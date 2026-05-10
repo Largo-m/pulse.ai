@@ -1,1 +1,3 @@
-# pulse.ai
+# pulse_ai
+
+A new Flutter project.
