@@ -1,0 +1,154 @@
+---
+description: Cross-platform mobile development with Flutter 3, Dart, and production-grade state management patterns.
+alwaysApply: true
+---
+
+## Language and style
+
+- Code in English; UI/display strings may use the product language.
+- Comments only when the snippet is complex and truly needs explanation.
+- Prefer `const` on variables and constructors whenever possible; avoid `var`.
+- Avoid `dynamic`.
+
+## Typing and object orientation
+
+- Variables and methods must always be typed.
+- Avoid loose global functions and “utils/helpers”; prefer type extensions for pure transformations on a type.
+
+## Naming
+
+- **File**: `snake_case.dart` matches the primary type (`user_repository.dart` → `UserRepository`); one main concept per file.
+- **Public type**: `PascalCase`. Suffixes: `Entity`, `Dto`/`Adapter` (data), `Repository` (domain contract), `RepositoryImpl`, `UseCase`, `Service` (port or package/framework facade), `Bloc`/`Cubit`, `Page`/`Screen`, `View` (layout only). Bloc: `XBloc`, `XState`, `XEvent`.
+- **Member**: `camelCase`; private `_`. Booleans `is/has/can`; methods are verbs (`fetchUser`, `toEntity`). No opaque abbreviations.
+- **Const / enum**: `lowerCamelCase`. Routes: `RoutePaths.*`, `RouteNames.*`.
+- **GoRouter**: path segments `kebab-case` (`/profile/edit`); `name:` unique, English, consistent style app-wide; params `:userId` + typed parsing; group routes by feature as the router grows.
+- **Tests**: mirror `lib/` + `_test.dart`; `group`/`test` descriptions in English (`returns X when Y`).
+
+## Clean Architecture — layers and responsibilities
+
+- **Dependency**: `domain` must not import Flutter, Dio, `dart:io`, JSON, or concrete infrastructure; outer layers depend on inner contracts only.
+- **Presentation**: widgets, pages, Bloc/Cubit; invokes use cases; navigates (GoRouter); UI-only rules (e.g. enable button).
+- **Domain**: entities, VOs if needed, repository interfaces, use cases, `*Service` contracts (preferred); pure business rules; `fpdart` when it fits.
+- **Data**: concrete repos, DTOs, mappers; uses `service/` for IO/SDKs; errors mapped to app/domain failure model (no raw SDK details in UI).
+- **Service**: implementations wrapping packages, plugins, and framework APIs; only `data/` and `app/di` import these concrete classes.
+- **app / core / shared**: `app/` = composition (`MaterialApp.router`), routes, DI; `core/` = light shared infra (errors, extensions, cross-cutting `service/`); `shared/` = design system (tokens, theme, UI atoms).
+
+Flow: **Presentation → Use case → Repo (interface) ← Repo impl (data) → Service**.
+
+## Folder structure
+
+Suggested baseline (feature-first with inner layers):
+
+```text
+lib/
+  app/
+    app.dart
+    router/
+    di/
+  service/
+  shared/
+    theme/
+    tokens/
+    ui/
+  core/
+    error/
+    extensions/
+    service/
+  features/
+    <feature_name>/
+      presentation/
+        bloc/
+        pages/
+        widgets/
+      domain/
+        entities/
+        repositories/
+        usecases/
+      service/
+      data/
+        adapters/
+        repositories/
+```
+
+Rules:
+
+- New capability lives under `features/<feature>/` with `presentation`, `domain`, `service`, and `data`; do not mix code across features.
+- Overly deep relative imports signal extracting a `domain` interface or moving code to the correct package.
+- `lib/shared/` = design system (tokens, theme, atoms); do not mix with `core/` (cross-cutting infra without UI).
+- `core/service/` = shared wrappers across features (clock, device info, base HTTP client, etc.).
+- Assets and `l10n` follow standard Flutter layout (`assets/`, `lib/l10n/` or chosen tooling), referenced from presentation or `app/`.
+- Tests mirror `lib/features/...` under `test/features/...`; core tests under `test/core/...`.
+
+## Widgets and performance
+
+- Prefer `StatelessWidget` screens; `StatefulWidget` only when lifecycle must be observed.
+- Do not use `setState` for app state; use the Bloc pattern.
+- Avoid unnecessary rebuilds.
+- Do not stack too many widgets in a single `build()`; split into small, single-responsibility methods on the same class.
+- Widgets, screens, and pages render only; logic belongs in the store or appropriate layer.
+- Reusable components, optimized, favoring `const` where sensible.
+
+## State, navigation, and HTTP
+
+- State with the Bloc pattern.
+- Navigation with GoRouter.
+- HTTP with Dio behind the **service** layer (do not use raw Dio in `data/` without a `*Service`).
+
+## Design system
+
+- **`lib/shared/`**: tokens (color, typography, dimensions, styles), global UI strings, and **global atomic components** (smallest reusable unit: base button, field, label, spacer, semantically sized icon, etc.).
+- Atoms under `shared/ui/`: presentation only; no business rules, no feature state, no imports from `features/`; compose screens with `shared` plus feature-local widgets.
+- Do not duplicate in a feature what already exists as an atom in `shared/`.
+- **DS only**: in UI, do not use color, dimension, typography, `TextStyle`, `BoxDecoration`, `EdgeInsets`, or equivalent literals (`fontSize`, `fontWeight`, `height`, `radius`, etc.) unless mapped in `shared/` (tokens, theme, or named style). New value → define in the DS first, then reference.
+- No magic numbers outside DS tokens/styles.
+
+## Tests
+
+- No widget tests until explicitly “second order” in the project workflow.
+- Whenever production code changes or is added, update or add unit tests.
+- Project coverage target ≥ 90%.
+- Each test: at least one success case and one failure/error case.
+- Classes and methods: aim for ≥ 90% coverage where applicable.
+- Unit tests: as small as needed to fail on the target bug; then minimal production code to pass (lean TDD).
+- Test priority: domain and use cases (pure), then repositories with fakes/mocks, then Blocs with `bloc_test` when applicable.
+
+## Module boundaries
+
+- Clear layers, defined responsibilities, coherent folder layout, and respected architectural boundaries.
+- Modules must not depend on peers’ internals beyond exposed abstractions.
+- Data abstraction: hide implementation behind interfaces.
+- Encapsulate framework and package calls behind interfaces when it reduces coupling.
+
+## SOLID and dependency injection
+
+- Depend on abstractions, not concrete implementations.
+- Inject dependencies through interfaces.
+- Small, focused interfaces; classes extensible through meaningful contracts.
+- Subtypes must be substitutable for their base without breaking contracts (LSP).
+- Separate high-level business rules from low-level details.
+
+## Error handling
+
+- Prefer exceptions over return codes for error flows.
+- Do not return or pass null where the model can avoid it.
+- Use `fpdart` for typed error/result flows when it fits the project pattern.
+
+## Tooling
+
+- Run `flutter analyze` and fix lint issues before finishing changes.
+- After adding or updating packages: `flutter clean` and `flutter pub get`.
+
+## Class size and complexity
+
+- Short methods, single responsibility; at most ~60 lines per method.
+- At most three parameters per method; beyond that, use a DTO or parameter object.
+- Class at most ~300 lines; if larger, refactor (patterns, extraction) or align with the team before growing further.
+- SRP: small classes with one clear reason to change.
+
+## Heuristics (code smells)
+
+- Rigidity: hard to change.
+- Fragility: one change breaks many places.
+- Immobility: hard to reuse.
+- Viscosity: easier to do the wrong thing than the right one.
+- Needless complexity or repetition.
