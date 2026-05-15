@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pulse_ai/app/di/orchestrator_composition.dart';
 import 'package:pulse_ai/app/router/route_paths.dart';
 import 'package:pulse_ai/app/router/shell_navigator_routes.dart';
 import 'package:pulse_ai/shared/strings/app_strings.dart';
@@ -63,7 +64,7 @@ class MainApp extends StatelessWidget {
         }
         return content;
       },
-      home: const PulseShell(),
+      home: const OrchestratorCompositionScope(child: PulseShell()),
     );
   }
 }
