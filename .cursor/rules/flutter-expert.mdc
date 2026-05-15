@@ -31,14 +31,15 @@ alwaysApply: true
 - **File**: `snake_case.dart` matches the primary type (`user_repository.dart` → `UserRepository`); one main concept per file.
 - **Public type**: `PascalCase`. Suffixes: `Entity`, `Dto`/`Adapter` (data), `Repository` (domain contract), `RepositoryImpl`, `UseCase`, `Service` (port or package/framework facade), `Bloc`/`Cubit`, `Page`/`Screen`, `View` (layout only). Bloc: `XBloc`, `XState`, `XEvent`.
 - **Member**: `camelCase`; private `_`. Booleans `is/has/can`; methods are verbs (`fetchUser`, `toEntity`). No opaque abbreviations.
-- **Const / enum**: `lowerCamelCase`. Routes: `RoutePaths.*`, `RouteNames.*`.
-- **GoRouter**: path segments `kebab-case` (`/profile/edit`); `name:` unique, English, consistent style app-wide; params `:userId` + typed parsing; group routes by feature as the router grows.
+- **Const / enum**: `lowerCamelCase`. Routes: `RoutePaths.*`, `RouteNames.*` (paths and names live only under `lib/app/router/`).
+- **Route paths**: segments in `kebab-case` (`/orchestrator/import/select-source`); group by feature as the tree grows.
+- **Route names** (`RouteNames.*`): English, `lowerCamelCase`, unique app-wide; used with GoRouter `name:` when adopted.
 - **Tests**: mirror `lib/` + `_test.dart`; `group`/`test` descriptions in English (`returns X when Y`).
 
 ## Clean Architecture — layers and responsibilities
 
 - **Dependency**: `domain` must not import Flutter, Dio, `dart:io`, JSON, or concrete infrastructure; outer layers depend on inner contracts only.
-- **Presentation**: widgets, pages, Bloc/Cubit; invokes use cases; navigates (GoRouter); UI-only rules (e.g. enable button).
+- **Presentation**: widgets, pages, Bloc/Cubit; invokes use cases; navigates via **centralized routes** (`RoutePaths` / GoRouter — never ad-hoc `MaterialPageRoute` in feature code); UI-only rules (e.g. enable button).
 - **Domain**: entities, VOs if needed, repository interfaces, use cases, `*Service` contracts (preferred); pure business rules; `fpdart` when it fits.
 - **Data**: concrete repos, DTOs, mappers; uses `service/` for IO/SDKs; errors mapped to app/domain failure model (no raw SDK details in UI).
 - **Service**: implementations wrapping packages, plugins, and framework APIs; only `data/` and `app/di` import these concrete classes.
@@ -55,6 +56,9 @@ lib/
   app/
     app.dart
     router/
+      route_paths.dart
+      route_names.dart
+      shell_navigator_routes.dart   # or app_router.dart (GoRouter)
     di/
   service/
   shared/
@@ -105,10 +109,19 @@ Rules:
 - Widgets, screens, and pages render only; logic belongs in the store or appropriate layer.
 - Reusable components, optimized, favoring `const` where sensible.
 
-## State, navigation, and HTTP
+## Navigation (mandatory)
+
+- **Never** navigate from pages, widgets, or Blocs with inline routes: no `Navigator.push(context, MaterialPageRoute(...))`, no `builder: (_) => SomePage()` inside feature code, no string literals for paths (`'/orchestrator/import'`).
+- **Always** use constants from `lib/app/router/route_paths.dart` (`RoutePaths.*`) and register every new screen in `lib/app/router/` (`shell_navigator_routes.dart` today; `app_router.dart` with **GoRouter** as the stack matures).
+- **Presentation** calls navigation APIs only with those constants, e.g. `Navigator.of(context).pushNamed(RoutePaths.orchestratorImportSelectSource)` or, with GoRouter, `context.pushNamed(RouteNames.orchestratorImportSelectSource)` / `context.go(RoutePaths.orchestrator)`.
+- **Returning / deep links**: prefer `popUntil` / `go` / `goNamed` keyed on `RoutePaths` (or `route.settings.name`), not hard-coded widget types or anonymous routes.
+- Adding a screen = (1) add `RoutePaths` + `RouteNames`, (2) wire the route in the app router module, (3) navigate from UI via the constant, (4) add/update tests under `test/app/router/`.
+- **GoRouter** (target): `MaterialApp.router` + `GoRouter` in `lib/app/router/`; path segments `kebab-case`; typed params (`:userId` + parsing helpers); feature-grouped `routes` / `ShellRoute` as the tree grows.
+- Until GoRouter lands, the nested shell `Navigator` in `main.dart` must delegate to `ShellNavigatorRoutes.onGenerateRoute` — do not grow `switch` blocks inside `main.dart` or features.
+
+## State and HTTP
 
 - State with the Bloc pattern; never `setState`.
-- Navigation with GoRouter.
 - HTTP with Dio behind the **service** layer (do not use raw Dio in `data/` without a `*Service`).
 
 ## Design system
@@ -171,6 +184,7 @@ Rules:
 - Viscosity: easier to do the wrong thing than the right one.
 - Needless complexity or repetition.
 - **String literals in UI** — copy scattered in widgets; impossible to audit language or reuse.
+- **Ad-hoc navigation** — `MaterialPageRoute` / `push` with inline `builder` in `features/`; bypasses `RoutePaths`, breaks deep links and reviewability. **Blocker in PR.**
 - **`setState` for hover/toggles** — prefer `ValueListenableBuilder` or Bloc; `setState` will be rejected in review.
 - **English UI in a PT-BR product** — belongs in `*_strings.dart` as PT-BR, not as a quick `Text('…')` in English.
 
@@ -184,3 +198,5 @@ Before finishing any change, confirm:
 4. No user-facing string literals in widgets/pages (`grep` for `Text('`, `Text("`, `title: '`, `label: '` under `lib/` should find none except inside `*_strings.dart` or generated l10n).
 5. New/changed copy lives in `AppStrings` or `<Feature>Strings` and is **PT-BR**.
 6. Unit tests added/updated for new string classes when copy is introduced.
+7. No ad-hoc navigation in `features/` (`grep` under `lib/features/` for `MaterialPageRoute`, `push<`, `push(` without `pushNamed` / GoRouter — should find **none**).
+8. New routes: `RoutePaths` + `RouteNames` updated, screen registered in `lib/app/router/`, tests under `test/app/router/` when applicable.

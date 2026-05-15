@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'package:pulse_ai/app/router/route_paths.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_bottom_bar.dart';
@@ -45,6 +48,13 @@ final class _OrchestratorChrome extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return OrchestratorAppTopBar(
+      onImportProject: () {
+        unawaited(
+          Navigator.of(
+            context,
+          ).pushNamed<void>(RoutePaths.orchestratorImportSelectSource),
+        );
+      },
       onPlaceholder: () =>
           OrchestratorPlaceholderFeedback.showComingSoon(context),
     );

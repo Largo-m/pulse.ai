@@ -6,9 +6,18 @@ import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 
 final class OrchestratorAppTopBar extends StatelessWidget {
-  const OrchestratorAppTopBar({super.key, required this.onPlaceholder});
+  const OrchestratorAppTopBar({
+    super.key,
+    required this.onPlaceholder,
+    this.isWorkspacesActive = false,
+    this.onWorkspaces,
+    this.onImportProject,
+  });
 
   final VoidCallback onPlaceholder;
+  final bool isWorkspacesActive;
+  final VoidCallback? onWorkspaces;
+  final VoidCallback? onImportProject;
 
   @override
   Widget build(BuildContext context) {
@@ -43,21 +52,46 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                   color: PulseColors.outlineVariant,
                 ),
                 TextButton(
-                  onPressed: onPlaceholder,
+                  onPressed: onWorkspaces ?? onPlaceholder,
                   style: TextButton.styleFrom(
-                    foregroundColor: PulseColors.onSurfaceVariant,
+                    foregroundColor: isWorkspacesActive
+                        ? PulseColors.primary
+                        : PulseColors.onSurfaceVariant,
                     padding: PulseInsets.textButton,
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text(
-                    OrchestratorStrings.workspacesNav,
-                    style: tt.labelLarge,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: isWorkspacesActive
+                          ? const Border(
+                              bottom: BorderSide(
+                                color: PulseColors.primary,
+                                width: 2,
+                              ),
+                            )
+                          : null,
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: isWorkspacesActive
+                            ? PulseDimensions.sectionGapSm
+                            : 0,
+                      ),
+                      child: Text(
+                        OrchestratorStrings.workspacesNav,
+                        style: tt.labelLarge?.copyWith(
+                          color: isWorkspacesActive
+                              ? PulseColors.primary
+                              : PulseColors.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 const Spacer(),
                 FilledButton(
-                  onPressed: onPlaceholder,
+                  onPressed: onImportProject ?? onPlaceholder,
                   style: FilledButton.styleFrom(
                     backgroundColor: PulseColors.primary,
                     foregroundColor: PulseColors.onPrimary,
