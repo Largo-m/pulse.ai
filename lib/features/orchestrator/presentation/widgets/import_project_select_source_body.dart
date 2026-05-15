@@ -9,8 +9,13 @@ import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 
 final class ImportProjectSelectSourceBody extends StatelessWidget {
-  const ImportProjectSelectSourceBody({super.key, required this.onPlaceholder});
+  const ImportProjectSelectSourceBody({
+    super.key,
+    required this.onSelectLocal,
+    required this.onPlaceholder,
+  });
 
+  final VoidCallback onSelectLocal;
   final VoidCallback onPlaceholder;
 
   @override
@@ -30,7 +35,7 @@ final class ImportProjectSelectSourceBody extends StatelessWidget {
           buttonTrailingIcon: Icons.arrow_forward,
           accentColor: PulseColors.primary,
           iconColor: PulseColors.primary,
-          onPressed: onPlaceholder,
+          onPressed: onSelectLocal,
         );
     final ImportProjectSourceCardUiModel remoteModel =
         ImportProjectSourceCardUiModel(

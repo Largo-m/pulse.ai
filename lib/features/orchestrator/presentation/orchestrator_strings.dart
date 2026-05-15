@@ -27,4 +27,11 @@ abstract final class OrchestratorStrings {
 
   static const String comingSoonMessage =
       'Em breve: integração ainda não disponível.';
+
+  static const String recentProjectsSectionTitle = 'Projetos recentes';
+  static const String recentProjectNewButtonTooltip = 'Novo projeto';
+  static const String recentProjectSelectSemantics = 'Selecionar projeto';
+  static const String recentProjectActiveSemantics = 'Projeto ativo';
+  static const String recentProjectExpandSemantics = 'Expandir projeto';
+  static const String recentProjectCollapseSemantics = 'Recolher projeto';
 }

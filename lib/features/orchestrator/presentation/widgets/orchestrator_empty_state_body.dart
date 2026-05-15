@@ -9,8 +9,13 @@ import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 import 'orchestrator_cta_card.dart';
 
 final class OrchestratorEmptyStateBody extends StatelessWidget {
-  const OrchestratorEmptyStateBody({super.key, required this.onPlaceholder});
+  const OrchestratorEmptyStateBody({
+    super.key,
+    required this.onSelectLocal,
+    required this.onPlaceholder,
+  });
 
+  final VoidCallback onSelectLocal;
   final VoidCallback onPlaceholder;
 
   @override
@@ -24,7 +29,7 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
       iconColor: PulseColors.primary,
       buttonLabel: OrchestratorStrings.localProjectButton,
       usesPrimaryButtonStyle: true,
-      onPressed: onPlaceholder,
+      onPressed: onSelectLocal,
     );
     final OrchestratorCtaCardUiModel remoteModel = OrchestratorCtaCardUiModel(
       title: OrchestratorStrings.remoteProjectTitle,

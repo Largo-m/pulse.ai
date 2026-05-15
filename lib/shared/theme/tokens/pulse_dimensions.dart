@@ -3,6 +3,19 @@ abstract final class PulseDimensions {
   static const double breadcrumbBarHeight = 40;
   static const double bottomBarHeight = 32;
   static const double horizontalInset = 24;
+  static const double orchestratorSidebarWidth = 256;
+  static const double sidebarHeaderPadding = 16;
+  static const double sidebarNavHorizontalPadding = 8;
+  static const double sidebarTreeRowVerticalPadding = 8;
+  static const double sidebarTreeRowGap = 8;
+  static const double sidebarTreeIconSize = 18;
+  static const double sidebarTreeChevronSize = 16;
+  static const double sidebarAddButtonIconSize = 18;
+  static const double sidebarAgentTreeIndent = 16;
+  static const double sidebarAgentTreeInnerPadding = 8;
+  static const double sidebarAgentStatusDotSize = 6;
+  static const double sidebarAgentRowVerticalPadding = 6;
+  static const double sidebarSectionTitleLetterSpacing = 0.08;
   static const double topBarVerticalPadding = 8;
   static const double pageScrollPadding = 32;
   static const double bodyTopSpacer = 24;
@@ -16,8 +29,10 @@ abstract final class PulseDimensions {
   static const double brandDividerHeight = 16;
   static const double brandDividerHorizontalMargin = 8;
   static const double afterImportButtonGap = 8;
+  static const double actionButtonHorizontalPadding = 16;
+  static const double actionButtonVerticalPadding = 8;
   static const double primaryButtonHorizontalPadding = 16;
-  static const double primaryButtonVerticalPadding = 6;
+  static const double primaryButtonVerticalPadding = 8;
   static const double ctaCardPadding = 24;
   static const double ctaIconBoxSize = 40;
   static const double heroIconContainerSize = 64;
@@ -64,5 +79,6 @@ abstract final class PulseDimensions {
   static const double inkHoverAlpha = 0.04;
   static const double ctaButtonLetterSpacing = 0.06;
   static const double ctaButtonHorizontalPadding = 16;
-  static const double ctaButtonVerticalPadding = 12;
+  static const double ctaButtonVerticalPadding = 8;
+  static const double chromeIconButtonPadding = 4;
 }

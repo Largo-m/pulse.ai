@@ -14,5 +14,20 @@ void main() {
         greaterThanOrEqualTo(PulseDimensions.maxIntroTextWidth),
       );
     });
+
+    test(
+      'orchestratorSidebarWidth is positive and distinct from chrome heights',
+      () {
+        expect(PulseDimensions.orchestratorSidebarWidth, greaterThan(0));
+        expect(
+          PulseDimensions.orchestratorSidebarWidth,
+          isNot(equals(PulseDimensions.appTopBarHeight)),
+        );
+        expect(
+          PulseDimensions.orchestratorSidebarWidth,
+          isNot(equals(PulseDimensions.horizontalInset)),
+        );
+      },
+    );
   });
 }

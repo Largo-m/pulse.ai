@@ -23,4 +23,10 @@ abstract final class ImportProjectStrings {
   static const String remoteFeatureBranchManagement =
       'Gerenciamento de branches';
   static const String selectRemote = 'Selecionar remoto';
+
+  static const String importLocalFailureMessage =
+      'Não foi possível importar o projeto local. Verifique as permissões '
+      'da pasta e tente novamente.';
+  static const String importLocalPermissionFailureMessage =
+      'Permissão negada para acessar a pasta selecionada.';
 }
