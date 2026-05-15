@@ -5,10 +5,21 @@ alwaysApply: true
 
 ## Language and style
 
-- Code in English; UI/display strings may use the product language.
+- Code in English (identifiers, types, routes, tests); **all user-visible copy in PT-BR** unless the string is an untranslatable proper noun (product name, trademark, remote host label).
 - Comments only when the snippet is complex and truly needs explanation.
 - Prefer `const` on variables and constructors whenever possible; avoid `var`.
 - Avoid `dynamic`.
+
+## UI copy and strings (mandatory)
+
+- **Never** embed user-facing text as literals in widgets, pages, `SnackBar`, dialogs, tooltips, semantics labels, or window titles. No `Text('…')`, `const Text("…")`, `title: '…'`, `label: '…'`, etc.
+- Centralize copy in dedicated files:
+  - **App-wide**: `lib/shared/strings/app_strings.dart` → `abstract final class AppStrings`.
+  - **Per feature**: `lib/features/<feature>/presentation/<feature>_strings.dart` → `abstract final class <Feature>Strings`.
+- Widgets and pages **only reference** constants from those classes (or generated l10n when adopted). Tests may import the same constants; do not duplicate literals in tests.
+- Adding or changing UI text = update the strings file first, then wire the widget. New feature → create `<feature>_strings.dart` before shipping UI.
+- Group strings by screen/flow inside the class; use descriptive `lowerCamelCase` static const names (`emptyStateTitle`, `comingSoonMessage`).
+- English UI copy in PRs is a **blocker** — translate to PT-BR in the strings file, not inline in the widget tree.
 
 ## Typing and object orientation
 
@@ -47,6 +58,7 @@ lib/
     di/
   service/
   shared/
+    strings/
     theme/
     tokens/
     ui/
@@ -57,6 +69,7 @@ lib/
   features/
     <feature_name>/
       presentation/
+        <feature>_strings.dart
         bloc/
         pages/
         widgets/
@@ -74,15 +87,19 @@ Rules:
 
 - New capability lives under `features/<feature>/` with `presentation`, `domain`, `service`, and `data`; do not mix code across features.
 - Overly deep relative imports signal extracting a `domain` interface or moving code to the correct package.
-- `lib/shared/` = design system (tokens, theme, atoms); do not mix with `core/` (cross-cutting infra without UI).
+- `lib/shared/` = design system (tokens, theme, atoms, **app-wide strings**); do not mix with `core/` (cross-cutting infra without UI).
+- `lib/shared/strings/` and `features/<feature>/presentation/*_strings.dart` are the **only** homes for user-visible copy until official `l10n`/ARB is introduced.
 - `core/service/` = shared wrappers across features (clock, device info, base HTTP client, etc.).
 - Assets and `l10n` follow standard Flutter layout (`assets/`, `lib/l10n/` or chosen tooling), referenced from presentation or `app/`.
 - Tests mirror `lib/features/...` under `test/features/...`; core tests under `test/core/...`.
 
 ## Widgets and performance
 
-- Prefer `StatelessWidget` screens; `StatefulWidget` only when lifecycle must be observed.
-- Do not use `setState` for app state; use the Bloc pattern.
+- Prefer `StatelessWidget` screens; `StatefulWidget` only when lifecycle must be observed (listeners, controllers, `TickerProvider`, `ValueNotifier` disposal).
+- **`setState` is forbidden** in this codebase — including hover, focus, and other ephemeral UI feedback. Use, in order of preference:
+  1. **Bloc/Cubit** for anything that affects business rules, navigation, or data shown to the user.
+  2. **`ValueNotifier` + `ValueListenableBuilder`** (or `ListenableBuilder`) for local visual-only state inside a widget subtree; dispose notifiers in `dispose`.
+  3. **Shared atoms** such as `lib/shared/ui/mouse_hover_builder.dart` for repeated hover patterns — do not reintroduce `setState` per widget.
 - Avoid unnecessary rebuilds.
 - Do not stack too many widgets in a single `build()`; split into small, single-responsibility methods on the same class.
 - Widgets, screens, and pages render only; logic belongs in the store or appropriate layer.
@@ -90,13 +107,13 @@ Rules:
 
 ## State, navigation, and HTTP
 
-- State with the Bloc pattern.
+- State with the Bloc pattern; never `setState`.
 - Navigation with GoRouter.
 - HTTP with Dio behind the **service** layer (do not use raw Dio in `data/` without a `*Service`).
 
 ## Design system
 
-- **`lib/shared/`**: tokens (color, typography, dimensions, styles), global UI strings, and **global atomic components** (smallest reusable unit: base button, field, label, spacer, semantically sized icon, etc.).
+- **`lib/shared/`**: tokens (color, typography, dimensions, styles), **`lib/shared/strings/`** for app-wide copy, and **global atomic components** (smallest reusable unit: base button, field, label, spacer, semantically sized icon, etc.).
 - Atoms under `shared/ui/`: presentation only; no business rules, no feature state, no imports from `features/`; compose screens with `shared` plus feature-local widgets.
 - Do not duplicate in a feature what already exists as an atom in `shared/`.
 - **DS only**: in UI, do not use color, dimension, typography, `TextStyle`, `BoxDecoration`, `EdgeInsets`, or equivalent literals (`fontSize`, `fontWeight`, `height`, `radius`, etc.) unless mapped in `shared/` (tokens, theme, or named style). New value → define in the DS first, then reference.
@@ -152,3 +169,15 @@ Rules:
 - Immobility: hard to reuse.
 - Viscosity: easier to do the wrong thing than the right one.
 - Needless complexity or repetition.
+- **String literals in UI** — copy scattered in widgets; impossible to audit language or reuse.
+- **`setState` for hover/toggles** — prefer `ValueListenableBuilder` or Bloc; `setState` will be rejected in review.
+- **English UI in a PT-BR product** — belongs in `*_strings.dart` as PT-BR, not as a quick `Text('…')` in English.
+
+## Pre-merge checklist (UI changes)
+
+Before finishing any presentation-layer change, confirm:
+
+1. No `setState(` anywhere in `lib/`.
+2. No user-facing string literals in widgets/pages (`grep` for `Text('`, `Text("`, `title: '`, `label: '` under `lib/` should find none except inside `*_strings.dart` or generated l10n).
+3. New/changed copy lives in `AppStrings` or `<Feature>Strings` and is **PT-BR**.
+4. Unit tests added/updated for new string classes when copy is introduced.
