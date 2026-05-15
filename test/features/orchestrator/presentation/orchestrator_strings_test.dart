@@ -29,9 +29,11 @@ void main() {
         OrchestratorStrings.recentProjectsSectionTitle,
         contains('Projetos recentes'),
       );
-      expect(OrchestratorStrings.recentProjectListTileTooltip, isNotEmpty);
+      expect(OrchestratorStrings.recentProjectNewButtonTooltip, isNotEmpty);
       expect(OrchestratorStrings.recentProjectSelectSemantics, isNotEmpty);
       expect(OrchestratorStrings.recentProjectActiveSemantics, isNotEmpty);
+      expect(OrchestratorStrings.recentProjectExpandSemantics, isNotEmpty);
+      expect(OrchestratorStrings.recentProjectCollapseSemantics, isNotEmpty);
     });
 
     test('recent projects sidebar strings are not English placeholders', () {
@@ -40,8 +42,8 @@ void main() {
         isNot(equals('Recent Projects')),
       );
       expect(
-        OrchestratorStrings.recentProjectListTileTooltip,
-        isNot(equals('Select project')),
+        OrchestratorStrings.recentProjectNewButtonTooltip,
+        isNot(equals('New Agent')),
       );
     });
   });

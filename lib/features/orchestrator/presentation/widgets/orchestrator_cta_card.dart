@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/orchestrator_cta_card_ui_model.dart';
-import 'package:pulse_ai/shared/theme/pulse_typography.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 import 'package:pulse_ai/shared/ui/mouse_hover_builder.dart';
+import 'package:pulse_ai/shared/ui/pulse_filled_action_button.dart';
 
 final class OrchestratorCtaCard extends StatelessWidget {
   const OrchestratorCtaCard({super.key, required this.model});
@@ -96,28 +96,14 @@ final class OrchestratorCtaCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: PulseDimensions.sectionGapLg),
-                        if (m.usesPrimaryButtonStyle)
-                          FilledButton(
-                            onPressed: m.onPressed,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: PulseColors.primary,
-                              foregroundColor: PulseColors.onPrimary,
-                              textStyle: context.pulseCtaButtonLabel(),
-                              padding: PulseInsets.ctaButton,
-                            ),
-                            child: Text(m.buttonLabel.toUpperCase()),
-                          )
-                        else
-                          FilledButton(
-                            onPressed: m.onPressed,
-                            style: FilledButton.styleFrom(
-                              backgroundColor: PulseColors.tertiaryContainer,
-                              foregroundColor: PulseColors.onTertiaryContainer,
-                              textStyle: context.pulseCtaButtonLabel(),
-                              padding: PulseInsets.ctaButton,
-                            ),
-                            child: Text(m.buttonLabel.toUpperCase()),
-                          ),
+                        PulseFilledActionButton(
+                          label: m.buttonLabel,
+                          onPressed: m.onPressed,
+                          variant: m.usesPrimaryButtonStyle
+                              ? PulseFilledActionButtonVariant.primary
+                              : PulseFilledActionButtonVariant.tertiary,
+                          uppercaseLabel: true,
+                        ),
                       ],
                     ),
                   ),

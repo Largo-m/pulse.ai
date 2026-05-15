@@ -21,21 +21,46 @@ abstract final class PulseInsets {
     vertical: PulseDimensions.textButtonVerticalPadding,
   );
 
-  static const EdgeInsets primaryTopBarButton = EdgeInsets.symmetric(
-    horizontal: PulseDimensions.primaryButtonHorizontalPadding,
-    vertical: PulseDimensions.primaryButtonVerticalPadding,
+  static const EdgeInsets filledActionButton = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.actionButtonHorizontalPadding,
+    vertical: PulseDimensions.actionButtonVerticalPadding,
   );
+
+  static const EdgeInsets primaryTopBarButton = filledActionButton;
 
   static const EdgeInsets ctaCard = EdgeInsets.all(
     PulseDimensions.ctaCardPadding,
   );
 
-  static const EdgeInsets ctaButton = EdgeInsets.symmetric(
-    horizontal: PulseDimensions.ctaButtonHorizontalPadding,
-    vertical: PulseDimensions.ctaButtonVerticalPadding,
+  static const EdgeInsets ctaButton = filledActionButton;
+
+  static const EdgeInsets chromeIconButton = EdgeInsets.all(
+    PulseDimensions.chromeIconButtonPadding,
   );
 
   static const EdgeInsets watermark = EdgeInsets.all(
     PulseDimensions.watermarkPadding,
+  );
+
+  static const EdgeInsets sidebarHeader = EdgeInsets.all(
+    PulseDimensions.sidebarHeaderPadding,
+  );
+
+  static const EdgeInsets sidebarNav = EdgeInsets.symmetric(
+    vertical: PulseDimensions.sidebarNavHorizontalPadding,
+  );
+
+  static const EdgeInsets sidebarTreeGroup = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sidebarNavHorizontalPadding,
+  );
+
+  static const EdgeInsets sidebarTreeProjectRow = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sidebarNavHorizontalPadding,
+    vertical: PulseDimensions.sidebarTreeRowVerticalPadding,
+  );
+
+  static const EdgeInsets sidebarTreeAgentRow = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sidebarNavHorizontalPadding,
+    vertical: PulseDimensions.sidebarAgentRowVerticalPadding,
   );
 }

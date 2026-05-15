@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/import_project_source_card_ui_model.dart';
+import 'package:pulse_ai/shared/theme/pulse_button_styles.dart';
 import 'package:pulse_ai/shared/theme/pulse_typography.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
@@ -198,13 +199,10 @@ final class _SourceCardButton extends StatelessWidget {
         : PulseColors.outlineVariant;
     return OutlinedButton(
       onPressed: onPressed,
-      style: OutlinedButton.styleFrom(
+      style: PulseButtonStyles.outlinedAction(
         foregroundColor: foreground,
         backgroundColor: background,
-        side: BorderSide(color: borderColor),
-        padding: const EdgeInsets.symmetric(
-          vertical: PulseDimensions.importSourceButtonVerticalPadding,
-        ),
+        borderColor: borderColor,
         textStyle: context.pulseCtaButtonLabel(),
       ),
       child: Row(
