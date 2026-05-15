@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
@@ -27,7 +28,7 @@ final class OrchestratorAppTopBar extends StatelessWidget {
             child: Row(
               children: [
                 Text(
-                  'Pulse.AI',
+                  OrchestratorStrings.brandName,
                   style: tt.labelMedium?.copyWith(
                     color: GovernanceColors.primary,
                     fontWeight: FontWeight.w700,
@@ -50,7 +51,10 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text('Workspaces', style: tt.labelLarge),
+                  child: Text(
+                    OrchestratorStrings.workspacesNav,
+                    style: tt.labelLarge,
+                  ),
                 ),
                 const Spacer(),
                 FilledButton(
@@ -61,7 +65,7 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                     padding: GovernanceInsets.primaryTopBarButton,
                     textStyle: tt.labelLarge,
                   ),
-                  child: const Text('Import Project'),
+                  child: const Text(OrchestratorStrings.importProject),
                 ),
                 const SizedBox(
                   width: GovernanceDimensions.afterImportButtonGap,

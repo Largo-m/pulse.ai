@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/orchestrator_cta_card_ui_model.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
@@ -16,24 +17,22 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     final OrchestratorCtaCardUiModel localModel = OrchestratorCtaCardUiModel(
-      title: 'Open Local Project',
-      body:
-          'Mount a local directory containing your agent configuration files and task graphs.',
+      title: OrchestratorStrings.localProjectTitle,
+      body: OrchestratorStrings.localProjectBody,
       icon: Icons.folder_open,
       accentBorderHover: GovernanceColors.primary,
       iconColor: GovernanceColors.primary,
-      buttonLabel: 'Initialize Local',
+      buttonLabel: OrchestratorStrings.localProjectButton,
       usesPrimaryButtonStyle: true,
       onPressed: onPlaceholder,
     );
     final OrchestratorCtaCardUiModel remoteModel = OrchestratorCtaCardUiModel(
-      title: 'Clone Git Repository',
-      body:
-          'Synchronize an existing orchestration project from GitHub, GitLab, or a custom remote.',
+      title: OrchestratorStrings.remoteProjectTitle,
+      body: OrchestratorStrings.remoteProjectBody,
       icon: Icons.cloud_download_outlined,
       accentBorderHover: GovernanceColors.tertiary,
       iconColor: GovernanceColors.tertiary,
-      buttonLabel: 'Connect Remote',
+      buttonLabel: OrchestratorStrings.remoteProjectButton,
       usesPrimaryButtonStyle: false,
       onPressed: onPlaceholder,
     );
@@ -74,7 +73,7 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
                   ),
                   const SizedBox(height: GovernanceDimensions.sectionGapMd),
                   Text(
-                    'Welcome to Neural Shell Systems',
+                    OrchestratorStrings.emptyStateTitle,
                     style: tt.displaySmall?.copyWith(
                       color: GovernanceColors.onSurface,
                     ),
@@ -86,7 +85,7 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
                       maxWidth: GovernanceDimensions.maxIntroTextWidth,
                     ),
                     child: Text(
-                      'The agentic orchestration environment is initialized and standing by. Configure your workspace to begin managing multi-agent workflows.',
+                      OrchestratorStrings.emptyStateSubtitle,
                       style: tt.bodyLarge?.copyWith(
                         color: GovernanceColors.onSurfaceVariant,
                       ),

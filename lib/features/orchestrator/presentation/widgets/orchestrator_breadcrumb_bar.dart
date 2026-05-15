@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_pulsing_dot.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
@@ -25,7 +27,7 @@ final class OrchestratorBreadcrumbBar extends StatelessWidget {
           child: Row(
             children: [
               Text(
-                'SYSTEM',
+                OrchestratorStrings.breadcrumbSystem,
                 style: tt.labelMedium?.copyWith(color: GovernanceColors.outline),
               ),
               const Icon(
@@ -34,7 +36,7 @@ final class OrchestratorBreadcrumbBar extends StatelessWidget {
                 color: GovernanceColors.outline,
               ),
               Text(
-                'INITIALIZATION',
+                OrchestratorStrings.breadcrumbInitialization,
                 style: tt.labelMedium?.copyWith(
                   color: GovernanceColors.onSurface,
                 ),
@@ -62,7 +64,7 @@ final class OrchestratorBreadcrumbBar extends StatelessWidget {
                         width: GovernanceDimensions.standbyLabelGap,
                       ),
                       Text(
-                        'STANDBY',
+                        OrchestratorStrings.statusStandby,
                         style: tt.labelMedium?.copyWith(
                           color: GovernanceColors.tertiary,
                         ),

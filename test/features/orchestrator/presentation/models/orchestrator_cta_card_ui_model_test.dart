@@ -2,22 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/orchestrator_cta_card_ui_model.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 
 void main() {
   group('OrchestratorCtaCardUiModel', () {
     test('holds provided title and button label', () {
       final OrchestratorCtaCardUiModel model = OrchestratorCtaCardUiModel(
-        title: 'Open Local Project',
-        body: 'Body text',
+        title: OrchestratorStrings.localProjectTitle,
+        body: OrchestratorStrings.localProjectBody,
         icon: Icons.folder_open,
         accentBorderHover: const Color(0xFF000000),
         iconColor: const Color(0xFF000000),
-        buttonLabel: 'Initialize Local',
+        buttonLabel: OrchestratorStrings.localProjectButton,
         usesPrimaryButtonStyle: true,
         onPressed: _noop,
       );
-      expect(model.title, 'Open Local Project');
-      expect(model.buttonLabel, 'Initialize Local');
+      expect(model.title, OrchestratorStrings.localProjectTitle);
+      expect(model.buttonLabel, OrchestratorStrings.localProjectButton);
     });
 
     test('usesPrimaryButtonStyle distinguishes primary vs tertiary CTA', () {

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/pages/orchestrator_empty_page.dart';
+import 'package:pulse_ai/shared/strings/app_strings.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -15,7 +16,7 @@ void main() async {
         size: initialSize,
         minimumSize: const Size(400, 300),
         center: false,
-        title: 'pulse.ia',
+        title: AppStrings.windowTitle,
         backgroundColor: Colors.transparent,
         titleBarStyle: TitleBarStyle.hidden,
         windowButtonVisibility: defaultTargetPlatform == TargetPlatform.macOS,
@@ -122,7 +123,7 @@ class HomeScreen extends StatelessWidget {
       color: Theme.of(context).colorScheme.surface,
       child: Center(
         child: Text(
-          'pulse.ia',
+          AppStrings.homeTitle,
           style: Theme.of(context).textTheme.headlineMedium,
         ),
       ),
@@ -145,16 +146,20 @@ class PulseTitleBar extends StatefulWidget {
 }
 
 class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
+  late final ValueNotifier<int> _windowLayoutTick;
+
   @override
   void initState() {
+    super.initState();
+    _windowLayoutTick = ValueNotifier<int>(0);
     if (widget.showWindowControls) {
       windowManager.addListener(this);
     }
-    super.initState();
   }
 
   @override
   void dispose() {
+    _windowLayoutTick.dispose();
     if (widget.showWindowControls) {
       windowManager.removeListener(this);
     }
@@ -171,7 +176,7 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
       fontWeight: FontWeight.w600,
     );
     final titleWidget = IgnorePointer(
-      child: Text('pulse.ia', style: titleStyle),
+      child: Text(AppStrings.windowTitle, style: titleStyle),
     );
     final useNativeMacChrome =
         widget.showWindowControls &&
@@ -216,21 +221,26 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
                       }
                     },
                   ),
-                  FutureBuilder<bool>(
-                    future: windowManager.isMaximized(),
-                    builder: (context, snapshot) {
-                      if (snapshot.data == true) {
-                        return WindowCaptionButton.unmaximize(
-                          brightness: widget.brightness,
-                          onPressed: () async {
-                            await windowManager.unmaximize();
-                          },
-                        );
-                      }
-                      return WindowCaptionButton.maximize(
-                        brightness: widget.brightness,
-                        onPressed: () async {
-                          await windowManager.maximize();
+                  ValueListenableBuilder<int>(
+                    valueListenable: _windowLayoutTick,
+                    builder: (BuildContext context, int tick, Widget? child) {
+                      return FutureBuilder<bool>(
+                        future: windowManager.isMaximized(),
+                        builder: (context, snapshot) {
+                          if (snapshot.data == true) {
+                            return WindowCaptionButton.unmaximize(
+                              brightness: widget.brightness,
+                              onPressed: () async {
+                                await windowManager.unmaximize();
+                              },
+                            );
+                          }
+                          return WindowCaptionButton.maximize(
+                            brightness: widget.brightness,
+                            onPressed: () async {
+                              await windowManager.maximize();
+                            },
+                          );
                         },
                       );
                     },
@@ -257,11 +267,11 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
 
   @override
   void onWindowMaximize() {
-    setState(() {});
+    _windowLayoutTick.value++;
   }
 
   @override
   void onWindowUnmaximize() {
-    setState(() {});
+    _windowLayoutTick.value++;
   }
 }
