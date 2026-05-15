@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:pulse_ai/app/router/route_paths.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/import_project_select_source_body.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
@@ -21,7 +22,12 @@ final class ImportProjectSelectSourcePage extends StatelessWidget {
           children: [
             OrchestratorAppTopBar(
               isWorkspacesActive: true,
-              onWorkspaces: () => Navigator.of(context).maybePop(),
+              onWorkspaces: () {
+                Navigator.of(context).popUntil(
+                  (Route<dynamic> route) =>
+                      route.settings.name == RoutePaths.orchestrator,
+                );
+              },
               onImportProject: () =>
                   OrchestratorPlaceholderFeedback.showComingSoon(context),
               onPlaceholder: () =>

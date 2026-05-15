@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/pages/orchestrator_empty_page.dart';
+import 'package:pulse_ai/app/router/route_paths.dart';
+import 'package:pulse_ai/app/router/shell_navigator_routes.dart';
 import 'package:pulse_ai/shared/strings/app_strings.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
@@ -86,25 +87,15 @@ class _PulseShellState extends State<PulseShell> {
           PulseTitleBar(brightness: brightness, showWindowControls: _isDesktop),
           Expanded(
             child: Navigator(
-              initialRoute: '/orchestrator',
-              onGenerateRoute: (settings) {
-                switch (settings.name) {
-                  case '/':
-                    return MaterialPageRoute<void>(
-                      builder: (_) => const HomeScreen(),
-                      settings: settings,
-                    );
-                  case '/orchestrator':
-                    return MaterialPageRoute<void>(
-                      builder: (_) => const OrchestratorEmptyPage(),
-                      settings: settings,
-                    );
-                  default:
-                    return MaterialPageRoute<void>(
-                      builder: (_) => const HomeScreen(),
-                      settings: settings,
-                    );
+              initialRoute: RoutePaths.orchestrator,
+              onGenerateRoute: (RouteSettings settings) {
+                if (settings.name == RoutePaths.home) {
+                  return MaterialPageRoute<void>(
+                    settings: settings,
+                    builder: (BuildContext context) => const HomeScreen(),
+                  );
                 }
+                return ShellNavigatorRoutes.onGenerateRoute(settings);
               },
             ),
           ),
