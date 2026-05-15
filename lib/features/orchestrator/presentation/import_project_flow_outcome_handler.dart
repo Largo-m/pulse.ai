@@ -3,18 +3,18 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_sta
 abstract final class ImportProjectFlowOutcomeHandler {
   static Future<void> handle({
     required ImportFlowState state,
-    required void Function() onImportSuccessNavigate,
+    void Function()? onImportSuccessNavigate,
     required Future<void> Function() refreshRecentProjects,
-    required void Function() showImportFailure,
+    required void Function(String? failureMessage) showImportFailure,
     required void Function() resetImportFlow,
   }) async {
     switch (state.status) {
       case ImportFlowStatus.success:
-        onImportSuccessNavigate();
+        onImportSuccessNavigate?.call();
         await refreshRecentProjects();
         resetImportFlow();
       case ImportFlowStatus.failure:
-        showImportFailure();
+        showImportFailure(state.failureMessage);
         resetImportFlow();
       case ImportFlowStatus.cancelled:
         resetImportFlow();

@@ -26,7 +26,7 @@ void main() {
         refreshRecentProjects: () async {
           refreshed = true;
         },
-        showImportFailure: () {},
+        showImportFailure: (_) {},
         resetImportFlow: () {
           reset = true;
         },
@@ -39,6 +39,7 @@ void main() {
 
     test('failure shows feedback and resets import flow', () async {
       var failureShown = false;
+      String? capturedMessage;
       var reset = false;
 
       await ImportProjectFlowOutcomeHandler.handle(
@@ -48,8 +49,9 @@ void main() {
         ),
         onImportSuccessNavigate: () {},
         refreshRecentProjects: () async {},
-        showImportFailure: () {
+        showImportFailure: (String? failureMessage) {
           failureShown = true;
+          capturedMessage = failureMessage;
         },
         resetImportFlow: () {
           reset = true;
@@ -57,6 +59,7 @@ void main() {
       );
 
       expect(failureShown, isTrue);
+      expect(capturedMessage, 'permission denied');
       expect(reset, isTrue);
     });
 
@@ -68,7 +71,7 @@ void main() {
         state: const ImportFlowState(status: ImportFlowStatus.cancelled),
         onImportSuccessNavigate: () {},
         refreshRecentProjects: () async {},
-        showImportFailure: () {
+        showImportFailure: (_) {
           failureShown = true;
         },
         resetImportFlow: () {
@@ -80,6 +83,32 @@ void main() {
       expect(reset, isTrue);
     });
 
+    test(
+      'success without navigation still refreshes recent projects',
+      () async {
+        var refreshed = false;
+
+        await ImportProjectFlowOutcomeHandler.handle(
+          state: ImportFlowState(
+            status: ImportFlowStatus.success,
+            project: LocalProjectEntity(
+              id: '/tmp/repo',
+              absolutePath: '/tmp/repo',
+              displayName: 'repo',
+              lastAccessedAt: DateTime.utc(2026, 5, 15),
+            ),
+          ),
+          refreshRecentProjects: () async {
+            refreshed = true;
+          },
+          showImportFailure: (_) {},
+          resetImportFlow: () {},
+        );
+
+        expect(refreshed, isTrue);
+      },
+    );
+
     test('idle and loading do not trigger side effects', () async {
       var navigated = false;
 
@@ -89,7 +118,7 @@ void main() {
           navigated = true;
         },
         refreshRecentProjects: () async {},
-        showImportFailure: () {},
+        showImportFailure: (_) {},
         resetImportFlow: () {},
       );
 

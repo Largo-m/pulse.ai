@@ -28,17 +28,29 @@ void main() {
 
       final FakeRecentProjectsRepository repository =
           FakeRecentProjectsRepository();
-      final RecentProjectsCubit cubit = RecentProjectsCubit(
+      final RecentProjectsCubit recentProjectsCubit = RecentProjectsCubit(
         listRecentProjectsUseCase: ListRecentProjectsUseCase(repository),
         selectActiveProjectUseCase: SelectActiveProjectUseCase(repository),
         loadOnCreate: false,
       );
-      addTearDown(cubit.close);
+      final ImportFlowCubit importFlowCubit = ImportFlowCubit(
+        importLocalProjectUseCase: ImportLocalProjectUseCase(
+          repository: repository,
+          pickerService: FakeLocalDirectoryPickerService(),
+        ),
+      );
+      addTearDown(recentProjectsCubit.close);
+      addTearDown(importFlowCubit.close);
 
       await tester.pumpWidget(
         MaterialApp(
-          home: BlocProvider<RecentProjectsCubit>.value(
-            value: cubit,
+          home: MultiBlocProvider(
+            providers: <BlocProvider<dynamic>>[
+              BlocProvider<RecentProjectsCubit>.value(
+                value: recentProjectsCubit,
+              ),
+              BlocProvider<ImportFlowCubit>.value(value: importFlowCubit),
+            ],
             child: Builder(builder: route.builder),
           ),
         ),

@@ -40,8 +40,11 @@ final class ImportProjectSelectSourcePage extends StatelessWidget {
               },
               refreshRecentProjects: () =>
                   context.read<RecentProjectsCubit>().refresh(),
-              showImportFailure: () =>
-                  ImportProjectFeedback.showImportFailure(context),
+              showImportFailure: (String? failureMessage) =>
+                  ImportProjectFeedback.showImportFailure(
+                    context,
+                    failureMessage: failureMessage,
+                  ),
               resetImportFlow: () => context.read<ImportFlowCubit>().reset(),
             ),
           );

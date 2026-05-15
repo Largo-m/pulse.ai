@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:pulse_ai/app/router/route_paths.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/import_project_feedback.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/import_project_flow_outcome_handler.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_bottom_bar.dart';
@@ -23,15 +27,36 @@ final class OrchestratorPage extends StatelessWidget {
     final ThemeData theme = PulseThemeData.build();
     return Theme(
       data: theme,
-      child: const ColoredBox(
-        color: PulseColors.background,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _OrchestratorChrome(),
-            Expanded(child: _OrchestratorMainContent()),
-            OrchestratorBottomBar(),
-          ],
+      child: BlocListener<ImportFlowCubit, ImportFlowState>(
+        listenWhen: (ImportFlowState previous, ImportFlowState current) =>
+            previous.status != current.status &&
+            current.status != ImportFlowStatus.idle &&
+            current.status != ImportFlowStatus.loading,
+        listener: (BuildContext context, ImportFlowState state) {
+          unawaited(
+            ImportProjectFlowOutcomeHandler.handle(
+              state: state,
+              refreshRecentProjects: () =>
+                  context.read<RecentProjectsCubit>().refresh(),
+              showImportFailure: (String? failureMessage) =>
+                  ImportProjectFeedback.showImportFailure(
+                    context,
+                    failureMessage: failureMessage,
+                  ),
+              resetImportFlow: () => context.read<ImportFlowCubit>().reset(),
+            ),
+          );
+        },
+        child: const ColoredBox(
+          color: PulseColors.background,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _OrchestratorChrome(),
+              Expanded(child: _OrchestratorMainContent()),
+              OrchestratorBottomBar(),
+            ],
+          ),
         ),
       ),
     );
@@ -73,7 +98,7 @@ final class _OrchestratorMainContent extends StatelessWidget {
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+                children: <Widget>[
                   OrchestratorBreadcrumbBar(),
                   Expanded(child: _OrchestratorScrollableBody()),
                 ],
@@ -92,6 +117,16 @@ final class _OrchestratorScrollableBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return OrchestratorEmptyStateBody(
+      onSelectLocal: () {
+        final ImportFlowStatus status = context
+            .read<ImportFlowCubit>()
+            .state
+            .status;
+        if (status == ImportFlowStatus.loading) {
+          return;
+        }
+        unawaited(context.read<ImportFlowCubit>().importLocal());
+      },
       onPlaceholder: () =>
           OrchestratorPlaceholderFeedback.showComingSoon(context),
     );
