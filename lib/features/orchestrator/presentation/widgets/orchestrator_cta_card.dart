@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/orchestrator_cta_card_ui_model.dart';
-import 'package:pulse_ai/shared/theme/governance_typography.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_radii.dart';
+import 'package:pulse_ai/shared/theme/pulse_typography.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 import 'package:pulse_ai/shared/ui/mouse_hover_builder.dart';
 
 final class OrchestratorCtaCard extends StatelessWidget {
@@ -21,18 +21,18 @@ final class OrchestratorCtaCard extends StatelessWidget {
       builder: (BuildContext context, bool isHovered) {
         final Color borderColor = isHovered
             ? m.accentBorderHover
-            : GovernanceColors.outlineVariant;
+            : PulseColors.outlineVariant;
         final double watermarkOpacity = isHovered
-            ? GovernanceDimensions.watermarkOpacityHover
-            : GovernanceDimensions.watermarkOpacityRest;
+            ? PulseDimensions.watermarkOpacityHover
+            : PulseDimensions.watermarkOpacityRest;
         return AnimatedContainer(
           duration: const Duration(
-            milliseconds: GovernanceDimensions.borderTransitionMs,
+            milliseconds: PulseDimensions.borderTransitionMs,
           ),
           curve: Curves.easeInOut,
           decoration: BoxDecoration(
-            color: GovernanceColors.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(GovernanceRadii.ctaCard),
+            color: PulseColors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(PulseRadii.ctaCard),
             border: Border.all(color: borderColor),
           ),
           clipBehavior: Clip.antiAlias,
@@ -44,10 +44,10 @@ final class OrchestratorCtaCard extends StatelessWidget {
                 child: Opacity(
                   opacity: watermarkOpacity,
                   child: Padding(
-                    padding: GovernanceInsets.watermark,
+                    padding: PulseInsets.watermark,
                     child: Icon(
                       m.icon,
-                      size: GovernanceDimensions.watermarkIconSize,
+                      size: PulseDimensions.watermarkIconSize,
                       color: m.iconColor,
                     ),
                   ),
@@ -58,59 +58,52 @@ final class OrchestratorCtaCard extends StatelessWidget {
                 child: InkWell(
                   onTap: m.onPressed,
                   hoverColor: Colors.white.withValues(
-                    alpha: GovernanceDimensions.inkHoverAlpha,
+                    alpha: PulseDimensions.inkHoverAlpha,
                   ),
                   child: Padding(
-                    padding: GovernanceInsets.ctaCard,
+                    padding: PulseInsets.ctaCard,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         AnimatedContainer(
                           duration: const Duration(
-                            milliseconds:
-                                GovernanceDimensions.borderTransitionMs,
+                            milliseconds: PulseDimensions.borderTransitionMs,
                           ),
-                          width: GovernanceDimensions.ctaIconBoxSize,
-                          height: GovernanceDimensions.ctaIconBoxSize,
+                          width: PulseDimensions.ctaIconBoxSize,
+                          height: PulseDimensions.ctaIconBoxSize,
                           decoration: BoxDecoration(
-                            color: GovernanceColors.surfaceContainerHighest,
+                            color: PulseColors.surfaceContainerHighest,
                             borderRadius: BorderRadius.circular(
-                              GovernanceRadii.ctaIconBox,
+                              PulseRadii.ctaIconBox,
                             ),
                             border: Border.all(color: borderColor),
                           ),
                           alignment: Alignment.center,
                           child: Icon(m.icon, color: m.iconColor),
                         ),
-                        const SizedBox(
-                          height: GovernanceDimensions.sectionGapMd,
-                        ),
+                        const SizedBox(height: PulseDimensions.sectionGapMd),
                         Text(
                           m.title,
                           style: tt.headlineSmall?.copyWith(
-                            color: GovernanceColors.onSurface,
+                            color: PulseColors.onSurface,
                           ),
                         ),
-                        const SizedBox(
-                          height: GovernanceDimensions.sectionGapSm,
-                        ),
+                        const SizedBox(height: PulseDimensions.sectionGapSm),
                         Text(
                           m.body,
                           style: tt.bodyMedium?.copyWith(
-                            color: GovernanceColors.onSurfaceVariant,
+                            color: PulseColors.onSurfaceVariant,
                           ),
                         ),
-                        const SizedBox(
-                          height: GovernanceDimensions.sectionGapLg,
-                        ),
+                        const SizedBox(height: PulseDimensions.sectionGapLg),
                         if (m.usesPrimaryButtonStyle)
                           FilledButton(
                             onPressed: m.onPressed,
                             style: FilledButton.styleFrom(
-                              backgroundColor: GovernanceColors.primary,
-                              foregroundColor: GovernanceColors.onPrimary,
-                              textStyle: context.governanceCtaButtonLabel(),
-                              padding: GovernanceInsets.ctaButton,
+                              backgroundColor: PulseColors.primary,
+                              foregroundColor: PulseColors.onPrimary,
+                              textStyle: context.pulseCtaButtonLabel(),
+                              padding: PulseInsets.ctaButton,
                             ),
                             child: Text(m.buttonLabel.toUpperCase()),
                           )
@@ -118,12 +111,10 @@ final class OrchestratorCtaCard extends StatelessWidget {
                           FilledButton(
                             onPressed: m.onPressed,
                             style: FilledButton.styleFrom(
-                              backgroundColor:
-                                  GovernanceColors.tertiaryContainer,
-                              foregroundColor:
-                                  GovernanceColors.onTertiaryContainer,
-                              textStyle: context.governanceCtaButtonLabel(),
-                              padding: GovernanceInsets.ctaButton,
+                              backgroundColor: PulseColors.tertiaryContainer,
+                              foregroundColor: PulseColors.onTertiaryContainer,
+                              textStyle: context.pulseCtaButtonLabel(),
+                              padding: PulseInsets.ctaButton,
                             ),
                             child: Text(m.buttonLabel.toUpperCase()),
                           ),

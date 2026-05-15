@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 
-import 'tokens/governance_dimensions.dart';
+import 'tokens/pulse_dimensions.dart';
 
-extension GovernanceTextBuildContext on BuildContext {
-  TextStyle governanceCtaButtonLabel() {
+extension PulseTextBuildContext on BuildContext {
+  TextStyle pulseCtaButtonLabel() {
     final TextStyle? base = Theme.of(this).textTheme.labelMedium;
     return (base ?? const TextStyle()).copyWith(
       fontWeight: FontWeight.w700,
-      letterSpacing: GovernanceDimensions.ctaButtonLetterSpacing,
+      letterSpacing: PulseDimensions.ctaButtonLetterSpacing,
     );
   }
 }
 
-abstract final class GovernanceTypography {
+abstract final class PulseTypography {
   static const TextTheme textTheme = TextTheme(
     displaySmall: TextStyle(
       fontSize: 24,

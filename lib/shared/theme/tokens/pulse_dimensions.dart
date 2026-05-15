@@ -1,4 +1,4 @@
-abstract final class GovernanceDimensions {
+abstract final class PulseDimensions {
   static const double appTopBarHeight = 56;
   static const double breadcrumbBarHeight = 40;
   static const double bottomBarHeight = 32;

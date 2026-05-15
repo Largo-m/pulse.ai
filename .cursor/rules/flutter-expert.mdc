@@ -153,6 +153,7 @@ Rules:
 ## Tooling
 
 - Run `flutter analyze` and fix lint issues before finishing changes.
+- **At the end of every task** that touches Dart files, run `dart format .` from the repository root and include any formatting changes in the same delivery (do not skip as optional).
 - After adding or updating packages: `flutter clean` and `flutter pub get`.
 
 ## Class size and complexity
@@ -175,9 +176,11 @@ Rules:
 
 ## Pre-merge checklist (UI changes)
 
-Before finishing any presentation-layer change, confirm:
+Before finishing any change, confirm:
 
-1. No `setState(` anywhere in `lib/`.
-2. No user-facing string literals in widgets/pages (`grep` for `Text('`, `Text("`, `title: '`, `label: '` under `lib/` should find none except inside `*_strings.dart` or generated l10n).
-3. New/changed copy lives in `AppStrings` or `<Feature>Strings` and is **PT-BR**.
-4. Unit tests added/updated for new string classes when copy is introduced.
+1. `dart format .` was run and the tree is formatted.
+2. `flutter analyze` passes (or equivalent CI checks).
+3. No `setState(` anywhere in `lib/`.
+4. No user-facing string literals in widgets/pages (`grep` for `Text('`, `Text("`, `title: '`, `label: '` under `lib/` should find none except inside `*_strings.dart` or generated l10n).
+5. New/changed copy lives in `AppStrings` or `<Feature>Strings` and is **PT-BR**.
+6. Unit tests added/updated for new string classes when copy is introduced.

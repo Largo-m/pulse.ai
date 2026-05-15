@@ -13,7 +13,10 @@ void main() {
     test('exposes non-empty CTA labels for local and remote flows', () {
       expect(OrchestratorStrings.localProjectButton, isNotEmpty);
       expect(OrchestratorStrings.remoteProjectButton, isNotEmpty);
-      expect(OrchestratorStrings.localProjectTitle, isNot(equals('Open Local Project')));
+      expect(
+        OrchestratorStrings.localProjectTitle,
+        isNot(equals('Open Local Project')),
+      );
     });
 
     test('comingSoonMessage is defined for placeholder feedback', () {

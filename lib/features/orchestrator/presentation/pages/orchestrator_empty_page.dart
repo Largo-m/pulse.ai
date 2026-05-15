@@ -5,19 +5,19 @@ import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_bottom_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_breadcrumb_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_empty_state_body.dart';
-import 'package:pulse_ai/shared/theme/governance_theme_data.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
+import 'package:pulse_ai/shared/theme/pulse_theme_data.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 
 final class OrchestratorEmptyPage extends StatelessWidget {
   const OrchestratorEmptyPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = GovernanceThemeData.build();
+    final ThemeData theme = PulseThemeData.build();
     return Theme(
       data: theme,
       child: const ColoredBox(
-        color: GovernanceColors.background,
+        color: PulseColors.background,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

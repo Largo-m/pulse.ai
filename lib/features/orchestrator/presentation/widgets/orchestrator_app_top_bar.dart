@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 
 final class OrchestratorAppTopBar extends StatelessWidget {
   const OrchestratorAppTopBar({super.key, required this.onPlaceholder});
@@ -14,40 +14,39 @@ final class OrchestratorAppTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return Material(
-      color: GovernanceColors.surfaceContainerLowest,
+      color: PulseColors.surfaceContainerLowest,
       child: SizedBox(
-        height: GovernanceDimensions.appTopBarHeight,
+        height: PulseDimensions.appTopBarHeight,
         child: DecoratedBox(
           decoration: const BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: GovernanceColors.outlineVariant),
+              bottom: BorderSide(color: PulseColors.outlineVariant),
             ),
           ),
           child: Padding(
-            padding: GovernanceInsets.appTopBar,
+            padding: PulseInsets.appTopBar,
             child: Row(
               children: [
                 Text(
                   OrchestratorStrings.brandName,
                   style: tt.labelMedium?.copyWith(
-                    color: GovernanceColors.primary,
+                    color: PulseColors.primary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 Container(
-                  width: GovernanceDimensions.brandDividerWidth,
-                  height: GovernanceDimensions.brandDividerHeight,
+                  width: PulseDimensions.brandDividerWidth,
+                  height: PulseDimensions.brandDividerHeight,
                   margin: const EdgeInsets.symmetric(
-                    horizontal:
-                        GovernanceDimensions.brandDividerHorizontalMargin,
+                    horizontal: PulseDimensions.brandDividerHorizontalMargin,
                   ),
-                  color: GovernanceColors.outlineVariant,
+                  color: PulseColors.outlineVariant,
                 ),
                 TextButton(
                   onPressed: onPlaceholder,
                   style: TextButton.styleFrom(
-                    foregroundColor: GovernanceColors.onSurfaceVariant,
-                    padding: GovernanceInsets.textButton,
+                    foregroundColor: PulseColors.onSurfaceVariant,
+                    padding: PulseInsets.textButton,
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
@@ -60,23 +59,21 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                 FilledButton(
                   onPressed: onPlaceholder,
                   style: FilledButton.styleFrom(
-                    backgroundColor: GovernanceColors.primary,
-                    foregroundColor: GovernanceColors.onPrimary,
-                    padding: GovernanceInsets.primaryTopBarButton,
+                    backgroundColor: PulseColors.primary,
+                    foregroundColor: PulseColors.onPrimary,
+                    padding: PulseInsets.primaryTopBarButton,
                     textStyle: tt.labelLarge,
                   ),
                   child: const Text(OrchestratorStrings.importProject),
                 ),
-                const SizedBox(
-                  width: GovernanceDimensions.afterImportButtonGap,
-                ),
+                const SizedBox(width: PulseDimensions.afterImportButtonGap),
                 IconButton(
                   onPressed: onPlaceholder,
                   icon: const Icon(
                     Icons.settings_outlined,
-                    size: GovernanceDimensions.chromeIconSize,
+                    size: PulseDimensions.chromeIconSize,
                   ),
-                  color: GovernanceColors.onSurfaceVariant,
+                  color: PulseColors.onSurfaceVariant,
                   style: IconButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -86,9 +83,9 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                   onPressed: onPlaceholder,
                   icon: const Icon(
                     Icons.notifications_none_outlined,
-                    size: GovernanceDimensions.chromeIconSize,
+                    size: PulseDimensions.chromeIconSize,
                   ),
-                  color: GovernanceColors.onSurfaceVariant,
+                  color: PulseColors.onSurfaceVariant,
                   style: IconButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -98,9 +95,9 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                   onPressed: onPlaceholder,
                   icon: const Icon(
                     Icons.account_circle_outlined,
-                    size: GovernanceDimensions.chromeIconSize,
+                    size: PulseDimensions.chromeIconSize,
                   ),
-                  color: GovernanceColors.onSurfaceVariant,
+                  color: PulseColors.onSurfaceVariant,
                   style: IconButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,

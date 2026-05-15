@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_pulsing_dot.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_radii.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 
 final class OrchestratorBreadcrumbBar extends StatelessWidget {
   const OrchestratorBreadcrumbBar({super.key});
@@ -14,59 +14,50 @@ final class OrchestratorBreadcrumbBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final TextTheme tt = Theme.of(context).textTheme;
     return SizedBox(
-      height: GovernanceDimensions.breadcrumbBarHeight,
+      height: PulseDimensions.breadcrumbBarHeight,
       child: DecoratedBox(
         decoration: const BoxDecoration(
-          color: GovernanceColors.surfaceContainerLow,
-          border: Border(
-            bottom: BorderSide(color: GovernanceColors.outlineVariant),
-          ),
+          color: PulseColors.surfaceContainerLow,
+          border: Border(bottom: BorderSide(color: PulseColors.outlineVariant)),
         ),
         child: Padding(
-          padding: GovernanceInsets.breadcrumbHorizontal,
+          padding: PulseInsets.breadcrumbHorizontal,
           child: Row(
             children: [
               Text(
                 OrchestratorStrings.breadcrumbSystem,
-                style: tt.labelMedium?.copyWith(color: GovernanceColors.outline),
+                style: tt.labelMedium?.copyWith(color: PulseColors.outline),
               ),
               const Icon(
                 Icons.chevron_right,
-                size: GovernanceDimensions.chevronIconSize,
-                color: GovernanceColors.outline,
+                size: PulseDimensions.chevronIconSize,
+                color: PulseColors.outline,
               ),
               Text(
                 OrchestratorStrings.breadcrumbInitialization,
-                style: tt.labelMedium?.copyWith(
-                  color: GovernanceColors.onSurface,
-                ),
+                style: tt.labelMedium?.copyWith(color: PulseColors.onSurface),
               ),
               const Spacer(),
               DecoratedBox(
                 decoration: BoxDecoration(
-                  color: GovernanceColors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(
-                    GovernanceRadii.standbyChip,
-                  ),
-                  border: Border.all(color: GovernanceColors.outlineVariant),
+                  color: PulseColors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(PulseRadii.standbyChip),
+                  border: Border.all(color: PulseColors.outlineVariant),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal:
-                        GovernanceDimensions.standbyChipHorizontalPadding,
-                    vertical: GovernanceDimensions.standbyChipVerticalPadding,
+                    horizontal: PulseDimensions.standbyChipHorizontalPadding,
+                    vertical: PulseDimensions.standbyChipVerticalPadding,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const OrchestratorPulsingDot(),
-                      const SizedBox(
-                        width: GovernanceDimensions.standbyLabelGap,
-                      ),
+                      const SizedBox(width: PulseDimensions.standbyLabelGap),
                       Text(
                         OrchestratorStrings.statusStandby,
                         style: tt.labelMedium?.copyWith(
-                          color: GovernanceColors.tertiary,
+                          color: PulseColors.tertiary,
                         ),
                       ),
                     ],

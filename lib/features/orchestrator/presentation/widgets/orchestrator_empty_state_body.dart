@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/orchestrator_cta_card_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_colors.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_dimensions.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_insets.dart';
-import 'package:pulse_ai/shared/theme/tokens/governance_radii.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 import 'orchestrator_cta_card.dart';
 
 final class OrchestratorEmptyStateBody extends StatelessWidget {
@@ -20,8 +20,8 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
       title: OrchestratorStrings.localProjectTitle,
       body: OrchestratorStrings.localProjectBody,
       icon: Icons.folder_open,
-      accentBorderHover: GovernanceColors.primary,
-      iconColor: GovernanceColors.primary,
+      accentBorderHover: PulseColors.primary,
+      iconColor: PulseColors.primary,
       buttonLabel: OrchestratorStrings.localProjectButton,
       usesPrimaryButtonStyle: true,
       onPressed: onPlaceholder,
@@ -30,76 +30,75 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
       title: OrchestratorStrings.remoteProjectTitle,
       body: OrchestratorStrings.remoteProjectBody,
       icon: Icons.cloud_download_outlined,
-      accentBorderHover: GovernanceColors.tertiary,
-      iconColor: GovernanceColors.tertiary,
+      accentBorderHover: PulseColors.tertiary,
+      iconColor: PulseColors.tertiary,
       buttonLabel: OrchestratorStrings.remoteProjectButton,
       usesPrimaryButtonStyle: false,
       onPressed: onPlaceholder,
     );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
-        final bool isWide =
-            c.maxWidth >= GovernanceDimensions.twoColumnBreakpoint;
+        final bool isWide = c.maxWidth >= PulseDimensions.twoColumnBreakpoint;
         return SingleChildScrollView(
-          padding: GovernanceInsets.pageScroll,
+          padding: PulseInsets.pageScroll,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(
-                maxWidth: GovernanceDimensions.maxContentWidth,
+                maxWidth: PulseDimensions.maxContentWidth,
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: GovernanceDimensions.bodyTopSpacer),
+                  const SizedBox(height: PulseDimensions.bodyTopSpacer),
                   SizedBox(
-                    width: GovernanceDimensions.heroIconContainerSize,
-                    height: GovernanceDimensions.heroIconContainerSize,
+                    width: PulseDimensions.heroIconContainerSize,
+                    height: PulseDimensions.heroIconContainerSize,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: GovernanceColors.surfaceContainerHighest,
+                        color: PulseColors.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(
-                          GovernanceRadii.heroIconContainer,
+                          PulseRadii.heroIconContainer,
                         ),
-                        border: Border.all(
-                          color: GovernanceColors.outlineVariant,
-                        ),
+                        border: Border.all(color: PulseColors.outlineVariant),
                       ),
                       child: const Icon(
                         Icons.memory,
-                        size: GovernanceDimensions.heroIconGlyphSize,
-                        color: GovernanceColors.primary,
+                        size: PulseDimensions.heroIconGlyphSize,
+                        color: PulseColors.primary,
                       ),
                     ),
                   ),
-                  const SizedBox(height: GovernanceDimensions.sectionGapMd),
+                  const SizedBox(height: PulseDimensions.sectionGapMd),
                   Text(
                     OrchestratorStrings.emptyStateTitle,
                     style: tt.displaySmall?.copyWith(
-                      color: GovernanceColors.onSurface,
+                      color: PulseColors.onSurface,
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: GovernanceDimensions.sectionGapSm),
+                  const SizedBox(height: PulseDimensions.sectionGapSm),
                   ConstrainedBox(
                     constraints: const BoxConstraints(
-                      maxWidth: GovernanceDimensions.maxIntroTextWidth,
+                      maxWidth: PulseDimensions.maxIntroTextWidth,
                     ),
                     child: Text(
                       OrchestratorStrings.emptyStateSubtitle,
                       style: tt.bodyLarge?.copyWith(
-                        color: GovernanceColors.onSurfaceVariant,
+                        color: PulseColors.onSurfaceVariant,
                       ),
                       textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: GovernanceDimensions.sectionGapXl),
+                  const SizedBox(height: PulseDimensions.sectionGapXl),
                   if (isWide)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(child: OrchestratorCtaCard(model: localModel)),
-                        const SizedBox(width: GovernanceDimensions.ctaColumnGap),
-                        Expanded(child: OrchestratorCtaCard(model: remoteModel)),
+                        const SizedBox(width: PulseDimensions.ctaColumnGap),
+                        Expanded(
+                          child: OrchestratorCtaCard(model: remoteModel),
+                        ),
                       ],
                     )
                   else
@@ -107,11 +106,11 @@ final class OrchestratorEmptyStateBody extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         OrchestratorCtaCard(model: localModel),
-                        const SizedBox(height: GovernanceDimensions.ctaColumnGap),
+                        const SizedBox(height: PulseDimensions.ctaColumnGap),
                         OrchestratorCtaCard(model: remoteModel),
                       ],
                     ),
-                  const SizedBox(height: GovernanceDimensions.bodyTopSpacer),
+                  const SizedBox(height: PulseDimensions.bodyTopSpacer),
                 ],
               ),
             ),
