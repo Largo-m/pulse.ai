@@ -8,7 +8,9 @@ import 'package:pulse_ai/features/orchestrator/presentation/pages/orchestrator_e
 
 void main() {
   group('ShellNavigatorRoutes', () {
-    testWidgets('builds orchestrator empty page route', (WidgetTester tester) async {
+    testWidgets('builds orchestrator empty page route', (
+      WidgetTester tester,
+    ) async {
       final MaterialPageRoute<void> route =
           ShellNavigatorRoutes.onGenerateRoute(
                 const RouteSettings(name: RoutePaths.orchestrator),
@@ -24,7 +26,9 @@ void main() {
       expect(find.byType(OrchestratorEmptyPage), findsOneWidget);
     });
 
-    testWidgets('builds import select source route', (WidgetTester tester) async {
+    testWidgets('builds import select source route', (
+      WidgetTester tester,
+    ) async {
       final MaterialPageRoute<void> route =
           ShellNavigatorRoutes.onGenerateRoute(
                 const RouteSettings(
@@ -33,10 +37,7 @@ void main() {
               )
               as MaterialPageRoute<void>;
 
-      expect(
-        route.settings.name,
-        RoutePaths.orchestratorImportSelectSource,
-      );
+      expect(route.settings.name, RoutePaths.orchestratorImportSelectSource);
 
       await tester.pumpWidget(
         MaterialApp(home: Builder(builder: route.builder)),
