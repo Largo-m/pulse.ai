@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/pages/orchestrator_empty_page.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -73,10 +74,6 @@ class PulseShell extends StatefulWidget {
 }
 
 class _PulseShellState extends State<PulseShell> {
-  bool _sidebarOpen = true;
-  final GlobalKey<NavigatorState> _shellNavigatorKey =
-      GlobalKey<NavigatorState>();
-
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
@@ -85,74 +82,29 @@ class _PulseShellState extends State<PulseShell> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PulseTitleBar(
-            brightness: brightness,
-            sidebarOpen: _sidebarOpen,
-            showWindowControls: _isDesktop,
-            onSidebarToggle: () {
-              setState(() => _sidebarOpen = !_sidebarOpen);
-            },
-          ),
+          PulseTitleBar(brightness: brightness, showWindowControls: _isDesktop),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ClipRect(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    width: _sidebarOpen ? 240 : 0,
-                    child: _sidebarOpen
-                        ? Material(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
-                            child: ListView(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
-                              children: [
-                                ListTile(
-                                  leading: Icon(
-                                    Icons.dashboard_outlined,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary,
-                                  ),
-                                  title: const Text('Início'),
-                                  onTap: () async {
-                                    await _shellNavigatorKey.currentState
-                                        ?.pushNamedAndRemoveUntil(
-                                          '/',
-                                          (route) => false,
-                                        );
-                                  },
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-                Expanded(
-                  child: Navigator(
-                    key: _shellNavigatorKey,
-                    initialRoute: '/',
-                    onGenerateRoute: (settings) {
-                      switch (settings.name) {
-                        case '/':
-                          return MaterialPageRoute<void>(
-                            builder: (_) => const HomeScreen(),
-                            settings: settings,
-                          );
-                        default:
-                          return MaterialPageRoute<void>(
-                            builder: (_) => const HomeScreen(),
-                            settings: settings,
-                          );
-                      }
-                    },
-                  ),
-                ),
-              ],
+            child: Navigator(
+              initialRoute: '/orchestrator',
+              onGenerateRoute: (settings) {
+                switch (settings.name) {
+                  case '/':
+                    return MaterialPageRoute<void>(
+                      builder: (_) => const HomeScreen(),
+                      settings: settings,
+                    );
+                  case '/orchestrator':
+                    return MaterialPageRoute<void>(
+                      builder: (_) => const OrchestratorEmptyPage(),
+                      settings: settings,
+                    );
+                  default:
+                    return MaterialPageRoute<void>(
+                      builder: (_) => const HomeScreen(),
+                      settings: settings,
+                    );
+                }
+              },
             ),
           ),
         ],
@@ -182,15 +134,11 @@ class PulseTitleBar extends StatefulWidget {
   const PulseTitleBar({
     super.key,
     required this.brightness,
-    required this.sidebarOpen,
     required this.showWindowControls,
-    required this.onSidebarToggle,
   });
 
   final Brightness brightness;
-  final bool sidebarOpen;
   final bool showWindowControls;
-  final VoidCallback onSidebarToggle;
 
   @override
   State<PulseTitleBar> createState() => _PulseTitleBarState();
@@ -225,32 +173,14 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
     final titleWidget = IgnorePointer(
       child: Text('pulse.ia', style: titleStyle),
     );
-    final sidebarButton = _SidebarToggleCaptionButton(
-      brightness: widget.brightness,
-      expanded: widget.sidebarOpen,
-      onPressed: widget.onSidebarToggle,
-    );
     final useNativeMacChrome =
         widget.showWindowControls &&
         defaultTargetPlatform == TargetPlatform.macOS;
-    final sidebarLeftInset = useNativeMacChrome ? 78.0 : 8.0;
 
     Widget barBody;
     if (!widget.showWindowControls || useNativeMacChrome) {
-      barBody = Stack(
-        clipBehavior: Clip.none,
-        fit: StackFit.expand,
-        children: [
-          DragToMoveArea(
-            child: SizedBox.expand(child: Center(child: titleWidget)),
-          ),
-          Positioned(
-            left: sidebarLeftInset,
-            top: 0,
-            bottom: 0,
-            child: Center(child: sidebarButton),
-          ),
-        ],
+      barBody = DragToMoveArea(
+        child: SizedBox.expand(child: Center(child: titleWidget)),
       );
     } else {
       barBody = Stack(
@@ -269,10 +199,9 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  sidebarButton,
                   WindowCaptionButton.close(
                     brightness: widget.brightness,
-                    onPressed: () async{
+                    onPressed: () async {
                       await windowManager.close();
                     },
                   ),
@@ -293,7 +222,7 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
                       if (snapshot.data == true) {
                         return WindowCaptionButton.unmaximize(
                           brightness: widget.brightness,
-                          onPressed: () async   {
+                          onPressed: () async {
                             await windowManager.unmaximize();
                           },
                         );
@@ -334,57 +263,5 @@ class _PulseTitleBarState extends State<PulseTitleBar> with WindowListener {
   @override
   void onWindowUnmaximize() {
     setState(() {});
-  }
-}
-
-class _SidebarToggleCaptionButton extends StatefulWidget {
-  const _SidebarToggleCaptionButton({
-    required this.brightness,
-    required this.expanded,
-    required this.onPressed,
-  });
-
-  final Brightness brightness;
-  final bool expanded;
-  final VoidCallback onPressed;
-
-  @override
-  State<_SidebarToggleCaptionButton> createState() =>
-      _SidebarToggleCaptionButtonState();
-}
-
-class _SidebarToggleCaptionButtonState
-    extends State<_SidebarToggleCaptionButton> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = widget.brightness == Brightness.dark;
-    final iconColor = isDark
-        ? Colors.white
-        : Colors.black.withValues(alpha: 0.8956);
-    const bgNormal = Colors.transparent;
-    final bgHover = isDark
-        ? Colors.white.withValues(alpha: 0.0605)
-        : Colors.black.withValues(alpha: 0.0373);
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onPressed,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 46, minHeight: 32),
-          decoration: BoxDecoration(color: _hover ? bgHover : bgNormal),
-          alignment: Alignment.center,
-          child: Icon(
-            widget.expanded ? Icons.view_sidebar : Icons.view_sidebar_outlined,
-            size: 16,
-            color: iconColor,
-          ),
-        ),
-      ),
-    );
   }
 }
