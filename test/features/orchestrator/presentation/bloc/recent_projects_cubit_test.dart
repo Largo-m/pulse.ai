@@ -56,6 +56,10 @@ void main() {
       verify: (RecentProjectsCubit cubit) {
         expect(cubit.state.projects, hasLength(1));
         expect(cubit.state.activeProjectId, '/Users/dev/team-repo');
+        expect(
+          cubit.state.expandedProjectIds,
+          contains('/Users/dev/team-repo'),
+        );
         expect(cubit.state.isLoading, isFalse);
       },
     );
@@ -80,6 +84,52 @@ void main() {
       verify: (RecentProjectsCubit cubit) {
         expect(repository.activeProjectId, '/Users/dev/team-repo');
         expect(cubit.state.activeProjectId, '/Users/dev/team-repo');
+        expect(
+          cubit.state.expandedProjectIds,
+          contains('/Users/dev/team-repo'),
+        );
+      },
+    );
+
+    blocTest<RecentProjectsCubit, RecentProjectsState>(
+      'toggleProjectExpanded adds and removes project id',
+      build: buildCubit,
+      act: (RecentProjectsCubit cubit) {
+        cubit.toggleProjectExpanded('project-a');
+        cubit.toggleProjectExpanded('project-b');
+        cubit.toggleProjectExpanded('project-a');
+      },
+      verify: (RecentProjectsCubit cubit) {
+        expect(cubit.state.expandedProjectIds, contains('project-b'));
+        expect(cubit.state.expandedProjectIds, isNot(contains('project-a')));
+      },
+    );
+
+    blocTest<RecentProjectsCubit, RecentProjectsState>(
+      'refresh drops expanded ids that are no longer in recent projects',
+      build: () {
+        repository.projects.add(
+          LocalProjectEntity(
+            id: '/Users/dev/still-here',
+            absolutePath: '/Users/dev/still-here',
+            displayName: 'still-here',
+            lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
+          ),
+        );
+        return buildCubit();
+      },
+      seed: () => const RecentProjectsState(
+        expandedProjectIds: <String>[
+          '/Users/dev/removed',
+          '/Users/dev/still-here',
+        ],
+      ),
+      act: (RecentProjectsCubit cubit) async => cubit.refresh(),
+      verify: (RecentProjectsCubit cubit) {
+        expect(
+          cubit.state.expandedProjectIds,
+          equals(<String>['/Users/dev/still-here']),
+        );
       },
     );
 

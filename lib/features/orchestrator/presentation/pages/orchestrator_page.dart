@@ -94,7 +94,11 @@ final class _OrchestratorMainContent extends StatelessWidget {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (showSidebar) const RecentProjectsSidebar(),
+            if (showSidebar)
+              RecentProjectsSidebar(
+                onNewProject: () =>
+                    OrchestratorPlaceholderFeedback.showComingSoon(context),
+              ),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

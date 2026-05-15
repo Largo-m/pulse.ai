@@ -28,7 +28,22 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
 
   Future<void> selectProject(String projectId) async {
     await _selectActiveProjectUseCase.select(projectId);
-    emit(state.copyWith(activeProjectId: projectId));
+    emit(
+      state.copyWith(
+        activeProjectId: projectId,
+        expandedProjectIds: _expandedWithProject(projectId),
+      ),
+    );
+  }
+
+  void toggleProjectExpanded(String projectId) {
+    final Set<String> expanded = state.expandedProjectIds.toSet();
+    if (expanded.contains(projectId)) {
+      expanded.remove(projectId);
+    } else {
+      expanded.add(projectId);
+    }
+    emit(state.copyWith(expandedProjectIds: expanded.toList()));
   }
 
   Future<void> refresh() async {
@@ -41,13 +56,43 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
     final String? activeProjectId = await _selectActiveProjectUseCase
         .readActiveProjectId();
 
+    final String? knownActiveId = _activeIdWhenKnown(projects, activeProjectId);
+
     emit(
       RecentProjectsState(
         projects: projects,
-        activeProjectId: _activeIdWhenKnown(projects, activeProjectId),
+        activeProjectId: knownActiveId,
+        expandedProjectIds: _expandedAfterRefresh(
+          projects: projects,
+          previousExpandedIds: state.expandedProjectIds,
+          activeProjectId: knownActiveId,
+        ),
         isLoading: false,
       ),
     );
+  }
+
+  List<String> _expandedWithProject(String projectId) {
+    final Set<String> expanded = state.expandedProjectIds.toSet()
+      ..add(projectId);
+    return expanded.toList();
+  }
+
+  List<String> _expandedAfterRefresh({
+    required List<LocalProjectEntity> projects,
+    required List<String> previousExpandedIds,
+    required String? activeProjectId,
+  }) {
+    final Set<String> knownIds = projects
+        .map((LocalProjectEntity project) => project.id)
+        .toSet();
+    final Set<String> expanded = previousExpandedIds
+        .where(knownIds.contains)
+        .toSet();
+    if (activeProjectId != null) {
+      expanded.add(activeProjectId);
+    }
+    return expanded.toList();
   }
 
   String? _activeIdWhenKnown(

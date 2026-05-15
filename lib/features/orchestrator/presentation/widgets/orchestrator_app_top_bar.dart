@@ -4,6 +4,8 @@ import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
+import 'package:pulse_ai/shared/ui/pulse_chrome_icon_button.dart';
+import 'package:pulse_ai/shared/ui/pulse_filled_action_button.dart';
 
 final class OrchestratorAppTopBar extends StatelessWidget {
   const OrchestratorAppTopBar({
@@ -90,52 +92,22 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                   ),
                 ),
                 const Spacer(),
-                FilledButton(
+                PulseFilledActionButton(
+                  label: OrchestratorStrings.importProject,
                   onPressed: onImportProject ?? onPlaceholder,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: PulseColors.primary,
-                    foregroundColor: PulseColors.onPrimary,
-                    padding: PulseInsets.primaryTopBarButton,
-                    textStyle: tt.labelLarge,
-                  ),
-                  child: const Text(OrchestratorStrings.importProject),
                 ),
                 const SizedBox(width: PulseDimensions.afterImportButtonGap),
-                IconButton(
+                PulseChromeIconButton(
+                  icon: Icons.settings_outlined,
                   onPressed: onPlaceholder,
-                  icon: const Icon(
-                    Icons.settings_outlined,
-                    size: PulseDimensions.chromeIconSize,
-                  ),
-                  color: PulseColors.onSurfaceVariant,
-                  style: IconButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
                 ),
-                IconButton(
+                PulseChromeIconButton(
+                  icon: Icons.notifications_none_outlined,
                   onPressed: onPlaceholder,
-                  icon: const Icon(
-                    Icons.notifications_none_outlined,
-                    size: PulseDimensions.chromeIconSize,
-                  ),
-                  color: PulseColors.onSurfaceVariant,
-                  style: IconButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
                 ),
-                IconButton(
+                PulseChromeIconButton(
+                  icon: Icons.account_circle_outlined,
                   onPressed: onPlaceholder,
-                  icon: const Icon(
-                    Icons.account_circle_outlined,
-                    size: PulseDimensions.chromeIconSize,
-                  ),
-                  color: PulseColors.onSurfaceVariant,
-                  style: IconButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
                 ),
               ],
             ),
