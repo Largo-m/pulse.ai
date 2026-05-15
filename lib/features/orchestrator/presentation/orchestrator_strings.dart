@@ -8,7 +8,7 @@ abstract final class OrchestratorStrings {
   static const String breadcrumbInitialization = 'INICIALIZAÇÃO';
   static const String statusStandby = 'EM ESPERA';
 
-  static const String emptyStateTitle = 'Bem-vindo ao Neural Shell Systems';
+  static const String emptyStateTitle = 'Bem-vindo ao Pulse.AI';
   static const String emptyStateSubtitle =
       'O ambiente de orquestração agentica está inicializado e em espera. '
       'Configure seu workspace para começar a gerenciar fluxos de trabalho multiagente.';
