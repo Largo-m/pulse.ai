@@ -22,5 +22,27 @@ void main() {
     test('comingSoonMessage is defined for placeholder feedback', () {
       expect(OrchestratorStrings.comingSoonMessage, isNotEmpty);
     });
+
+    test('exposes non-empty PT-BR copy for recent projects sidebar', () {
+      expect(OrchestratorStrings.recentProjectsSectionTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.recentProjectsSectionTitle,
+        contains('Projetos recentes'),
+      );
+      expect(OrchestratorStrings.recentProjectListTileTooltip, isNotEmpty);
+      expect(OrchestratorStrings.recentProjectSelectSemantics, isNotEmpty);
+      expect(OrchestratorStrings.recentProjectActiveSemantics, isNotEmpty);
+    });
+
+    test('recent projects sidebar strings are not English placeholders', () {
+      expect(
+        OrchestratorStrings.recentProjectsSectionTitle,
+        isNot(equals('Recent Projects')),
+      );
+      expect(
+        OrchestratorStrings.recentProjectListTileTooltip,
+        isNot(equals('Select project')),
+      );
+    });
   });
 }

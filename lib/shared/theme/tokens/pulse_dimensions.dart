@@ -3,6 +3,7 @@ abstract final class PulseDimensions {
   static const double breadcrumbBarHeight = 40;
   static const double bottomBarHeight = 32;
   static const double horizontalInset = 24;
+  static const double orchestratorSidebarWidth = 240;
   static const double topBarVerticalPadding = 8;
   static const double pageScrollPadding = 32;
   static const double bodyTopSpacer = 24;
