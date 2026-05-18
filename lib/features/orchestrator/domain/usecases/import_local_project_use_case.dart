@@ -3,17 +3,20 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_ent
 import 'package:pulse_ai/features/orchestrator/domain/project_path_normalizer.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_directory_picker_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_result.dart';
 
 final class ImportLocalProjectUseCase {
   ImportLocalProjectUseCase({
     required RecentProjectsRepository repository,
     required LocalDirectoryPickerService pickerService,
+    ProjectSandboxAccessService? sandboxAccessService,
     ProjectPathNormalizer? pathNormalizer,
     DateTime Function()? clock,
     int maxRecentProjects = 10,
   }) : _repository = repository,
        _pickerService = pickerService,
+       _sandboxAccessService = sandboxAccessService,
        _pathNormalizer = pathNormalizer ?? const ProjectPathNormalizer(),
        _clock = clock ?? DateTime.now,
        _maxRecentProjects = maxRecentProjects;
@@ -22,6 +25,7 @@ final class ImportLocalProjectUseCase {
 
   final RecentProjectsRepository _repository;
   final LocalDirectoryPickerService _pickerService;
+  final ProjectSandboxAccessService? _sandboxAccessService;
   final ProjectPathNormalizer _pathNormalizer;
   final DateTime Function() _clock;
   final int _maxRecentProjects;
@@ -54,12 +58,15 @@ final class ImportLocalProjectUseCase {
       final String normalizedId = _pathNormalizer.normalizeToAbsoluteId(
         rawPath,
       );
+      final String? macosSecurityScopedBookmark = await _sandboxAccessService
+          ?.createBookmark(normalizedId);
       final DateTime accessedAt = _clock().toUtc();
       final LocalProjectEntity project = LocalProjectEntity(
         id: normalizedId,
         absolutePath: normalizedId,
         displayName: p.basename(normalizedId),
         lastAccessedAt: accessedAt,
+        macosSecurityScopedBookmark: macosSecurityScopedBookmark,
       );
 
       await _repository.upsertAndPromote(project);

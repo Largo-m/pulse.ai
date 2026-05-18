@@ -81,6 +81,8 @@ final class RecentProjectsDocument {
       'absolutePath': project.absolutePath,
       'displayName': project.displayName,
       'lastAccessedAtIso': project.lastAccessedAt.toUtc().toIso8601String(),
+      if (project.macosSecurityScopedBookmark != null)
+        'macosSecurityScopedBookmark': project.macosSecurityScopedBookmark,
     };
   }
 
@@ -111,6 +113,8 @@ final class RecentProjectsDocument {
       absolutePath: absolutePath,
       displayName: displayName,
       lastAccessedAt: lastAccessedAt,
+      macosSecurityScopedBookmark:
+          entry['macosSecurityScopedBookmark'] as String?,
     );
   }
 }

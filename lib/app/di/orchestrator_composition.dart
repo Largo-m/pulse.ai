@@ -5,12 +5,18 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final class OrchestratorComposition {
@@ -18,11 +24,13 @@ final class OrchestratorComposition {
     required this.recentProjectsRepository,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
+    required this.initializeAgentBranchesCubit,
   });
 
   final RecentProjectsRepository recentProjectsRepository;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
+  final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
 
   static Future<OrchestratorComposition> create() async {
     final SharedPreferences preferences = await SharedPreferences.getInstance();
@@ -39,10 +47,13 @@ final class OrchestratorComposition {
         ListRecentProjectsUseCase(repository);
     final SelectActiveProjectUseCase selectActiveProjectUseCase =
         SelectActiveProjectUseCase(repository);
+    final ProjectSandboxAccessService sandboxAccessService =
+        ProjectSandboxAccessServiceImpl();
     final ImportLocalProjectUseCase importLocalProjectUseCase =
         ImportLocalProjectUseCase(
           repository: repository,
           pickerService: pickerService,
+          sandboxAccessService: sandboxAccessService,
         );
 
     final RecentProjectsCubit recentProjectsCubit = RecentProjectsCubit(
@@ -53,16 +64,27 @@ final class OrchestratorComposition {
       importLocalProjectUseCase: importLocalProjectUseCase,
     );
 
+    final LocalGitBranchesService localGitBranchesService =
+        LocalGitBranchesServiceImpl(sandboxAccessService: sandboxAccessService);
+    final ListLocalGitBranchesUseCase listLocalGitBranchesUseCase =
+        ListLocalGitBranchesUseCase(service: localGitBranchesService);
+    final InitializeAgentBranchesCubit initializeAgentBranchesCubit =
+        InitializeAgentBranchesCubit(
+          listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
+        );
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
+      initializeAgentBranchesCubit: initializeAgentBranchesCubit,
     );
   }
 
   void dispose() {
     unawaited(recentProjectsCubit.close());
     unawaited(importFlowCubit.close());
+    unawaited(initializeAgentBranchesCubit.close());
   }
 }
 
@@ -121,6 +143,9 @@ class _OrchestratorCompositionScopeState
                   ),
                   BlocProvider<ImportFlowCubit>.value(
                     value: composition.importFlowCubit,
+                  ),
+                  BlocProvider<InitializeAgentBranchesCubit>.value(
+                    value: composition.initializeAgentBranchesCubit,
                   ),
                 ],
                 child: widget.child,

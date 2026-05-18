@@ -1,9 +1,14 @@
+import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_submit_rules.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/initialize_agent_submit_payload.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/shared/theme/pulse_button_styles.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
@@ -15,7 +20,10 @@ Future<void> showInitializeAgentModal(
   BuildContext context, {
   required List<LocalProjectEntity> projects,
   required String? activeProjectId,
+  void Function(InitializeAgentSubmitPayload payload)? onSubmit,
 }) {
+  final InitializeAgentBranchesCubit branchesCubit = context
+      .read<InitializeAgentBranchesCubit>();
   final MaterialLocalizations loc = MaterialLocalizations.of(context);
   return showGeneralDialog<void>(
     context: context,
@@ -28,9 +36,13 @@ Future<void> showInitializeAgentModal(
           Animation<double> animation,
           Animation<double> secondaryAnimation,
         ) {
-          return _InitializeAgentModalPage(
-            projects: projects,
-            activeProjectId: activeProjectId,
+          return BlocProvider<InitializeAgentBranchesCubit>.value(
+            value: branchesCubit,
+            child: _InitializeAgentModalPage(
+              projects: projects,
+              activeProjectId: activeProjectId,
+              onSubmit: onSubmit,
+            ),
           );
         },
   );
@@ -40,10 +52,12 @@ final class _InitializeAgentModalPage extends StatefulWidget {
   const _InitializeAgentModalPage({
     required this.projects,
     required this.activeProjectId,
+    this.onSubmit,
   });
 
   final List<LocalProjectEntity> projects;
   final String? activeProjectId;
+  final void Function(InitializeAgentSubmitPayload payload)? onSubmit;
 
   @override
   State<_InitializeAgentModalPage> createState() =>
@@ -52,23 +66,15 @@ final class _InitializeAgentModalPage extends StatefulWidget {
 
 final class _InitializeAgentModalPageState
     extends State<_InitializeAgentModalPage> {
-  static const List<String> _branchValues = <String>[
-    'main',
-    'staging',
-    'feature/agent-init',
-  ];
-
   late final TextEditingController _coreDirectiveController;
   late final TextEditingController _agentNameController;
   late final ValueNotifier<String?> _projectIdNotifier;
-  late final ValueNotifier<String> _branchNotifier;
 
   @override
   void initState() {
     super.initState();
     _coreDirectiveController = TextEditingController();
     _agentNameController = TextEditingController();
-    _branchNotifier = ValueNotifier<String>(_branchValues.first);
     final List<LocalProjectEntity> projects = widget.projects;
     if (projects.isEmpty) {
       _projectIdNotifier = ValueNotifier<String?>(null);
@@ -79,15 +85,104 @@ final class _InitializeAgentModalPageState
       }
       _projectIdNotifier = ValueNotifier<String?>(pid);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBranchesForProjectId(_projectIdNotifier.value);
+    });
   }
 
   @override
   void dispose() {
+    context.read<InitializeAgentBranchesCubit>().reset();
     _coreDirectiveController.dispose();
     _agentNameController.dispose();
     _projectIdNotifier.dispose();
-    _branchNotifier.dispose();
     super.dispose();
+  }
+
+  LocalProjectEntity? _projectForId(String projectId) {
+    for (final LocalProjectEntity project in widget.projects) {
+      if (project.id == projectId) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  void _loadBranchesForProjectId(String? projectId) {
+    if (projectId == null) {
+      return;
+    }
+
+    final LocalProjectEntity? project = _projectForId(projectId);
+    if (project == null) {
+      return;
+    }
+
+    unawaited(
+      context.read<InitializeAgentBranchesCubit>().loadForProject(
+        absolutePath: project.absolutePath,
+        macosSecurityScopedBookmark: project.macosSecurityScopedBookmark,
+      ),
+    );
+  }
+
+  void _onProjectChanged(String? projectId) {
+    _projectIdNotifier.value = projectId;
+    _loadBranchesForProjectId(projectId);
+  }
+
+  void _onSubmitPressed(
+    BuildContext context,
+    String projectId,
+    InitializeAgentBranchesState branchState,
+  ) {
+    if (!canSubmitInitializeAgent(branchState)) {
+      return;
+    }
+
+    final String? branchName = branchState.selectedBranch;
+    if (branchName == null) {
+      return;
+    }
+
+    widget.onSubmit?.call(
+      InitializeAgentSubmitPayload(
+        agentName: _agentNameController.text.trim(),
+        coreDirective: _coreDirectiveController.text.trim(),
+        projectId: projectId,
+        branchName: branchName,
+      ),
+    );
+    Navigator.of(context).pop();
+  }
+
+  String? _branchHelperText(BranchLoadStatus status) {
+    return switch (status) {
+      BranchLoadStatus.loading =>
+        OrchestratorStrings.initializeAgentBranchesLoading,
+      BranchLoadStatus.notGitRepository =>
+        OrchestratorStrings.initializeAgentBranchesNotGit,
+      BranchLoadStatus.permissionDenied =>
+        OrchestratorStrings.initializeAgentBranchesPermissionDenied,
+      BranchLoadStatus.failure =>
+        OrchestratorStrings.initializeAgentBranchesLoadFailed,
+      BranchLoadStatus.initial || BranchLoadStatus.loaded => null,
+    };
+  }
+
+  String? _branchSemanticsLabel(BranchLoadStatus status) {
+    return switch (status) {
+      BranchLoadStatus.loading =>
+        OrchestratorStrings.initializeAgentBranchesLoadingSemantics,
+      BranchLoadStatus.notGitRepository =>
+        OrchestratorStrings.initializeAgentBranchesNotGitSemantics,
+      BranchLoadStatus.permissionDenied =>
+        OrchestratorStrings.initializeAgentBranchesPermissionDeniedSemantics,
+      BranchLoadStatus.failure =>
+        OrchestratorStrings.initializeAgentBranchesLoadFailedSemantics,
+      BranchLoadStatus.initial || BranchLoadStatus.loaded => null,
+    };
   }
 
   InputDecoration _outlineDecoration(BuildContext context, {String? hint}) {
@@ -133,6 +228,123 @@ final class _InitializeAgentModalPageState
         const SizedBox(height: PulseDimensions.sectionGapSm),
         child,
       ],
+    );
+  }
+
+  Widget _buildBranchControl(
+    BuildContext context,
+    TextTheme tt,
+    InitializeAgentBranchesState branchState,
+  ) {
+    switch (branchState.status) {
+      case BranchLoadStatus.loading:
+        return const Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: PulseDimensions.sidebarTreeIconSize,
+            height: PulseDimensions.sidebarTreeIconSize,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: PulseColors.primary,
+            ),
+          ),
+        );
+      case BranchLoadStatus.loaded:
+        final String? dropdownValue =
+            branchState.selectedBranch != null &&
+                branchState.branches.contains(branchState.selectedBranch)
+            ? branchState.selectedBranch
+            : null;
+
+        return DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isDense: true,
+            value: dropdownValue,
+            isExpanded: true,
+            dropdownColor: PulseColors.surfaceContainerLowest,
+            style: tt.labelLarge?.copyWith(color: PulseColors.onSurface),
+            items: branchState.branches
+                .map(
+                  (String branch) => DropdownMenuItem<String>(
+                    value: branch,
+                    child: Text(branch),
+                  ),
+                )
+                .toList(),
+            onChanged: (String? value) {
+              if (value != null) {
+                context.read<InitializeAgentBranchesCubit>().selectBranch(
+                  value,
+                );
+              }
+            },
+          ),
+        );
+      case BranchLoadStatus.initial:
+      case BranchLoadStatus.notGitRepository:
+      case BranchLoadStatus.permissionDenied:
+      case BranchLoadStatus.failure:
+        return DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            isDense: true,
+            value: null,
+            isExpanded: true,
+            dropdownColor: PulseColors.surfaceContainerLowest,
+            style: tt.labelLarge?.copyWith(color: PulseColors.onSurfaceVariant),
+            items: const <DropdownMenuItem<String>>[],
+            onChanged: null,
+          ),
+        );
+    }
+  }
+
+  Widget _buildBranchField(TextTheme tt) {
+    return _labeledBlock(
+      tt: tt,
+      label: OrchestratorStrings.initializeAgentBranchLabel,
+      child:
+          BlocBuilder<
+            InitializeAgentBranchesCubit,
+            InitializeAgentBranchesState
+          >(
+            builder:
+                (
+                  BuildContext context,
+                  InitializeAgentBranchesState branchState,
+                ) {
+                  final String? helperText = _branchHelperText(
+                    branchState.status,
+                  );
+                  final String? semanticsLabel = _branchSemanticsLabel(
+                    branchState.status,
+                  );
+                  final bool branchFieldEnabled =
+                      branchState.status == BranchLoadStatus.loaded;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Semantics(
+                        label: semanticsLabel,
+                        enabled: branchFieldEnabled,
+                        child: InputDecorator(
+                          decoration: _outlineDecoration(context),
+                          child: _buildBranchControl(context, tt, branchState),
+                        ),
+                      ),
+                      if (helperText != null) ...<Widget>[
+                        const SizedBox(height: PulseDimensions.sectionGapSm),
+                        Text(
+                          helperText,
+                          style: tt.bodySmall?.copyWith(
+                            color: PulseColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
+          ),
     );
   }
 
@@ -344,64 +556,16 @@ final class _InitializeAgentModalPageState
                                                           ),
                                                         );
                                                       }).toList(),
-                                                      onChanged: (String? v) {
-                                                        _projectIdNotifier
-                                                                .value =
-                                                            v;
-                                                      },
+                                                      onChanged:
+                                                          _onProjectChanged,
                                                     ),
                                                   ),
                                                 );
                                               },
                                         ),
                                       );
-                                final Widget branchField = _labeledBlock(
-                                  tt: tt,
-                                  label: OrchestratorStrings
-                                      .initializeAgentBranchLabel,
-                                  child: ValueListenableBuilder<String>(
-                                    valueListenable: _branchNotifier,
-                                    builder:
-                                        (
-                                          BuildContext context,
-                                          String branch,
-                                          Widget? child,
-                                        ) {
-                                          return InputDecorator(
-                                            decoration: _outlineDecoration(
-                                              context,
-                                            ),
-                                            child: DropdownButtonHideUnderline(
-                                              child: DropdownButton<String>(
-                                                isDense: true,
-                                                value: branch,
-                                                isExpanded: true,
-                                                dropdownColor: PulseColors
-                                                    .surfaceContainerLowest,
-                                                style: tt.labelLarge?.copyWith(
-                                                  color: PulseColors.onSurface,
-                                                ),
-                                                items: _branchValues
-                                                    .map(
-                                                      (String b) =>
-                                                          DropdownMenuItem<
-                                                            String
-                                                          >(
-                                                            value: b,
-                                                            child: Text(b),
-                                                          ),
-                                                    )
-                                                    .toList(),
-                                                onChanged: (String? v) {
-                                                  if (v != null) {
-                                                    _branchNotifier.value = v;
-                                                  }
-                                                },
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                  ),
+                                final Widget branchField = _buildBranchField(
+                                  tt,
                                 );
                                 if (stack) {
                                   return Column(
@@ -457,17 +621,52 @@ final class _InitializeAgentModalPageState
                               const SizedBox(
                                 width: PulseDimensions.sectionGapMd,
                               ),
-                              FilledButton.icon(
-                                onPressed: () => Navigator.of(context).pop(),
-                                style: PulseButtonStyles.filledPrimary(
-                                  context,
-                                  uppercaseLabel: true,
-                                ),
-                                label: Text(
-                                  OrchestratorStrings
-                                      .initializeAgentSubmitButton
-                                      .toUpperCase(),
-                                ),
+                              ValueListenableBuilder<String?>(
+                                valueListenable: _projectIdNotifier,
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      String? projectId,
+                                      Widget? child,
+                                    ) {
+                                      return BlocBuilder<
+                                        InitializeAgentBranchesCubit,
+                                        InitializeAgentBranchesState
+                                      >(
+                                        builder:
+                                            (
+                                              BuildContext context,
+                                              InitializeAgentBranchesState
+                                              branchState,
+                                            ) {
+                                              final bool canSubmit =
+                                                  projectId != null &&
+                                                  canSubmitInitializeAgent(
+                                                    branchState,
+                                                  );
+
+                                              return FilledButton.icon(
+                                                onPressed: canSubmit
+                                                    ? () => _onSubmitPressed(
+                                                        context,
+                                                        projectId,
+                                                        branchState,
+                                                      )
+                                                    : null,
+                                                style:
+                                                    PulseButtonStyles.filledPrimary(
+                                                      context,
+                                                      uppercaseLabel: true,
+                                                    ),
+                                                label: Text(
+                                                  OrchestratorStrings
+                                                      .initializeAgentSubmitButton
+                                                      .toUpperCase(),
+                                                ),
+                                              );
+                                            },
+                                      );
+                                    },
                               ),
                             ],
                           ),
