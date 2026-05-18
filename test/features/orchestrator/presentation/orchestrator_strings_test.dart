@@ -111,5 +111,21 @@ void main() {
         isNot(equals('New Agent')),
       );
     });
+
+    test('workflow techspec initialization copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.workflowTechspecEmptyTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.workflowTechspecEmptyTitle,
+        isNot(equals('No Technical Specification Yet')),
+      );
+      expect(OrchestratorStrings.workflowTechspecInitializeButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.workflowTechspecInitializeButton,
+        contains('techspec'),
+      );
+      expect(OrchestratorStrings.workflowTechspecPrdCompleteBanner, isNotEmpty);
+      expect(OrchestratorStrings.workflowPhaseTechspec, isNotEmpty);
+      expect(OrchestratorStrings.workflowTechspecApplyButton, isNotEmpty);
+    });
   });
 }

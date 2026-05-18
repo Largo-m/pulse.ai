@@ -63,4 +63,26 @@ abstract final class OrchestratorStrings {
   static const String initializeAgentCloseSemantics = 'Fechar';
   static const String initializeAgentCancelButton = 'Cancelar';
   static const String initializeAgentSubmitButton = 'Salvar';
+
+  static const String workflowPhasePrd = 'PRD';
+  static const String workflowPhaseTechspec = 'Techspec';
+  static const String workflowPhaseTasks = 'Tasks';
+  static const String workflowPhaseQa = 'QA';
+  static const String workflowPhaseReview = 'Review';
+
+  static const String workflowTechspecEmptyTitle =
+      'Nenhuma especificação técnica ainda';
+  static const String workflowTechspecEmptySubtitle =
+      'Pronto para definir a arquitetura? Você pode deixar a IA gerar a '
+      'techspec inicial com base no PRD ou importar seu próprio documento.';
+  static const String workflowTechspecInitializeButton = 'Inicializar techspec';
+  static const String workflowTechspecPrdCompleteBanner =
+      'Fase de PRD concluída. 12 requisitos prontos para processamento.';
+  static const String workflowTechspecInstructionPlaceholder =
+      'Adicionar instrução manual à especificação técnica…';
+  static const String workflowTechspecApplyButton = 'Aplicar';
+  static const String workflowTechspecInitializeSemantics =
+      'Inicializar especificação técnica com IA';
+  static const String workflowTechspecApplySemantics =
+      'Aplicar instrução manual à especificação técnica';
 }

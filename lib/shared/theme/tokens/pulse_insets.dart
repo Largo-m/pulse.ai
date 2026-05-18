@@ -77,4 +77,17 @@ abstract final class PulseInsets {
     horizontal: PulseDimensions.sidebarNavHorizontalPadding,
     vertical: PulseDimensions.sidebarAgentRowVerticalPadding,
   );
+
+  static const EdgeInsets workflowInstructionBarOuter = EdgeInsets.all(
+    PulseDimensions.workflowInstructionBarOuterInset,
+  );
+
+  static const EdgeInsets workflowInstructionBarSuffix = EdgeInsets.only(
+    right: PulseDimensions.workflowInstructionBarSuffixRightPadding,
+    top: PulseDimensions.workflowInstructionBarSuffixVerticalPadding,
+    bottom: PulseDimensions.workflowInstructionBarSuffixVerticalPadding,
+  );
+
+  static const EdgeInsets workflowInstructionBarApplyButtonHorizontal =
+      EdgeInsets.symmetric(horizontal: PulseDimensions.sectionGapSm);
 }
