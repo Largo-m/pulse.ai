@@ -32,6 +32,20 @@ abstract final class PulseInsets {
     PulseDimensions.ctaCardPadding,
   );
 
+  static const EdgeInsets modalFormPadding = EdgeInsets.fromLTRB(
+    PulseDimensions.horizontalInset,
+    PulseDimensions.horizontalInset,
+    PulseDimensions.horizontalInset,
+    PulseDimensions.modalFormBottomInset,
+  );
+
+  static const EdgeInsets modalFooterPadding = EdgeInsets.fromLTRB(
+    PulseDimensions.horizontalInset,
+    PulseDimensions.modalFooterVerticalPadding,
+    PulseDimensions.horizontalInset,
+    PulseDimensions.modalFooterVerticalPadding,
+  );
+
   static const EdgeInsets ctaButton = filledActionButton;
 
   static const EdgeInsets chromeIconButton = EdgeInsets.all(

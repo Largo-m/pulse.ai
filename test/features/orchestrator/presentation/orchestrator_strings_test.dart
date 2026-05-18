@@ -36,6 +36,25 @@ void main() {
       expect(OrchestratorStrings.recentProjectCollapseSemantics, isNotEmpty);
     });
 
+    test(
+      'initialize agent modal copy is localized and exposes form labels',
+      () {
+        expect(OrchestratorStrings.initializeAgentModalTitle, isNotEmpty);
+        expect(
+          OrchestratorStrings.initializeAgentModalTitle,
+          isNot(equals('Initialize New Agent')),
+        );
+        expect(
+          OrchestratorStrings.initializeAgentCoreDirectiveLabel,
+          isNotEmpty,
+        );
+        expect(OrchestratorStrings.initializeAgentNameLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentProjectLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentBranchLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentSubmitButton, isNotEmpty);
+      },
+    );
+
     test('recent projects sidebar strings are not English placeholders', () {
       expect(
         OrchestratorStrings.recentProjectsSectionTitle,

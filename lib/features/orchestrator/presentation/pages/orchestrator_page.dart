@@ -11,6 +11,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_flow_outcome_handler.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/initialize_agent_modal.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_bottom_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_breadcrumb_bar.dart';
@@ -96,8 +97,15 @@ final class _OrchestratorMainContent extends StatelessWidget {
           children: [
             if (showSidebar)
               RecentProjectsSidebar(
-                onNewProject: () =>
-                    OrchestratorPlaceholderFeedback.showComingSoon(context),
+                onNewProject: () {
+                  unawaited(
+                    showInitializeAgentModal(
+                      context,
+                      projects: state.projects,
+                      activeProjectId: state.activeProjectId,
+                    ),
+                  );
+                },
               ),
             const Expanded(
               child: Column(

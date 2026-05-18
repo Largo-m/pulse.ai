@@ -46,6 +46,13 @@ abstract final class PulseDimensions {
   static const double standbyChipVerticalPadding = 2;
   static const double standbyLabelGap = 6;
   static const double maxContentWidth = 896;
+  static const double modalMaxWidth = 576;
+  static const double modalTextAreaHeight = 128;
+  static const double modalBackdropBlurSigma = 8;
+  static const double modalNonScrollingChromeHeightEstimate = 176;
+  static const double modalScrollBodyMinExtent = 64;
+  static const double modalFormBottomInset = 8;
+  static const double modalFooterVerticalPadding = 10;
   static const double maxIntroTextWidth = 512;
   static const double twoColumnBreakpoint = 900;
   static const double ctaColumnGap = 24;

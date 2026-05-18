@@ -34,4 +34,18 @@ abstract final class OrchestratorStrings {
   static const String recentProjectActiveSemantics = 'Projeto ativo';
   static const String recentProjectExpandSemantics = 'Expandir projeto';
   static const String recentProjectCollapseSemantics = 'Recolher projeto';
+
+  static const String initializeAgentModalTitle = 'Novo agente';
+  static const String initializeAgentCoreDirectiveLabel = 'Descrição:';
+  static const String initializeAgentCoreDirectiveHint =
+      'Defina o propósito central do agente.';
+  static const String initializeAgentNameLabel = 'Nome: ';
+  static const String initializeAgentNameHint = 'Ex.: Bot-SRE-01';
+  static const String initializeAgentProjectLabel = 'Projeto:';
+  static const String initializeAgentBranchLabel = 'Branch:';
+  static const String initializeAgentProjectEmptyOption =
+      'Nenhum projeto disponível';
+  static const String initializeAgentCloseSemantics = 'Fechar';
+  static const String initializeAgentCancelButton = 'Cancelar';
+  static const String initializeAgentSubmitButton = 'Salvar';
 }
