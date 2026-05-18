@@ -10,6 +10,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_flow_outcome_handler.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_submit_handler.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/initialize_agent_modal.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
@@ -103,6 +104,7 @@ final class _OrchestratorMainContent extends StatelessWidget {
                       context,
                       projects: state.projects,
                       activeProjectId: state.activeProjectId,
+                      onSubmit: InitializeAgentSubmitHandler.handle,
                     ),
                   );
                 },

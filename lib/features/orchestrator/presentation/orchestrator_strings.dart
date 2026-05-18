@@ -43,6 +43,21 @@ abstract final class OrchestratorStrings {
   static const String initializeAgentNameHint = 'Ex.: Bot-SRE-01';
   static const String initializeAgentProjectLabel = 'Projeto:';
   static const String initializeAgentBranchLabel = 'Branch:';
+  static const String initializeAgentBranchesLoading = 'Carregando branches…';
+  static const String initializeAgentBranchesNotGit =
+      'Este projeto não é um repositório Git.';
+  static const String initializeAgentBranchesLoadFailed =
+      'Não foi possível carregar as branches deste projeto.';
+  static const String initializeAgentBranchesPermissionDenied =
+      'Sem permissão para acessar este projeto. Reimporte a pasta do projeto.';
+  static const String initializeAgentBranchesLoadingSemantics =
+      'Carregando branches do projeto';
+  static const String initializeAgentBranchesNotGitSemantics =
+      'Projeto sem repositório Git; seleção de branch indisponível';
+  static const String initializeAgentBranchesLoadFailedSemantics =
+      'Falha ao carregar branches do projeto';
+  static const String initializeAgentBranchesPermissionDeniedSemantics =
+      'Sem permissão para acessar o projeto; reimporte a pasta';
   static const String initializeAgentProjectEmptyOption =
       'Nenhum projeto disponível';
   static const String initializeAgentCloseSemantics = 'Fechar';

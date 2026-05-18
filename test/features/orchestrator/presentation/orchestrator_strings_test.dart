@@ -55,6 +55,52 @@ void main() {
       },
     );
 
+    test('initialize agent branch load states expose non-empty PT-BR copy', () {
+      expect(OrchestratorStrings.initializeAgentBranchesLoading, isNotEmpty);
+      expect(
+        OrchestratorStrings.initializeAgentBranchesLoading,
+        contains('Carregando'),
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesLoading,
+        isNot(equals('Loading branches…')),
+      );
+      expect(OrchestratorStrings.initializeAgentBranchesNotGit, isNotEmpty);
+      expect(
+        OrchestratorStrings.initializeAgentBranchesNotGit,
+        contains('repositório Git'),
+      );
+      expect(OrchestratorStrings.initializeAgentBranchesLoadFailed, isNotEmpty);
+      expect(
+        OrchestratorStrings.initializeAgentBranchesLoadFailed,
+        contains('carregar'),
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesLoadingSemantics,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesNotGitSemantics,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesLoadFailedSemantics,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesPermissionDenied,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesPermissionDenied,
+        contains('Reimporte'),
+      );
+      expect(
+        OrchestratorStrings.initializeAgentBranchesPermissionDeniedSemantics,
+        isNotEmpty,
+      );
+    });
+
     test('recent projects sidebar strings are not English placeholders', () {
       expect(
         OrchestratorStrings.recentProjectsSectionTitle,
