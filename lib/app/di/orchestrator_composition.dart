@@ -13,6 +13,7 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
@@ -25,12 +26,14 @@ final class OrchestratorComposition {
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
+    required this.orchestratorMainContentCubit,
   });
 
   final RecentProjectsRepository recentProjectsRepository;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
+  final OrchestratorMainContentCubit orchestratorMainContentCubit;
 
   static Future<OrchestratorComposition> create() async {
     final SharedPreferences preferences = await SharedPreferences.getInstance();
@@ -72,12 +75,15 @@ final class OrchestratorComposition {
         InitializeAgentBranchesCubit(
           listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
         );
+    final OrchestratorMainContentCubit orchestratorMainContentCubit =
+        OrchestratorMainContentCubit();
 
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
+      orchestratorMainContentCubit: orchestratorMainContentCubit,
     );
   }
 
@@ -85,6 +91,7 @@ final class OrchestratorComposition {
     unawaited(recentProjectsCubit.close());
     unawaited(importFlowCubit.close());
     unawaited(initializeAgentBranchesCubit.close());
+    unawaited(orchestratorMainContentCubit.close());
   }
 }
 
@@ -146,6 +153,9 @@ class _OrchestratorCompositionScopeState
                   ),
                   BlocProvider<InitializeAgentBranchesCubit>.value(
                     value: composition.initializeAgentBranchesCubit,
+                  ),
+                  BlocProvider<OrchestratorMainContentCubit>.value(
+                    value: composition.orchestratorMainContentCubit,
                   ),
                 ],
                 child: widget.child,

@@ -6,11 +6,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/app/router/route_paths.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/import_project_flow_outcome_handler.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_submit_handler.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/initialize_agent_submit_payload.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/initialize_agent_modal.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
@@ -18,6 +21,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_breadcrumb_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_empty_state_body.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/recent_projects_sidebar.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_techspec_workspace.dart';
 import 'package:pulse_ai/shared/theme/pulse_theme_data.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 
@@ -99,14 +103,7 @@ final class _OrchestratorMainContent extends StatelessWidget {
             if (showSidebar)
               RecentProjectsSidebar(
                 onNewProject: () {
-                  unawaited(
-                    showInitializeAgentModal(
-                      context,
-                      projects: state.projects,
-                      activeProjectId: state.activeProjectId,
-                      onSubmit: InitializeAgentSubmitHandler.handle,
-                    ),
-                  );
+                  unawaited(_showInitializeAgentModal(context, state));
                 },
               ),
             const Expanded(
@@ -125,24 +122,59 @@ final class _OrchestratorMainContent extends StatelessWidget {
   }
 }
 
+Future<void> _showInitializeAgentModal(
+  BuildContext context,
+  RecentProjectsState projectsState,
+) {
+  final OrchestratorMainContentCubit mainContentCubit = context
+      .read<OrchestratorMainContentCubit>();
+
+  return showInitializeAgentModal(
+    context,
+    projects: projectsState.projects,
+    activeProjectId: projectsState.activeProjectId,
+    onSubmit: (InitializeAgentSubmitPayload payload) {
+      InitializeAgentSubmitHandler.handle(mainContentCubit, payload);
+    },
+  );
+}
+
 final class _OrchestratorScrollableBody extends StatelessWidget {
   const _OrchestratorScrollableBody();
 
   @override
   Widget build(BuildContext context) {
-    return OrchestratorEmptyStateBody(
-      onSelectLocal: () {
-        final ImportFlowStatus status = context
-            .read<ImportFlowCubit>()
-            .state
-            .status;
-        if (status == ImportFlowStatus.loading) {
-          return;
-        }
-        unawaited(context.read<ImportFlowCubit>().importLocal());
-      },
-      onPlaceholder: () =>
-          OrchestratorPlaceholderFeedback.showComingSoon(context),
+    return BlocBuilder<
+      OrchestratorMainContentCubit,
+      OrchestratorMainContentState
+    >(
+      builder:
+          (BuildContext context, OrchestratorMainContentState contentState) {
+            if (contentState.view ==
+                OrchestratorMainContentView.techspecWorkflow) {
+              return WorkflowTechspecWorkspace(
+                onInitialize: () =>
+                    OrchestratorPlaceholderFeedback.showComingSoon(context),
+                onApplyInstruction: () =>
+                    OrchestratorPlaceholderFeedback.showComingSoon(context),
+              );
+            }
+
+            return OrchestratorEmptyStateBody(
+              onSelectLocal: () {
+                final ImportFlowStatus status = context
+                    .read<ImportFlowCubit>()
+                    .state
+                    .status;
+                if (status == ImportFlowStatus.loading) {
+                  return;
+                }
+                unawaited(context.read<ImportFlowCubit>().importLocal());
+              },
+              onPlaceholder: () =>
+                  OrchestratorPlaceholderFeedback.showComingSoon(context),
+            );
+          },
     );
   }
 }
