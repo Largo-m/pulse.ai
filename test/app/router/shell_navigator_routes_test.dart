@@ -8,6 +8,7 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_proj
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/pages/import_project_select_source_page.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/pages/orchestrator_page.dart';
@@ -39,8 +40,11 @@ void main() {
           pickerService: FakeLocalDirectoryPickerService(),
         ),
       );
+      final OrchestratorMainContentCubit orchestratorMainContentCubit =
+          OrchestratorMainContentCubit();
       addTearDown(recentProjectsCubit.close);
       addTearDown(importFlowCubit.close);
+      addTearDown(orchestratorMainContentCubit.close);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -50,6 +54,9 @@ void main() {
                 value: recentProjectsCubit,
               ),
               BlocProvider<ImportFlowCubit>.value(value: importFlowCubit),
+              BlocProvider<OrchestratorMainContentCubit>.value(
+                value: orchestratorMainContentCubit,
+              ),
             ],
             child: Builder(builder: route.builder),
           ),

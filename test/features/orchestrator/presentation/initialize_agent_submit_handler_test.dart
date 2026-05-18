@@ -13,7 +13,7 @@ void main() {
       branchName: 'main',
     );
 
-    test('handle opens techspec workflow for submitted agent', () async{
+    test('handle opens techspec workflow for submitted agent', () async {
       final OrchestratorMainContentCubit cubit = OrchestratorMainContentCubit();
 
       InitializeAgentSubmitHandler.handle(cubit, payload);
