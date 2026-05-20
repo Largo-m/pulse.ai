@@ -4,11 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/app/di/hive_bootstrap.dart';
 import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
+import 'package:pulse_ai/features/orchestrator/data/hive/orchestrator_hive_boxes.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/artifact_repository_impl.dart';
+import 'package:pulse_ai/features/orchestrator/data/repositories/prd_run_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
+import 'package:pulse_ai/features/orchestrator/data/repositories/workflow_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/repositories/prd_run_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
@@ -28,6 +33,8 @@ final class OrchestratorComposition {
   OrchestratorComposition({
     required this.recentProjectsRepository,
     required this.artifactRepository,
+    required this.workflowRepository,
+    required this.prdRunRepository,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
@@ -36,6 +43,8 @@ final class OrchestratorComposition {
 
   final RecentProjectsRepository recentProjectsRepository;
   final ArtifactRepository artifactRepository;
+  final WorkflowRepository workflowRepository;
+  final PrdRunRepository prdRunRepository;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
@@ -91,9 +100,20 @@ final class OrchestratorComposition {
       store: artifactStore,
     );
 
+    final OrchestratorHiveBoxes hiveBoxes = await OrchestratorHiveBoxes.open();
+    final WorkflowRepository workflowRepository = WorkflowRepositoryImpl(
+      boxes: hiveBoxes,
+      artifactStore: artifactStore,
+    );
+    final PrdRunRepository prdRunRepository = PrdRunRepositoryImpl(
+      boxes: hiveBoxes,
+    );
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       artifactRepository: artifactRepository,
+      workflowRepository: workflowRepository,
+      prdRunRepository: prdRunRepository,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
@@ -158,6 +178,12 @@ class _OrchestratorCompositionScopeState
                 ),
                 RepositoryProvider<ArtifactRepository>.value(
                   value: composition.artifactRepository,
+                ),
+                RepositoryProvider<WorkflowRepository>.value(
+                  value: composition.workflowRepository,
+                ),
+                RepositoryProvider<PrdRunRepository>.value(
+                  value: composition.prdRunRepository,
                 ),
               ],
               child: MultiBlocProvider(
