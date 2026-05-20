@@ -16,9 +16,14 @@ import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projec
 import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
@@ -35,6 +40,11 @@ final class OrchestratorComposition {
     required this.artifactRepository,
     required this.workflowRepository,
     required this.prdRunRepository,
+    required this.createWorkflowUseCase,
+    required this.listWorkflowsByProjectUseCase,
+    required this.savePrdDraftUseCase,
+    required this.readPrdMarkdownUseCase,
+    required this.listWorkflowAdrsUseCase,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
@@ -45,6 +55,11 @@ final class OrchestratorComposition {
   final ArtifactRepository artifactRepository;
   final WorkflowRepository workflowRepository;
   final PrdRunRepository prdRunRepository;
+  final CreateWorkflowUseCase createWorkflowUseCase;
+  final ListWorkflowsByProjectUseCase listWorkflowsByProjectUseCase;
+  final SavePrdDraftUseCase savePrdDraftUseCase;
+  final ReadPrdMarkdownUseCase readPrdMarkdownUseCase;
+  final ListWorkflowAdrsUseCase listWorkflowAdrsUseCase;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
@@ -109,11 +124,30 @@ final class OrchestratorComposition {
       boxes: hiveBoxes,
     );
 
+    final CreateWorkflowUseCase createWorkflowUseCase = CreateWorkflowUseCase(
+      workflowRepository: workflowRepository,
+    );
+    final ListWorkflowsByProjectUseCase listWorkflowsByProjectUseCase =
+        ListWorkflowsByProjectUseCase(workflowRepository);
+    final SavePrdDraftUseCase savePrdDraftUseCase = SavePrdDraftUseCase(
+      artifactRepository: artifactRepository,
+      prdRunRepository: prdRunRepository,
+    );
+    final ReadPrdMarkdownUseCase readPrdMarkdownUseCase =
+        ReadPrdMarkdownUseCase(artifactRepository);
+    final ListWorkflowAdrsUseCase listWorkflowAdrsUseCase =
+        ListWorkflowAdrsUseCase(artifactRepository);
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       artifactRepository: artifactRepository,
       workflowRepository: workflowRepository,
       prdRunRepository: prdRunRepository,
+      createWorkflowUseCase: createWorkflowUseCase,
+      listWorkflowsByProjectUseCase: listWorkflowsByProjectUseCase,
+      savePrdDraftUseCase: savePrdDraftUseCase,
+      readPrdMarkdownUseCase: readPrdMarkdownUseCase,
+      listWorkflowAdrsUseCase: listWorkflowAdrsUseCase,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,

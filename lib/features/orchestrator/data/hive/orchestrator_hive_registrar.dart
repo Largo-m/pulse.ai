@@ -3,6 +3,7 @@ import 'package:pulse_ai/features/orchestrator/data/adapters/prd_approval_entity
 import 'package:pulse_ai/features/orchestrator/data/adapters/prd_run_entity_adapter.dart';
 import 'package:pulse_ai/features/orchestrator/data/adapters/stream_event_entity_adapter.dart';
 import 'package:pulse_ai/features/orchestrator/data/adapters/workflow_entity_adapter.dart';
+
 final class OrchestratorHiveRegistrar {
   static bool _registered = false;
 

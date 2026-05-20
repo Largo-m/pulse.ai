@@ -96,8 +96,7 @@ void main() {
       );
 
       await box.put('event', original);
-      final StreamEventEntity? decoded =
-          box.get('event') as StreamEventEntity?;
+      final StreamEventEntity? decoded = box.get('event') as StreamEventEntity?;
       expect(decoded, original);
     });
   });
