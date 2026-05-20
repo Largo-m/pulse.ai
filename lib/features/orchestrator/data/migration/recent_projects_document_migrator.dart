@@ -2,8 +2,8 @@ import 'package:pulse_ai/features/orchestrator/data/models/recent_projects_docum
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:uuid/uuid.dart';
 
-final class MigrateRecentProjectsUseCase {
-  MigrateRecentProjectsUseCase({String Function()? newProjectId})
+final class RecentProjectsDocumentMigrator {
+  RecentProjectsDocumentMigrator({String Function()? newProjectId})
     : _newProjectId = newProjectId ?? _defaultNewProjectId;
 
   static const Uuid _uuid = Uuid();
@@ -12,7 +12,7 @@ final class MigrateRecentProjectsUseCase {
 
   final String Function() _newProjectId;
 
-  RecentProjectsDocument call(RecentProjectsDocument document) {
+  RecentProjectsDocument migrate(RecentProjectsDocument document) {
     if (document.schemaVersion >= RecentProjectsDocument.currentSchemaVersion) {
       return document;
     }

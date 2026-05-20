@@ -1,16 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pulse_ai/features/orchestrator/data/migration/recent_projects_document_migrator.dart';
 import 'package:pulse_ai/features/orchestrator/data/models/recent_projects_document.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/usecases/migrate_recent_projects_use_case.dart';
 
 void main() {
-  group('MigrateRecentProjectsUseCase', () {
+  group('RecentProjectsDocumentMigrator', () {
     late int uuidSequence;
-    late MigrateRecentProjectsUseCase useCase;
+    late RecentProjectsDocumentMigrator migrator;
 
     setUp(() {
       uuidSequence = 0;
-      useCase = MigrateRecentProjectsUseCase(
+      migrator = RecentProjectsDocumentMigrator(
         newProjectId: () {
           uuidSequence++;
           return 'uuid-$uuidSequence';
@@ -47,7 +47,7 @@ void main() {
           ],
         );
 
-        final RecentProjectsDocument migrated = useCase.call(v1);
+        final RecentProjectsDocument migrated = migrator.migrate(v1);
 
         expect(
           migrated.schemaVersion,
@@ -81,7 +81,7 @@ void main() {
         ],
       );
 
-      final RecentProjectsDocument migrated = useCase.call(v1);
+      final RecentProjectsDocument migrated = migrator.migrate(v1);
 
       expect(migrated.activeProjectId, 'uuid-1');
     });
@@ -100,7 +100,7 @@ void main() {
         ],
       );
 
-      final RecentProjectsDocument migrated = useCase.call(v2);
+      final RecentProjectsDocument migrated = migrator.migrate(v2);
 
       expect(identical(migrated, v2), isTrue);
     });

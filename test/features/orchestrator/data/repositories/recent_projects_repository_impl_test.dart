@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pulse_ai/features/orchestrator/data/migration/recent_projects_document_migrator.dart';
 import 'package:pulse_ai/features/orchestrator/data/models/recent_projects_document.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/usecases/migrate_recent_projects_use_case.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -16,7 +16,7 @@ void main() {
           await SharedPreferences.getInstance();
       repository = RecentProjectsRepositoryImpl(
         RecentProjectsLocalStorage(preferences),
-        migrateRecentProjectsUseCase: MigrateRecentProjectsUseCase(
+        documentMigrator: RecentProjectsDocumentMigrator(
           newProjectId: () => 'migrated-uuid',
         ),
       );
@@ -186,7 +186,7 @@ void main() {
       final RecentProjectsRepositoryImpl migratingRepository =
           RecentProjectsRepositoryImpl(
             RecentProjectsLocalStorage(preferences),
-            migrateRecentProjectsUseCase: MigrateRecentProjectsUseCase(
+            documentMigrator: RecentProjectsDocumentMigrator(
               newProjectId: () {
                 migrationIndex++;
                 return 'migrated-uuid-$migrationIndex';
