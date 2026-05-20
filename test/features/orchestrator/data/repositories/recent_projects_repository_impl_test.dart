@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pulse_ai/features/orchestrator/data/migration/recent_projects_document_migrator.dart';
 import 'package:pulse_ai/features/orchestrator/data/models/recent_projects_document.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
@@ -15,16 +16,20 @@ void main() {
           await SharedPreferences.getInstance();
       repository = RecentProjectsRepositoryImpl(
         RecentProjectsLocalStorage(preferences),
+        documentMigrator: RecentProjectsDocumentMigrator(
+          newProjectId: () => 'migrated-uuid',
+        ),
       );
     });
 
     LocalProjectEntity project({
       required String id,
+      required String canonicalPath,
       required DateTime accessedAt,
     }) {
       return LocalProjectEntity(
         id: id,
-        absolutePath: id,
+        canonicalPath: canonicalPath,
         displayName: 'team-repo',
         lastAccessedAt: accessedAt,
       );
@@ -45,11 +50,11 @@ void main() {
       await storage.writeRaw(
         RecentProjectsDocument(
           schemaVersion: RecentProjectsDocument.currentSchemaVersion,
-          activeProjectId: '/Users/dev/team-repo',
+          activeProjectId: 'uuid-1',
           projects: <LocalProjectEntity>[
             LocalProjectEntity(
-              id: '/Users/dev/team-repo',
-              absolutePath: '/Users/dev/team-repo',
+              id: 'uuid-1',
+              canonicalPath: '/Users/dev/team-repo',
               displayName: 'team-repo',
               lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
             ),
@@ -69,31 +74,40 @@ void main() {
         final DateTime newer = DateTime.utc(2026, 5, 15, 12);
 
         await repository.upsertAndPromote(
-          project(id: '/Users/dev/first', accessedAt: older),
+          project(
+            id: 'uuid-first',
+            canonicalPath: '/Users/dev/first',
+            accessedAt: older,
+          ),
         );
         await repository.upsertAndPromote(
-          project(id: '/Users/dev/second', accessedAt: newer),
+          project(
+            id: 'uuid-second',
+            canonicalPath: '/Users/dev/second',
+            accessedAt: newer,
+          ),
         );
 
         final List<LocalProjectEntity> recent = await repository.listRecent();
 
         expect(recent, hasLength(2));
-        expect(recent.first.id, '/Users/dev/second');
-        expect(recent.last.id, '/Users/dev/first');
+        expect(recent.first.id, 'uuid-second');
+        expect(recent.last.id, 'uuid-first');
       },
     );
 
     test('setActiveProjectId round-trips through getActiveProjectId', () async {
       await repository.upsertAndPromote(
         project(
-          id: '/Users/dev/team-repo',
+          id: 'uuid-team',
+          canonicalPath: '/Users/dev/team-repo',
           accessedAt: DateTime.utc(2026, 5, 15, 12),
         ),
       );
 
-      await repository.setActiveProjectId('/Users/dev/team-repo');
+      await repository.setActiveProjectId('uuid-team');
 
-      expect(await repository.getActiveProjectId(), '/Users/dev/team-repo');
+      expect(await repository.getActiveProjectId(), 'uuid-team');
     });
 
     test('malformed JSON returns empty list and null active id', () async {
@@ -131,34 +145,93 @@ void main() {
         final DateTime refreshedAccess = DateTime.utc(2026, 5, 15, 18);
 
         await repository.upsertAndPromote(
-          project(id: '/Users/dev/alpha', accessedAt: firstAccess),
+          project(
+            id: 'uuid-alpha',
+            canonicalPath: '/Users/dev/alpha',
+            accessedAt: firstAccess,
+          ),
         );
         await repository.upsertAndPromote(
-          project(id: '/Users/dev/beta', accessedAt: secondAccess),
+          project(
+            id: 'uuid-beta',
+            canonicalPath: '/Users/dev/beta',
+            accessedAt: secondAccess,
+          ),
         );
         await repository.upsertAndPromote(
-          project(id: '/Users/dev/alpha', accessedAt: refreshedAccess),
+          project(
+            id: 'uuid-alpha',
+            canonicalPath: '/Users/dev/alpha',
+            accessedAt: refreshedAccess,
+          ),
         );
 
         final List<LocalProjectEntity> recent = await repository.listRecent();
 
         expect(recent, hasLength(2));
-        expect(recent.first.id, '/Users/dev/alpha');
+        expect(recent.first.id, 'uuid-alpha');
         expect(recent.first.lastAccessedAt, refreshedAccess);
-        expect(recent.last.id, '/Users/dev/beta');
+        expect(recent.last.id, 'uuid-beta');
       },
     );
+
+    test('migrates v1 persisted JSON to v2 on first read', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        RecentProjectsLocalStorage.storageKey:
+            '{"schemaVersion":1,"activeProjectId":"/Users/dev/first","projects":[{"id":"/Users/dev/first","absolutePath":"/Users/dev/first","displayName":"first","lastAccessedAtIso":"2026-05-14T12:00:00.000Z"},{"id":"/Users/dev/second","absolutePath":"/Users/dev/second","displayName":"second","lastAccessedAtIso":"2026-05-15T12:00:00.000Z"}]}',
+      });
+      final SharedPreferences preferences =
+          await SharedPreferences.getInstance();
+      var migrationIndex = 0;
+      final RecentProjectsRepositoryImpl migratingRepository =
+          RecentProjectsRepositoryImpl(
+            RecentProjectsLocalStorage(preferences),
+            documentMigrator: RecentProjectsDocumentMigrator(
+              newProjectId: () {
+                migrationIndex++;
+                return 'migrated-uuid-$migrationIndex';
+              },
+            ),
+          );
+
+      final List<LocalProjectEntity> recent = await migratingRepository
+          .listRecent();
+
+      expect(recent, hasLength(2));
+      expect(
+        recent.every((LocalProjectEntity p) => p.id != p.canonicalPath),
+        isTrue,
+      );
+      expect(recent.map((LocalProjectEntity p) => p.canonicalPath), <String>[
+        '/Users/dev/first',
+        '/Users/dev/second',
+      ]);
+
+      final String? activeId = await migratingRepository.getActiveProjectId();
+      expect(activeId, isNotNull);
+      expect(activeId, isNot('/Users/dev/first'));
+      expect(recent.any((LocalProjectEntity p) => p.id == activeId), isTrue);
+
+      final String? raw = RecentProjectsLocalStorage(preferences).readRaw();
+      final RecentProjectsDocument? persisted = RecentProjectsDocument.tryParse(
+        raw,
+      );
+      expect(
+        persisted?.schemaVersion,
+        RecentProjectsDocument.currentSchemaVersion,
+      );
+    });
   });
 
   group('RecentProjectsDocument', () {
-    test('encode and tryParse round-trip document fields', () {
+    test('encode and tryParse round-trip v2 document fields', () {
       final RecentProjectsDocument document = RecentProjectsDocument(
         schemaVersion: RecentProjectsDocument.currentSchemaVersion,
-        activeProjectId: '/Users/dev/team-repo',
+        activeProjectId: 'uuid-team',
         projects: <LocalProjectEntity>[
           LocalProjectEntity(
-            id: '/Users/dev/team-repo',
-            absolutePath: '/Users/dev/team-repo',
+            id: 'uuid-team',
+            canonicalPath: '/Users/dev/team-repo',
             displayName: 'team-repo',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
@@ -170,10 +243,23 @@ void main() {
       );
 
       expect(parsed, isNotNull);
-      expect(parsed!.schemaVersion, 1);
-      expect(parsed.activeProjectId, '/Users/dev/team-repo');
+      expect(parsed!.schemaVersion, 2);
+      expect(parsed.activeProjectId, 'uuid-team');
       expect(parsed.projects, hasLength(1));
-      expect(parsed.projects.first.displayName, 'team-repo');
+      expect(parsed.projects.first.canonicalPath, '/Users/dev/team-repo');
+    });
+
+    test('tryParse accepts legacy v1 project rows with absolutePath', () {
+      const String v1Json =
+          '{"schemaVersion":1,"projects":[{"id":"/Users/dev/team-repo","absolutePath":"/Users/dev/team-repo","displayName":"team-repo","lastAccessedAtIso":"2026-05-15T12:00:00.000Z"}]}';
+
+      final RecentProjectsDocument? parsed = RecentProjectsDocument.tryParse(
+        v1Json,
+      );
+
+      expect(parsed, isNotNull);
+      expect(parsed!.schemaVersion, 1);
+      expect(parsed.projects.single.canonicalPath, '/Users/dev/team-repo');
     });
   });
 }

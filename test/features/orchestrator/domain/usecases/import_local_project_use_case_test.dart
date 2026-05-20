@@ -20,6 +20,7 @@ void main() {
         repository: repository,
         pickerService: picker,
         clock: () => DateTime.utc(2026, 5, 15, 12),
+        newProjectId: () => 'uuid-new',
       );
     });
 
@@ -39,7 +40,7 @@ void main() {
     );
 
     test(
-      'creates project, sets active, and persists on successful pick',
+      'creates project with UUID, sets active, and persists on successful pick',
       () async {
         picker.nextResult = const DirectoryPickResult(
           DirectoryPickOutcome.success,
@@ -49,15 +50,16 @@ void main() {
         final ImportLocalProjectResult result = await useCase.call();
 
         expect(result.outcome, ImportLocalProjectOutcome.success);
-        expect(result.project?.id, '/Users/dev/team-repo');
+        expect(result.project?.id, 'uuid-new');
+        expect(result.project?.canonicalPath, '/Users/dev/team-repo');
         expect(result.project?.displayName, 'team-repo');
-        expect(repository.activeProjectId, '/Users/dev/team-repo');
+        expect(repository.activeProjectId, 'uuid-new');
         expect(repository.projects, hasLength(1));
       },
     );
 
     test(
-      're-import same id updates lastAccessedAt without duplicate rows',
+      're-import same canonicalPath returns same UUID without duplicate rows',
       () async {
         picker.nextResult = const DirectoryPickResult(
           DirectoryPickOutcome.success,
@@ -71,11 +73,13 @@ void main() {
               repository: repository,
               pickerService: picker,
               clock: () => DateTime.utc(2026, 5, 16, 8),
+              newProjectId: () => 'uuid-other',
             );
 
         final ImportLocalProjectResult result = await reimportUseCase.call();
 
         expect(result.outcome, ImportLocalProjectOutcome.success);
+        expect(result.project?.id, 'uuid-new');
         expect(repository.projects, hasLength(1));
         expect(
           repository.projects.single.lastAccessedAt,
@@ -88,8 +92,8 @@ void main() {
       for (int index = 0; index < 10; index++) {
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/project-$index',
-            absolutePath: '/Users/dev/project-$index',
+            id: 'uuid-$index',
+            canonicalPath: '/Users/dev/project-$index',
             displayName: 'project-$index',
             lastAccessedAt: DateTime.utc(2026, 5, 1, index),
           ),
@@ -105,6 +109,7 @@ void main() {
         repository: repository,
         pickerService: picker,
         clock: () => DateTime.utc(2026, 5, 20, 12),
+        newProjectId: () => 'uuid-new-project',
       );
 
       final ImportLocalProjectResult result = await cappedUseCase.call();
@@ -113,14 +118,13 @@ void main() {
       expect(repository.projects, hasLength(10));
       expect(
         repository.projects.any(
-          (LocalProjectEntity project) => project.id == '/Users/dev/project-0',
+          (LocalProjectEntity project) => project.id == 'uuid-0',
         ),
         isFalse,
       );
       expect(
         repository.projects.any(
-          (LocalProjectEntity project) =>
-              project.id == '/Users/dev/project-new',
+          (LocalProjectEntity project) => project.id == 'uuid-new-project',
         ),
         isTrue,
       );

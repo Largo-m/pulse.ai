@@ -1,14 +1,14 @@
 final class LocalProjectEntity {
   const LocalProjectEntity({
     required this.id,
-    required this.absolutePath,
+    required this.canonicalPath,
     required this.displayName,
     required this.lastAccessedAt,
     this.macosSecurityScopedBookmark,
   });
 
   final String id;
-  final String absolutePath;
+  final String canonicalPath;
   final String displayName;
   final DateTime lastAccessedAt;
   final String? macosSecurityScopedBookmark;
@@ -18,7 +18,7 @@ final class LocalProjectEntity {
     return identical(this, other) ||
         other is LocalProjectEntity &&
             other.id == id &&
-            other.absolutePath == absolutePath &&
+            other.canonicalPath == canonicalPath &&
             other.displayName == displayName &&
             other.lastAccessedAt == lastAccessedAt &&
             other.macosSecurityScopedBookmark == macosSecurityScopedBookmark;
@@ -27,7 +27,7 @@ final class LocalProjectEntity {
   @override
   int get hashCode => Object.hash(
     id,
-    absolutePath,
+    canonicalPath,
     displayName,
     lastAccessedAt,
     macosSecurityScopedBookmark,

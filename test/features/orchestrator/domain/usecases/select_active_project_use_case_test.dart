@@ -8,13 +8,12 @@ void main() {
   group('SelectActiveProjectUseCase', () {
     test('readActiveProjectId returns repository value', () async {
       final FakeRecentProjectsRepository repository =
-          FakeRecentProjectsRepository()
-            ..activeProjectId = '/Users/dev/team-repo';
+          FakeRecentProjectsRepository()..activeProjectId = 'uuid-team';
       final SelectActiveProjectUseCase useCase = SelectActiveProjectUseCase(
         repository,
       );
 
-      expect(await useCase.readActiveProjectId(), '/Users/dev/team-repo');
+      expect(await useCase.readActiveProjectId(), 'uuid-team');
     });
 
     test('persists given project id via repository', () async {
@@ -24,9 +23,9 @@ void main() {
         repository,
       );
 
-      await useCase.select('/Users/dev/team-repo');
+      await useCase.select('uuid-team');
 
-      expect(repository.activeProjectId, '/Users/dev/team-repo');
+      expect(repository.activeProjectId, 'uuid-team');
     });
 
     test(
@@ -34,11 +33,11 @@ void main() {
       () async {
         final FakeRecentProjectsRepository repository =
             FakeRecentProjectsRepository()
-              ..activeProjectId = '/Users/dev/missing'
+              ..activeProjectId = 'uuid-missing'
               ..projects.add(
                 LocalProjectEntity(
-                  id: '/Users/dev/still-here',
-                  absolutePath: '/Users/dev/still-here',
+                  id: 'uuid-still-here',
+                  canonicalPath: '/Users/dev/still-here',
                   displayName: 'still-here',
                   lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
                 ),

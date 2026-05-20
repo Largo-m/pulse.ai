@@ -28,6 +28,7 @@ void main() {
         repository: repository,
         pickerService: picker,
         clock: () => DateTime.utc(2026, 5, 15, 12),
+        newProjectId: () => 'uuid-team',
       );
     });
 
@@ -46,15 +47,15 @@ void main() {
         ImportFlowState(
           status: ImportFlowStatus.success,
           project: LocalProjectEntity(
-            id: '/Users/dev/team-repo',
-            absolutePath: '/Users/dev/team-repo',
+            id: 'uuid-team',
+            canonicalPath: '/Users/dev/team-repo',
             displayName: 'team-repo',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
         ),
       ],
       verify: (ImportFlowCubit cubit) {
-        expect(repository.activeProjectId, '/Users/dev/team-repo');
+        expect(repository.activeProjectId, 'uuid-team');
       },
     );
 

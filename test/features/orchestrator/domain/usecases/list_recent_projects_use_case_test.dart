@@ -21,14 +21,14 @@ void main() {
           FakeRecentProjectsRepository()
             ..projects.addAll(<LocalProjectEntity>[
               LocalProjectEntity(
-                id: '/Users/dev/older',
-                absolutePath: '/Users/dev/older',
+                id: 'uuid-older',
+                canonicalPath: '/Users/dev/older',
                 displayName: 'older',
                 lastAccessedAt: DateTime.utc(2026, 5, 10, 12),
               ),
               LocalProjectEntity(
-                id: '/Users/dev/newer',
-                absolutePath: '/Users/dev/newer',
+                id: 'uuid-newer',
+                canonicalPath: '/Users/dev/newer',
                 displayName: 'newer',
                 lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
               ),
@@ -40,8 +40,8 @@ void main() {
 
       final List<LocalProjectEntity> recent = await useCase.call();
 
-      expect(recent.first.id, '/Users/dev/newer');
-      expect(recent.last.id, '/Users/dev/older');
+      expect(recent.first.id, 'uuid-newer');
+      expect(recent.last.id, 'uuid-older');
     });
   });
 }

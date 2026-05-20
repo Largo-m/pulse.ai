@@ -121,7 +121,7 @@ final class _InitializeAgentModalPageState
 
     unawaited(
       context.read<InitializeAgentBranchesCubit>().loadForProject(
-        absolutePath: project.absolutePath,
+        absolutePath: project.canonicalPath,
         macosSecurityScopedBookmark: project.macosSecurityScopedBookmark,
       ),
     );

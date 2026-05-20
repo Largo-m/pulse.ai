@@ -43,23 +43,20 @@ void main() {
       build: () {
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/team-repo',
-            absolutePath: '/Users/dev/team-repo',
+            id: 'uuid-team',
+            canonicalPath: '/Users/dev/team-repo',
             displayName: 'team-repo',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
         );
-        repository.activeProjectId = '/Users/dev/team-repo';
+        repository.activeProjectId = 'uuid-team';
         return buildCubit();
       },
       act: (RecentProjectsCubit cubit) async => cubit.refresh(),
       verify: (RecentProjectsCubit cubit) {
         expect(cubit.state.projects, hasLength(1));
-        expect(cubit.state.activeProjectId, '/Users/dev/team-repo');
-        expect(
-          cubit.state.expandedProjectIds,
-          contains('/Users/dev/team-repo'),
-        );
+        expect(cubit.state.activeProjectId, 'uuid-team');
+        expect(cubit.state.expandedProjectIds, contains('uuid-team'));
         expect(cubit.state.isLoading, isFalse);
       },
     );
@@ -69,8 +66,8 @@ void main() {
       build: () {
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/team-repo',
-            absolutePath: '/Users/dev/team-repo',
+            id: 'uuid-team',
+            canonicalPath: '/Users/dev/team-repo',
             displayName: 'team-repo',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
@@ -79,15 +76,12 @@ void main() {
       },
       act: (RecentProjectsCubit cubit) async {
         await cubit.refresh();
-        await cubit.selectProject('/Users/dev/team-repo');
+        await cubit.selectProject('uuid-team');
       },
       verify: (RecentProjectsCubit cubit) {
-        expect(repository.activeProjectId, '/Users/dev/team-repo');
-        expect(cubit.state.activeProjectId, '/Users/dev/team-repo');
-        expect(
-          cubit.state.expandedProjectIds,
-          contains('/Users/dev/team-repo'),
-        );
+        expect(repository.activeProjectId, 'uuid-team');
+        expect(cubit.state.activeProjectId, 'uuid-team');
+        expect(cubit.state.expandedProjectIds, contains('uuid-team'));
       },
     );
 
@@ -110,8 +104,8 @@ void main() {
       build: () {
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/still-here',
-            absolutePath: '/Users/dev/still-here',
+            id: 'uuid-still-here',
+            canonicalPath: '/Users/dev/still-here',
             displayName: 'still-here',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
@@ -119,16 +113,13 @@ void main() {
         return buildCubit();
       },
       seed: () => const RecentProjectsState(
-        expandedProjectIds: <String>[
-          '/Users/dev/removed',
-          '/Users/dev/still-here',
-        ],
+        expandedProjectIds: <String>['uuid-removed', 'uuid-still-here'],
       ),
       act: (RecentProjectsCubit cubit) async => cubit.refresh(),
       verify: (RecentProjectsCubit cubit) {
         expect(
           cubit.state.expandedProjectIds,
-          equals(<String>['/Users/dev/still-here']),
+          equals(<String>['uuid-still-here']),
         );
       },
     );
@@ -140,8 +131,8 @@ void main() {
         await cubit.refresh();
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/new-repo',
-            absolutePath: '/Users/dev/new-repo',
+            id: 'uuid-new-repo',
+            canonicalPath: '/Users/dev/new-repo',
             displayName: 'new-repo',
             lastAccessedAt: DateTime.utc(2026, 5, 16, 8),
           ),
@@ -150,18 +141,18 @@ void main() {
       },
       verify: (RecentProjectsCubit cubit) {
         expect(cubit.state.projects, hasLength(1));
-        expect(cubit.state.projects.single.id, '/Users/dev/new-repo');
+        expect(cubit.state.projects.single.id, 'uuid-new-repo');
       },
     );
 
     blocTest<RecentProjectsCubit, RecentProjectsState>(
       'refresh clears active id when it is not in recent projects',
       build: () {
-        repository.activeProjectId = '/Users/dev/missing';
+        repository.activeProjectId = 'uuid-missing';
         repository.projects.add(
           LocalProjectEntity(
-            id: '/Users/dev/still-here',
-            absolutePath: '/Users/dev/still-here',
+            id: 'uuid-still-here',
+            canonicalPath: '/Users/dev/still-here',
             displayName: 'still-here',
             lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
           ),
