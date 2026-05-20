@@ -5,6 +5,7 @@ import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projec
 import 'package:pulse_ai/features/orchestrator/domain/service/local_directory_picker_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_result.dart';
+import 'package:uuid/uuid.dart';
 
 final class ImportLocalProjectUseCase {
   ImportLocalProjectUseCase({
@@ -13,21 +14,27 @@ final class ImportLocalProjectUseCase {
     ProjectSandboxAccessService? sandboxAccessService,
     ProjectPathNormalizer? pathNormalizer,
     DateTime Function()? clock,
+    String Function()? newProjectId,
     int maxRecentProjects = 10,
   }) : _repository = repository,
        _pickerService = pickerService,
        _sandboxAccessService = sandboxAccessService,
        _pathNormalizer = pathNormalizer ?? const ProjectPathNormalizer(),
        _clock = clock ?? DateTime.now,
+       _newProjectId = newProjectId ?? _defaultNewProjectId,
        _maxRecentProjects = maxRecentProjects;
 
   static const int defaultMaxRecentProjects = 10;
+  static const Uuid _uuid = Uuid();
+
+  static String _defaultNewProjectId() => _uuid.v4();
 
   final RecentProjectsRepository _repository;
   final LocalDirectoryPickerService _pickerService;
   final ProjectSandboxAccessService? _sandboxAccessService;
   final ProjectPathNormalizer _pathNormalizer;
   final DateTime Function() _clock;
+  final String Function() _newProjectId;
   final int _maxRecentProjects;
 
   Future<ImportLocalProjectResult> call() async {
@@ -55,16 +62,17 @@ final class ImportLocalProjectUseCase {
     }
 
     try {
-      final String normalizedId = _pathNormalizer.normalizeToAbsoluteId(
+      final String canonicalPath = _pathNormalizer.normalizeToAbsoluteId(
         rawPath,
       );
+      final String projectId = await _resolveProjectId(canonicalPath);
       final String? macosSecurityScopedBookmark = await _sandboxAccessService
-          ?.createBookmark(normalizedId);
+          ?.createBookmark(canonicalPath);
       final DateTime accessedAt = _clock().toUtc();
       final LocalProjectEntity project = LocalProjectEntity(
-        id: normalizedId,
-        absolutePath: normalizedId,
-        displayName: p.basename(normalizedId),
+        id: projectId,
+        canonicalPath: canonicalPath,
+        displayName: p.basename(canonicalPath),
         lastAccessedAt: accessedAt,
         macosSecurityScopedBookmark: macosSecurityScopedBookmark,
       );
@@ -87,6 +95,16 @@ final class ImportLocalProjectUseCase {
         failureMessage: message,
       );
     }
+  }
+
+  Future<String> _resolveProjectId(String canonicalPath) async {
+    final List<LocalProjectEntity> recent = await _repository.listRecent();
+    for (final LocalProjectEntity existing in recent) {
+      if (existing.canonicalPath == canonicalPath) {
+        return existing.id;
+      }
+    }
+    return _newProjectId();
   }
 
   Future<void> _enforceRecentProjectsCap() async {

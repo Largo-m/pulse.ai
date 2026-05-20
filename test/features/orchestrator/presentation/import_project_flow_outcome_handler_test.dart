@@ -14,8 +14,8 @@ void main() {
         state: ImportFlowState(
           status: ImportFlowStatus.success,
           project: LocalProjectEntity(
-            id: '/tmp/repo',
-            absolutePath: '/tmp/repo',
+            id: 'uuid-repo',
+            canonicalPath: '/tmp/repo',
             displayName: 'repo',
             lastAccessedAt: DateTime.utc(2026, 5, 15),
           ),
@@ -92,8 +92,8 @@ void main() {
           state: ImportFlowState(
             status: ImportFlowStatus.success,
             project: LocalProjectEntity(
-              id: '/tmp/repo',
-              absolutePath: '/tmp/repo',
+              id: 'uuid-repo',
+              canonicalPath: '/tmp/repo',
               displayName: 'repo',
               lastAccessedAt: DateTime.utc(2026, 5, 15),
             ),

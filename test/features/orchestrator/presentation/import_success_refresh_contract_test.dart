@@ -29,6 +29,7 @@ void main() {
               repository: repository,
               pickerService: picker,
               clock: () => DateTime.utc(2026, 5, 15, 12),
+              newProjectId: () => 'uuid-team',
             );
         final ListRecentProjectsUseCase listRecentProjectsUseCase =
             ListRecentProjectsUseCase(repository);
@@ -54,10 +55,7 @@ void main() {
         await recentProjectsCubit.refresh();
 
         expect(recentProjectsCubit.state.projects, hasLength(1));
-        expect(
-          recentProjectsCubit.state.activeProjectId,
-          '/Users/dev/team-repo',
-        );
+        expect(recentProjectsCubit.state.activeProjectId, 'uuid-team');
         expect(
           recentProjectsCubit.state.projects.first.displayName,
           'team-repo',

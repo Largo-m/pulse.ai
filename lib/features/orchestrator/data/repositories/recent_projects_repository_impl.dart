@@ -2,11 +2,17 @@ import 'package:pulse_ai/features/orchestrator/data/models/recent_projects_docum
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/migrate_recent_projects_use_case.dart';
 
 final class RecentProjectsRepositoryImpl implements RecentProjectsRepository {
-  RecentProjectsRepositoryImpl(this._storage);
+  RecentProjectsRepositoryImpl(
+    this._storage, {
+    MigrateRecentProjectsUseCase? migrateRecentProjectsUseCase,
+  }) : _migrateRecentProjectsUseCase =
+           migrateRecentProjectsUseCase ?? MigrateRecentProjectsUseCase();
 
   final RecentProjectsLocalStorage _storage;
+  final MigrateRecentProjectsUseCase _migrateRecentProjectsUseCase;
 
   @override
   Future<List<LocalProjectEntity>> listRecent() async {
@@ -65,8 +71,17 @@ final class RecentProjectsRepositoryImpl implements RecentProjectsRepository {
 
   Future<RecentProjectsDocument> _readDocument() async {
     final String? raw = _storage.readRaw();
-    return RecentProjectsDocument.tryParse(raw) ??
-        RecentProjectsDocument.empty();
+    final RecentProjectsDocument parsed =
+        RecentProjectsDocument.tryParse(raw) ?? RecentProjectsDocument.empty();
+    final RecentProjectsDocument migrated = _migrateRecentProjectsUseCase.call(
+      parsed,
+    );
+
+    if (migrated.schemaVersion != parsed.schemaVersion || migrated != parsed) {
+      await _writeDocument(migrated);
+    }
+
+    return migrated;
   }
 
   Future<void> _writeDocument(RecentProjectsDocument document) async {

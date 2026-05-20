@@ -9,7 +9,8 @@ final class RecentProjectsDocument {
     this.activeProjectId,
   });
 
-  static const int currentSchemaVersion = 1;
+  static const int legacySchemaVersion = 1;
+  static const int currentSchemaVersion = 2;
 
   final int schemaVersion;
   final String? activeProjectId;
@@ -50,6 +51,11 @@ final class RecentProjectsDocument {
         return null;
       }
 
+      if (schemaVersionValue != legacySchemaVersion &&
+          schemaVersionValue != currentSchemaVersion) {
+        return null;
+      }
+
       final String? activeProjectId = decoded['activeProjectId'] as String?;
       final Object? projectsValue = decoded['projects'];
       if (projectsValue is! List<Object?>) {
@@ -78,7 +84,7 @@ final class RecentProjectsDocument {
   static Map<String, Object?> _projectToJson(LocalProjectEntity project) {
     return <String, Object?>{
       'id': project.id,
-      'absolutePath': project.absolutePath,
+      'canonicalPath': project.canonicalPath,
       'displayName': project.displayName,
       'lastAccessedAtIso': project.lastAccessedAt.toUtc().toIso8601String(),
       if (project.macosSecurityScopedBookmark != null)
@@ -92,12 +98,13 @@ final class RecentProjectsDocument {
     }
 
     final String? id = entry['id'] as String?;
-    final String? absolutePath = entry['absolutePath'] as String?;
+    final String? canonicalPath =
+        entry['canonicalPath'] as String? ?? entry['absolutePath'] as String?;
     final String? displayName = entry['displayName'] as String?;
     final String? lastAccessedAtIso = entry['lastAccessedAtIso'] as String?;
 
     if (id == null ||
-        absolutePath == null ||
+        canonicalPath == null ||
         displayName == null ||
         lastAccessedAtIso == null) {
       return null;
@@ -110,7 +117,7 @@ final class RecentProjectsDocument {
 
     return LocalProjectEntity(
       id: id,
-      absolutePath: absolutePath,
+      canonicalPath: canonicalPath,
       displayName: displayName,
       lastAccessedAt: lastAccessedAt,
       macosSecurityScopedBookmark:
