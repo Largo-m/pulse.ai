@@ -51,10 +51,10 @@ final class FilesystemArtifactStore {
   }) async {
     try {
       final File prdFile = _prdFile(projectId: projectId, slug: slug);
-      if (!await prdFile.exists()) {
+      if (!prdFile.existsSync()) {
         return right('');
       }
-      return right(await prdFile.readAsString());
+      return right(prdFile.readAsStringSync());
     } on IOException {
       return left(const ArtifactPersistenceFailure.ioError());
     }
@@ -105,11 +105,11 @@ final class FilesystemArtifactStore {
         projectId: projectId,
         slug: slug,
       );
-      if (!await adrsDir.exists()) {
+      if (!adrsDir.existsSync()) {
         return right(<AdrEntry>[]);
       }
 
-      final List<FileSystemEntity> entities = await adrsDir.list().toList();
+      final List<FileSystemEntity> entities = adrsDir.listSync();
       final List<AdrEntry> entries = <AdrEntry>[];
 
       for (final FileSystemEntity entity in entities) {
@@ -124,7 +124,7 @@ final class FilesystemArtifactStore {
         }
 
         final int sequenceNumber = int.parse(match.group(1)!);
-        final String markdown = await entity.readAsString();
+        final String markdown = entity.readAsStringSync();
         entries.add(
           AdrEntry(
             fileName: fileName,
@@ -164,8 +164,8 @@ final class FilesystemArtifactStore {
   }
 
   static Future<void> _defaultAtomicRename(File source, File target) async {
-    if (await target.exists()) {
-      await target.delete();
+    if (target.existsSync()) {
+      target.deleteSync();
     }
     await source.rename(target.path);
   }

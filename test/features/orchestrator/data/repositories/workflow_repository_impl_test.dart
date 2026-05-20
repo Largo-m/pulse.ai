@@ -109,9 +109,9 @@ void main() {
         final Directory tempRoot = await Directory.systemTemp.createTemp(
           'pulse_workflow_fs_rollback_',
         );
-        addTearDown(() async {
-          if (await tempRoot.exists()) {
-            await tempRoot.delete(recursive: true);
+        addTearDown(() {
+          if (tempRoot.existsSync()) {
+            tempRoot.deleteSync(recursive: true);
           }
         });
 
@@ -143,7 +143,7 @@ void main() {
           projectId: projectId,
           slug: 'rollback-slug',
         );
-        expect(await workflowDir.exists(), isFalse);
+        expect(workflowDir.existsSync(), isFalse);
         expect(
           boxes.workflows.containsKey('$projectId::rollback-slug'),
           isFalse,

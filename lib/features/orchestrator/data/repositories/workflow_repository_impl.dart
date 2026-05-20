@@ -91,8 +91,8 @@ final class WorkflowRepositoryImpl implements WorkflowRepository {
           projectId: projectId,
           slug: slug,
         );
-        if (await directory.exists()) {
-          await directory.delete(recursive: true);
+        if (directory.existsSync()) {
+          directory.deleteSync(recursive: true);
         }
       },
     );

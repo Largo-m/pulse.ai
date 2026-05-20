@@ -33,8 +33,8 @@ void main() {
     });
 
     tearDown(() async {
-      if (await tempRoot.exists()) {
-        await tempRoot.delete(recursive: true);
+      if (tempRoot.existsSync()) {
+        tempRoot.deleteSync(recursive: true);
       }
     });
 
@@ -111,7 +111,7 @@ void main() {
         final Directory escapedDir = Directory(
           p.join(workflowsRoot.path, projectId, '..'),
         );
-        expect(await escapedDir.exists(), isFalse);
+        expect(escapedDir.existsSync(), isFalse);
       },
     );
 
@@ -137,7 +137,7 @@ void main() {
 
         expect(writeResult.isLeft(), isTrue);
         expect(
-          await Directory(p.join(workflowsRoot.path, projectId, '')).exists(),
+          Directory(p.join(workflowsRoot.path, projectId, '')).existsSync(),
           isFalse,
         );
       },
@@ -179,8 +179,8 @@ void main() {
         final File prdFile = File(
           p.join(workflowsRoot.path, projectId, slug, 'prd.md'),
         );
-        expect(await prdFile.exists(), isTrue);
-        expect(await prdFile.readAsString(), '# Scoped PRD');
+        expect(prdFile.existsSync(), isTrue);
+        expect(prdFile.readAsStringSync(), '# Scoped PRD');
       },
     );
   });

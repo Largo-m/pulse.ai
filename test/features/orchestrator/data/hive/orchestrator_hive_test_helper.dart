@@ -37,8 +37,8 @@ final class OrchestratorHiveTestHelper {
       await Hive.box<dynamic>(OrchestratorHiveBoxNames.streamEvents).close();
     }
     await Hive.close();
-    if (_tempDir != null && await _tempDir!.exists()) {
-      await _tempDir!.delete(recursive: true);
+    if (_tempDir != null && _tempDir!.existsSync()) {
+      _tempDir!.deleteSync(recursive: true);
       _tempDir = null;
     }
     OrchestratorHiveRegistrar.resetForTesting();

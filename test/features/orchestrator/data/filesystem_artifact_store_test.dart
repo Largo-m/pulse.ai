@@ -26,8 +26,8 @@ void main() {
     });
 
     tearDown(() async {
-      if (await tempRoot.exists()) {
-        await tempRoot.delete(recursive: true);
+      if (tempRoot.existsSync()) {
+        tempRoot.deleteSync(recursive: true);
       }
     });
 
@@ -123,8 +123,8 @@ void main() {
                     FilesystemArtifactStore.prdFileName) {
               throw const FileSystemException('simulated rename failure');
             }
-            if (await target.exists()) {
-              await target.delete();
+            if (target.existsSync()) {
+              target.deleteSync();
             }
             await source.rename(target.path);
           },
@@ -251,8 +251,8 @@ void main() {
             FilesystemArtifactStore.metadataFileName,
           ),
         );
-        expect(await metadataFile.exists(), isTrue);
-        expect(await metadataFile.readAsString(), contains('run-meta'));
+        expect(metadataFile.existsSync(), isTrue);
+        expect(metadataFile.readAsStringSync(), contains('run-meta'));
       },
     );
 
@@ -283,7 +283,7 @@ void main() {
             'prd.md',
           ),
         );
-        expect(await prdFile.exists(), isTrue);
+        expect(prdFile.existsSync(), isTrue);
       },
     );
 
@@ -300,7 +300,7 @@ void main() {
       final File prdFile = File(
         p.join(workflowsRoot.path, projectId, slug, 'prd.md'),
       );
-      expect(await prdFile.exists(), isTrue);
+      expect(prdFile.existsSync(), isTrue);
       expect(
         store.workflowDirectory(projectId: projectId, slug: slug).path,
         p.join(workflowsRoot.path, projectId, slug),
