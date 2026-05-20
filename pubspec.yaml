@@ -10,8 +10,11 @@ dependencies:
   file_picker: ^11.0.2
   flutter:
     sdk: flutter
+  fpdart: ^1.1.0
   git2dart: ^0.4.0
   flutter_bloc: ^9.1.1
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
   path: ^1.9.1
   shared_preferences: ^2.5.3
   path_provider: ^2.1.5

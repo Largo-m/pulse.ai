@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pulse_ai/app/di/hive_bootstrap.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
@@ -36,6 +37,7 @@ final class OrchestratorComposition {
   final OrchestratorMainContentCubit orchestratorMainContentCubit;
 
   static Future<OrchestratorComposition> create() async {
+    await HiveBootstrap.ensureInitialized();
     final SharedPreferences preferences = await SharedPreferences.getInstance();
     final RecentProjectsLocalStorage storage = RecentProjectsLocalStorage(
       preferences,
