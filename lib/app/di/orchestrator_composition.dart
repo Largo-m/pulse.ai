@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/app/di/hive_bootstrap.dart';
+import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
+import 'package:pulse_ai/features/orchestrator/data/repositories/artifact_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/recent_projects_repository_impl.dart';
+import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
@@ -24,6 +27,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 final class OrchestratorComposition {
   OrchestratorComposition({
     required this.recentProjectsRepository,
+    required this.artifactRepository,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
@@ -31,6 +35,7 @@ final class OrchestratorComposition {
   });
 
   final RecentProjectsRepository recentProjectsRepository;
+  final ArtifactRepository artifactRepository;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
@@ -80,8 +85,15 @@ final class OrchestratorComposition {
     final OrchestratorMainContentCubit orchestratorMainContentCubit =
         OrchestratorMainContentCubit();
 
+    final FilesystemArtifactStore artifactStore =
+        await FilesystemArtifactStore.createFromApplicationSupport();
+    final ArtifactRepository artifactRepository = ArtifactRepositoryImpl(
+      store: artifactStore,
+    );
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
+      artifactRepository: artifactRepository,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
@@ -143,6 +155,9 @@ class _OrchestratorCompositionScopeState
               providers: <RepositoryProvider<dynamic>>[
                 RepositoryProvider<RecentProjectsRepository>.value(
                   value: composition.recentProjectsRepository,
+                ),
+                RepositoryProvider<ArtifactRepository>.value(
+                  value: composition.artifactRepository,
                 ),
               ],
               child: MultiBlocProvider(
