@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
@@ -84,9 +85,19 @@ final class RecentProjectsSidebar extends StatelessWidget {
                                     ),
                                     onSelected: () {
                                       unawaited(
-                                        context
-                                            .read<RecentProjectsCubit>()
-                                            .selectProject(project.id),
+                                        _selectProject(
+                                          context,
+                                          projectId: project.id,
+                                        ),
+                                      );
+                                    },
+                                    onAgentSelected: (String slug) {
+                                      unawaited(
+                                        _openWorkflow(
+                                          context,
+                                          projectId: project.id,
+                                          slug: slug,
+                                        ),
                                       );
                                     },
                                     onToggleExpanded: () {
@@ -121,6 +132,47 @@ final class RecentProjectsSidebar extends StatelessWidget {
           },
     );
   }
+}
+
+Future<void> _selectProject(
+  BuildContext context, {
+  required String projectId,
+}) async {
+  await context.read<RecentProjectsCubit>().selectProject(projectId);
+}
+
+Future<void> _openWorkflow(
+  BuildContext context, {
+  required String projectId,
+  required String slug,
+}) async {
+  final RecentProjectsState projectsState = context
+      .read<RecentProjectsCubit>()
+      .state;
+  final List<WorkflowEntity> workflows = projectsState.workflowsForProject(
+    projectId,
+  );
+
+  WorkflowEntity? workflow;
+  for (final WorkflowEntity candidate in workflows) {
+    if (candidate.slug == slug) {
+      workflow = candidate;
+      break;
+    }
+  }
+
+  if (workflow == null) {
+    return;
+  }
+
+  await context.read<RecentProjectsCubit>().selectProject(projectId);
+  if (!context.mounted) {
+    return;
+  }
+
+  context.read<OrchestratorMainContentCubit>().openWorkflowFromSidebar(
+    workflow,
+  );
 }
 
 final class _RecentProjectsSidebarHeader extends StatelessWidget {

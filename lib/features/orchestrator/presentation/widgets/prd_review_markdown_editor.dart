@@ -12,11 +12,13 @@ final class PrdReviewMarkdownEditor extends StatefulWidget {
     required this.textNotifier,
     required this.onChanged,
     required this.enabled,
+    this.expandToParent = false,
   });
 
   final ValueNotifier<String> textNotifier;
   final ValueChanged<String> onChanged;
   final bool enabled;
+  final bool expandToParent;
 
   @override
   State<PrdReviewMarkdownEditor> createState() =>
@@ -89,7 +91,9 @@ final class _PrdReviewMarkdownEditorState
         padding: PulseInsets.prdReviewEditor,
         child: SizedBox(
           width: double.infinity,
-          height: PulseDimensions.prdReviewEditorMinHeight,
+          height: widget.expandToParent
+              ? double.infinity
+              : PulseDimensions.prdReviewEditorMinHeight,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: PulseColors.background,

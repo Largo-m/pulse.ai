@@ -5,6 +5,7 @@ void main() {
   group('RecentProjectTreeAgentUiModel', () {
     test('defaults isRunning to false', () {
       const RecentProjectTreeAgentUiModel agent = RecentProjectTreeAgentUiModel(
+        slug: 'scraper-agent',
         displayName: 'ScraperAgent',
         isActive: true,
       );

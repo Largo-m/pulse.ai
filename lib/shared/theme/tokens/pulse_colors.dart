@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 abstract final class PulseColors {
   static const Color modalBarrierScrim = Color(0x99000000);
 
-  static const Color background = Color(0xFF051424);
-  static const Color surfaceContainerLowest = Color(0xFF010F1F);
-  static const Color surfaceContainer = Color(0xFF122131);
+  static const Color background = Color(0xFF0A0F1A);
+  static const Color surfaceContainerLowest = Color(0xFF050A14);
+  static const Color surfaceContainer = Color(0xFF111827);
   static const Color surfaceContainerLow = Color(0xFF0D1C2D);
   static const Color surfaceContainerHighest = Color(0xFF273647);
   static const Color outlineVariant = Color(0xFF424754);

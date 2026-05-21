@@ -89,7 +89,8 @@ void main() {
     testWidgets('handle keeps welcome view when create workflow fails', (
       WidgetTester tester,
     ) async {
-      final FakeWorkflowRepository workflowRepository = FakeWorkflowRepository();
+      final FakeWorkflowRepository workflowRepository =
+          FakeWorkflowRepository();
       await workflowRepository.create(
         projectId: 'project-1',
         slug: 'bot-sre-01',

@@ -9,6 +9,7 @@ List<RecentProjectTreeAgentUiModel> mapWorkflowsToSidebarAgents({
   return workflows
       .map(
         (WorkflowEntity workflow) => RecentProjectTreeAgentUiModel(
+          slug: workflow.slug,
           displayName: workflow.slug,
           isActive: workflow.slug == activeSlug,
           isRunning: workflow.prdPhaseStatus == PrdPhaseStatus.running,

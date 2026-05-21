@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/initialize_agent_submit_payload.dart';
@@ -36,5 +37,22 @@ final class OrchestratorMainContentCubit
 
   void showWelcome() {
     emit(const OrchestratorMainContentState());
+  }
+
+  void openWorkflowFromSidebar(WorkflowEntity workflow) {
+    final InitializeAgentSubmitPayload agent =
+        InitializeAgentSubmitPayload.fromWorkflow(workflow);
+    final OrchestratorMainContentView view =
+        workflow.prdPhaseStatus == PrdPhaseStatus.approved
+        ? OrchestratorMainContentView.techspecWorkflow
+        : OrchestratorMainContentView.prdWorkflow;
+
+    emit(
+      OrchestratorMainContentState(
+        view: view,
+        activeAgent: agent,
+        activeWorkflow: workflow,
+      ),
+    );
   }
 }

@@ -138,7 +138,7 @@ final class _WorkflowStepItem extends StatelessWidget {
     final TextStyle labelStyle = (textTheme.labelMedium ?? const TextStyle())
         .copyWith(
           color: isCompleted
-              ? PulseColors.tertiary
+              ? PulseColors.primary
               : isCurrent
               ? PulseColors.primary
               : PulseColors.onSurface,
@@ -171,13 +171,13 @@ final class _WorkflowStepItem extends StatelessWidget {
         height: PulseDimensions.workflowStepIndicatorSize,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: PulseColors.tertiary,
+            color: PulseColors.primary,
             shape: BoxShape.circle,
           ),
           child: Icon(
             Icons.check,
             size: PulseDimensions.sidebarTreeIconSize,
-            color: PulseColors.onTertiary,
+            color: PulseColors.onPrimary,
           ),
         ),
       );

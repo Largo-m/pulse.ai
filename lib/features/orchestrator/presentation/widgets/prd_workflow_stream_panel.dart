@@ -5,10 +5,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_status_chip.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/utils/workflow_progress_calculator.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_user_action_highlight.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_progress_bar.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_section_header.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_terminal_log.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
@@ -24,9 +26,14 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
       label: OrchestratorStrings.prdWorkflowStreamPanelSemantics,
       child: BlocBuilder<PrdWorkflowCubit, PrdWorkflowState>(
         builder: (BuildContext context, PrdWorkflowState state) {
+          final int progressPercent = workflowProgressPercent(
+            phaseStatus: state.phaseStatus,
+            streamLineCount: state.streamLines.length,
+          );
+
           return DecoratedBox(
             decoration: BoxDecoration(
-              color: PulseColors.surfaceContainerLowest,
+              color: PulseColors.surfaceContainer,
               borderRadius: BorderRadius.circular(
                 PulseRadii.workflowStreamPanel,
               ),
@@ -40,31 +47,51 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      PrdWorkflowStatusChip(state: state),
-                      const Spacer(),
-                      if (state.canCancel)
-                        Semantics(
-                          button: true,
-                          label: OrchestratorStrings.prdWorkflowCancelSemantics,
-                          child: TextButton(
-                            onPressed: state.isCancelling
-                                ? null
-                                : () {
-                                    unawaited(
-                                      context
-                                          .read<PrdWorkflowCubit>()
-                                          .cancelActiveRun(),
-                                    );
-                                  },
-                            child: const Text(
-                              OrchestratorStrings.prdWorkflowCancelButton,
-                            ),
+                  WorkflowSectionHeader(
+                    icon: Icons.terminal,
+                    title: OrchestratorStrings.prdWorkflowSystemProcessingTitle,
+                    trailing: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: <Widget>[
+                        Text(
+                          workflowProgressLabel(progressPercent),
+                          style:
+                              (Theme.of(context).textTheme.labelMedium ??
+                                      const TextStyle())
+                                  .copyWith(
+                                    color: PulseColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                        ),
+                        const SizedBox(height: PulseDimensions.sectionGapSm),
+                        WorkflowProgressBar(percent: progressPercent),
+                      ],
+                    ),
+                  ),
+                  if (state.canCancel) ...<Widget>[
+                    const SizedBox(height: PulseDimensions.sectionGapSm),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Semantics(
+                        button: true,
+                        label: OrchestratorStrings.prdWorkflowCancelSemantics,
+                        child: TextButton(
+                          onPressed: state.isCancelling
+                              ? null
+                              : () {
+                                  unawaited(
+                                    context
+                                        .read<PrdWorkflowCubit>()
+                                        .cancelActiveRun(),
+                                  );
+                                },
+                          child: const Text(
+                            OrchestratorStrings.prdWorkflowCancelButton,
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                    ),
+                  ],
                   if (state.requiresUserAction) ...<Widget>[
                     const SizedBox(height: PulseDimensions.sectionGapMd),
                     const PrdWorkflowUserActionHighlight(),
@@ -74,7 +101,10 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
                     _FailureBanner(messageKey: state.failureMessageKey!),
                   ],
                   const SizedBox(height: PulseDimensions.sectionGapMd),
-                  Expanded(child: _StreamLinesList(lines: state.streamLines)),
+                  SizedBox(
+                    height: PulseDimensions.workflowTerminalMinHeight,
+                    child: WorkflowTerminalLog(lines: state.streamLines),
+                  ),
                 ],
               ),
             ),
@@ -113,64 +143,6 @@ final class _FailureBanner extends StatelessWidget {
           style: textTheme.bodyMedium?.copyWith(color: PulseColors.secondary),
         ),
       ),
-    );
-  }
-}
-
-final class _StreamLinesList extends StatelessWidget {
-  const _StreamLinesList({required this.lines});
-
-  final List<PrdStreamLineUiModel> lines;
-
-  @override
-  Widget build(BuildContext context) {
-    final TextTheme textTheme = Theme.of(context).textTheme;
-
-    if (lines.isEmpty) {
-      return Center(
-        child: Text(
-          OrchestratorStrings.prdWorkflowStreamEmpty,
-          style: textTheme.bodyMedium?.copyWith(
-            color: PulseColors.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      );
-    }
-
-    return ListView.separated(
-      itemCount: lines.length,
-      separatorBuilder: (BuildContext context, int index) {
-        return const SizedBox(height: PulseDimensions.sectionGapSm);
-      },
-      itemBuilder: (BuildContext context, int index) {
-        final PrdStreamLineUiModel line = lines[index];
-        final TextStyle baseStyle =
-            textTheme.bodySmall?.copyWith(color: PulseColors.onSurface) ??
-            const TextStyle();
-
-        return Semantics(
-          label: line.displayText,
-          child: DecoratedBox(
-            decoration: line.requiresUserAction
-                ? BoxDecoration(
-                    color: PulseColors.tertiaryContainer.withValues(
-                      alpha: PulseDimensions.workflowInfoBannerBorderAlpha,
-                    ),
-                    borderRadius: BorderRadius.circular(
-                      PulseRadii.workflowStreamPanel,
-                    ),
-                  )
-                : const BoxDecoration(),
-            child: Padding(
-              padding: line.requiresUserAction
-                  ? PulseInsets.workflowStreamChip
-                  : EdgeInsets.zero,
-              child: Text(line.displayText, style: baseStyle),
-            ),
-          ),
-        );
-      },
     );
   }
 }

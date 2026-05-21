@@ -11,16 +11,20 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cu
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_review_load_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_artifact_card.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_action_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_feedback_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_markdown_editor.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_repo_context_header.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_unsaved_overwrite_dialog.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_section_header.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 
 final class PrdReviewSection extends StatelessWidget {
-  const PrdReviewSection({super.key});
+  const PrdReviewSection({super.key, required this.workflowSlug});
+
+  final String workflowSlug;
 
   @override
   Widget build(BuildContext context) {
@@ -66,60 +70,72 @@ final class PrdReviewSection extends StatelessWidget {
           final bool showFeedback =
               state.loadStatus == PrdReviewLoadStatus.ready &&
               !state.isApproved;
+          final bool showArtifact =
+              state.loadStatus == PrdReviewLoadStatus.ready ||
+              state.loadStatus == PrdReviewLoadStatus.loading;
+
+          if (!showArtifact) {
+            return const SizedBox.shrink();
+          }
 
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              PrdReviewRepoContextHeader(
-                repoPath: state.repoPathHeader,
-                branchName: state.branchNameHeader,
+              const WorkflowSectionHeader(
+                icon: Icons.description_outlined,
+                title: OrchestratorStrings.prdArtifactDraftedMessage,
               ),
-              Expanded(
+              const SizedBox(height: PulseDimensions.sectionGapMd),
+              PrdArtifactCard(
+                fileName: OrchestratorStrings.prdArtifactFileName(workflowSlug),
+                footer: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (state.failureMessageKey != null)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: PulseDimensions.sectionGapSm,
+                        ),
+                        child: Text(
+                          state.failureMessageKey!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: PulseColors.secondary,
+                          ),
+                        ),
+                      ),
+                    if (state.approveBlockedMessageKey != null)
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: PulseDimensions.sectionGapSm,
+                        ),
+                        child: Text(
+                          state.approveBlockedMessageKey!,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: PulseColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    PrdReviewActionBar(
+                      artifactMode: true,
+                      showsUserEditedBadge: state.showsUserEditedBadge,
+                      canSave: state.canSave,
+                      canApprove: state.canApprove,
+                      canReject: state.canReject,
+                      isSaving: state.isSaving,
+                      isApproving: state.isApproving,
+                      isRejecting: state.isRejecting,
+                      onSave: () => unawaited(cubit.saveDraft()),
+                      onApprove: () => unawaited(cubit.approve()),
+                      onReject: () {},
+                    ),
+                  ],
+                ),
                 child: PrdReviewMarkdownEditor(
                   textNotifier: cubit.editorText,
                   onChanged: cubit.onEditorTextChanged,
                   enabled: state.isEditable,
+                  expandToParent: true,
                 ),
-              ),
-              if (state.failureMessageKey != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal:
-                        PulseDimensions.workflowInstructionBarOuterInset,
-                    vertical: PulseDimensions.sectionGapSm,
-                  ),
-                  child: Text(
-                    state.failureMessageKey!,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: PulseColors.secondary,
-                    ),
-                  ),
-                ),
-              if (state.approveBlockedMessageKey != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal:
-                        PulseDimensions.workflowInstructionBarOuterInset,
-                    vertical: PulseDimensions.sectionGapSm,
-                  ),
-                  child: Text(
-                    state.approveBlockedMessageKey!,
-                    style: textTheme.bodySmall?.copyWith(
-                      color: PulseColors.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              PrdReviewActionBar(
-                showsUserEditedBadge: state.showsUserEditedBadge,
-                canSave: state.canSave,
-                canApprove: state.canApprove,
-                canReject: state.canReject,
-                isSaving: state.isSaving,
-                isApproving: state.isApproving,
-                isRejecting: state.isRejecting,
-                onSave: () => unawaited(cubit.saveDraft()),
-                onApprove: () => unawaited(cubit.approve()),
-                onReject: () {},
               ),
               if (showFeedback)
                 PrdReviewFeedbackBar(

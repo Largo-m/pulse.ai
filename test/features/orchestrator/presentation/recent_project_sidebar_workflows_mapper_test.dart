@@ -33,6 +33,7 @@ void main() {
           );
 
       expect(agents, hasLength(2));
+      expect(agents.first.slug, 'alpha-flow');
       expect(agents.first.displayName, 'alpha-flow');
       expect(agents.first.isActive, isTrue);
       expect(agents.last.displayName, 'beta-flow');

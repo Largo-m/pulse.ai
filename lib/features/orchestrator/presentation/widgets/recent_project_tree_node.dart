@@ -18,6 +18,7 @@ final class RecentProjectTreeNode extends StatelessWidget {
     required this.isExpanded,
     required this.agents,
     required this.onSelected,
+    required this.onAgentSelected,
     required this.onToggleExpanded,
   });
 
@@ -26,6 +27,7 @@ final class RecentProjectTreeNode extends StatelessWidget {
   final bool isExpanded;
   final List<RecentProjectTreeAgentUiModel> agents;
   final VoidCallback onSelected;
+  final ValueChanged<String> onAgentSelected;
   final VoidCallback onToggleExpanded;
 
   @override
@@ -143,7 +145,10 @@ final class RecentProjectTreeNode extends StatelessWidget {
                   children: agents
                       .map(
                         (RecentProjectTreeAgentUiModel agent) =>
-                            _RecentProjectAgentRow(agent: agent),
+                            _RecentProjectAgentRow(
+                              agent: agent,
+                              onSelected: () => onAgentSelected(agent.slug),
+                            ),
                       )
                       .toList(growable: false),
                 ),
@@ -156,57 +161,81 @@ final class RecentProjectTreeNode extends StatelessWidget {
 }
 
 final class _RecentProjectAgentRow extends StatelessWidget {
-  const _RecentProjectAgentRow({required this.agent});
+  const _RecentProjectAgentRow({required this.agent, required this.onSelected});
 
   final RecentProjectTreeAgentUiModel agent;
+  final VoidCallback onSelected;
 
   @override
   Widget build(BuildContext context) {
     final TextTheme textTheme = Theme.of(context).textTheme;
+    final String semanticsLabel = agent.isActive
+        ? '${OrchestratorStrings.recentProjectActiveSemantics}: '
+              '${agent.displayName}'
+        : '${OrchestratorStrings.recentProjectAgentSelectSemantics}: '
+              '${agent.displayName}';
 
-    return MouseHoverBuilder(
-      builder: (BuildContext context, bool isHovered) {
-        final Color rowBackground = isHovered
-            ? PulseColors.surfaceContainerHighest
-            : Colors.transparent;
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: MouseHoverBuilder(
+        builder: (BuildContext context, bool isHovered) {
+          final Color rowBackground = isHovered || agent.isActive
+              ? PulseColors.surfaceContainerHighest
+              : Colors.transparent;
 
-        return AnimatedContainer(
-          duration: const Duration(
-            milliseconds: PulseDimensions.borderTransitionMs,
-          ),
-          curve: Curves.easeInOut,
-          decoration: BoxDecoration(
-            color: rowBackground,
-            borderRadius: BorderRadius.circular(PulseRadii.standbyChip),
-          ),
-          child: Padding(
-            padding: PulseInsets.sidebarTreeAgentRow.copyWith(
-              left: PulseDimensions.sidebarAgentTreeInnerPadding,
+          return AnimatedContainer(
+            duration: const Duration(
+              milliseconds: PulseDimensions.borderTransitionMs,
             ),
-            child: Row(
-              children: <Widget>[
-                _AgentStatusDot(
-                  isActive: agent.isActive,
-                  isRunning: agent.isRunning,
+            curve: Curves.easeInOut,
+            decoration: BoxDecoration(
+              color: rowBackground,
+              borderRadius: BorderRadius.circular(PulseRadii.standbyChip),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onSelected,
+                borderRadius: BorderRadius.circular(PulseRadii.standbyChip),
+                hoverColor: Colors.white.withValues(
+                  alpha: PulseDimensions.inkHoverAlpha,
                 ),
-                const SizedBox(width: PulseDimensions.sidebarTreeRowGap),
-                Expanded(
-                  child: Text(
-                    agent.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: (textTheme.bodyMedium ?? const TextStyle()).copyWith(
-                      color: agent.isActive
-                          ? PulseColors.onSurfaceVariant
-                          : PulseColors.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
+                child: Padding(
+                  padding: PulseInsets.sidebarTreeAgentRow.copyWith(
+                    left: PulseDimensions.sidebarAgentTreeInnerPadding,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      _AgentStatusDot(
+                        isActive: agent.isActive,
+                        isRunning: agent.isRunning,
+                      ),
+                      const SizedBox(width: PulseDimensions.sidebarTreeRowGap),
+                      Expanded(
+                        child: Text(
+                          agent.displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: (textTheme.bodyMedium ?? const TextStyle())
+                              .copyWith(
+                                color: agent.isActive
+                                    ? PulseColors.onSurface
+                                    : PulseColors.onSurfaceVariant,
+                                fontWeight: agent.isActive
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                              ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

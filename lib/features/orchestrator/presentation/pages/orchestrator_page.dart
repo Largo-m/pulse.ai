@@ -58,17 +58,35 @@ final class OrchestratorPage extends StatelessWidget {
             ),
           );
         },
-        child: const ColoredBox(
-          color: PulseColors.background,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _OrchestratorChrome(),
-              Expanded(child: _OrchestratorMainContent()),
-              OrchestratorBottomBar(),
-            ],
-          ),
-        ),
+        child:
+            BlocBuilder<
+              OrchestratorMainContentCubit,
+              OrchestratorMainContentState
+            >(
+              builder:
+                  (
+                    BuildContext context,
+                    OrchestratorMainContentState contentState,
+                  ) {
+                    final bool isWorkflowView =
+                        contentState.view ==
+                            OrchestratorMainContentView.prdWorkflow ||
+                        contentState.view ==
+                            OrchestratorMainContentView.techspecWorkflow;
+
+                    return ColoredBox(
+                      color: PulseColors.background,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          const _OrchestratorChrome(),
+                          const Expanded(child: _OrchestratorMainContent()),
+                          if (!isWorkflowView) const OrchestratorBottomBar(),
+                        ],
+                      ),
+                    );
+                  },
+            ),
       ),
     );
   }
@@ -111,14 +129,35 @@ final class _OrchestratorMainContent extends StatelessWidget {
                   unawaited(_showInitializeAgentModal(context, state));
                 },
               ),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  OrchestratorBreadcrumbBar(),
-                  Expanded(child: _OrchestratorScrollableBody()),
-                ],
-              ),
+            Expanded(
+              child:
+                  BlocBuilder<
+                    OrchestratorMainContentCubit,
+                    OrchestratorMainContentState
+                  >(
+                    builder:
+                        (
+                          BuildContext context,
+                          OrchestratorMainContentState contentState,
+                        ) {
+                          final bool isWorkflowView =
+                              contentState.view ==
+                                  OrchestratorMainContentView.prdWorkflow ||
+                              contentState.view ==
+                                  OrchestratorMainContentView.techspecWorkflow;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              if (!isWorkflowView)
+                                const OrchestratorBreadcrumbBar(),
+                              const Expanded(
+                                child: _OrchestratorScrollableBody(),
+                              ),
+                            ],
+                          );
+                        },
+                  ),
             ),
           ],
         );
@@ -186,7 +225,11 @@ final class _OrchestratorScrollableBody extends StatelessWidget {
                       contentState.activeWorkflow?.prdPhaseStatus ??
                       PrdPhaseStatus.draft;
 
+                  final String workflowSlug =
+                      contentState.activeWorkflow?.slug ?? 'workflow';
+
                   return WorkflowTechspecWorkspace(
+                    workflowSlug: workflowSlug,
                     prdPhaseStatus: prdPhaseStatus,
                     onInitialize: () =>
                         OrchestratorPlaceholderFeedback.showComingSoon(context),

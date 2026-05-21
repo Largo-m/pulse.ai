@@ -198,6 +198,25 @@ void main() {
       expect(OrchestratorStrings.prdReviewRejectSemantics, isNotEmpty);
     });
 
+    test('workspace feed copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowSystemProcessingTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSystemProcessingTitle,
+        contains('PROCESSAMENTO'),
+      );
+      expect(OrchestratorStrings.prdArtifactApproveButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactApproveButton,
+        contains('artefato'),
+      );
+      expect(OrchestratorStrings.workflowArchiveTitle, isNotEmpty);
+      expect(OrchestratorStrings.workflowTechspecMappingTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactFileName('meu-agente'),
+        contains('meu-agente'),
+      );
+    });
+
     test('workflow techspec initialization copy is localized in PT-BR', () {
       expect(OrchestratorStrings.workflowTechspecEmptyTitle, isNotEmpty);
       expect(

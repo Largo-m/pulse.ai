@@ -67,6 +67,39 @@ void main() {
       ],
     );
 
+    final WorkflowEntity approvedWorkflow = WorkflowEntity(
+      projectId: 'project-1',
+      slug: 'bot-sre-01',
+      branchName: 'main',
+      prdPhaseStatus: PrdPhaseStatus.approved,
+      createdAt: DateTime.utc(2026, 5, 20),
+    );
+
+    blocTest<OrchestratorMainContentCubit, OrchestratorMainContentState>(
+      'openWorkflowFromSidebar exposes prd view for non-approved workflow',
+      build: OrchestratorMainContentCubit.new,
+      act: (OrchestratorMainContentCubit cubit) =>
+          cubit.openWorkflowFromSidebar(workflow),
+      verify: (OrchestratorMainContentCubit cubit) {
+        expect(cubit.state.view, OrchestratorMainContentView.prdWorkflow);
+        expect(cubit.state.activeWorkflow, workflow);
+        expect(cubit.state.activeAgent?.slug, workflow.slug);
+        expect(cubit.state.activeAgent?.projectId, workflow.projectId);
+      },
+    );
+
+    blocTest<OrchestratorMainContentCubit, OrchestratorMainContentState>(
+      'openWorkflowFromSidebar exposes techspec view when prd is approved',
+      build: OrchestratorMainContentCubit.new,
+      act: (OrchestratorMainContentCubit cubit) =>
+          cubit.openWorkflowFromSidebar(approvedWorkflow),
+      verify: (OrchestratorMainContentCubit cubit) {
+        expect(cubit.state.view, OrchestratorMainContentView.techspecWorkflow);
+        expect(cubit.state.activeWorkflow, approvedWorkflow);
+        expect(cubit.state.activeAgent?.slug, approvedWorkflow.slug);
+      },
+    );
+
     blocTest<OrchestratorMainContentCubit, OrchestratorMainContentState>(
       'showWelcome returns to welcome view and clears active agent',
       build: OrchestratorMainContentCubit.new,
