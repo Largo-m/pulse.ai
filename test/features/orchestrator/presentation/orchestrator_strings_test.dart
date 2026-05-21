@@ -157,6 +157,20 @@ void main() {
       );
     });
 
+    test('prd review copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdReviewApproveButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdReviewApproveButton,
+        isNot(equals('Approve PRD')),
+      );
+      expect(OrchestratorStrings.prdReviewRejectButton, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUnsavedOverwriteTitle, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUserEditedBadge, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUserEditedBadge, contains('usuário'));
+      expect(OrchestratorStrings.prdReviewApproveSemantics, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewRejectSemantics, isNotEmpty);
+    });
+
     test('workflow techspec initialization copy is localized in PT-BR', () {
       expect(OrchestratorStrings.workflowTechspecEmptyTitle, isNotEmpty);
       expect(

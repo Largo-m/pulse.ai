@@ -99,4 +99,22 @@ abstract final class PulseInsets {
     horizontal: PulseDimensions.workflowStreamChipHorizontalPadding,
     vertical: PulseDimensions.workflowStreamChipVerticalPadding,
   );
+
+  static const EdgeInsets prdReviewEditor = EdgeInsets.all(
+    PulseDimensions.workflowInstructionBarOuterInset,
+  );
+
+  static const EdgeInsets prdReviewContextHeader = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.workflowInstructionBarOuterInset,
+    vertical: PulseDimensions.sectionGapSm,
+  );
+
+  static const EdgeInsets prdReviewActionBar = EdgeInsets.all(
+    PulseDimensions.workflowInstructionBarOuterInset,
+  );
+
+  static const EdgeInsets prdReviewUserEditedBadge = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.prdReviewUserEditedBadgeHorizontalPadding,
+    vertical: PulseDimensions.prdReviewUserEditedBadgeVerticalPadding,
+  );
 }

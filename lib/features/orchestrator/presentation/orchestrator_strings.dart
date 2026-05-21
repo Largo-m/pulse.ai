@@ -144,4 +144,43 @@ abstract final class OrchestratorStrings {
   static const String prdWorkflowStreamEventDone = 'Execução concluída';
   static const String prdWorkflowStreamEventHeartbeat = 'Heartbeat';
   static const String prdWorkflowStreamEventGeneric = 'Evento de execução';
+
+  static const String prdReviewRepoContextLabel = 'Repositório';
+  static const String prdReviewBranchContextLabel = 'Branch';
+  static const String prdReviewUserEditedBadge = 'Editado pelo usuário';
+  static const String prdReviewUserEditedBadgeSemantics =
+      'PRD editado manualmente pelo usuário';
+  static const String prdReviewSaveDraftButton = 'Salvar rascunho';
+  static const String prdReviewSaveDraftSemantics =
+      'Salvar rascunho do PRD em edição';
+  static const String prdReviewApproveButton = 'Aprovar PRD';
+  static const String prdReviewApproveSemantics =
+      'Aprovar PRD com o conteúdo atual do editor';
+  static const String prdReviewRejectButton = 'Rejeitar';
+  static const String prdReviewRejectSemantics =
+      'Rejeitar PRD e enviar feedback para nova execução do agente';
+  static const String prdReviewFeedbackPlaceholder =
+      'Descreva o que deve mudar no PRD (ex.: adicionar requisitos de segurança)…';
+  static const String prdReviewFeedbackSubmitButton = 'Enviar feedback';
+  static const String prdReviewFeedbackSubmitSemantics =
+      'Rejeitar PRD e iniciar nova execução com o feedback informado';
+  static const String prdReviewUnsavedOverwriteTitle = 'Substituir edições?';
+  static const String prdReviewUnsavedOverwriteBody =
+      'Uma nova execução do agente gerou outro rascunho. Salve suas alterações '
+      'ou confirme para descartá-las e carregar o novo conteúdo.';
+  static const String prdReviewUnsavedOverwriteConfirm = 'Substituir';
+  static const String prdReviewUnsavedOverwriteCancel = 'Manter edição';
+  static const String prdReviewUnsavedOverwriteConfirmSemantics =
+      'Descartar edições não salvas e carregar o novo rascunho do agente';
+  static const String prdReviewUnsavedOverwriteCancelSemantics =
+      'Manter o texto atual do editor';
+  static const String prdReviewLoadFailed =
+      'Não foi possível carregar o rascunho do PRD.';
+  static const String prdReviewActionFailed =
+      'Não foi possível concluir a ação de revisão. Tente novamente.';
+  static const String prdReviewEditorSemantics = 'Editor markdown do PRD';
+  static const String prdReviewRepoContextSemantics =
+      'Caminho do repositório local em modo somente leitura';
+  static const String prdReviewBranchContextSemantics =
+      'Branch do fluxo em modo somente leitura';
 }

@@ -122,4 +122,9 @@ abstract final class PulseDimensions {
   static const double workflowStreamChipVerticalPadding = 4;
   static const double workflowStreamPanelBorderWidth = 1;
   static const double workflowStreamUserActionIconSize = 20;
+  static const double prdReviewEditorMinHeight = 320;
+  static const double prdReviewContextHeaderIconSize = 16;
+  static const double prdReviewActionBarButtonHeight = 36;
+  static const double prdReviewUserEditedBadgeHorizontalPadding = 8;
+  static const double prdReviewUserEditedBadgeVerticalPadding = 2;
 }

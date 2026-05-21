@@ -6,8 +6,8 @@ import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_agent_run_output.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
@@ -211,10 +211,7 @@ void main() {
           repoPath: repoPath,
         );
 
-      expect(
-        cubit.state.phaseStatus,
-        PrdWorkflowPhaseUiStatus.pendingApproval,
-      );
+      expect(cubit.state.phaseStatus, PrdWorkflowPhaseUiStatus.pendingApproval);
     });
 
     test(
