@@ -85,4 +85,20 @@ abstract final class OrchestratorStrings {
       'Inicializar especificação técnica com IA';
   static const String workflowTechspecApplySemantics =
       'Aplicar instrução manual à especificação técnica';
+
+  static const String cursorConnectionMissingCredentialRemediation =
+      'Configure a chave da API do Cursor nas configurações para iniciar '
+      'execuções do agente PRD.';
+  static const String cursorConnectionUnauthorizedRemediation =
+      'A credencial do Cursor foi recusada (401). Atualize a chave da API '
+      'nas configurações e tente novamente.';
+  static const String cursorConnectionDisconnectedRemediation =
+      'Não foi possível verificar a conexão com o Cursor. Confira a rede e '
+      'a chave da API nas configurações.';
+  static const String cursorConnectionCheckingSemantics =
+      'Verificando conexão com o Cursor';
+  static const String cursorConnectionConnectedSemantics =
+      'Conexão com o Cursor verificada';
+  static const String cursorConnectionDisconnectedSemantics =
+      'Cursor desconectado; configure a credencial';
 }

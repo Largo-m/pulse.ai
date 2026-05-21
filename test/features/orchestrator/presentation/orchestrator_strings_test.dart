@@ -112,6 +112,30 @@ void main() {
       );
     });
 
+    test('cursor connection remediation copy is localized in PT-BR', () {
+      expect(
+        OrchestratorStrings.cursorConnectionMissingCredentialRemediation,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorConnectionMissingCredentialRemediation,
+        contains('Cursor'),
+      );
+      expect(
+        OrchestratorStrings.cursorConnectionUnauthorizedRemediation,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorConnectionUnauthorizedRemediation,
+        contains('401'),
+      );
+      expect(
+        OrchestratorStrings.cursorConnectionDisconnectedRemediation,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.cursorConnectionCheckingSemantics, isNotEmpty);
+    });
+
     test('workflow techspec initialization copy is localized in PT-BR', () {
       expect(OrchestratorStrings.workflowTechspecEmptyTitle, isNotEmpty);
       expect(
