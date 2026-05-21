@@ -101,6 +101,9 @@ abstract final class OrchestratorStrings {
       'Conexão com o Cursor verificada';
   static const String cursorConnectionDisconnectedSemantics =
       'Cursor desconectado; configure a credencial';
+  static const String cursorConnectionBannerCta = 'Abrir configurações';
+  static const String cursorConnectionBannerSemantics =
+      'Banner de conexão com o Cursor; credencial ausente ou inválida';
 
   static const String prdWorkflowStatusNotStarted = 'Não iniciado';
   static const String prdWorkflowStatusRunning = 'Em execução';

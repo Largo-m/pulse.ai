@@ -134,6 +134,11 @@ void main() {
         isNotEmpty,
       );
       expect(OrchestratorStrings.cursorConnectionCheckingSemantics, isNotEmpty);
+      expect(OrchestratorStrings.cursorConnectionBannerCta, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorConnectionBannerCta,
+        contains('configura'),
+      );
     });
 
     test('prd workflow stream and status copy is localized in PT-BR', () {
