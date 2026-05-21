@@ -101,4 +101,89 @@ abstract final class OrchestratorStrings {
       'Conexão com o Cursor verificada';
   static const String cursorConnectionDisconnectedSemantics =
       'Cursor desconectado; configure a credencial';
+  static const String cursorConnectionBannerCta = 'Abrir configurações';
+  static const String cursorConnectionBannerSemantics =
+      'Banner de conexão com o Cursor; credencial ausente ou inválida';
+
+  static const String prdWorkflowStatusNotStarted = 'Não iniciado';
+  static const String prdWorkflowStatusRunning = 'Em execução';
+  static const String prdWorkflowStatusPendingApproval = 'Aguardando aprovação';
+  static const String prdWorkflowStatusApproved = 'Aprovado';
+  static const String prdWorkflowStatusFailed = 'Falhou';
+  static const String prdWorkflowStatusCancelled = 'Cancelado';
+
+  static const String prdWorkflowStreamEmpty =
+      'Nenhum evento de execução ainda. Inicie o agente PRD para ver o stream ao vivo.';
+  static const String prdWorkflowCancelButton = 'Cancelar execução';
+  static const String prdWorkflowCancelSemantics =
+      'Cancelar execução do agente PRD em andamento';
+  static const String prdWorkflowStreamPanelSemantics =
+      'Painel de stream ao vivo da execução PRD';
+  static const String prdWorkflowRunStatusRunningSemantics =
+      'Execução PRD em andamento';
+  static const String prdWorkflowRunStatusPendingApprovalSemantics =
+      'Execução PRD concluída; aguardando aprovação';
+  static const String prdWorkflowRunStatusFailedSemantics =
+      'Execução PRD falhou';
+  static const String prdWorkflowRunStatusCancelledSemantics =
+      'Execução PRD cancelada';
+
+  static const String prdWorkflowUserActionRequiredTitle =
+      'Ação necessária no Cursor';
+  static const String prdWorkflowUserActionRequiredBody =
+      'O agente sinalizou que precisa de uma ação sua no Cursor. '
+      'Conclua a etapa pendente para retomar o stream.';
+
+  static const String prdWorkflowRunFailedGeneric =
+      'A execução do agente PRD falhou. Tente novamente ou verifique a conexão.';
+  static const String prdWorkflowStreamUnavailable =
+      'O stream da execução ficou indisponível. Verifique a rede e tente de novo.';
+
+  static const String prdWorkflowStreamEventStatus = 'Atualização de status';
+  static const String prdWorkflowStreamEventAssistant =
+      'Resposta do assistente';
+  static const String prdWorkflowStreamEventThinking = 'Raciocínio do agente';
+  static const String prdWorkflowStreamEventToolCall = 'Chamada de ferramenta';
+  static const String prdWorkflowStreamEventDone = 'Execução concluída';
+  static const String prdWorkflowStreamEventHeartbeat = 'Heartbeat';
+  static const String prdWorkflowStreamEventGeneric = 'Evento de execução';
+
+  static const String prdReviewRepoContextLabel = 'Repositório';
+  static const String prdReviewBranchContextLabel = 'Branch';
+  static const String prdReviewUserEditedBadge = 'Editado pelo usuário';
+  static const String prdReviewUserEditedBadgeSemantics =
+      'PRD editado manualmente pelo usuário';
+  static const String prdReviewSaveDraftButton = 'Salvar rascunho';
+  static const String prdReviewSaveDraftSemantics =
+      'Salvar rascunho do PRD em edição';
+  static const String prdReviewApproveButton = 'Aprovar PRD';
+  static const String prdReviewApproveSemantics =
+      'Aprovar PRD com o conteúdo atual do editor';
+  static const String prdReviewRejectButton = 'Rejeitar';
+  static const String prdReviewRejectSemantics =
+      'Rejeitar PRD e enviar feedback para nova execução do agente';
+  static const String prdReviewFeedbackPlaceholder =
+      'Descreva o que deve mudar no PRD (ex.: adicionar requisitos de segurança)…';
+  static const String prdReviewFeedbackSubmitButton = 'Enviar feedback';
+  static const String prdReviewFeedbackSubmitSemantics =
+      'Rejeitar PRD e iniciar nova execução com o feedback informado';
+  static const String prdReviewUnsavedOverwriteTitle = 'Substituir edições?';
+  static const String prdReviewUnsavedOverwriteBody =
+      'Uma nova execução do agente gerou outro rascunho. Salve suas alterações '
+      'ou confirme para descartá-las e carregar o novo conteúdo.';
+  static const String prdReviewUnsavedOverwriteConfirm = 'Substituir';
+  static const String prdReviewUnsavedOverwriteCancel = 'Manter edição';
+  static const String prdReviewUnsavedOverwriteConfirmSemantics =
+      'Descartar edições não salvas e carregar o novo rascunho do agente';
+  static const String prdReviewUnsavedOverwriteCancelSemantics =
+      'Manter o texto atual do editor';
+  static const String prdReviewLoadFailed =
+      'Não foi possível carregar o rascunho do PRD.';
+  static const String prdReviewActionFailed =
+      'Não foi possível concluir a ação de revisão. Tente novamente.';
+  static const String prdReviewEditorSemantics = 'Editor markdown do PRD';
+  static const String prdReviewRepoContextSemantics =
+      'Caminho do repositório local em modo somente leitura';
+  static const String prdReviewBranchContextSemantics =
+      'Branch do fluxo em modo somente leitura';
 }

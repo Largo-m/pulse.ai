@@ -17,11 +17,17 @@ import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persisten
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_completion_output_source.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_connection_gate.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/append_stream_event_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/approve_prd_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/build_prd_run_context_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/cancel_prd_agent_run_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/complete_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/fail_prd_agent_run_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/find_prd_approval_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
@@ -37,15 +43,33 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_credential_store_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/default_prd_run_completion_output_source.dart';
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+final class PrdWorkspaceCubitBundle {
+  PrdWorkspaceCubitBundle({
+    required this.workflowCubit,
+    required this.reviewCubit,
+  });
+
+  final PrdWorkflowCubit workflowCubit;
+  final PrdReviewCubit reviewCubit;
+
+  void dispose() {
+    unawaited(workflowCubit.close());
+    unawaited(reviewCubit.close());
+  }
+}
 
 final class OrchestratorComposition {
   OrchestratorComposition({
@@ -61,6 +85,13 @@ final class OrchestratorComposition {
     required this.startPrdAgentRunUseCase,
     required this.approvePrdUseCase,
     required this.rejectPrdWithFeedbackUseCase,
+    required this.appendStreamEventUseCase,
+    required this.completePrdAgentRunUseCase,
+    required this.cancelPrdAgentRunUseCase,
+    required this.failPrdAgentRunUseCase,
+    required this.cursorPrdAgentService,
+    required this.runCursorConnectionPreflightUseCase,
+    required this.prdRunCompletionOutputSource,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
@@ -80,6 +111,13 @@ final class OrchestratorComposition {
   final StartPrdAgentRunUseCase startPrdAgentRunUseCase;
   final ApprovePrdUseCase approvePrdUseCase;
   final RejectPrdWithFeedbackUseCase rejectPrdWithFeedbackUseCase;
+  final AppendStreamEventUseCase appendStreamEventUseCase;
+  final CompletePrdAgentRunUseCase completePrdAgentRunUseCase;
+  final CancelPrdAgentRunUseCase cancelPrdAgentRunUseCase;
+  final FailPrdAgentRunUseCase failPrdAgentRunUseCase;
+  final CursorPrdAgentService cursorPrdAgentService;
+  final RunCursorConnectionPreflightUseCase runCursorConnectionPreflightUseCase;
+  final PrdRunCompletionOutputSource prdRunCompletionOutputSource;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
@@ -206,6 +244,30 @@ final class OrchestratorComposition {
           workflowRepository: workflowRepository,
           startPrdAgentRunUseCase: startPrdAgentRunUseCase,
         );
+    final AppendStreamEventUseCase appendStreamEventUseCase =
+        AppendStreamEventUseCase(
+          prdRunRepository: prdRunRepository,
+          artifactRepository: artifactRepository,
+        );
+    final CompletePrdAgentRunUseCase completePrdAgentRunUseCase =
+        CompletePrdAgentRunUseCase(
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+          artifactRepository: artifactRepository,
+        );
+    final CancelPrdAgentRunUseCase cancelPrdAgentRunUseCase =
+        CancelPrdAgentRunUseCase(
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+          cursorPrdAgentService: cursorPrdAgentService,
+        );
+    final FailPrdAgentRunUseCase failPrdAgentRunUseCase =
+        FailPrdAgentRunUseCase(
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+        );
+    const PrdRunCompletionOutputSource prdRunCompletionOutputSource =
+        DefaultPrdRunCompletionOutputSource();
 
     return OrchestratorComposition(
       recentProjectsRepository: repository,
@@ -220,11 +282,41 @@ final class OrchestratorComposition {
       startPrdAgentRunUseCase: startPrdAgentRunUseCase,
       approvePrdUseCase: approvePrdUseCase,
       rejectPrdWithFeedbackUseCase: rejectPrdWithFeedbackUseCase,
+      appendStreamEventUseCase: appendStreamEventUseCase,
+      completePrdAgentRunUseCase: completePrdAgentRunUseCase,
+      cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
+      failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+      cursorPrdAgentService: cursorPrdAgentService,
+      runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
+      prdRunCompletionOutputSource: prdRunCompletionOutputSource,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
       orchestratorMainContentCubit: orchestratorMainContentCubit,
       cursorConnectionCubit: cursorConnectionCubit,
+    );
+  }
+
+  PrdWorkspaceCubitBundle createPrdWorkspaceCubitBundle() {
+    return PrdWorkspaceCubitBundle(
+      workflowCubit: PrdWorkflowCubit(
+        startPrdAgentRunUseCase: startPrdAgentRunUseCase,
+        appendStreamEventUseCase: appendStreamEventUseCase,
+        completePrdAgentRunUseCase: completePrdAgentRunUseCase,
+        cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
+        failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+        cursorPrdAgentService: cursorPrdAgentService,
+        completionOutputSource: prdRunCompletionOutputSource,
+      ),
+      reviewCubit: PrdReviewCubit(
+        readPrdMarkdownUseCase: readPrdMarkdownUseCase,
+        savePrdDraftUseCase: savePrdDraftUseCase,
+        approvePrdUseCase: approvePrdUseCase,
+        rejectPrdWithFeedbackUseCase: rejectPrdWithFeedbackUseCase,
+        findPrdApprovalUseCase: FindPrdApprovalUseCase(prdRunRepository),
+        runCursorConnectionPreflightUseCase:
+            runCursorConnectionPreflightUseCase,
+      ),
     );
   }
 
@@ -281,6 +373,9 @@ class _OrchestratorCompositionScopeState
 
             return MultiRepositoryProvider(
               providers: <RepositoryProvider<dynamic>>[
+                RepositoryProvider<OrchestratorComposition>.value(
+                  value: composition,
+                ),
                 RepositoryProvider<RecentProjectsRepository>.value(
                   value: composition.recentProjectsRepository,
                 ),

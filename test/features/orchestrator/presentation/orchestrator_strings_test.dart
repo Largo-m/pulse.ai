@@ -134,6 +134,46 @@ void main() {
         isNotEmpty,
       );
       expect(OrchestratorStrings.cursorConnectionCheckingSemantics, isNotEmpty);
+      expect(OrchestratorStrings.cursorConnectionBannerCta, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorConnectionBannerCta,
+        contains('configura'),
+      );
+    });
+
+    test('prd workflow stream and status copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowStatusRunning, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowStatusRunning,
+        contains('execução'),
+      );
+      expect(OrchestratorStrings.prdWorkflowStreamEmpty, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowCancelButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowUserActionRequiredTitle,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.prdWorkflowRunFailedGeneric, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStreamUnavailable, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStreamEventAssistant, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowStatusPendingApproval,
+        isNot(equals('Pending approval')),
+      );
+    });
+
+    test('prd review copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdReviewApproveButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdReviewApproveButton,
+        isNot(equals('Approve PRD')),
+      );
+      expect(OrchestratorStrings.prdReviewRejectButton, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUnsavedOverwriteTitle, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUserEditedBadge, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewUserEditedBadge, contains('usuário'));
+      expect(OrchestratorStrings.prdReviewApproveSemantics, isNotEmpty);
+      expect(OrchestratorStrings.prdReviewRejectSemantics, isNotEmpty);
     });
 
     test('workflow techspec initialization copy is localized in PT-BR', () {
