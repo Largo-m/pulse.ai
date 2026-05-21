@@ -42,6 +42,16 @@ abstract final class OrchestratorStrings {
   static const String initializeAgentNameLabel = 'Nome: ';
   static const String initializeAgentNameHint = 'Ex.: Bot-SRE-01';
   static const String initializeAgentProjectLabel = 'Projeto:';
+  static const String initializeAgentSlugLabel = 'Slug do workflow:';
+  static const String initializeAgentSlugHint = 'Ex.: cursor-workflow-agents';
+  static const String initializeAgentSlugRequiredError =
+      'Informe um slug para o workflow.';
+  static const String initializeAgentSlugInvalidFormatError =
+      'O slug deve estar em kebab-case (letras minúsculas, números e hífens).';
+  static const String initializeAgentSlugCollisionError =
+      'Já existe um workflow com este slug neste projeto.';
+  static const String initializeAgentCreateWorkflowFailure =
+      'Não foi possível criar o workflow. Tente novamente.';
   static const String initializeAgentBranchLabel = 'Branch:';
   static const String initializeAgentBranchesLoading = 'Carregando branches…';
   static const String initializeAgentBranchesNotGit =
@@ -69,6 +79,14 @@ abstract final class OrchestratorStrings {
   static const String workflowPhaseTasks = 'Tasks';
   static const String workflowPhaseQa = 'QA';
   static const String workflowPhaseReview = 'Review';
+
+  static const String workflowTechspecPrdRequiredTitle =
+      'Aprove o PRD para continuar';
+  static const String workflowTechspecPrdRequiredSubtitle =
+      'A fase de TechSpec ficará disponível após você aprovar o PRD deste '
+      'workflow no workspace PRD.';
+  static const String workflowTechspecPrdRequiredSemantics =
+      'TechSpec bloqueada até aprovação do PRD';
 
   static const String workflowTechspecEmptyTitle =
       'Nenhuma especificação técnica ainda';

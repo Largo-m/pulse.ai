@@ -1,8 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_state.dart';
 
@@ -10,9 +14,11 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
   RecentProjectsCubit({
     required ListRecentProjectsUseCase listRecentProjectsUseCase,
     required SelectActiveProjectUseCase selectActiveProjectUseCase,
+    ListWorkflowsByProjectUseCase? listWorkflowsByProjectUseCase,
     bool loadOnCreate = true,
   }) : _listRecentProjectsUseCase = listRecentProjectsUseCase,
        _selectActiveProjectUseCase = selectActiveProjectUseCase,
+       _listWorkflowsByProjectUseCase = listWorkflowsByProjectUseCase,
        super(
          loadOnCreate
              ? const RecentProjectsState(isLoading: true)
@@ -25,6 +31,7 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
 
   final ListRecentProjectsUseCase _listRecentProjectsUseCase;
   final SelectActiveProjectUseCase _selectActiveProjectUseCase;
+  final ListWorkflowsByProjectUseCase? _listWorkflowsByProjectUseCase;
 
   Future<void> selectProject(String projectId) async {
     await _selectActiveProjectUseCase.select(projectId);
@@ -57,6 +64,8 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
         .readActiveProjectId();
 
     final String? knownActiveId = _activeIdWhenKnown(projects, activeProjectId);
+    final Map<String, List<WorkflowEntity>> workflowsByProjectId =
+        await _loadWorkflowsByProject(projects);
 
     emit(
       RecentProjectsState(
@@ -67,9 +76,33 @@ final class RecentProjectsCubit extends Cubit<RecentProjectsState> {
           previousExpandedIds: state.expandedProjectIds,
           activeProjectId: knownActiveId,
         ),
+        workflowsByProjectId: workflowsByProjectId,
         isLoading: false,
       ),
     );
+  }
+
+  Future<Map<String, List<WorkflowEntity>>> _loadWorkflowsByProject(
+    List<LocalProjectEntity> projects,
+  ) async {
+    final ListWorkflowsByProjectUseCase? listUseCase =
+        _listWorkflowsByProjectUseCase;
+    if (listUseCase == null) {
+      return const <String, List<WorkflowEntity>>{};
+    }
+
+    final Map<String, List<WorkflowEntity>> workflowsByProjectId =
+        <String, List<WorkflowEntity>>{};
+    for (final LocalProjectEntity project in projects) {
+      final Either<Failure, List<WorkflowEntity>> result = await listUseCase(
+        project.id,
+      );
+      workflowsByProjectId[project.id] = result.fold(
+        (_) => const <WorkflowEntity>[],
+        (List<WorkflowEntity> workflows) => workflows,
+      );
+    }
+    return workflowsByProjectId;
   }
 
   List<String> _expandedWithProject(String projectId) {

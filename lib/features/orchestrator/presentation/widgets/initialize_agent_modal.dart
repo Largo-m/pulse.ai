@@ -7,7 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_state.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_submit_rules.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_slug_validation.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/initialize_agent_submit_payload.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/shared/theme/pulse_button_styles.dart';
@@ -68,13 +68,18 @@ final class _InitializeAgentModalPageState
     extends State<_InitializeAgentModalPage> {
   late final TextEditingController _coreDirectiveController;
   late final TextEditingController _agentNameController;
+  late final TextEditingController _slugController;
   late final ValueNotifier<String?> _projectIdNotifier;
+  late final ValueNotifier<String?> _slugErrorNotifier;
 
   @override
   void initState() {
     super.initState();
     _coreDirectiveController = TextEditingController();
     _agentNameController = TextEditingController();
+    _slugController = TextEditingController();
+    _slugErrorNotifier = ValueNotifier<String?>(null);
+    _slugController.addListener(_onSlugChanged);
     final List<LocalProjectEntity> projects = widget.projects;
     if (projects.isEmpty) {
       _projectIdNotifier = ValueNotifier<String?>(null);
@@ -94,8 +99,11 @@ final class _InitializeAgentModalPageState
   @override
   void dispose() {
     context.read<InitializeAgentBranchesCubit>().reset();
+    _slugController.removeListener(_onSlugChanged);
     _coreDirectiveController.dispose();
     _agentNameController.dispose();
+    _slugController.dispose();
+    _slugErrorNotifier.dispose();
     _projectIdNotifier.dispose();
     super.dispose();
   }
@@ -132,12 +140,24 @@ final class _InitializeAgentModalPageState
     _loadBranchesForProjectId(projectId);
   }
 
+  void _onSlugChanged() {
+    _slugErrorNotifier.value = validateInitializeAgentSlug(
+      _slugController.text,
+    );
+  }
+
   void _onSubmitPressed(
     BuildContext context,
     String projectId,
     InitializeAgentBranchesState branchState,
   ) {
-    if (!canSubmitInitializeAgent(branchState)) {
+    final String? slugError = validateInitializeAgentSlug(_slugController.text);
+    _slugErrorNotifier.value = slugError;
+    if (slugError != null ||
+        !canSubmitInitializeAgentForm(
+          branchState: branchState,
+          slug: _slugController.text,
+        )) {
       return;
     }
 
@@ -152,6 +172,7 @@ final class _InitializeAgentModalPageState
         coreDirective: _coreDirectiveController.text.trim(),
         projectId: projectId,
         branchName: branchName,
+        slug: _slugController.text.trim(),
       ),
     );
     Navigator.of(context).pop();
@@ -467,6 +488,55 @@ final class _InitializeAgentModalPageState
                             const SizedBox(
                               height: PulseDimensions.sectionGapLg,
                             ),
+                            ValueListenableBuilder<String?>(
+                              valueListenable: _slugErrorNotifier,
+                              builder:
+                                  (
+                                    BuildContext context,
+                                    String? slugError,
+                                    Widget? child,
+                                  ) {
+                                    return _labeledBlock(
+                                      tt: tt,
+                                      label: OrchestratorStrings
+                                          .initializeAgentSlugLabel,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: <Widget>[
+                                          TextField(
+                                            controller: _slugController,
+                                            style: tt.labelLarge?.copyWith(
+                                              color: PulseColors.onSurface,
+                                            ),
+                                            decoration: _outlineDecoration(
+                                              context,
+                                              hint: OrchestratorStrings
+                                                  .initializeAgentSlugHint,
+                                            ),
+                                          ),
+                                          if (slugError != null) ...<Widget>[
+                                            const SizedBox(
+                                              height:
+                                                  PulseDimensions.sectionGapSm,
+                                            ),
+                                            Text(
+                                              slugError,
+                                              style: tt.bodySmall?.copyWith(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.error,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    );
+                                  },
+                            ),
+                            const SizedBox(
+                              height: PulseDimensions.sectionGapLg,
+                            ),
                             _labeledBlock(
                               tt: tt,
                               label: OrchestratorStrings
@@ -629,40 +699,57 @@ final class _InitializeAgentModalPageState
                                       String? projectId,
                                       Widget? child,
                                     ) {
-                                      return BlocBuilder<
-                                        InitializeAgentBranchesCubit,
-                                        InitializeAgentBranchesState
-                                      >(
+                                      return ValueListenableBuilder<String?>(
+                                        valueListenable: _slugErrorNotifier,
                                         builder:
                                             (
                                               BuildContext context,
-                                              InitializeAgentBranchesState
-                                              branchState,
+                                              String? slugError,
+                                              Widget? child,
                                             ) {
-                                              final bool canSubmit =
-                                                  projectId != null &&
-                                                  canSubmitInitializeAgent(
-                                                    branchState,
-                                                  );
+                                              return BlocBuilder<
+                                                InitializeAgentBranchesCubit,
+                                                InitializeAgentBranchesState
+                                              >(
+                                                builder:
+                                                    (
+                                                      BuildContext context,
+                                                      InitializeAgentBranchesState
+                                                      branchState,
+                                                    ) {
+                                                      final bool canSubmit =
+                                                          projectId != null &&
+                                                          slugError == null &&
+                                                          canSubmitInitializeAgentForm(
+                                                            branchState:
+                                                                branchState,
+                                                            slug:
+                                                                _slugController
+                                                                    .text,
+                                                          );
 
-                                              return FilledButton.icon(
-                                                onPressed: canSubmit
-                                                    ? () => _onSubmitPressed(
-                                                        context,
-                                                        projectId,
-                                                        branchState,
-                                                      )
-                                                    : null,
-                                                style:
-                                                    PulseButtonStyles.filledPrimary(
-                                                      context,
-                                                      uppercaseLabel: true,
-                                                    ),
-                                                label: Text(
-                                                  OrchestratorStrings
-                                                      .initializeAgentSubmitButton
-                                                      .toUpperCase(),
-                                                ),
+                                                      return FilledButton.icon(
+                                                        onPressed: canSubmit
+                                                            ? () =>
+                                                                  _onSubmitPressed(
+                                                                    context,
+                                                                    projectId,
+                                                                    branchState,
+                                                                  )
+                                                            : null,
+                                                        style:
+                                                            PulseButtonStyles.filledPrimary(
+                                                              context,
+                                                              uppercaseLabel:
+                                                                  true,
+                                                            ),
+                                                        label: Text(
+                                                          OrchestratorStrings
+                                                              .initializeAgentSubmitButton
+                                                              .toUpperCase(),
+                                                        ),
+                                                      );
+                                                    },
                                               );
                                             },
                                       );

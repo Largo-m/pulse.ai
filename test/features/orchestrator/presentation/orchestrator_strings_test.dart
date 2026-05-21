@@ -51,9 +51,31 @@ void main() {
         expect(OrchestratorStrings.initializeAgentNameLabel, isNotEmpty);
         expect(OrchestratorStrings.initializeAgentProjectLabel, isNotEmpty);
         expect(OrchestratorStrings.initializeAgentBranchLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentSlugLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentSlugHint, isNotEmpty);
+        expect(
+          OrchestratorStrings.initializeAgentSlugRequiredError,
+          isNotEmpty,
+        );
+        expect(
+          OrchestratorStrings.initializeAgentSlugInvalidFormatError,
+          isNotEmpty,
+        );
         expect(OrchestratorStrings.initializeAgentSubmitButton, isNotEmpty);
       },
     );
+
+    test('techspec PRD gate copy is localized PT-BR', () {
+      expect(OrchestratorStrings.workflowTechspecPrdRequiredTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.workflowTechspecPrdRequiredTitle,
+        contains('PRD'),
+      );
+      expect(
+        OrchestratorStrings.workflowTechspecPrdRequiredSubtitle,
+        isNotEmpty,
+      );
+    });
 
     test('initialize agent branch load states expose non-empty PT-BR copy', () {
       expect(OrchestratorStrings.initializeAgentBranchesLoading, isNotEmpty);

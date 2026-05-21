@@ -149,10 +149,6 @@ final class OrchestratorComposition {
           sandboxAccessService: sandboxAccessService,
         );
 
-    final RecentProjectsCubit recentProjectsCubit = RecentProjectsCubit(
-      listRecentProjectsUseCase: listRecentProjectsUseCase,
-      selectActiveProjectUseCase: selectActiveProjectUseCase,
-    );
     final ImportFlowCubit importFlowCubit = ImportFlowCubit(
       importLocalProjectUseCase: importLocalProjectUseCase,
     );
@@ -188,6 +184,13 @@ final class OrchestratorComposition {
     );
     final ListWorkflowsByProjectUseCase listWorkflowsByProjectUseCase =
         ListWorkflowsByProjectUseCase(workflowRepository);
+
+    final RecentProjectsCubit recentProjectsCubit = RecentProjectsCubit(
+      listRecentProjectsUseCase: listRecentProjectsUseCase,
+      selectActiveProjectUseCase: selectActiveProjectUseCase,
+      listWorkflowsByProjectUseCase: listWorkflowsByProjectUseCase,
+    );
+
     final SavePrdDraftUseCase savePrdDraftUseCase = SavePrdDraftUseCase(
       artifactRepository: artifactRepository,
       prdRunRepository: prdRunRepository,

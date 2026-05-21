@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/repositories/fakes/fake_workflow_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_state.dart';
@@ -163,6 +169,56 @@ void main() {
       verify: (RecentProjectsCubit cubit) {
         expect(cubit.state.activeProjectId, isNull);
         expect(repository.activeProjectId, isNull);
+      },
+    );
+
+    blocTest<RecentProjectsCubit, RecentProjectsState>(
+      'refresh loads workflows per project when list use case is provided',
+      build: () {
+        repository.projects.add(
+          LocalProjectEntity(
+            id: 'uuid-team',
+            canonicalPath: '/Users/dev/team-repo',
+            displayName: 'team-repo',
+            lastAccessedAt: DateTime.utc(2026, 5, 15, 12),
+          ),
+        );
+        final FakeWorkflowRepository workflowRepository =
+            FakeWorkflowRepository();
+        unawaited(
+          workflowRepository.create(
+            projectId: 'uuid-team',
+            slug: 'flow-a',
+            branchName: 'main',
+          ),
+        );
+        unawaited(
+          workflowRepository.create(
+            projectId: 'uuid-team',
+            slug: 'flow-b',
+            branchName: 'develop',
+          ),
+        );
+        return RecentProjectsCubit(
+          listRecentProjectsUseCase: listRecentProjectsUseCase,
+          selectActiveProjectUseCase: selectActiveProjectUseCase,
+          listWorkflowsByProjectUseCase: ListWorkflowsByProjectUseCase(
+            workflowRepository,
+          ),
+          loadOnCreate: false,
+        );
+      },
+      act: (RecentProjectsCubit cubit) async => cubit.refresh(),
+      verify: (RecentProjectsCubit cubit) {
+        final List<WorkflowEntity> workflows = cubit.state.workflowsForProject(
+          'uuid-team',
+        );
+        expect(workflows, hasLength(2));
+        expect(
+          workflows.map((WorkflowEntity w) => w.slug),
+          containsAll(<String>['flow-a', 'flow-b']),
+        );
+        expect(workflows.first.prdPhaseStatus, PrdPhaseStatus.draft);
       },
     );
   });
