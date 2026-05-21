@@ -136,6 +136,27 @@ void main() {
       expect(OrchestratorStrings.cursorConnectionCheckingSemantics, isNotEmpty);
     });
 
+    test('prd workflow stream and status copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowStatusRunning, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowStatusRunning,
+        contains('execução'),
+      );
+      expect(OrchestratorStrings.prdWorkflowStreamEmpty, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowCancelButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowUserActionRequiredTitle,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.prdWorkflowRunFailedGeneric, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStreamUnavailable, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStreamEventAssistant, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowStatusPendingApproval,
+        isNot(equals('Pending approval')),
+      );
+    });
+
     test('workflow techspec initialization copy is localized in PT-BR', () {
       expect(OrchestratorStrings.workflowTechspecEmptyTitle, isNotEmpty);
       expect(

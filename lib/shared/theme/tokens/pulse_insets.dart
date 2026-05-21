@@ -90,4 +90,13 @@ abstract final class PulseInsets {
 
   static const EdgeInsets workflowInstructionBarApplyButtonHorizontal =
       EdgeInsets.symmetric(horizontal: PulseDimensions.sectionGapSm);
+
+  static const EdgeInsets workflowStreamPanel = EdgeInsets.all(
+    PulseDimensions.workflowInstructionBarOuterInset,
+  );
+
+  static const EdgeInsets workflowStreamChip = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.workflowStreamChipHorizontalPadding,
+    vertical: PulseDimensions.workflowStreamChipVerticalPadding,
+  );
 }

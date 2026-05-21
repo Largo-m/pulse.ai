@@ -101,4 +101,47 @@ abstract final class OrchestratorStrings {
       'Conexão com o Cursor verificada';
   static const String cursorConnectionDisconnectedSemantics =
       'Cursor desconectado; configure a credencial';
+
+  static const String prdWorkflowStatusNotStarted = 'Não iniciado';
+  static const String prdWorkflowStatusRunning = 'Em execução';
+  static const String prdWorkflowStatusPendingApproval = 'Aguardando aprovação';
+  static const String prdWorkflowStatusApproved = 'Aprovado';
+  static const String prdWorkflowStatusFailed = 'Falhou';
+  static const String prdWorkflowStatusCancelled = 'Cancelado';
+
+  static const String prdWorkflowStreamEmpty =
+      'Nenhum evento de execução ainda. Inicie o agente PRD para ver o stream ao vivo.';
+  static const String prdWorkflowCancelButton = 'Cancelar execução';
+  static const String prdWorkflowCancelSemantics =
+      'Cancelar execução do agente PRD em andamento';
+  static const String prdWorkflowStreamPanelSemantics =
+      'Painel de stream ao vivo da execução PRD';
+  static const String prdWorkflowRunStatusRunningSemantics =
+      'Execução PRD em andamento';
+  static const String prdWorkflowRunStatusPendingApprovalSemantics =
+      'Execução PRD concluída; aguardando aprovação';
+  static const String prdWorkflowRunStatusFailedSemantics =
+      'Execução PRD falhou';
+  static const String prdWorkflowRunStatusCancelledSemantics =
+      'Execução PRD cancelada';
+
+  static const String prdWorkflowUserActionRequiredTitle =
+      'Ação necessária no Cursor';
+  static const String prdWorkflowUserActionRequiredBody =
+      'O agente sinalizou que precisa de uma ação sua no Cursor. '
+      'Conclua a etapa pendente para retomar o stream.';
+
+  static const String prdWorkflowRunFailedGeneric =
+      'A execução do agente PRD falhou. Tente novamente ou verifique a conexão.';
+  static const String prdWorkflowStreamUnavailable =
+      'O stream da execução ficou indisponível. Verifique a rede e tente de novo.';
+
+  static const String prdWorkflowStreamEventStatus = 'Atualização de status';
+  static const String prdWorkflowStreamEventAssistant =
+      'Resposta do assistente';
+  static const String prdWorkflowStreamEventThinking = 'Raciocínio do agente';
+  static const String prdWorkflowStreamEventToolCall = 'Chamada de ferramenta';
+  static const String prdWorkflowStreamEventDone = 'Execução concluída';
+  static const String prdWorkflowStreamEventHeartbeat = 'Heartbeat';
+  static const String prdWorkflowStreamEventGeneric = 'Evento de execução';
 }
