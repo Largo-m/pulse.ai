@@ -39,8 +39,10 @@ final class FakeCursorPrdAgentServiceForLifecycle
 
   Either<Failure, void>? nextPreflightResult;
   bool shouldFailStart = false;
+  int startRunCallCount = 0;
   int cancelRunCallCount = 0;
   String? lastCancelledCloudRunId;
+  PrdRunContext? lastStartContext;
 
   final Uuid _uuid;
 
@@ -51,6 +53,8 @@ final class FakeCursorPrdAgentServiceForLifecycle
 
   @override
   Future<PrdRunEntity> startRun(PrdRunContext context) async {
+    startRunCallCount++;
+    lastStartContext = context;
     if (shouldFailStart) {
       throw const PrdRunOperationException(PrdRunFailure.cloudRunFailed());
     }

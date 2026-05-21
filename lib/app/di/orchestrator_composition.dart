@@ -17,7 +17,10 @@ import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persisten
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_connection_gate.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/approve_prd_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/build_prd_run_context_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
@@ -25,9 +28,11 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/start_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
@@ -53,6 +58,9 @@ final class OrchestratorComposition {
     required this.savePrdDraftUseCase,
     required this.readPrdMarkdownUseCase,
     required this.listWorkflowAdrsUseCase,
+    required this.startPrdAgentRunUseCase,
+    required this.approvePrdUseCase,
+    required this.rejectPrdWithFeedbackUseCase,
     required this.recentProjectsCubit,
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
@@ -69,6 +77,9 @@ final class OrchestratorComposition {
   final SavePrdDraftUseCase savePrdDraftUseCase;
   final ReadPrdMarkdownUseCase readPrdMarkdownUseCase;
   final ListWorkflowAdrsUseCase listWorkflowAdrsUseCase;
+  final StartPrdAgentRunUseCase startPrdAgentRunUseCase;
+  final ApprovePrdUseCase approvePrdUseCase;
+  final RejectPrdWithFeedbackUseCase rejectPrdWithFeedbackUseCase;
   final RecentProjectsCubit recentProjectsCubit;
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
@@ -148,6 +159,12 @@ final class OrchestratorComposition {
     final ListWorkflowAdrsUseCase listWorkflowAdrsUseCase =
         ListWorkflowAdrsUseCase(artifactRepository);
 
+    final BuildPrdRunContextUseCase buildPrdRunContextUseCase =
+        BuildPrdRunContextUseCase(
+          recentProjectsRepository: repository,
+          listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
+        );
+
     final CursorCredentialStoreService cursorCredentialStoreService =
         CursorCredentialStoreServiceImpl();
     final CursorCloudAgentHttpClientImpl cursorCloudAgentHttpClient =
@@ -167,6 +184,29 @@ final class OrchestratorComposition {
       runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
     );
 
+    final PreflightPrdRunConnectionGate prdRunConnectionGate =
+        PreflightPrdRunConnectionGate(
+          preflight: runCursorConnectionPreflightUseCase.call,
+        );
+    final StartPrdAgentRunUseCase startPrdAgentRunUseCase =
+        StartPrdAgentRunUseCase(
+          connectionGate: prdRunConnectionGate,
+          buildPrdRunContextUseCase: buildPrdRunContextUseCase,
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+          cursorPrdAgentService: cursorPrdAgentService,
+        );
+    final ApprovePrdUseCase approvePrdUseCase = ApprovePrdUseCase(
+      prdRunRepository: prdRunRepository,
+      workflowRepository: workflowRepository,
+    );
+    final RejectPrdWithFeedbackUseCase rejectPrdWithFeedbackUseCase =
+        RejectPrdWithFeedbackUseCase(
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+          startPrdAgentRunUseCase: startPrdAgentRunUseCase,
+        );
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       artifactRepository: artifactRepository,
@@ -177,6 +217,9 @@ final class OrchestratorComposition {
       savePrdDraftUseCase: savePrdDraftUseCase,
       readPrdMarkdownUseCase: readPrdMarkdownUseCase,
       listWorkflowAdrsUseCase: listWorkflowAdrsUseCase,
+      startPrdAgentRunUseCase: startPrdAgentRunUseCase,
+      approvePrdUseCase: approvePrdUseCase,
+      rejectPrdWithFeedbackUseCase: rejectPrdWithFeedbackUseCase,
       recentProjectsCubit: recentProjectsCubit,
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
