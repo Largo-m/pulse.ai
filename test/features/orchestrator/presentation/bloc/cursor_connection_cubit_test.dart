@@ -7,7 +7,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 
-import '../../domain/service/fakes/fake_cursor_prd_agent_service.dart';
+import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_agent_service.dart';
 
 void main() {
   group('CursorConnectionCubit', () {

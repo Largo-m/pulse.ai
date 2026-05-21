@@ -32,11 +32,13 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cub
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_credential_store_service_impl.dart';
-import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_stub.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/prd_run_context_builder.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -148,9 +150,19 @@ final class OrchestratorComposition {
 
     final CursorCredentialStoreService cursorCredentialStoreService =
         CursorCredentialStoreServiceImpl();
-    final CursorPrdAgentService cursorPrdAgentService =
-        CursorPrdAgentServiceStub(
+    final CursorCloudAgentHttpClientImpl cursorCloudAgentHttpClient =
+        CursorCloudAgentHttpClientImpl(
           credentialStore: cursorCredentialStoreService,
+        );
+    final PrdRunContextBuilder prdRunContextBuilder = PrdRunContextBuilder(
+      recentProjectsRepository: repository,
+      listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
+    );
+    final CursorPrdAgentService cursorPrdAgentService =
+        CursorPrdAgentServiceImpl(
+          credentialStore: cursorCredentialStoreService,
+          contextBuilder: prdRunContextBuilder,
+          httpClient: cursorCloudAgentHttpClient,
         );
     final CursorConnectionCubit cursorConnectionCubit = CursorConnectionCubit(
       cursorPrdAgentService: cursorPrdAgentService,
