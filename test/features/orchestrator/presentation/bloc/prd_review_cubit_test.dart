@@ -16,6 +16,7 @@ import 'package:pulse_ai/features/orchestrator/domain/repositories/fakes/fake_wo
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_connection_gate.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/approve_prd_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/build_prd_run_context_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/find_prd_approval_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
@@ -52,6 +53,7 @@ void main() {
   late lifecycle_fake.FakeCursorPrdAgentServiceForLifecycle rejectAgentService;
   late SavePrdDraftUseCase savePrdDraftUseCase;
   late ReadPrdMarkdownUseCase readPrdMarkdownUseCase;
+  late FindPrdApprovalUseCase findPrdApprovalUseCase;
   late ApprovePrdUseCase approvePrdUseCase;
   late RejectPrdWithFeedbackUseCase rejectPrdWithFeedbackUseCase;
   late RunCursorConnectionPreflightUseCase preflightUseCase;
@@ -64,7 +66,7 @@ void main() {
       savePrdDraftUseCase: savePrdDraftUseCase,
       approvePrdUseCase: approvePrdUseCase,
       rejectPrdWithFeedbackUseCase: rejectPrdWithFeedbackUseCase,
-      prdRunRepository: prdRunRepository,
+      findPrdApprovalUseCase: findPrdApprovalUseCase,
       runCursorConnectionPreflightUseCase: preflightUseCase,
     );
   }
@@ -102,6 +104,7 @@ void main() {
       clock: () => DateTime.utc(2026, 5, 21, 16),
     );
     readPrdMarkdownUseCase = ReadPrdMarkdownUseCase(artifactRepository);
+    findPrdApprovalUseCase = FindPrdApprovalUseCase(prdRunRepository);
     approvePrdUseCase = ApprovePrdUseCase(
       prdRunRepository: prdRunRepository,
       workflowRepository: workflowRepository,

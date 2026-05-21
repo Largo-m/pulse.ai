@@ -27,6 +27,7 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/cancel_prd_agent_
 import 'package:pulse_ai/features/orchestrator/domain/usecases/complete_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/fail_prd_agent_run_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/find_prd_approval_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/import_local_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_projects_use_case.dart';
@@ -312,7 +313,7 @@ final class OrchestratorComposition {
         savePrdDraftUseCase: savePrdDraftUseCase,
         approvePrdUseCase: approvePrdUseCase,
         rejectPrdWithFeedbackUseCase: rejectPrdWithFeedbackUseCase,
-        prdRunRepository: prdRunRepository,
+        findPrdApprovalUseCase: FindPrdApprovalUseCase(prdRunRepository),
         runCursorConnectionPreflightUseCase:
             runCursorConnectionPreflightUseCase,
       ),

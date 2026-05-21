@@ -8,9 +8,8 @@ import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_approval_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_approval_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_key.dart';
-import 'package:pulse_ai/features/orchestrator/domain/repositories/prd_run_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/approve_prd_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/find_prd_approval_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
@@ -26,14 +25,14 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
     required SavePrdDraftUseCase savePrdDraftUseCase,
     required ApprovePrdUseCase approvePrdUseCase,
     required RejectPrdWithFeedbackUseCase rejectPrdWithFeedbackUseCase,
-    required PrdRunRepository prdRunRepository,
+    required FindPrdApprovalUseCase findPrdApprovalUseCase,
     required RunCursorConnectionPreflightUseCase
     runCursorConnectionPreflightUseCase,
   }) : _readPrdMarkdownUseCase = readPrdMarkdownUseCase,
        _savePrdDraftUseCase = savePrdDraftUseCase,
        _approvePrdUseCase = approvePrdUseCase,
        _rejectPrdWithFeedbackUseCase = rejectPrdWithFeedbackUseCase,
-       _prdRunRepository = prdRunRepository,
+       _findPrdApprovalUseCase = findPrdApprovalUseCase,
        _runCursorConnectionPreflightUseCase =
            runCursorConnectionPreflightUseCase,
        super(const PrdReviewState());
@@ -42,7 +41,7 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
   final SavePrdDraftUseCase _savePrdDraftUseCase;
   final ApprovePrdUseCase _approvePrdUseCase;
   final RejectPrdWithFeedbackUseCase _rejectPrdWithFeedbackUseCase;
-  final PrdRunRepository _prdRunRepository;
+  final FindPrdApprovalUseCase _findPrdApprovalUseCase;
   final RunCursorConnectionPreflightUseCase
   _runCursorConnectionPreflightUseCase;
 
@@ -99,12 +98,9 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
       ),
     );
 
-    final String workflowKey = WorkflowKey.compose(
+    final PrdApprovalEntity? approval = await _findPrdApprovalUseCase(
       projectId: projectId,
       slug: slug,
-    );
-    final PrdApprovalEntity? approval = await _prdRunRepository.findApproval(
-      workflowKey,
     );
 
     if (approval == null ||
@@ -192,12 +188,9 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
       return;
     }
 
-    final String workflowKey = WorkflowKey.compose(
+    final PrdApprovalEntity? approval = await _findPrdApprovalUseCase(
       projectId: projectId,
       slug: slug,
-    );
-    final PrdApprovalEntity? approval = await _prdRunRepository.findApproval(
-      workflowKey,
     );
 
     emit(
