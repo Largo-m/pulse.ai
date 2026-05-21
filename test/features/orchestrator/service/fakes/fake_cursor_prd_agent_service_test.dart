@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_agent_service.dart';
 
@@ -39,12 +39,12 @@ void main() {
       final FakeCursorPrdAgentService service = FakeCursorPrdAgentService();
 
       final run = await service.startRun(
-        const PrdRunRequest(
+        const PrdRunContext(
           projectId: 'project-1',
           slug: 'agent-a',
-          repoPath: '/Users/dev/repo',
+          canonicalPath: '/Users/dev/repo',
           branchName: 'main',
-          directive: 'Create PRD',
+          composedPrompt: 'Create PRD',
         ),
       );
 

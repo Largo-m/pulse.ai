@@ -5,22 +5,22 @@ import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/build_prd_run_context_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
-import 'package:pulse_ai/features/orchestrator/service/prd_run_context_builder.dart';
 
-import '../domain/usecases/fake_local_git_branches_service.dart';
-import '../domain/usecases/fake_recent_projects_repository.dart';
+import 'fake_local_git_branches_service.dart';
+import 'fake_recent_projects_repository.dart';
 
 void main() {
-  group('PrdRunContextBuilder', () {
+  group('BuildPrdRunContextUseCase', () {
     late FakeRecentProjectsRepository projectsRepository;
     late FakeLocalGitBranchesService gitService;
-    late PrdRunContextBuilder builder;
+    late BuildPrdRunContextUseCase useCase;
 
     setUp(() {
       projectsRepository = FakeRecentProjectsRepository();
       gitService = FakeLocalGitBranchesService();
-      builder = PrdRunContextBuilder(
+      useCase = BuildPrdRunContextUseCase(
         recentProjectsRepository: projectsRepository,
         listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
           service: gitService,
@@ -29,7 +29,7 @@ void main() {
     });
 
     test('returns projectNotFound when UUID is missing', () async {
-      final Either<Failure, PrdRunContext> result = await builder.build(
+      final Either<Failure, PrdRunContext> result = await useCase(
         const PrdRunRequest(
           projectId: 'missing-project',
           slug: 'agent-a',
@@ -66,7 +66,7 @@ void main() {
             headBranchName: 'main',
           );
 
-      final Either<Failure, PrdRunContext> result = await builder.build(
+      final Either<Failure, PrdRunContext> result = await useCase(
         const PrdRunRequest(
           projectId: 'project-1',
           slug: 'agent-a',
@@ -105,7 +105,7 @@ void main() {
               headBranchName: 'develop',
             );
 
-        final Either<Failure, PrdRunContext> result = await builder.build(
+        final Either<Failure, PrdRunContext> result = await useCase(
           const PrdRunRequest(
             projectId: 'project-1',
             slug: 'agent-a',
@@ -141,7 +141,7 @@ void main() {
             headBranchName: 'main',
           );
 
-      final Either<Failure, PrdRunContext> result = await builder.build(
+      final Either<Failure, PrdRunContext> result = await useCase(
         const PrdRunRequest(
           projectId: 'project-1',
           slug: 'agent-a',
@@ -176,7 +176,7 @@ void main() {
             LocalGitBranchesOutcome.notGitRepository,
           );
 
-      final Either<Failure, PrdRunContext> result = await builder.build(
+      final Either<Failure, PrdRunContext> result = await useCase(
         const PrdRunRequest(
           projectId: 'project-1',
           slug: 'agent-a',

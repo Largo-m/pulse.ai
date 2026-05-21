@@ -7,8 +7,8 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.d
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 
-final class PrdRunContextBuilder {
-  PrdRunContextBuilder({
+final class BuildPrdRunContextUseCase {
+  BuildPrdRunContextUseCase({
     required RecentProjectsRepository recentProjectsRepository,
     required ListLocalGitBranchesUseCase listLocalGitBranchesUseCase,
   }) : _recentProjectsRepository = recentProjectsRepository,
@@ -17,7 +17,7 @@ final class PrdRunContextBuilder {
   final RecentProjectsRepository _recentProjectsRepository;
   final ListLocalGitBranchesUseCase _listLocalGitBranchesUseCase;
 
-  Future<Either<Failure, PrdRunContext>> build(PrdRunRequest request) async {
+  Future<Either<Failure, PrdRunContext>> call(PrdRunRequest request) async {
     final List<LocalProjectEntity> projects = await _recentProjectsRepository
         .listRecent();
     LocalProjectEntity? project;

@@ -1,8 +1,8 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
@@ -24,7 +24,7 @@ final class CursorPrdAgentServiceStub implements CursorPrdAgentService {
   }
 
   @override
-  Future<PrdRunEntity> startRun(PrdRunRequest request) {
+  Future<PrdRunEntity> startRun(PrdRunContext context) {
     throw UnimplementedError('CursorPrdAgentService.startRun is task_07');
   }
 

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_stub.dart';
 
 import '../domain/service/fakes/fake_cursor_credential_store_service.dart';
@@ -63,12 +63,12 @@ void main() {
     test('startRun throws UnimplementedError until task_07', () {
       expect(
         () => stub.startRun(
-          const PrdRunRequest(
+          const PrdRunContext(
             projectId: 'p1',
             slug: 'agent-a',
-            repoPath: '/repo',
+            canonicalPath: '/repo',
             branchName: 'main',
-            directive: 'build prd',
+            composedPrompt: 'build prd',
           ),
         ),
         throwsA(isA<UnimplementedError>()),

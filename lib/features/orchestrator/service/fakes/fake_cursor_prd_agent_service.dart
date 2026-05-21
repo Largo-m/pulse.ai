@@ -1,7 +1,7 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_key.dart';
@@ -31,20 +31,20 @@ final class FakeCursorPrdAgentService implements CursorPrdAgentService {
   }
 
   @override
-  Future<PrdRunEntity> startRun(PrdRunRequest request) async {
+  Future<PrdRunEntity> startRun(PrdRunContext context) async {
     return PrdRunEntity(
       id: _uuid.v4(),
       workflowKey: WorkflowKey.compose(
-        projectId: request.projectId,
-        slug: request.slug,
+        projectId: context.projectId,
+        slug: context.slug,
       ),
       cloudRunId: CursorCloudRunIdCodec.encode(
         agentId: fakeAgentId,
         runId: fakeRunId,
       ),
       status: PrdRunStatus.queued,
-      supersedesRunId: request.supersedesRunId,
-      feedback: request.feedback,
+      supersedesRunId: context.supersedesRunId,
+      feedback: context.feedback,
       startedAt: DateTime.now().toUtc(),
     );
   }

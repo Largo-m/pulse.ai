@@ -39,7 +39,6 @@ import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
-import 'package:pulse_ai/features/orchestrator/service/prd_run_context_builder.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -155,14 +154,9 @@ final class OrchestratorComposition {
         CursorCloudAgentHttpClientImpl(
           credentialStore: cursorCredentialStoreService,
         );
-    final PrdRunContextBuilder prdRunContextBuilder = PrdRunContextBuilder(
-      recentProjectsRepository: repository,
-      listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
-    );
     final CursorPrdAgentService cursorPrdAgentService =
         CursorPrdAgentServiceImpl(
           credentialStore: cursorCredentialStoreService,
-          contextBuilder: prdRunContextBuilder,
           httpClient: cursorCloudAgentHttpClient,
         );
     final RunCursorConnectionPreflightUseCase

@@ -7,7 +7,6 @@ import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
-import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_key.dart';
@@ -16,27 +15,23 @@ import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_s
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_id_codec.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_run_sse_parser.dart';
-import 'package:pulse_ai/features/orchestrator/service/prd_run_context_builder.dart';
 import 'package:pulse_ai/features/orchestrator/service/transient_http_retry.dart';
 import 'package:uuid/uuid.dart';
 
 final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
   CursorPrdAgentServiceImpl({
     required CursorCredentialStoreService credentialStore,
-    required PrdRunContextBuilder contextBuilder,
     required CursorCloudAgentHttpClient httpClient,
     CursorRunSseParser? sseParser,
     TransientHttpRetry? retryPolicy,
     Uuid? uuid,
   }) : _credentialStore = credentialStore,
-       _contextBuilder = contextBuilder,
        _httpClient = httpClient,
        _sseParser = sseParser ?? const CursorRunSseParser(),
        _retryPolicy = retryPolicy ?? const TransientHttpRetry(),
        _uuid = uuid ?? const Uuid();
 
   final CursorCredentialStoreService _credentialStore;
-  final PrdRunContextBuilder _contextBuilder;
   final CursorCloudAgentHttpClient _httpClient;
   final CursorRunSseParser _sseParser;
   final TransientHttpRetry _retryPolicy;
@@ -69,14 +64,7 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
   }
 
   @override
-  Future<PrdRunEntity> startRun(PrdRunRequest request) async {
-    final Either<Failure, PrdRunContext> contextResult = await _contextBuilder
-        .build(request);
-    final PrdRunContext context = contextResult.fold(
-      (Failure failure) => throw PrdRunOperationException(failure),
-      (PrdRunContext value) => value,
-    );
-
+  Future<PrdRunEntity> startRun(PrdRunContext context) async {
     final String body = jsonEncode(<String, Object>{
       'prompt': <String, String>{'text': context.composedPrompt},
       'mode': 'agent',
@@ -107,13 +95,13 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
     return PrdRunEntity(
       id: _uuid.v4(),
       workflowKey: WorkflowKey.compose(
-        projectId: request.projectId,
-        slug: request.slug,
+        projectId: context.projectId,
+        slug: context.slug,
       ),
       cloudRunId: CursorCloudRunIdCodec.encode(agentId: agentId, runId: runId),
       status: PrdRunStatus.queued,
-      supersedesRunId: request.supersedesRunId,
-      feedback: request.feedback,
+      supersedesRunId: context.supersedesRunId,
+      feedback: context.feedback,
       startedAt: startedAt,
     );
   }
