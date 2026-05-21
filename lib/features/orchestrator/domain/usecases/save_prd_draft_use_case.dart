@@ -42,15 +42,18 @@ final class SavePrdDraftUseCase {
       return writeResult;
     }
 
+    final PrdApprovalEntity? existingApproval = await _prdRunRepository
+        .findApproval(workflowKey);
     final PrdApprovalStatus status =
-        (await _prdRunRepository.findApproval(workflowKey))?.status ??
-        PrdApprovalStatus.draft;
+        existingApproval?.status ?? PrdApprovalStatus.draft;
 
     final Either<Failure, PrdApprovalEntity> approvalResult =
         await _prdRunRepository.upsertApproval(
           workflowKey: workflowKey,
           status: status,
           lastEditedAt: lastEditedAt,
+          sourceRunId: existingApproval?.sourceRunId,
+          approvedAt: existingApproval?.approvedAt,
         );
     return approvalResult.fold(
       (Failure failure) => left(failure),

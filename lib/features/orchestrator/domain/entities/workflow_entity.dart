@@ -21,6 +21,21 @@ final class WorkflowEntity {
   String get workflowKey =>
       WorkflowKey.compose(projectId: projectId, slug: slug);
 
+  WorkflowEntity copyWith({
+    String? branchName,
+    String? directive,
+    PrdPhaseStatus? prdPhaseStatus,
+  }) {
+    return WorkflowEntity(
+      projectId: projectId,
+      slug: slug,
+      branchName: branchName ?? this.branchName,
+      directive: directive ?? this.directive,
+      prdPhaseStatus: prdPhaseStatus ?? this.prdPhaseStatus,
+      createdAt: createdAt,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     return identical(this, other) ||

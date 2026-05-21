@@ -8,6 +8,8 @@ enum PrdRunFailureCode {
   cloudRunNotFound,
   streamUnavailable,
   cancelled,
+  runNotActive,
+  workflowNotFound,
 }
 
 final class PrdRunFailure implements Failure {
@@ -30,6 +32,12 @@ final class PrdRunFailure implements Failure {
 
   const PrdRunFailure.streamUnavailable()
     : this(code: PrdRunFailureCode.streamUnavailable, message: '');
+
+  const PrdRunFailure.runNotActive()
+    : this(code: PrdRunFailureCode.runNotActive, message: '');
+
+  const PrdRunFailure.workflowNotFound()
+    : this(code: PrdRunFailureCode.workflowNotFound, message: '');
 
   final PrdRunFailureCode code;
 
