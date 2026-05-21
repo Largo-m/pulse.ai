@@ -1,18 +1,15 @@
-import 'dart:io';
-
 import 'package:fpdart/fpdart.dart';
 import 'package:hive/hive.dart';
-import 'package:pulse_ai/core/error/artifact_persistence_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/workflow_persistence_failure.dart';
 import 'package:pulse_ai/features/orchestrator/data/artifact_path_segment_validator.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/data/hive/orchestrator_hive_boxes.dart';
 import 'package:pulse_ai/features/orchestrator/data/persistence/persistence_write_coordinator.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_key.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 
 typedef WorkflowHivePut =
     Future<void> Function(String key, WorkflowEntity entity);
@@ -20,12 +17,12 @@ typedef WorkflowHivePut =
 final class WorkflowRepositoryImpl implements WorkflowRepository {
   WorkflowRepositoryImpl({
     required OrchestratorHiveBoxes boxes,
-    FilesystemArtifactStore? artifactStore,
+    ArtifactPersistenceService? artifactPersistenceService,
     ArtifactPathSegmentValidator? pathSegmentValidator,
     PersistenceWriteCoordinator? writeCoordinator,
     WorkflowHivePut? hivePutOverride,
   }) : _workflowsBox = boxes.workflows,
-       _artifactStore = artifactStore,
+       _artifactPersistenceService = artifactPersistenceService,
        _pathSegmentValidator =
            pathSegmentValidator ?? const ArtifactPathSegmentValidator(),
        _writeCoordinator =
@@ -33,7 +30,7 @@ final class WorkflowRepositoryImpl implements WorkflowRepository {
        _hivePutOverride = hivePutOverride;
 
   final Box<WorkflowEntity> _workflowsBox;
-  final FilesystemArtifactStore? _artifactStore;
+  final ArtifactPersistenceService? _artifactPersistenceService;
   final ArtifactPathSegmentValidator _pathSegmentValidator;
   final PersistenceWriteCoordinator _writeCoordinator;
   final WorkflowHivePut? _hivePutOverride;
@@ -67,33 +64,21 @@ final class WorkflowRepositoryImpl implements WorkflowRepository {
       createdAt: DateTime.now().toUtc(),
     );
 
-    if (_artifactStore == null) {
+    final ArtifactPersistenceService? artifactPersistenceService =
+        _artifactPersistenceService;
+    if (artifactPersistenceService == null) {
       return _persistWorkflowIndex(key: key, entity: entity);
     }
 
-    final FilesystemArtifactStore artifactStore = _artifactStore;
     return _writeCoordinator.commitFilesystemFirst<WorkflowEntity>(
-      filesystemCommit: () async {
-        try {
-          final Directory directory = artifactStore.workflowDirectory(
-            projectId: projectId,
-            slug: slug,
-          );
-          await directory.create(recursive: true);
-          return right(null);
-        } on Object {
-          return left(const ArtifactPersistenceFailure.ioError());
-        }
-      },
+      filesystemCommit: () => artifactPersistenceService
+          .ensureWorkflowDirectory(projectId: projectId, slug: slug),
       hiveCommit: () => _persistWorkflowIndex(key: key, entity: entity),
       rollbackFilesystem: () async {
-        final Directory directory = artifactStore.workflowDirectory(
+        await artifactPersistenceService.deleteWorkflowDirectory(
           projectId: projectId,
           slug: slug,
         );
-        if (directory.existsSync()) {
-          directory.deleteSync(recursive: true);
-        }
       },
     );
   }

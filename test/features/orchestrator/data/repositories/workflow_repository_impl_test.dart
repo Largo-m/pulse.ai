@@ -5,11 +5,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/workflow_persistence_failure.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/data/hive/orchestrator_hive_boxes.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/workflow_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
+import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import '../hive/orchestrator_hive_test_helper.dart';
 
 void main() {
@@ -119,13 +119,12 @@ void main() {
           p.join(tempRoot.path, 'pulse', 'workflows'),
         );
         await workflowsRoot.create(recursive: true);
-        final FilesystemArtifactStore store = FilesystemArtifactStore(
-          workflowsRoot: workflowsRoot,
-        );
+        final FilesystemArtifactServiceImpl artifactPersistenceService =
+            FilesystemArtifactServiceImpl(workflowsRoot: workflowsRoot);
 
         final WorkflowRepository fsRepository = WorkflowRepositoryImpl(
           boxes: boxes,
-          artifactStore: store,
+          artifactPersistenceService: artifactPersistenceService,
           hivePutOverride: (String key, WorkflowEntity entity) async {
             throw StateError('simulated hive failure');
           },
@@ -139,10 +138,8 @@ void main() {
             );
 
         expect(createResult.isLeft(), isTrue);
-        final Directory workflowDir = store.workflowDirectory(
-          projectId: projectId,
-          slug: 'rollback-slug',
-        );
+        final Directory workflowDir = artifactPersistenceService
+            .workflowDirectory(projectId: projectId, slug: 'rollback-slug');
         expect(workflowDir.existsSync(), isFalse);
         expect(
           boxes.workflows.containsKey('$projectId::rollback-slug'),

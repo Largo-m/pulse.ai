@@ -8,11 +8,13 @@ import 'package:pulse_ai/core/error/artifact_persistence_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 
 typedef ArtifactAtomicRename = Future<void> Function(File source, File target);
 
-final class FilesystemArtifactStore {
-  FilesystemArtifactStore({
+final class FilesystemArtifactServiceImpl
+    implements ArtifactPersistenceService {
+  FilesystemArtifactServiceImpl({
     required Directory workflowsRoot,
     ArtifactAtomicRename? atomicRename,
   }) : _workflowsRoot = workflowsRoot,
@@ -26,7 +28,7 @@ final class FilesystemArtifactStore {
   static const String adrsDirectoryName = 'adrs';
   static final RegExp _adrFileNamePattern = RegExp(r'^adr-(\d{3})\.md$');
 
-  static Future<FilesystemArtifactStore> createFromApplicationSupport({
+  static Future<FilesystemArtifactServiceImpl> createFromApplicationSupport({
     Future<Directory> Function()? resolveApplicationSupportDirectory,
   }) async {
     final Directory appSupport = resolveApplicationSupportDirectory != null
@@ -35,7 +37,7 @@ final class FilesystemArtifactStore {
     final Directory workflowsRoot = Directory(
       p.join(appSupport.path, 'pulse', 'workflows'),
     );
-    return FilesystemArtifactStore(workflowsRoot: workflowsRoot);
+    return FilesystemArtifactServiceImpl(workflowsRoot: workflowsRoot);
   }
 
   Directory workflowDirectory({
@@ -45,6 +47,43 @@ final class FilesystemArtifactStore {
     return Directory(p.join(_workflowsRoot.path, projectId, slug));
   }
 
+  @override
+  Future<Either<Failure, void>> ensureWorkflowDirectory({
+    required String projectId,
+    required String slug,
+  }) async {
+    try {
+      final Directory directory = workflowDirectory(
+        projectId: projectId,
+        slug: slug,
+      );
+      await directory.create(recursive: true);
+      return right(null);
+    } on IOException {
+      return left(const ArtifactPersistenceFailure.ioError());
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> deleteWorkflowDirectory({
+    required String projectId,
+    required String slug,
+  }) async {
+    try {
+      final Directory directory = workflowDirectory(
+        projectId: projectId,
+        slug: slug,
+      );
+      if (directory.existsSync()) {
+        directory.deleteSync(recursive: true);
+      }
+      return right(null);
+    } on IOException {
+      return left(const ArtifactPersistenceFailure.ioError());
+    }
+  }
+
+  @override
   Future<Either<Failure, String>> readPrdMarkdown({
     required String projectId,
     required String slug,
@@ -60,6 +99,7 @@ final class FilesystemArtifactStore {
     }
   }
 
+  @override
   Future<Either<Failure, void>> writePrdMarkdown({
     required String projectId,
     required String slug,
@@ -96,6 +136,7 @@ final class FilesystemArtifactStore {
     }
   }
 
+  @override
   Future<Either<Failure, List<AdrEntry>>> listAdrs({
     required String projectId,
     required String slug,

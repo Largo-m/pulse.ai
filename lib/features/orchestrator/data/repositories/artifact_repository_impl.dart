@@ -1,20 +1,20 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/data/artifact_path_segment_validator.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 
 final class ArtifactRepositoryImpl implements ArtifactRepository {
   ArtifactRepositoryImpl({
-    required FilesystemArtifactStore store,
+    required ArtifactPersistenceService artifactPersistenceService,
     ArtifactPathSegmentValidator? pathSegmentValidator,
-  }) : _store = store,
+  }) : _artifactPersistenceService = artifactPersistenceService,
        _pathSegmentValidator =
            pathSegmentValidator ?? const ArtifactPathSegmentValidator();
 
-  final FilesystemArtifactStore _store;
+  final ArtifactPersistenceService _artifactPersistenceService;
   final ArtifactPathSegmentValidator _pathSegmentValidator;
 
   @override
@@ -34,7 +34,10 @@ final class ArtifactRepositoryImpl implements ArtifactRepository {
       return left(slugValidation.getLeft().toNullable()!);
     }
 
-    return _store.readPrdMarkdown(projectId: projectId, slug: slug);
+    return _artifactPersistenceService.readPrdMarkdown(
+      projectId: projectId,
+      slug: slug,
+    );
   }
 
   @override
@@ -56,7 +59,7 @@ final class ArtifactRepositoryImpl implements ArtifactRepository {
       return left(slugValidation.getLeft().toNullable()!);
     }
 
-    return _store.writePrdMarkdown(
+    return _artifactPersistenceService.writePrdMarkdown(
       projectId: projectId,
       slug: slug,
       markdown: markdown,
@@ -81,6 +84,9 @@ final class ArtifactRepositoryImpl implements ArtifactRepository {
       return left(slugValidation.getLeft().toNullable()!);
     }
 
-    return _store.listAdrs(projectId: projectId, slug: slug);
+    return _artifactPersistenceService.listAdrs(
+      projectId: projectId,
+      slug: slug,
+    );
   }
 }

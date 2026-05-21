@@ -5,15 +5,15 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pulse_ai/core/error/artifact_persistence_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
+import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 
 void main() {
-  group('FilesystemArtifactStore', () {
+  group('FilesystemArtifactServiceImpl', () {
     late Directory tempRoot;
     late Directory workflowsRoot;
-    late FilesystemArtifactStore store;
+    late FilesystemArtifactServiceImpl service;
 
     const String projectId = '550e8400-e29b-41d4-a716-446655440000';
     const String slug = 'auth-flow';
@@ -22,7 +22,7 @@ void main() {
       tempRoot = await Directory.systemTemp.createTemp('pulse_artifact_test_');
       workflowsRoot = Directory(p.join(tempRoot.path, 'pulse', 'workflows'));
       await workflowsRoot.create(recursive: true);
-      store = FilesystemArtifactStore(workflowsRoot: workflowsRoot);
+      service = FilesystemArtifactServiceImpl(workflowsRoot: workflowsRoot);
     });
 
     tearDown(() async {
@@ -36,21 +36,20 @@ void main() {
       () async {
         const String markdown = '# PRD\n\nConteúdo de teste.';
 
-        final Either<Failure, void> writeResult = await store.writePrdMarkdown(
-          projectId: projectId,
-          slug: slug,
-          markdown: markdown,
-          metadata: PrdArtifactMetadata(
-            lastEditedAt: DateTime.utc(2026, 5, 20, 10),
-            sourceRunId: 'run-1',
-          ),
-        );
+        final Either<Failure, void> writeResult = await service
+            .writePrdMarkdown(
+              projectId: projectId,
+              slug: slug,
+              markdown: markdown,
+              metadata: PrdArtifactMetadata(
+                lastEditedAt: DateTime.utc(2026, 5, 20, 10),
+                sourceRunId: 'run-1',
+              ),
+            );
         expect(writeResult.isRight(), isTrue);
 
-        final Either<Failure, String> readResult = await store.readPrdMarkdown(
-          projectId: projectId,
-          slug: slug,
-        );
+        final Either<Failure, String> readResult = await service
+            .readPrdMarkdown(projectId: projectId, slug: slug);
         expect(readResult.getOrElse((Failure _) => ''), markdown);
       },
     );
@@ -58,10 +57,8 @@ void main() {
     test(
       'readPrdMarkdown returns empty string when prd.md is missing',
       () async {
-        final Either<Failure, String> readResult = await store.readPrdMarkdown(
-          projectId: projectId,
-          slug: 'missing-workflow',
-        );
+        final Either<Failure, String> readResult = await service
+            .readPrdMarkdown(projectId: projectId, slug: 'missing-workflow');
 
         expect(readResult.getOrElse((Failure _) => 'missing'), '');
       },
@@ -75,17 +72,15 @@ void main() {
             workflowsRoot.path,
             projectId,
             slug,
-            FilesystemArtifactStore.adrsDirectoryName,
+            FilesystemArtifactServiceImpl.adrsDirectoryName,
           ),
         );
         await adrsDir.create(recursive: true);
         await File(p.join(adrsDir.path, 'adr-002.md')).writeAsString('# ADR 2');
         await File(p.join(adrsDir.path, 'adr-001.md')).writeAsString('# ADR 1');
 
-        final Either<Failure, List<AdrEntry>> listResult = await store.listAdrs(
-          projectId: projectId,
-          slug: slug,
-        );
+        final Either<Failure, List<AdrEntry>> listResult = await service
+            .listAdrs(projectId: projectId, slug: slug);
 
         final List<AdrEntry> entries = listResult.getOrElse(
           (Failure _) => <AdrEntry>[],
@@ -104,7 +99,7 @@ void main() {
         const String original = '# Original PRD';
         const String updated = '# Updated PRD';
 
-        await store.writePrdMarkdown(
+        await service.writePrdMarkdown(
           projectId: projectId,
           slug: slug,
           markdown: original,
@@ -114,23 +109,24 @@ void main() {
         );
 
         var renameAttempts = 0;
-        final FilesystemArtifactStore failingStore = FilesystemArtifactStore(
-          workflowsRoot: workflowsRoot,
-          atomicRename: (File source, File target) async {
-            renameAttempts++;
-            if (renameAttempts == 1 &&
-                p.basename(target.path) ==
-                    FilesystemArtifactStore.prdFileName) {
-              throw const FileSystemException('simulated rename failure');
-            }
-            if (target.existsSync()) {
-              target.deleteSync();
-            }
-            await source.rename(target.path);
-          },
-        );
+        final FilesystemArtifactServiceImpl failingService =
+            FilesystemArtifactServiceImpl(
+              workflowsRoot: workflowsRoot,
+              atomicRename: (File source, File target) async {
+                renameAttempts++;
+                if (renameAttempts == 1 &&
+                    p.basename(target.path) ==
+                        FilesystemArtifactServiceImpl.prdFileName) {
+                  throw const FileSystemException('simulated rename failure');
+                }
+                if (target.existsSync()) {
+                  target.deleteSync();
+                }
+                await source.rename(target.path);
+              },
+            );
 
-        final Either<Failure, void> writeResult = await failingStore
+        final Either<Failure, void> writeResult = await failingService
             .writePrdMarkdown(
               projectId: projectId,
               slug: slug,
@@ -150,10 +146,8 @@ void main() {
           ),
         );
 
-        final Either<Failure, String> readResult = await store.readPrdMarkdown(
-          projectId: projectId,
-          slug: slug,
-        );
+        final Either<Failure, String> readResult = await service
+            .readPrdMarkdown(projectId: projectId, slug: slug);
         expect(readResult.getOrElse((Failure _) => ''), original);
       },
     );
@@ -165,7 +159,7 @@ void main() {
           return;
         }
 
-        await store.writePrdMarkdown(
+        await service.writePrdMarkdown(
           projectId: projectId,
           slug: slug,
           markdown: '# PRD',
@@ -179,7 +173,7 @@ void main() {
             workflowsRoot.path,
             projectId,
             slug,
-            FilesystemArtifactStore.prdFileName,
+            FilesystemArtifactServiceImpl.prdFileName,
           ),
         );
         await Process.run('chmod', <String>['000', prdFile.path]);
@@ -187,10 +181,8 @@ void main() {
           await Process.run('chmod', <String>['644', prdFile.path]);
         });
 
-        final Either<Failure, String> readResult = await store.readPrdMarkdown(
-          projectId: projectId,
-          slug: slug,
-        );
+        final Either<Failure, String> readResult = await service
+            .readPrdMarkdown(projectId: projectId, slug: slug);
 
         expect(readResult.isLeft(), isTrue);
         expect(
@@ -210,7 +202,7 @@ void main() {
           workflowsRoot.path,
           projectId,
           slug,
-          FilesystemArtifactStore.adrsDirectoryName,
+          FilesystemArtifactServiceImpl.adrsDirectoryName,
         ),
       );
       await adrsDir.create(recursive: true);
@@ -218,7 +210,7 @@ void main() {
       await Directory(p.join(adrsDir.path, 'ignored-dir')).create();
       await File(p.join(adrsDir.path, 'adr-001.md')).writeAsString('# ADR');
 
-      final Either<Failure, List<AdrEntry>> listResult = await store.listAdrs(
+      final Either<Failure, List<AdrEntry>> listResult = await service.listAdrs(
         projectId: projectId,
         slug: slug,
       );
@@ -233,7 +225,7 @@ void main() {
     test(
       'writePrdMarkdown persists metadata json alongside prd markdown',
       () async {
-        await store.writePrdMarkdown(
+        await service.writePrdMarkdown(
           projectId: projectId,
           slug: slug,
           markdown: '# PRD',
@@ -248,7 +240,7 @@ void main() {
             workflowsRoot.path,
             projectId,
             slug,
-            FilesystemArtifactStore.metadataFileName,
+            FilesystemArtifactServiceImpl.metadataFileName,
           ),
         );
         expect(metadataFile.existsSync(), isTrue);
@@ -259,12 +251,12 @@ void main() {
     test(
       'createFromApplicationSupport resolves pulse/workflows under app support',
       () async {
-        final FilesystemArtifactStore resolvedStore =
-            await FilesystemArtifactStore.createFromApplicationSupport(
+        final FilesystemArtifactServiceImpl resolvedService =
+            await FilesystemArtifactServiceImpl.createFromApplicationSupport(
               resolveApplicationSupportDirectory: () async => tempRoot,
             );
 
-        await resolvedStore.writePrdMarkdown(
+        await resolvedService.writePrdMarkdown(
           projectId: projectId,
           slug: 'from-app-support',
           markdown: '# From support root',
@@ -288,7 +280,7 @@ void main() {
     );
 
     test('creates pulse/workflows layout under workflows root', () async {
-      await store.writePrdMarkdown(
+      await service.writePrdMarkdown(
         projectId: projectId,
         slug: slug,
         markdown: '# PRD',
@@ -302,9 +294,36 @@ void main() {
       );
       expect(prdFile.existsSync(), isTrue);
       expect(
-        store.workflowDirectory(projectId: projectId, slug: slug).path,
+        service.workflowDirectory(projectId: projectId, slug: slug).path,
         p.join(workflowsRoot.path, projectId, slug),
       );
     });
+
+    test(
+      'ensureWorkflowDirectory creates directory and deleteWorkflowDirectory removes it',
+      () async {
+        final Directory workflowDir = service.workflowDirectory(
+          projectId: projectId,
+          slug: 'dir-lifecycle',
+        );
+        expect(workflowDir.existsSync(), isFalse);
+
+        final Either<Failure, void> ensureResult = await service
+            .ensureWorkflowDirectory(
+              projectId: projectId,
+              slug: 'dir-lifecycle',
+            );
+        expect(ensureResult.isRight(), isTrue);
+        expect(workflowDir.existsSync(), isTrue);
+
+        final Either<Failure, void> deleteResult = await service
+            .deleteWorkflowDirectory(
+              projectId: projectId,
+              slug: 'dir-lifecycle',
+            );
+        expect(deleteResult.isRight(), isTrue);
+        expect(workflowDir.existsSync(), isFalse);
+      },
+    );
   });
 }

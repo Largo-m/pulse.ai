@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pulse_ai/app/di/hive_bootstrap.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/data/hive/orchestrator_hive_boxes.dart';
 import 'package:pulse_ai/features/orchestrator/data/recent_projects_local_storage.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/artifact_repository_impl.dart';
@@ -14,6 +13,7 @@ import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repo
 import 'package:pulse_ai/features/orchestrator/domain/repositories/prd_run_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
@@ -29,6 +29,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cub
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
@@ -109,16 +110,16 @@ final class OrchestratorComposition {
     final OrchestratorMainContentCubit orchestratorMainContentCubit =
         OrchestratorMainContentCubit();
 
-    final FilesystemArtifactStore artifactStore =
-        await FilesystemArtifactStore.createFromApplicationSupport();
+    final ArtifactPersistenceService artifactPersistenceService =
+        await FilesystemArtifactServiceImpl.createFromApplicationSupport();
     final ArtifactRepository artifactRepository = ArtifactRepositoryImpl(
-      store: artifactStore,
+      artifactPersistenceService: artifactPersistenceService,
     );
 
     final OrchestratorHiveBoxes hiveBoxes = await OrchestratorHiveBoxes.open();
     final WorkflowRepository workflowRepository = WorkflowRepositoryImpl(
       boxes: hiveBoxes,
-      artifactStore: artifactStore,
+      artifactPersistenceService: artifactPersistenceService,
     );
     final PrdRunRepository prdRunRepository = PrdRunRepositoryImpl(
       boxes: hiveBoxes,

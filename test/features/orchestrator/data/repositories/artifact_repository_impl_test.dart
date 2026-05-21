@@ -5,11 +5,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pulse_ai/core/error/artifact_persistence_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
-import 'package:pulse_ai/features/orchestrator/data/filesystem_artifact_store.dart';
 import 'package:pulse_ai/features/orchestrator/data/repositories/artifact_repository_impl.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repository.dart';
+import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 
 void main() {
   group('ArtifactRepositoryImpl', () {
@@ -26,10 +26,11 @@ void main() {
       );
       workflowsRoot = Directory(p.join(tempRoot.path, 'pulse', 'workflows'));
       await workflowsRoot.create(recursive: true);
-      final FilesystemArtifactStore store = FilesystemArtifactStore(
-        workflowsRoot: workflowsRoot,
+      final FilesystemArtifactServiceImpl artifactPersistenceService =
+          FilesystemArtifactServiceImpl(workflowsRoot: workflowsRoot);
+      repository = ArtifactRepositoryImpl(
+        artifactPersistenceService: artifactPersistenceService,
       );
-      repository = ArtifactRepositoryImpl(store: store);
     });
 
     tearDown(() async {
@@ -66,7 +67,7 @@ void main() {
           workflowsRoot.path,
           projectId,
           slug,
-          FilesystemArtifactStore.adrsDirectoryName,
+          FilesystemArtifactServiceImpl.adrsDirectoryName,
         ),
       );
       await adrsDir.create(recursive: true);
