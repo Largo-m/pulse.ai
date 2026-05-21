@@ -5,6 +5,7 @@ enum WorkflowPersistenceFailureCode {
   hiveError,
   invalidInput,
   invalidSlug,
+  notFound,
 }
 
 final class WorkflowPersistenceFailure implements Failure {
@@ -29,6 +30,12 @@ final class WorkflowPersistenceFailure implements Failure {
     : this(
         code: WorkflowPersistenceFailureCode.invalidSlug,
         message: 'O slug do workflow deve estar em kebab-case',
+      );
+
+  const WorkflowPersistenceFailure.notFound()
+    : this(
+        code: WorkflowPersistenceFailureCode.notFound,
+        message: 'Workflow não encontrado',
       );
 
   final WorkflowPersistenceFailureCode code;

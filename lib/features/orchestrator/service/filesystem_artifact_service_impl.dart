@@ -8,6 +8,7 @@ import 'package:pulse_ai/core/error/artifact_persistence_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/stream_event_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 
 typedef ArtifactAtomicRename = Future<void> Function(File source, File target);
@@ -26,6 +27,7 @@ final class FilesystemArtifactServiceImpl
   static const String prdFileName = 'prd.md';
   static const String metadataFileName = 'prd.meta.json';
   static const String adrsDirectoryName = 'adrs';
+  static const String streamsDirectoryName = 'streams';
   static final RegExp _adrFileNamePattern = RegExp(r'^adr-(\d{3})\.md$');
 
   static Future<FilesystemArtifactServiceImpl> createFromApplicationSupport({
@@ -202,6 +204,63 @@ final class FilesystemArtifactServiceImpl
         adrsDirectoryName,
       ),
     );
+  }
+
+  @override
+  Future<Either<Failure, void>> writeAdrMarkdown({
+    required String projectId,
+    required String slug,
+    required AdrEntry entry,
+  }) async {
+    try {
+      final Directory adrsDir = _adrsDirectory(
+        projectId: projectId,
+        slug: slug,
+      );
+      await adrsDir.create(recursive: true);
+
+      final File adrFile = File(p.join(adrsDir.path, entry.fileName));
+      final File tempFile = File('${adrFile.path}.tmp');
+      await tempFile.writeAsString(entry.markdown, flush: true);
+      await _atomicRename(tempFile, adrFile);
+      return right(null);
+    } on IOException {
+      return left(const ArtifactPersistenceFailure.ioError());
+    }
+  }
+
+  @override
+  Future<Either<Failure, void>> appendStreamJsonl({
+    required String projectId,
+    required String slug,
+    required String runId,
+    required StreamEventEntity event,
+  }) async {
+    try {
+      final Directory streamsDir = Directory(
+        p.join(
+          workflowDirectory(projectId: projectId, slug: slug).path,
+          streamsDirectoryName,
+        ),
+      );
+      await streamsDir.create(recursive: true);
+
+      final File jsonlFile = File(p.join(streamsDir.path, '$runId.jsonl'));
+      final String line = jsonEncode(<String, Object>{
+        'sequence': event.sequence,
+        'eventType': event.eventType,
+        'payloadSummary': event.payloadSummary,
+        'timestamp': event.timestamp.toUtc().toIso8601String(),
+      });
+      await jsonlFile.writeAsString(
+        '$line\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+      return right(null);
+    } on IOException {
+      return left(const ArtifactPersistenceFailure.ioError());
+    }
   }
 
   static Future<void> _defaultAtomicRename(File source, File target) async {

@@ -127,6 +127,26 @@ final class WorkflowRepositoryImpl implements WorkflowRepository {
     return _workflowsBox.get(key);
   }
 
+  @override
+  Future<Either<Failure, WorkflowEntity>> update(
+    WorkflowEntity workflow,
+  ) async {
+    final Either<Failure, void> validation = _validateSegments(
+      projectId: workflow.projectId,
+      slug: workflow.slug,
+    );
+    if (validation.isLeft()) {
+      return left(validation.getLeft().toNullable()!);
+    }
+
+    final String key = workflow.workflowKey;
+    if (!_workflowsBox.containsKey(key)) {
+      return left(const WorkflowPersistenceFailure.notFound());
+    }
+
+    return _persistWorkflowIndex(key: key, entity: workflow);
+  }
+
   Either<Failure, void> _validateSegments({
     required String projectId,
     required String slug,

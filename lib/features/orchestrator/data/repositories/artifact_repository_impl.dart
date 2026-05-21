@@ -3,6 +3,7 @@ import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/data/artifact_path_segment_validator.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_artifact_metadata.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/stream_event_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/artifact_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
 
@@ -87,6 +88,58 @@ final class ArtifactRepositoryImpl implements ArtifactRepository {
     return _artifactPersistenceService.listAdrs(
       projectId: projectId,
       slug: slug,
+    );
+  }
+
+  @override
+  Future<Either<Failure, void>> writeAdrMarkdown({
+    required String projectId,
+    required String slug,
+    required AdrEntry entry,
+  }) async {
+    final Either<Failure, void> projectValidation = _pathSegmentValidator
+        .validateProjectId(projectId);
+    if (projectValidation.isLeft()) {
+      return left(projectValidation.getLeft().toNullable()!);
+    }
+
+    final Either<Failure, void> slugValidation = _pathSegmentValidator
+        .validateSlug(slug);
+    if (slugValidation.isLeft()) {
+      return left(slugValidation.getLeft().toNullable()!);
+    }
+
+    return _artifactPersistenceService.writeAdrMarkdown(
+      projectId: projectId,
+      slug: slug,
+      entry: entry,
+    );
+  }
+
+  @override
+  Future<Either<Failure, void>> appendStreamJsonl({
+    required String projectId,
+    required String slug,
+    required String runId,
+    required StreamEventEntity event,
+  }) async {
+    final Either<Failure, void> projectValidation = _pathSegmentValidator
+        .validateProjectId(projectId);
+    if (projectValidation.isLeft()) {
+      return left(projectValidation.getLeft().toNullable()!);
+    }
+
+    final Either<Failure, void> slugValidation = _pathSegmentValidator
+        .validateSlug(slug);
+    if (slugValidation.isLeft()) {
+      return left(slugValidation.getLeft().toNullable()!);
+    }
+
+    return _artifactPersistenceService.appendStreamJsonl(
+      projectId: projectId,
+      slug: slug,
+      runId: runId,
+      event: event,
     );
   }
 }

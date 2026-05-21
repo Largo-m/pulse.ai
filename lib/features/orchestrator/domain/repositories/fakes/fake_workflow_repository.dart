@@ -51,4 +51,16 @@ final class FakeWorkflowRepository implements WorkflowRepository {
     final String key = WorkflowKey.compose(projectId: projectId, slug: slug);
     return _workflows[key];
   }
+
+  @override
+  Future<Either<Failure, WorkflowEntity>> update(
+    WorkflowEntity workflow,
+  ) async {
+    final String key = workflow.workflowKey;
+    if (!_workflows.containsKey(key)) {
+      return left(const WorkflowPersistenceFailure.notFound());
+    }
+    _workflows[key] = workflow;
+    return right(workflow);
+  }
 }

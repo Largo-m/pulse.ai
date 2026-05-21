@@ -16,4 +16,6 @@ abstract interface class WorkflowRepository {
     required String projectId,
     required String slug,
   });
+
+  Future<Either<Failure, WorkflowEntity>> update(WorkflowEntity workflow);
 }
