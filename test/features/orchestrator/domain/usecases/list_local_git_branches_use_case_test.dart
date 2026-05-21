@@ -1,5 +1,4 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 
 import 'fake_local_git_branches_service.dart';

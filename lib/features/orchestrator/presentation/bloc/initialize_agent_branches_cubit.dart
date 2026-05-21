@@ -1,5 +1,4 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_state.dart';
 

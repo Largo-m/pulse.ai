@@ -14,6 +14,8 @@ import 'package:pulse_ai/features/orchestrator/domain/repositories/prd_run_repos
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/workflow_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persistence_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/create_workflow_use_case.dart';
@@ -23,12 +25,17 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_credential_store_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
@@ -50,6 +57,7 @@ final class OrchestratorComposition {
     required this.importFlowCubit,
     required this.initializeAgentBranchesCubit,
     required this.orchestratorMainContentCubit,
+    required this.cursorConnectionCubit,
   });
 
   final RecentProjectsRepository recentProjectsRepository;
@@ -65,6 +73,7 @@ final class OrchestratorComposition {
   final ImportFlowCubit importFlowCubit;
   final InitializeAgentBranchesCubit initializeAgentBranchesCubit;
   final OrchestratorMainContentCubit orchestratorMainContentCubit;
+  final CursorConnectionCubit cursorConnectionCubit;
 
   static Future<OrchestratorComposition> create() async {
     await HiveBootstrap.ensureInitialized();
@@ -139,6 +148,25 @@ final class OrchestratorComposition {
     final ListWorkflowAdrsUseCase listWorkflowAdrsUseCase =
         ListWorkflowAdrsUseCase(artifactRepository);
 
+    final CursorCredentialStoreService cursorCredentialStoreService =
+        CursorCredentialStoreServiceImpl();
+    final CursorCloudAgentHttpClientImpl cursorCloudAgentHttpClient =
+        CursorCloudAgentHttpClientImpl(
+          credentialStore: cursorCredentialStoreService,
+        );
+    final CursorPrdAgentService cursorPrdAgentService =
+        CursorPrdAgentServiceImpl(
+          credentialStore: cursorCredentialStoreService,
+          httpClient: cursorCloudAgentHttpClient,
+        );
+    final RunCursorConnectionPreflightUseCase
+    runCursorConnectionPreflightUseCase = RunCursorConnectionPreflightUseCase(
+      cursorPrdAgentService: cursorPrdAgentService,
+    );
+    final CursorConnectionCubit cursorConnectionCubit = CursorConnectionCubit(
+      runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
+    );
+
     return OrchestratorComposition(
       recentProjectsRepository: repository,
       artifactRepository: artifactRepository,
@@ -153,6 +181,7 @@ final class OrchestratorComposition {
       importFlowCubit: importFlowCubit,
       initializeAgentBranchesCubit: initializeAgentBranchesCubit,
       orchestratorMainContentCubit: orchestratorMainContentCubit,
+      cursorConnectionCubit: cursorConnectionCubit,
     );
   }
 
@@ -161,6 +190,7 @@ final class OrchestratorComposition {
     unawaited(importFlowCubit.close());
     unawaited(initializeAgentBranchesCubit.close());
     unawaited(orchestratorMainContentCubit.close());
+    unawaited(cursorConnectionCubit.close());
   }
 }
 
@@ -234,6 +264,9 @@ class _OrchestratorCompositionScopeState
                   ),
                   BlocProvider<OrchestratorMainContentCubit>.value(
                     value: composition.orchestratorMainContentCubit,
+                  ),
+                  BlocProvider<CursorConnectionCubit>.value(
+                    value: composition.cursorConnectionCubit,
                   ),
                 ],
                 child: widget.child,
