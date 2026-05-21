@@ -7,7 +7,6 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_ent
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
-import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_impl.dart';

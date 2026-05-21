@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/workflow_persistence_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
@@ -12,13 +13,19 @@ import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_age
 void main() {
   group('CursorConnectionCubit', () {
     late FakeCursorPrdAgentService fakeService;
+    late RunCursorConnectionPreflightUseCase preflightUseCase;
 
     CursorConnectionCubit buildCubit() {
-      return CursorConnectionCubit(cursorPrdAgentService: fakeService);
+      return CursorConnectionCubit(
+        runCursorConnectionPreflightUseCase: preflightUseCase,
+      );
     }
 
     setUp(() {
       fakeService = FakeCursorPrdAgentService();
+      preflightUseCase = RunCursorConnectionPreflightUseCase(
+        cursorPrdAgentService: fakeService,
+      );
     });
 
     blocTest<CursorConnectionCubit, CursorConnectionState>(

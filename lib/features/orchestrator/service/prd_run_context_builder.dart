@@ -5,7 +5,6 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_ent
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/recent_projects_repository.dart';
-import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 
 final class PrdRunContextBuilder {

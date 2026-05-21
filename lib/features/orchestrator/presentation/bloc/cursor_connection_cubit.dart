@@ -2,22 +2,26 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
-import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 
 final class CursorConnectionCubit extends Cubit<CursorConnectionState> {
-  CursorConnectionCubit({required CursorPrdAgentService cursorPrdAgentService})
-    : _cursorPrdAgentService = cursorPrdAgentService,
-      super(const CursorConnectionState());
+  CursorConnectionCubit({
+    required RunCursorConnectionPreflightUseCase
+    runCursorConnectionPreflightUseCase,
+  }) : _runCursorConnectionPreflightUseCase =
+           runCursorConnectionPreflightUseCase,
+       super(const CursorConnectionState());
 
-  final CursorPrdAgentService _cursorPrdAgentService;
+  final RunCursorConnectionPreflightUseCase
+  _runCursorConnectionPreflightUseCase;
 
   Future<void> runPreflight() async {
     emit(const CursorConnectionState(status: CursorConnectionStatus.checking));
 
-    final Either<Failure, void> result = await _cursorPrdAgentService
-        .preflight();
+    final Either<Failure, void> result =
+        await _runCursorConnectionPreflightUseCase();
 
     result.fold(
       (Failure failure) {

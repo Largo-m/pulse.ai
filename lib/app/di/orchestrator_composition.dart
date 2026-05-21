@@ -25,6 +25,7 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
@@ -164,8 +165,12 @@ final class OrchestratorComposition {
           contextBuilder: prdRunContextBuilder,
           httpClient: cursorCloudAgentHttpClient,
         );
-    final CursorConnectionCubit cursorConnectionCubit = CursorConnectionCubit(
+    final RunCursorConnectionPreflightUseCase
+    runCursorConnectionPreflightUseCase = RunCursorConnectionPreflightUseCase(
       cursorPrdAgentService: cursorPrdAgentService,
+    );
+    final CursorConnectionCubit cursorConnectionCubit = CursorConnectionCubit(
+      runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
     );
 
     return OrchestratorComposition(
