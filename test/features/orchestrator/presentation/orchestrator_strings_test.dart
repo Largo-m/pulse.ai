@@ -134,6 +134,41 @@ void main() {
       );
     });
 
+    test('cursor settings modal copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.cursorSettingsModalTitle, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsModalTitle, contains('Cursor'));
+      expect(OrchestratorStrings.cursorSettingsApiKeyLabel, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsApiKeyHint, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsHelperText, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsConfiguredStatus, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsConfiguredStatus,
+        contains('configurada'),
+      );
+      expect(OrchestratorStrings.cursorSettingsTestButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsTestButton, contains('Testar'));
+      expect(OrchestratorStrings.cursorSettingsSaveButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsDocumentationUrl, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationUrl,
+        startsWith('https://'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationLinkLabel,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationLinkLabel,
+        isNot(equals('Cursor documentation')),
+      );
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmTitle, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmBody, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveCancelButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsCloseSemantics, isNotEmpty);
+    });
+
     test('cursor settings feedback copy is localized in PT-BR', () {
       expect(
         OrchestratorStrings.cursorSettingsSaveBlockedWithoutTest,

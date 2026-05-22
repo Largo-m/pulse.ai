@@ -140,6 +140,48 @@ abstract final class OrchestratorStrings {
   static const String cursorConnectionBannerSemantics =
       'Banner de conexão com o Cursor; credencial ausente ou inválida';
 
+  static const String cursorSettingsModalTitle = 'Integração Cursor';
+  static const String cursorSettingsApiKeyLabel = 'Chave da API do Cursor';
+  static const String cursorSettingsApiKeyHint =
+      'Cole a chave de Cloud Agents do painel do Cursor';
+  static const String cursorSettingsHelperText =
+      'A chave não é exibida após salvar. Use Testar antes de Salvar.';
+  static const String cursorSettingsConfiguredStatus =
+      'Chave configurada neste dispositivo';
+  static const String cursorSettingsTestButton = 'Testar conexão';
+  static const String cursorSettingsSaveButton = 'Salvar';
+  static const String cursorSettingsRemoveButton = 'Remover';
+  static const String cursorSettingsCancelButton = 'Cancelar';
+  static const String cursorSettingsCloseSemantics =
+      'Fechar configurações do Cursor';
+  static const String cursorSettingsModalSemantics =
+      'Configurações da integração Cursor';
+  static const String cursorSettingsApiKeyFieldSemantics =
+      'Campo para colar a chave da API do Cursor';
+  static const String cursorSettingsTestButtonSemantics =
+      'Testar a chave da API do Cursor sem salvar';
+  static const String cursorSettingsSaveButtonSemantics =
+      'Salvar a chave da API do Cursor após teste bem-sucedido';
+  static const String cursorSettingsRemoveButtonSemantics =
+      'Remover a chave da API do Cursor armazenada';
+  static const String cursorSettingsDocumentationUrl =
+      'https://cursor.com/docs/cloud-agent/api/endpoints';
+  static const String cursorSettingsDocumentationLinkLabel =
+      'Documentação oficial do Cursor (Cloud Agents)';
+  static const String cursorSettingsDocumentationLinkSemantics =
+      'Abrir documentação oficial do Cursor em um navegador externo';
+  static const String cursorSettingsRemoveConfirmTitle =
+      'Remover chave do Cursor?';
+  static const String cursorSettingsRemoveConfirmBody =
+      'A chave armazenada será apagada deste dispositivo. Execuções do agente PRD '
+      'ficarão bloqueadas até você configurar uma nova chave.';
+  static const String cursorSettingsRemoveConfirmButton = 'Remover';
+  static const String cursorSettingsRemoveCancelButton = 'Cancelar';
+  static const String cursorSettingsRemoveConfirmSemantics =
+      'Confirmar remoção da chave da API do Cursor';
+  static const String cursorSettingsRemoveCancelSemantics =
+      'Cancelar remoção da chave da API do Cursor';
+
   static const String cursorSettingsSaveBlockedWithoutTest =
       'Teste a conexão antes de salvar a chave.';
   static const String cursorSettingsUnauthorizedFeedback =
