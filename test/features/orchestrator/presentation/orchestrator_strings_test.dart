@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
 
 void main() {
   group('OrchestratorStrings', () {
@@ -226,6 +227,46 @@ void main() {
       expect(
         OrchestratorStrings.cursorConnectionBannerCta,
         contains('configura'),
+      );
+    });
+
+    test('prd workflow session continuity copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowSessionEmptyTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSessionEmptyBody,
+        contains('finalizada'),
+      );
+      expect(OrchestratorStrings.prdWorkflowSessionInProgressTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSessionInProgressTitle,
+        contains('andamento'),
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowSessionRestoreFailedTitle,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowSessionRestoreRetryButton,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.prdWorkflowNewRunOverlayTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowNewRunOverlayBody,
+        contains('sessão'),
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowConversationSectionTitle,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowConversationUserRoleLabel,
+        isNot(equals('You')),
+      );
+      expect(
+        prdWorkflowFailureMessageForKey(
+          PrdWorkflowFailureMessageKeys.restoreFailed,
+        ),
+        OrchestratorStrings.prdWorkflowSessionRestoreFailed,
       );
     });
 

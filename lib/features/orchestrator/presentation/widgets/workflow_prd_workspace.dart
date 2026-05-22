@@ -10,9 +10,14 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/workflow_prd_stepper_params.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/cursor_connection_banner.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_conversation_list_section.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_new_run_overlay_banner.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_section.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_restore_failure_panel.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_stream_panel.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_phase_stepper.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_user_prompt_bubble.dart';
@@ -101,7 +106,7 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
           prdPhaseStatus: widget.workflow.prdPhaseStatus,
         );
     final String? directive = widget.workflow.directive?.trim();
-    final bool showUserBubble = directive != null && directive.isNotEmpty;
+    final bool hasDirective = directive != null && directive.isNotEmpty;
 
     return MultiBlocProvider(
       providers: <BlocProvider<dynamic>>[
@@ -124,19 +129,62 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
                   constraints: const BoxConstraints(
                     maxWidth: PulseDimensions.workflowFeedMaxWidth,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      if (showUserBubble) ...<Widget>[
-                        WorkflowUserPromptBubble(message: directive),
-                        const SizedBox(height: PulseDimensions.sectionGapLg),
-                      ],
-                      PrdWorkflowStreamPanel(
-                        workflowDirective: widget.workflow.directive,
-                      ),
-                      const SizedBox(height: PulseDimensions.sectionGapLg),
-                      PrdReviewSection(workflowSlug: widget.workflow.slug),
-                    ],
+                  child: BlocBuilder<PrdWorkflowCubit, PrdWorkflowState>(
+                    builder: (BuildContext context, PrdWorkflowState workflowState) {
+                      final bool showUserBubble =
+                          PrdWorkflowSessionPresentation.showsDirectiveBubble(
+                            hasDirective: hasDirective,
+                            state: workflowState,
+                          );
+                      final String? restoreFailureMessage =
+                          PrdWorkflowSessionPresentation.restoreFailureDisplayMessage(
+                            workflowState,
+                          );
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: <Widget>[
+                          if (PrdWorkflowSessionPresentation.showsNewRunOverlayBanner(
+                            workflowState,
+                          )) ...<Widget>[
+                            const PrdNewRunOverlayBanner(),
+                            const SizedBox(
+                              height: PulseDimensions.sectionGapLg,
+                            ),
+                          ],
+                          if (restoreFailureMessage != null) ...<Widget>[
+                            PrdWorkflowRestoreFailurePanel(
+                              message: restoreFailureMessage,
+                            ),
+                            const SizedBox(
+                              height: PulseDimensions.sectionGapLg,
+                            ),
+                          ],
+                          if (PrdWorkflowSessionPresentation.showsConversationSection(
+                            workflowState,
+                          )) ...<Widget>[
+                            PrdConversationListSection(
+                              messages:
+                                  workflowState.restoredConversationMessages,
+                            ),
+                            const SizedBox(
+                              height: PulseDimensions.sectionGapLg,
+                            ),
+                          ],
+                          if (showUserBubble) ...<Widget>[
+                            WorkflowUserPromptBubble(message: directive!),
+                            const SizedBox(
+                              height: PulseDimensions.sectionGapLg,
+                            ),
+                          ],
+                          PrdWorkflowStreamPanel(
+                            workflowDirective: widget.workflow.directive,
+                          ),
+                          const SizedBox(height: PulseDimensions.sectionGapLg),
+                          PrdReviewSection(workflowSlug: widget.workflow.slug),
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),

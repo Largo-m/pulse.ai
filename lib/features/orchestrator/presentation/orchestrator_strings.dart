@@ -251,6 +251,47 @@ abstract final class OrchestratorStrings {
       'Não foi possível restaurar a última sessão PRD. Verifique a conexão e tente '
       'novamente.';
 
+  static const String prdWorkflowSessionEmptyTitle = 'Nenhuma sessão anterior';
+  static const String prdWorkflowSessionEmptyBody =
+      'Ainda não há uma execução finalizada neste workflow. Inicie o agente PRD '
+      'para gerar o primeiro histórico.';
+  static const String prdWorkflowSessionEmptySemantics =
+      'Workspace PRD sem sessão finalizada anterior';
+
+  static const String prdWorkflowSessionInProgressTitle =
+      'Execução em andamento';
+  static const String prdWorkflowSessionInProgressBody =
+      'O agente PRD está processando esta execução. O log completo ficará '
+      'disponível quando a run for finalizada.';
+  static const String prdWorkflowSessionInProgressSemantics =
+      'Execução PRD em andamento; log completo indisponível até a finalização';
+
+  static const String prdWorkflowSessionRestoreFailedTitle =
+      'Não foi possível carregar o histórico';
+  static const String prdWorkflowSessionRestoreRetryButton =
+      'Tentar carregar novamente';
+  static const String prdWorkflowSessionRestoreRetrySemantics =
+      'Tentar restaurar novamente a última sessão PRD';
+  static const String prdWorkflowSessionRestoreFailedSemantics =
+      'Falha ao restaurar histórico da sessão PRD';
+  static const String prdWorkflowSessionRestoreTerminalHint =
+      'O log ficará disponível após carregar o histórico com sucesso.';
+
+  static const String prdWorkflowNewRunOverlayTitle =
+      'Nova execução em andamento';
+  static const String prdWorkflowNewRunOverlayBody =
+      'Uma nova run do agente PRD está ativa. O histórico abaixo é da sessão '
+      'anterior; o log ao vivo aparecerá quando esta execução for finalizada.';
+  static const String prdWorkflowNewRunOverlaySemantics =
+      'Banner: nova execução PRD em andamento sobre sessão restaurada';
+
+  static const String prdWorkflowConversationSectionTitle =
+      'Conversa com o agente';
+  static const String prdWorkflowConversationSectionSemantics =
+      'Lista de mensagens da conversa restaurada do agente PRD';
+  static const String prdWorkflowConversationUserRoleLabel = 'Você';
+  static const String prdWorkflowConversationAgentRoleLabel = 'Agente';
+
   static const String prdWorkflowStreamEventStatus = 'Atualização de status';
   static const String prdWorkflowStreamEventAssistant =
       'Resposta do assistente';
