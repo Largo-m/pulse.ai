@@ -43,6 +43,7 @@ void main() {
           projectId: 'project-1',
           slug: 'agent-a',
           canonicalPath: '/Users/dev/repo',
+          machineName: 'pulse-project-1',
           branchName: 'main',
           composedPrompt: 'Create PRD',
         ),

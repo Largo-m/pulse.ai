@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
 
 void main() {
   group('OrchestratorStrings', () {
@@ -229,6 +230,46 @@ void main() {
       );
     });
 
+    test('prd workflow session continuity copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowSessionEmptyTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSessionEmptyBody,
+        contains('finalizada'),
+      );
+      expect(OrchestratorStrings.prdWorkflowSessionInProgressTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSessionInProgressTitle,
+        contains('andamento'),
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowSessionRestoreFailedTitle,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowSessionRestoreRetryButton,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.prdWorkflowNewRunOverlayTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowNewRunOverlayBody,
+        contains('sessão'),
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowConversationSectionTitle,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.prdWorkflowConversationUserRoleLabel,
+        isNot(equals('You')),
+      );
+      expect(
+        prdWorkflowFailureMessageForKey(
+          PrdWorkflowFailureMessageKeys.restoreFailed,
+        ),
+        OrchestratorStrings.prdWorkflowSessionRestoreFailed,
+      );
+    });
+
     test('prd workflow stream and status copy is localized in PT-BR', () {
       expect(OrchestratorStrings.prdWorkflowStatusRunning, isNotEmpty);
       expect(
@@ -251,6 +292,21 @@ void main() {
         OrchestratorStrings.prdWorkflowStatusPendingApproval,
         isNot(equals('Pending approval')),
       );
+    });
+
+    test('artifact and ADR section copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdArtifactMissing, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactMissing,
+        isNot(equals('missingArtifact')),
+      );
+      expect(
+        OrchestratorStrings.prdArtifactRestoredRunLabel('run-1'),
+        contains('run-1'),
+      );
+      expect(OrchestratorStrings.prdAdrListSectionTitle, isNotEmpty);
+      expect(OrchestratorStrings.prdAdrListSectionTitle, contains('ADR'));
+      expect(OrchestratorStrings.prdAdrListLoadFailed, isNotEmpty);
     });
 
     test('prd review copy is localized in PT-BR', () {

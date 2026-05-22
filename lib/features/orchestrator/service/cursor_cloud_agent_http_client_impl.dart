@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:pretty_dio_logger/pretty_dio_logger.dart';
+import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 
@@ -12,23 +15,41 @@ final class CursorCloudAgentHttpClientImpl
     Dio? dio,
     String baseUrl = 'https://api.cursor.com',
   }) : _credentialStore = credentialStore,
-       _dio =
-           dio ??
-           Dio(
-             BaseOptions(
-               baseUrl: baseUrl,
-               connectTimeout: const Duration(seconds: 20),
-               receiveTimeout: const Duration(seconds: 20),
-               headers: <String, String>{
-                 'Accept': 'application/json',
-                 'Content-Type': 'application/json',
-               },
-               validateStatus: (_) => true,
-             ),
-           );
+       _dio = dio ?? _createDefaultDio(baseUrl);
 
   final CursorCredentialStoreService _credentialStore;
   final Dio _dio;
+
+  static Dio _createDefaultDio(String baseUrl) {
+    final Dio dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 20),
+        headers: <String, String>{
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        validateStatus: (_) => true,
+      ),
+    );
+    if (kDebugMode) {
+      dio.interceptors.add(
+        PrettyDioLogger(
+          requestHeader: true,
+          requestBody: true,
+          responseBody: true,
+          responseHeader: false,
+          error: true,
+          compact: true,
+          filter: (RequestOptions options, FilterArgs args) {
+            return options.responseType != ResponseType.stream;
+          },
+        ),
+      );
+    }
+    return dio;
+  }
 
   String _basicAuthToken(String apiKey) {
     return base64Encode(utf8.encode('${apiKey.trim()}:'));
@@ -110,6 +131,11 @@ final class CursorCloudAgentHttpClientImpl
         responseType: ResponseType.stream,
       ),
     );
+
+    final int statusCode = response.statusCode ?? 0;
+    if (statusCode < 200 || statusCode >= 300) {
+      throw const PrdRunOperationException(PrdRunFailure.streamUnavailable());
+    }
 
     await for (final String line in const LineSplitter().bind(
       utf8.decoder.bind(response.data!.stream),

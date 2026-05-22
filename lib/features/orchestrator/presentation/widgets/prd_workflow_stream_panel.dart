@@ -7,7 +7,9 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_start_policy.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/utils/workflow_progress_calculator.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_user_action_highlight.dart';
@@ -34,10 +36,18 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
         builder: (BuildContext context, CursorConnectionState connectionState) {
           return BlocBuilder<PrdWorkflowCubit, PrdWorkflowState>(
             builder: (BuildContext context, PrdWorkflowState state) {
+              final List<PrdStreamLineUiModel> terminalLines =
+                  PrdWorkflowSessionPresentation.terminalLinesFor(state);
+              final String terminalEmptyMessage =
+                  PrdWorkflowSessionPresentation.terminalEmptyMessageFor(state);
               final int progressPercent = workflowProgressPercent(
                 phaseStatus: state.phaseStatus,
-                streamLineCount: state.streamLines.length,
+                streamLineCount: terminalLines.length,
               );
+              final bool showInProgressAffordance =
+                  PrdWorkflowSessionPresentation.showsInProgressOnlyAffordance(
+                    state,
+                  );
 
               return DecoratedBox(
                 decoration: BoxDecoration(
@@ -166,18 +176,27 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
                           ),
                         ),
                       ],
+                      if (showInProgressAffordance) ...<Widget>[
+                        const SizedBox(height: PulseDimensions.sectionGapMd),
+                        const _InProgressOnlyAffordance(),
+                      ],
                       if (state.requiresUserAction) ...<Widget>[
                         const SizedBox(height: PulseDimensions.sectionGapMd),
                         const PrdWorkflowUserActionHighlight(),
                       ],
-                      if (state.failureMessageKey != null) ...<Widget>[
+                      if (PrdWorkflowSessionPresentation.showsRunFailureBanner(
+                        state,
+                      )) ...<Widget>[
                         const SizedBox(height: PulseDimensions.sectionGapMd),
                         _FailureBanner(messageKey: state.failureMessageKey!),
                       ],
                       const SizedBox(height: PulseDimensions.sectionGapMd),
                       SizedBox(
                         height: PulseDimensions.workflowTerminalMinHeight,
-                        child: WorkflowTerminalLog(lines: state.streamLines),
+                        child: WorkflowTerminalLog(
+                          lines: terminalLines,
+                          emptyMessage: terminalEmptyMessage,
+                        ),
                       ),
                     ],
                   ),
@@ -186,6 +205,71 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+final class _InProgressOnlyAffordance extends StatelessWidget {
+  const _InProgressOnlyAffordance();
+
+  @override
+  Widget build(BuildContext context) {
+    final TextTheme textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      container: true,
+      label: OrchestratorStrings.prdWorkflowSessionInProgressSemantics,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: PulseColors.tertiaryContainer.withValues(
+            alpha: PulseDimensions.workflowInfoBannerBorderAlpha,
+          ),
+          borderRadius: BorderRadius.circular(PulseRadii.workflowInfoBanner),
+          border: Border.all(
+            color: PulseColors.tertiary.withValues(
+              alpha: PulseDimensions.workflowInfoBannerBorderAlpha,
+            ),
+          ),
+        ),
+        child: Padding(
+          padding: PulseInsets.workflowStreamPanel,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const SizedBox(
+                width: PulseDimensions.sidebarTreeIconSize,
+                height: PulseDimensions.sidebarTreeIconSize,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: PulseColors.tertiary,
+                ),
+              ),
+              const SizedBox(width: PulseDimensions.sectionGapSm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      OrchestratorStrings.prdWorkflowSessionInProgressTitle,
+                      style: textTheme.titleSmall?.copyWith(
+                        color: PulseColors.onSurface,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: PulseDimensions.sectionGapSm),
+                    Text(
+                      OrchestratorStrings.prdWorkflowSessionInProgressBody,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: PulseColors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -34,6 +34,20 @@ void main() {
       expect(events[3].payloadSummary, contains('FINISHED'));
     });
 
+    test('maps result payload text field for agent conversation', () {
+      final List<PrdStreamEvent> events = parser.parseLines(
+        cloudRunId: 'run-1',
+        lines: <String>[
+          'event: result',
+          'data: {"result":"Resposta completa do agente"}',
+          '',
+        ],
+        startedAt: startedAt,
+      );
+
+      expect(events.single.payloadSummary, 'Resposta completa do agente');
+    });
+
     test('ignores invalid json payloads without throwing', () {
       final List<PrdStreamEvent> events = parser.parseLines(
         cloudRunId: 'run-1',

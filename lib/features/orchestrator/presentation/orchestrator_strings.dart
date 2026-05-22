@@ -217,6 +217,9 @@ abstract final class OrchestratorStrings {
   static const String prdWorkflowCancelButton = 'Cancelar execução';
   static const String prdWorkflowCancelSemantics =
       'Cancelar execução do agente PRD em andamento';
+  static const String prdWorkflowCancelCloudFailed =
+      'A execução foi encerrada no Pulse, mas o Cursor não confirmou o '
+      'cancelamento. Verifique o status no Cursor se o agente ainda estiver ativo.';
   static const String prdWorkflowStreamPanelSemantics =
       'Painel de stream ao vivo da execução PRD';
   static const String prdWorkflowSystemProcessingTitle =
@@ -245,8 +248,55 @@ abstract final class OrchestratorStrings {
 
   static const String prdWorkflowRunFailedGeneric =
       'A execução do agente PRD falhou. Tente novamente ou verifique a conexão.';
+  static const String prdWorkflowGithubRemoteUnavailable =
+      'Configure o remote origin com uma URL HTTPS do GitHub (ex.: '
+      'https://github.com/org/repo) para o agente na nuvem acessar o repositório.';
   static const String prdWorkflowStreamUnavailable =
       'O stream da execução ficou indisponível. Verifique a rede e tente de novo.';
+  static const String prdWorkflowSessionRestoreFailed =
+      'Não foi possível restaurar a última sessão PRD. Verifique a conexão e tente '
+      'novamente.';
+
+  static const String prdWorkflowSessionEmptyTitle = 'Nenhuma sessão anterior';
+  static const String prdWorkflowSessionEmptyBody =
+      'Ainda não há uma execução finalizada neste workflow. Inicie o agente PRD '
+      'para gerar o primeiro histórico.';
+  static const String prdWorkflowSessionEmptySemantics =
+      'Workspace PRD sem sessão finalizada anterior';
+
+  static const String prdWorkflowSessionInProgressTitle =
+      'Execução em andamento';
+  static const String prdWorkflowSessionInProgressBody =
+      'O agente PRD está processando esta execução. O log completo ficará '
+      'disponível quando a run for finalizada.';
+  static const String prdWorkflowSessionInProgressSemantics =
+      'Execução PRD em andamento; log completo indisponível até a finalização';
+
+  static const String prdWorkflowSessionRestoreFailedTitle =
+      'Não foi possível carregar o histórico';
+  static const String prdWorkflowSessionRestoreRetryButton =
+      'Tentar carregar novamente';
+  static const String prdWorkflowSessionRestoreRetrySemantics =
+      'Tentar restaurar novamente a última sessão PRD';
+  static const String prdWorkflowSessionRestoreFailedSemantics =
+      'Falha ao restaurar histórico da sessão PRD';
+  static const String prdWorkflowSessionRestoreTerminalHint =
+      'O log ficará disponível após carregar o histórico com sucesso.';
+
+  static const String prdWorkflowNewRunOverlayTitle =
+      'Nova execução em andamento';
+  static const String prdWorkflowNewRunOverlayBody =
+      'Uma nova run do agente PRD está ativa. O histórico abaixo é da sessão '
+      'anterior; o log ao vivo aparecerá quando esta execução for finalizada.';
+  static const String prdWorkflowNewRunOverlaySemantics =
+      'Banner: nova execução PRD em andamento sobre sessão restaurada';
+
+  static const String prdWorkflowConversationSectionTitle =
+      'Conversa com o agente';
+  static const String prdWorkflowConversationSectionSemantics =
+      'Lista de mensagens da conversa restaurada do agente PRD';
+  static const String prdWorkflowConversationUserRoleLabel = 'Você';
+  static const String prdWorkflowConversationAgentRoleLabel = 'Agente';
 
   static const String prdWorkflowStreamEventStatus = 'Atualização de status';
   static const String prdWorkflowStreamEventAssistant =
@@ -286,6 +336,18 @@ abstract final class OrchestratorStrings {
       'Descartar edições não salvas e carregar o novo rascunho do agente';
   static const String prdReviewUnsavedOverwriteCancelSemantics =
       'Manter o texto atual do editor';
+  static const String prdArtifactMissing =
+      'O arquivo do artefato não foi encontrado no disco. Gere ou restaure o '
+      'PRD para continuar.';
+  static String prdArtifactRestoredRunLabel(String runId) {
+    return 'Execução: $runId';
+  }
+
+  static const String prdAdrListSectionTitle = 'Decisões de arquitetura (ADR)';
+  static const String prdAdrListSectionSemantics = 'Lista de ADRs do workflow';
+  static const String prdAdrListLoadFailed =
+      'Não foi possível carregar os ADRs deste workflow.';
+
   static const String prdReviewLoadFailed =
       'Não foi possível carregar o rascunho do PRD.';
   static const String prdReviewActionFailed =

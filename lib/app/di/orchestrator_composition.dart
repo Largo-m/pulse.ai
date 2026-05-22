@@ -17,6 +17,7 @@ import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persisten
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/local_git_origin_remote_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_completion_output_source.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_connection_gate.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
@@ -34,8 +35,10 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/reconcile_prd_run_status_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/remove_cursor_credential_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/restore_last_finalized_prd_session_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_cursor_credential_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
@@ -46,6 +49,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_adr_list_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
@@ -56,6 +60,7 @@ import 'package:pulse_ai/features/orchestrator/service/default_prd_run_completio
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/local_git_origin_remote_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -63,14 +68,17 @@ final class PrdWorkspaceCubitBundle {
   PrdWorkspaceCubitBundle({
     required this.workflowCubit,
     required this.reviewCubit,
+    required this.adrListCubit,
   });
 
   final PrdWorkflowCubit workflowCubit;
   final PrdReviewCubit reviewCubit;
+  final PrdAdrListCubit adrListCubit;
 
   void dispose() {
     unawaited(workflowCubit.close());
     unawaited(reviewCubit.close());
+    unawaited(adrListCubit.close());
   }
 }
 
@@ -92,6 +100,8 @@ final class OrchestratorComposition {
     required this.completePrdAgentRunUseCase,
     required this.cancelPrdAgentRunUseCase,
     required this.failPrdAgentRunUseCase,
+    required this.restoreLastFinalizedPrdSessionUseCase,
+    required this.reconcilePrdRunStatusUseCase,
     required this.cursorPrdAgentService,
     required this.runCursorConnectionPreflightUseCase,
     required this.prdRunCompletionOutputSource,
@@ -118,6 +128,9 @@ final class OrchestratorComposition {
   final CompletePrdAgentRunUseCase completePrdAgentRunUseCase;
   final CancelPrdAgentRunUseCase cancelPrdAgentRunUseCase;
   final FailPrdAgentRunUseCase failPrdAgentRunUseCase;
+  final RestoreLastFinalizedPrdSessionUseCase
+  restoreLastFinalizedPrdSessionUseCase;
+  final ReconcilePrdRunStatusUseCase reconcilePrdRunStatusUseCase;
   final CursorPrdAgentService cursorPrdAgentService;
   final RunCursorConnectionPreflightUseCase runCursorConnectionPreflightUseCase;
   final PrdRunCompletionOutputSource prdRunCompletionOutputSource;
@@ -160,6 +173,10 @@ final class OrchestratorComposition {
         LocalGitBranchesServiceImpl(sandboxAccessService: sandboxAccessService);
     final ListLocalGitBranchesUseCase listLocalGitBranchesUseCase =
         ListLocalGitBranchesUseCase(service: localGitBranchesService);
+    final LocalGitOriginRemoteService localGitOriginRemoteService =
+        LocalGitOriginRemoteServiceImpl(
+          sandboxAccessService: sandboxAccessService,
+        );
     final InitializeAgentBranchesCubit initializeAgentBranchesCubit =
         InitializeAgentBranchesCubit(
           listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
@@ -207,6 +224,7 @@ final class OrchestratorComposition {
         BuildPrdRunContextUseCase(
           recentProjectsRepository: repository,
           listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
+          localGitOriginRemoteService: localGitOriginRemoteService,
         );
 
     final CursorCredentialStoreService cursorCredentialStoreService =
@@ -287,6 +305,18 @@ final class OrchestratorComposition {
           prdRunRepository: prdRunRepository,
           workflowRepository: workflowRepository,
         );
+    final RestoreLastFinalizedPrdSessionUseCase
+    restoreLastFinalizedPrdSessionUseCase =
+        RestoreLastFinalizedPrdSessionUseCase(
+          prdRunRepository: prdRunRepository,
+        );
+    final ReconcilePrdRunStatusUseCase reconcilePrdRunStatusUseCase =
+        ReconcilePrdRunStatusUseCase(
+          credentialStore: cursorCredentialStoreService,
+          cursorPrdAgentService: cursorPrdAgentService,
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+        );
     const PrdRunCompletionOutputSource prdRunCompletionOutputSource =
         DefaultPrdRunCompletionOutputSource();
 
@@ -307,6 +337,9 @@ final class OrchestratorComposition {
       completePrdAgentRunUseCase: completePrdAgentRunUseCase,
       cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
       failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+      restoreLastFinalizedPrdSessionUseCase:
+          restoreLastFinalizedPrdSessionUseCase,
+      reconcilePrdRunStatusUseCase: reconcilePrdRunStatusUseCase,
       cursorPrdAgentService: cursorPrdAgentService,
       runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
       prdRunCompletionOutputSource: prdRunCompletionOutputSource,
@@ -326,6 +359,10 @@ final class OrchestratorComposition {
         completePrdAgentRunUseCase: completePrdAgentRunUseCase,
         cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
         failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+        restoreLastFinalizedPrdSessionUseCase:
+            restoreLastFinalizedPrdSessionUseCase,
+        reconcilePrdRunStatusUseCase: reconcilePrdRunStatusUseCase,
+        prdRunRepository: prdRunRepository,
         cursorPrdAgentService: cursorPrdAgentService,
         completionOutputSource: prdRunCompletionOutputSource,
       ),
@@ -337,6 +374,9 @@ final class OrchestratorComposition {
         findPrdApprovalUseCase: FindPrdApprovalUseCase(prdRunRepository),
         runCursorConnectionPreflightUseCase:
             runCursorConnectionPreflightUseCase,
+      ),
+      adrListCubit: PrdAdrListCubit(
+        listWorkflowAdrsUseCase: listWorkflowAdrsUseCase,
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
@@ -14,6 +15,8 @@ import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_id_codec.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_status_mapper.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_config.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_run_sse_parser.dart';
 import 'package:pulse_ai/features/orchestrator/service/transient_http_retry.dart';
 import 'package:uuid/uuid.dart';
@@ -23,19 +26,31 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
     required CursorCredentialStoreService credentialStore,
     required CursorCloudAgentHttpClient httpClient,
     CursorRunSseParser? sseParser,
+    CursorCloudRunStatusMapper? statusMapper,
     TransientHttpRetry? retryPolicy,
+    TransientHttpRetry? cancelRetryPolicy,
     Uuid? uuid,
   }) : _credentialStore = credentialStore,
        _httpClient = httpClient,
        _sseParser = sseParser ?? const CursorRunSseParser(),
+       _statusMapper = statusMapper ?? const CursorCloudRunStatusMapper(),
        _retryPolicy = retryPolicy ?? const TransientHttpRetry(),
+       _cancelRetryPolicyOverride = cancelRetryPolicy,
        _uuid = uuid ?? const Uuid();
+
+  static const TransientHttpRetry _defaultCancelRetryPolicy =
+      TransientHttpRetry(maxAttempts: 1);
 
   final CursorCredentialStoreService _credentialStore;
   final CursorCloudAgentHttpClient _httpClient;
   final CursorRunSseParser _sseParser;
+  final CursorCloudRunStatusMapper _statusMapper;
   final TransientHttpRetry _retryPolicy;
+  final TransientHttpRetry? _cancelRetryPolicyOverride;
   final Uuid _uuid;
+
+  TransientHttpRetry get _cancelRetryPolicy =>
+      _cancelRetryPolicyOverride ?? _defaultCancelRetryPolicy;
 
   @override
   Future<Either<Failure, void>> preflight() async {
@@ -79,7 +94,8 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
   Future<PrdRunEntity> startRun(PrdRunContext context) async {
     final String body = jsonEncode(<String, Object>{
       'prompt': <String, String>{'text': context.composedPrompt},
-      'mode': 'agent',
+      'model': <String, String>{'id': CursorPrdAgentConfig.defaultModelId},
+      'env': <String, String>{'type': 'machine', 'name': context.machineName},
     });
 
     final CursorHttpResponse response = await _retryPolicy.execute(
@@ -194,7 +210,7 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
       throw const PrdRunOperationException(PrdRunFailure.cloudRunNotFound());
     }
 
-    final CursorHttpResponse response = await _retryPolicy.execute(
+    final CursorHttpResponse response = await _cancelRetryPolicy.execute(
       () => _httpClient.post(
         '/v1/agents/${ids.agentId}/runs/${ids.runId}/cancel',
       ),
@@ -211,5 +227,57 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const PrdRunOperationException(PrdRunFailure.cloudRunFailed());
     }
+  }
+
+  @override
+  Future<Either<Failure, CloudRunStatus>> fetchRunStatus(
+    String cloudRunId,
+  ) async {
+    final ({String agentId, String runId})? ids = CursorCloudRunIdCodec.decode(
+      cloudRunId,
+    );
+    if (ids == null) {
+      return left(const PrdRunFailure.cloudRunNotFound());
+    }
+
+    try {
+      final CursorHttpResponse response = await _retryPolicy.execute(
+        () => _httpClient.get('/v1/agents/${ids.agentId}/runs/${ids.runId}'),
+      );
+      return _mapFetchRunStatusResponse(response);
+    } on Object {
+      return left(const CursorConnectionFailure.network());
+    }
+  }
+
+  Either<Failure, CloudRunStatus> _mapFetchRunStatusResponse(
+    CursorHttpResponse response,
+  ) {
+    if (response.statusCode == 401) {
+      return left(const CursorConnectionFailure.unauthorized());
+    }
+    if (response.statusCode == 404) {
+      return left(const PrdRunFailure.cloudRunNotFound());
+    }
+    if (response.statusCode >= 500) {
+      return left(const CursorConnectionFailure.network());
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return left(const PrdRunFailure.cloudRunFailed());
+    }
+
+    final Map<String, dynamic>? decoded =
+        jsonDecode(response.body) as Map<String, dynamic>?;
+    final Object? statusValue = decoded?['status'];
+    if (statusValue is! String || statusValue.isEmpty) {
+      return left(const PrdRunFailure.cloudRunFailed());
+    }
+
+    final PrdRunStatus? mapped = _statusMapper.mapCloudStatus(statusValue);
+    if (mapped == null) {
+      return left(const PrdRunFailure.cloudRunFailed());
+    }
+
+    return right(CloudRunStatus(mappedPrdRunStatus: mapped));
   }
 }

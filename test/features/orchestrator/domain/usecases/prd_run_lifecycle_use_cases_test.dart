@@ -3,6 +3,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cancel_prd_agent_run_outcome.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_approval_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
@@ -28,6 +29,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/prd_stream_buffer_po
 
 import 'fake_cursor_prd_agent_service.dart';
 import 'fake_local_git_branches_service.dart';
+import 'fake_local_git_origin_remote_service.dart';
 import 'fake_recent_projects_repository.dart';
 
 void main() {
@@ -77,6 +79,7 @@ void main() {
       listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
         service: gitService,
       ),
+      localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
     );
   });
 
@@ -312,14 +315,18 @@ void main() {
           clock: () => DateTime.utc(2026, 5, 21, 12),
         );
 
-        final Either<Failure, PrdRunEntity> result = await useCase(
+        final Either<Failure, CancelPrdAgentRunOutcome> result = await useCase(
           runId: runId,
           projectId: projectId,
           slug: slug,
         );
 
         expect(result.isRight(), isTrue);
-        expect(result.getRight().toNullable()!.status, PrdRunStatus.cancelled);
+        expect(
+          result.getRight().toNullable()!.run.status,
+          PrdRunStatus.cancelled,
+        );
+        expect(result.getRight().toNullable()!.cloudCancelFailed, isFalse);
         expect(agentService.cancelRunCallCount, 1);
         expect(
           agentService.lastCancelledCloudRunId,

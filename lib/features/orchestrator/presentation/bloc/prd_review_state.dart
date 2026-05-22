@@ -18,6 +18,7 @@ final class PrdReviewState {
     this.pendingOverwriteMarkdown,
     this.failureMessageKey,
     this.isApproved = false,
+    this.pendingActiveRunAttachmentId,
   });
 
   final PrdReviewLoadStatus loadStatus;
@@ -36,6 +37,7 @@ final class PrdReviewState {
   final String? pendingOverwriteMarkdown;
   final String? failureMessageKey;
   final bool isApproved;
+  final String? pendingActiveRunAttachmentId;
 
   bool get isEditable => loadStatus == PrdReviewLoadStatus.ready && !isApproved;
 
@@ -70,6 +72,8 @@ final class PrdReviewState {
     String? failureMessageKey,
     bool clearFailureMessageKey = false,
     bool? isApproved,
+    String? pendingActiveRunAttachmentId,
+    bool clearPendingActiveRunAttachmentId = false,
   }) {
     return PrdReviewState(
       loadStatus: loadStatus ?? this.loadStatus,
@@ -94,6 +98,9 @@ final class PrdReviewState {
           ? null
           : (failureMessageKey ?? this.failureMessageKey),
       isApproved: isApproved ?? this.isApproved,
+      pendingActiveRunAttachmentId: clearPendingActiveRunAttachmentId
+          ? null
+          : (pendingActiveRunAttachmentId ?? this.pendingActiveRunAttachmentId),
     );
   }
 
@@ -116,7 +123,8 @@ final class PrdReviewState {
             other.mustConfirmOverwrite == mustConfirmOverwrite &&
             other.pendingOverwriteMarkdown == pendingOverwriteMarkdown &&
             other.failureMessageKey == failureMessageKey &&
-            other.isApproved == isApproved;
+            other.isApproved == isApproved &&
+            other.pendingActiveRunAttachmentId == pendingActiveRunAttachmentId;
   }
 
   @override
@@ -137,6 +145,7 @@ final class PrdReviewState {
     pendingOverwriteMarkdown,
     failureMessageKey,
     isApproved,
+    pendingActiveRunAttachmentId,
   );
 
   @override

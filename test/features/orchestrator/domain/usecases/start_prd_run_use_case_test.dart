@@ -9,6 +9,7 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/start_prd_run_use
 import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_agent_service.dart';
 
 import 'fake_local_git_branches_service.dart';
+import 'fake_local_git_origin_remote_service.dart';
 import 'fake_recent_projects_repository.dart';
 
 void main() {
@@ -20,6 +21,7 @@ void main() {
           listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
             service: FakeLocalGitBranchesService(),
           ),
+          localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
         ),
         cursorPrdAgentService: FakeCursorPrdAgentService(),
       );
@@ -69,6 +71,7 @@ void main() {
           listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
             service: gitService,
           ),
+          localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
         ),
         cursorPrdAgentService: FakeCursorPrdAgentService(),
       );

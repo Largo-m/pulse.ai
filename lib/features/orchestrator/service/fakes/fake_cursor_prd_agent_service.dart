@@ -1,6 +1,8 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
+import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
@@ -22,6 +24,9 @@ final class FakeCursorPrdAgentService implements CursorPrdAgentService {
 
   Either<Failure, void>? nextPreflightResult;
   Either<Failure, void>? nextPreflightCredentialResult;
+  Either<Failure, CloudRunStatus>? nextFetchRunStatusResult;
+  int fetchRunStatusCallCount = 0;
+  String? lastFetchRunStatusCloudRunId;
   int cancelRunCallCount = 0;
   String? lastCancelledCloudRunId;
 
@@ -88,5 +93,15 @@ final class FakeCursorPrdAgentService implements CursorPrdAgentService {
   Future<void> cancelRun(String cloudRunId) async {
     cancelRunCallCount++;
     lastCancelledCloudRunId = cloudRunId;
+  }
+
+  @override
+  Future<Either<Failure, CloudRunStatus>> fetchRunStatus(
+    String cloudRunId,
+  ) async {
+    fetchRunStatusCallCount++;
+    lastFetchRunStatusCloudRunId = cloudRunId;
+    return nextFetchRunStatusResult ??
+        left(const PrdRunFailure.cloudRunFailed());
   }
 }

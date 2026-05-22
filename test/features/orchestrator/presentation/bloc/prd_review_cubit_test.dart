@@ -28,11 +28,13 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubi
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_review_load_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_artifact_presentation.dart';
 import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_agent_service.dart';
 
 import '../../domain/usecases/fake_cursor_prd_agent_service.dart'
     as lifecycle_fake;
 import '../../domain/usecases/fake_local_git_branches_service.dart';
+import '../../domain/usecases/fake_local_git_origin_remote_service.dart';
 import '../../domain/usecases/fake_recent_projects_repository.dart';
 
 void main() {
@@ -130,6 +132,7 @@ void main() {
           listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
             service: gitService,
           ),
+          localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
         );
     startPrdAgentRunUseCase = StartPrdAgentRunUseCase(
       connectionGate: PreflightPrdRunConnectionGate(
@@ -267,6 +270,7 @@ void main() {
         );
         expect(rejected?.feedback, 'add security');
         expect(cubit.state.loadStatus, PrdReviewLoadStatus.unavailable);
+        expect(cubit.state.pendingActiveRunAttachmentId, isNotNull);
         expect(rejectAgentService.lastStartContext?.feedback, 'add security');
       },
     );
@@ -418,6 +422,34 @@ void main() {
       verify: (PrdReviewCubit cubit) {
         expect(cubit.state.loadStatus, PrdReviewLoadStatus.ready);
         expect(cubit.editorText.value, isEmpty);
+        expect(
+          cubit.state.failureMessageKey,
+          PrdArtifactFailureMessageKeys.missingArtifact,
+        );
+      },
+    );
+
+    blocTest<PrdReviewCubit, PrdReviewState>(
+      'load draft exposes sourceRunId for restored run alignment',
+      build: buildCubit,
+      act: (PrdReviewCubit cubit) async {
+        cubit.bindReviewContext(
+          projectId: projectId,
+          slug: slug,
+          repoPath: repoPath,
+          branchName: branchName,
+        );
+        await cubit.loadDraft();
+      },
+      verify: (PrdReviewCubit cubit) {
+        expect(cubit.state.sourceRunId, sourceRunId);
+        expect(
+          PrdArtifactPresentation.showsRestoredRunOnPrdCard(
+            sourceRunId: cubit.state.sourceRunId,
+            restoredRunId: sourceRunId,
+          ),
+          isTrue,
+        );
       },
     );
 

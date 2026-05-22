@@ -237,10 +237,15 @@ final class _OrchestratorScrollableBody extends StatelessWidget {
                       contentState.activeWorkflow?.prdPhaseStatus ??
                       PrdPhaseStatus.draft;
 
+                  final WorkflowEntity? activeWorkflow =
+                      contentState.activeWorkflow;
                   final String workflowSlug =
-                      contentState.activeWorkflow?.slug ?? 'workflow';
+                      activeWorkflow?.slug ?? 'workflow';
+                  final String workflowScopeKey =
+                      activeWorkflow?.workflowKey ?? workflowSlug;
 
                   return WorkflowTechspecWorkspace(
+                    key: ValueKey<String>(workflowScopeKey),
                     workflowSlug: workflowSlug,
                     prdPhaseStatus: prdPhaseStatus,
                     onInitialize: () =>
@@ -326,6 +331,7 @@ final class _OrchestratorPrdBody extends StatelessWidget {
     }
 
     return WorkflowPrdWorkspace(
+      key: ValueKey<String>(workflow.workflowKey),
       workflow: workflow,
       repoPath: project.canonicalPath,
       onOpenCursorSettings: () {

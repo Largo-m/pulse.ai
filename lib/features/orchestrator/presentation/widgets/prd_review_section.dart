@@ -12,6 +12,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_st
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_review_load_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_artifact_presentation.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_artifact_card.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_action_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_feedback_bar.dart';
@@ -20,6 +21,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_u
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_section_header.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
+import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 
 final class PrdReviewSection extends StatelessWidget {
   const PrdReviewSection({super.key, required this.workflowSlug});
@@ -46,6 +48,20 @@ final class PrdReviewSection extends StatelessWidget {
         ),
         BlocListener<PrdReviewCubit, PrdReviewState>(
           listenWhen: (PrdReviewState previous, PrdReviewState current) =>
+              previous.pendingActiveRunAttachmentId !=
+                  current.pendingActiveRunAttachmentId &&
+              current.pendingActiveRunAttachmentId != null,
+          listener: (BuildContext context, PrdReviewState state) {
+            unawaited(
+              context.read<PrdWorkflowCubit>().attachToActiveRun(
+                state.pendingActiveRunAttachmentId!,
+              ),
+            );
+            context.read<PrdReviewCubit>().clearPendingActiveRunAttachment();
+          },
+        ),
+        BlocListener<PrdReviewCubit, PrdReviewState>(
+          listenWhen: (PrdReviewState previous, PrdReviewState current) =>
               !previous.mustConfirmOverwrite && current.mustConfirmOverwrite,
           listener: (BuildContext context, PrdReviewState state) async {
             final bool? confirmed = await PrdReviewUnsavedOverwriteDialog.show(
@@ -63,87 +79,121 @@ final class PrdReviewSection extends StatelessWidget {
           },
         ),
       ],
-      child: BlocBuilder<PrdReviewCubit, PrdReviewState>(
-        builder: (BuildContext context, PrdReviewState state) {
-          final PrdReviewCubit cubit = context.read<PrdReviewCubit>();
-          final TextTheme textTheme = Theme.of(context).textTheme;
-          final bool showFeedback =
-              state.loadStatus == PrdReviewLoadStatus.ready &&
-              !state.isApproved;
-          final bool showArtifact =
-              state.loadStatus == PrdReviewLoadStatus.ready ||
-              state.loadStatus == PrdReviewLoadStatus.loading;
+      child: BlocBuilder<PrdWorkflowCubit, PrdWorkflowState>(
+        builder: (BuildContext context, PrdWorkflowState workflowState) {
+          return BlocBuilder<PrdReviewCubit, PrdReviewState>(
+            builder: (BuildContext context, PrdReviewState state) {
+              final PrdReviewCubit cubit = context.read<PrdReviewCubit>();
+              final TextTheme textTheme = Theme.of(context).textTheme;
+              final bool showFeedback =
+                  state.loadStatus == PrdReviewLoadStatus.ready &&
+                  !state.isApproved;
+              final bool showArtifact =
+                  state.loadStatus == PrdReviewLoadStatus.ready ||
+                  state.loadStatus == PrdReviewLoadStatus.loading;
+              final bool isMissingArtifact =
+                  state.failureMessageKey ==
+                  PrdArtifactFailureMessageKeys.missingArtifact;
+              final String? artifactStatusMessage =
+                  state.failureMessageKey == null
+                  ? null
+                  : prdArtifactFailureMessageForKey(state.failureMessageKey!);
+              final String? runSubtitle =
+                  PrdArtifactPresentation.showsRestoredRunOnPrdCard(
+                    sourceRunId: state.sourceRunId,
+                    restoredRunId: workflowState.restoredRunId,
+                  )
+                  ? PrdArtifactPresentation.restoredRunLabel(state.sourceRunId!)
+                  : null;
 
-          if (!showArtifact) {
-            return const SizedBox.shrink();
-          }
+              if (!showArtifact) {
+                return const SizedBox.shrink();
+              }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              const WorkflowSectionHeader(
-                icon: Icons.description_outlined,
-                title: OrchestratorStrings.prdArtifactDraftedMessage,
-              ),
-              const SizedBox(height: PulseDimensions.sectionGapMd),
-              PrdArtifactCard(
-                fileName: OrchestratorStrings.prdArtifactFileName(workflowSlug),
-                footer: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (state.failureMessageKey != null)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: PulseDimensions.sectionGapSm,
-                        ),
-                        child: Text(
-                          state.failureMessageKey!,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: PulseColors.secondary,
-                          ),
-                        ),
-                      ),
-                    if (state.approveBlockedMessageKey != null)
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: PulseDimensions.sectionGapSm,
-                        ),
-                        child: Text(
-                          state.approveBlockedMessageKey!,
-                          style: textTheme.bodySmall?.copyWith(
-                            color: PulseColors.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    PrdReviewActionBar(
-                      artifactMode: true,
-                      showsUserEditedBadge: state.showsUserEditedBadge,
-                      canSave: state.canSave,
-                      canApprove: state.canApprove,
-                      canReject: state.canReject,
-                      isSaving: state.isSaving,
-                      isApproving: state.isApproving,
-                      isRejecting: state.isRejecting,
-                      onSave: () => unawaited(cubit.saveDraft()),
-                      onApprove: () => unawaited(cubit.approve()),
-                      onReject: () {},
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  const WorkflowSectionHeader(
+                    icon: Icons.description_outlined,
+                    title: OrchestratorStrings.prdArtifactDraftedMessage,
+                  ),
+                  const SizedBox(height: PulseDimensions.sectionGapMd),
+                  PrdArtifactCard(
+                    fileName: OrchestratorStrings.prdArtifactFileName(
+                      workflowSlug,
                     ),
-                  ],
-                ),
-                child: PrdReviewMarkdownEditor(
-                  textNotifier: cubit.editorText,
-                  onChanged: cubit.onEditorTextChanged,
-                  enabled: state.isEditable,
-                  expandToParent: true,
-                ),
-              ),
-              if (showFeedback)
-                PrdReviewFeedbackBar(
-                  enabled: state.canReject && !state.isRejecting,
-                  onSubmit: (String feedback) =>
-                      unawaited(cubit.rejectWithFeedback(feedback)),
-                ),
-            ],
+                    subtitle: runSubtitle,
+                    footer: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        if (artifactStatusMessage != null && !isMissingArtifact)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: PulseDimensions.sectionGapSm,
+                            ),
+                            child: Text(
+                              artifactStatusMessage,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: PulseColors.secondary,
+                              ),
+                            ),
+                          ),
+                        if (state.approveBlockedMessageKey != null)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: PulseDimensions.sectionGapSm,
+                            ),
+                            child: Text(
+                              state.approveBlockedMessageKey!,
+                              style: textTheme.bodySmall?.copyWith(
+                                color: PulseColors.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        PrdReviewActionBar(
+                          artifactMode: true,
+                          showsUserEditedBadge: state.showsUserEditedBadge,
+                          canSave: state.canSave,
+                          canApprove: state.canApprove,
+                          canReject: state.canReject,
+                          isSaving: state.isSaving,
+                          isApproving: state.isApproving,
+                          isRejecting: state.isRejecting,
+                          onSave: () => unawaited(cubit.saveDraft()),
+                          onApprove: () => unawaited(cubit.approve()),
+                          onReject: () {},
+                        ),
+                      ],
+                    ),
+                    child: isMissingArtifact
+                        ? Padding(
+                            padding: PulseInsets.prdArtifactTitleBar,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: Text(
+                                artifactStatusMessage!,
+                                style: textTheme.bodyMedium?.copyWith(
+                                  color: PulseColors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          )
+                        : PrdReviewMarkdownEditor(
+                            textNotifier: cubit.editorText,
+                            onChanged: cubit.onEditorTextChanged,
+                            enabled: state.isEditable,
+                            expandToParent: true,
+                          ),
+                  ),
+                  if (showFeedback)
+                    PrdReviewFeedbackBar(
+                      enabled: state.canReject && !state.isRejecting,
+                      onSubmit: (String feedback) =>
+                          unawaited(cubit.rejectWithFeedback(feedback)),
+                    ),
+                ],
+              );
+            },
           );
         },
       ),

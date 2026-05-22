@@ -12,9 +12,11 @@ final class PrdArtifactCard extends StatelessWidget {
     required this.fileName,
     required this.child,
     required this.footer,
+    this.subtitle,
   });
 
   final String fileName;
+  final String? subtitle;
   final Widget child;
   final Widget footer;
 
@@ -52,13 +54,30 @@ final class PrdArtifactCard extends StatelessWidget {
                   ),
                   const SizedBox(width: PulseDimensions.sectionGapSm),
                   Expanded(
-                    child: Text(
-                      fileName,
-                      style: textTheme.labelMedium?.copyWith(
-                        color: PulseColors.onSurface,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          fileName,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: PulseColors.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (subtitle != null) ...<Widget>[
+                          const SizedBox(
+                            height: PulseDimensions.sectionGapSm / 2,
+                          ),
+                          Text(
+                            subtitle!,
+                            style: textTheme.labelSmall?.copyWith(
+                              color: PulseColors.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                   Semantics(

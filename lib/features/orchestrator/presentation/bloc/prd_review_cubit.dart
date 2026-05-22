@@ -18,6 +18,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_review_load_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_artifact_presentation.dart';
 
 final class PrdReviewCubit extends Cubit<PrdReviewState> {
   PrdReviewCubit({
@@ -132,7 +133,12 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
       final Failure failure = readResult.getLeft().toNullable()!;
       if (failure is ArtifactPersistenceFailure &&
           failure.code == ArtifactPersistenceFailureCode.notFound) {
-        _applyLoadedContent(markdown: '', approval: approval);
+        _applyLoadedContent(
+          markdown: '',
+          approval: approval,
+          missingArtifactMessageKey:
+              PrdArtifactFailureMessageKeys.missingArtifact,
+        );
         return;
       }
       emit(
@@ -345,6 +351,8 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
       return;
     }
 
+    final PrdRunEntity startedRun = rejectResult.getRight().toNullable()!;
+
     emit(
       state.copyWith(
         isRejecting: false,
@@ -354,9 +362,17 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
         showsUserEditedBadge: false,
         clearPendingOverwriteMarkdown: true,
         mustConfirmOverwrite: false,
+        pendingActiveRunAttachmentId: startedRun.id,
       ),
     );
     _setEditorText('');
+  }
+
+  void clearPendingActiveRunAttachment() {
+    if (state.pendingActiveRunAttachmentId == null) {
+      return;
+    }
+    emit(state.copyWith(clearPendingActiveRunAttachmentId: true));
   }
 
   void applyIncomingDraft(String markdown) {
@@ -398,6 +414,7 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
   void _applyLoadedContent({
     required String markdown,
     required PrdApprovalEntity approval,
+    String? missingArtifactMessageKey,
   }) {
     _replaceEditorContent(markdown);
     emit(
@@ -410,7 +427,8 @@ final class PrdReviewCubit extends Cubit<PrdReviewState> {
         isApproved: false,
         mustConfirmOverwrite: false,
         clearPendingOverwriteMarkdown: true,
-        clearFailureMessageKey: true,
+        failureMessageKey: missingArtifactMessageKey,
+        clearFailureMessageKey: missingArtifactMessageKey == null,
       ),
     );
   }

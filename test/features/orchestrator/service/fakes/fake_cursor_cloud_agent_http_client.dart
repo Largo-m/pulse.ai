@@ -4,6 +4,7 @@ final class FakeCursorCloudAgentHttpClient
     implements CursorCloudAgentHttpClient {
   final List<String> getPaths = <String>[];
   final List<String> postPaths = <String>[];
+  final List<String> postBodies = <String>[];
   final List<String> ssePaths = <String>[];
 
   CursorHttpResponse? nextGetResponse;
@@ -48,6 +49,9 @@ final class FakeCursorCloudAgentHttpClient
   }) async {
     postCallCount++;
     postPaths.add(path);
+    if (body != null) {
+      postBodies.add(body);
+    }
     if (postResponseQueue.isNotEmpty) {
       return postResponseQueue.removeAt(0);
     }
