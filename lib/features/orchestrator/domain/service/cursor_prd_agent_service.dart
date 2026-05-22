@@ -7,6 +7,8 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.
 abstract interface class CursorPrdAgentService {
   Future<Either<Failure, void>> preflight();
 
+  Future<Either<Failure, void>> preflightCredential(String apiKey);
+
   Future<PrdRunEntity> startRun(PrdRunContext context);
 
   Stream<PrdStreamEvent> watchRun(String cloudRunId);

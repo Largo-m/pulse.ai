@@ -1,4 +1,5 @@
 import 'package:fpdart/fpdart.dart';
+import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/adr_entry.dart';
@@ -48,6 +49,14 @@ final class FakeCursorPrdAgentServiceForLifecycle
 
   @override
   Future<Either<Failure, void>> preflight() async {
+    return nextPreflightResult ?? right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> preflightCredential(String apiKey) async {
+    if (apiKey.trim().isEmpty) {
+      return left(const CursorConnectionFailure.missingCredential());
+    }
     return nextPreflightResult ?? right(null);
   }
 

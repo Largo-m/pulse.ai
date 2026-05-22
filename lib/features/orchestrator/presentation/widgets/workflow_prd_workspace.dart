@@ -129,7 +129,9 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
                         WorkflowUserPromptBubble(message: directive),
                         const SizedBox(height: PulseDimensions.sectionGapLg),
                       ],
-                      const PrdWorkflowStreamPanel(),
+                      PrdWorkflowStreamPanel(
+                        workflowDirective: widget.workflow.directive,
+                      ),
                       const SizedBox(height: PulseDimensions.sectionGapLg),
                       PrdReviewSection(workflowSlug: widget.workflow.slug),
                     ],

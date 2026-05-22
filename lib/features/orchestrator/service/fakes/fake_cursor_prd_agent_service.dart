@@ -1,4 +1,5 @@
 import 'package:fpdart/fpdart.dart';
+import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
@@ -20,6 +21,7 @@ final class FakeCursorPrdAgentService implements CursorPrdAgentService {
   );
 
   Either<Failure, void>? nextPreflightResult;
+  Either<Failure, void>? nextPreflightCredentialResult;
   int cancelRunCallCount = 0;
   String? lastCancelledCloudRunId;
 
@@ -28,6 +30,14 @@ final class FakeCursorPrdAgentService implements CursorPrdAgentService {
   @override
   Future<Either<Failure, void>> preflight() async {
     return nextPreflightResult ?? right(null);
+  }
+
+  @override
+  Future<Either<Failure, void>> preflightCredential(String apiKey) async {
+    if (apiKey.trim().isEmpty) {
+      return left(const CursorConnectionFailure.missingCredential());
+    }
+    return nextPreflightCredentialResult ?? nextPreflightResult ?? right(null);
   }
 
   @override

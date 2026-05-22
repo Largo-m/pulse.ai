@@ -17,6 +17,8 @@ final class CursorCloudAgentHttpClientImpl
            Dio(
              BaseOptions(
                baseUrl: baseUrl,
+               connectTimeout: const Duration(seconds: 20),
+               receiveTimeout: const Duration(seconds: 20),
                headers: <String, String>{
                  'Accept': 'application/json',
                  'Content-Type': 'application/json',
@@ -28,24 +30,42 @@ final class CursorCloudAgentHttpClientImpl
   final CursorCredentialStoreService _credentialStore;
   final Dio _dio;
 
-  Future<void> _ensureAuthorization() async {
-    final String? apiKey = await _credentialStore.read();
+  String _basicAuthToken(String apiKey) {
+    return base64Encode(utf8.encode('${apiKey.trim()}:'));
+  }
+
+  Future<Map<String, String>> _authorizationHeaders({
+    String? credential,
+  }) async {
+    final String? apiKey = credential ?? await _credentialStore.read();
     if (apiKey == null || apiKey.trim().isEmpty) {
       throw StateError('Cursor API credential is missing');
     }
-    final String token = base64Encode(utf8.encode('${apiKey.trim()}:'));
-    _dio.options.headers['Authorization'] = 'Basic $token';
+    return <String, String>{
+      'Authorization': 'Basic ${_basicAuthToken(apiKey)}',
+    };
+  }
+
+  Map<String, String> _mergeHeaders({
+    Map<String, String>? headers,
+    required Map<String, String> authorizationHeaders,
+  }) {
+    return <String, String>{...?headers, ...authorizationHeaders};
   }
 
   @override
   Future<CursorHttpResponse> get(
     String path, {
     Map<String, String>? headers,
+    String? credential,
   }) async {
-    await _ensureAuthorization();
+    final Map<String, String> requestHeaders = _mergeHeaders(
+      headers: headers,
+      authorizationHeaders: await _authorizationHeaders(credential: credential),
+    );
     final Response<String> response = await _dio.get<String>(
       path,
-      options: Options(headers: headers),
+      options: Options(headers: requestHeaders),
     );
     return CursorHttpResponse(
       statusCode: response.statusCode ?? 0,
@@ -59,11 +79,14 @@ final class CursorCloudAgentHttpClientImpl
     Map<String, String>? headers,
     String? body,
   }) async {
-    await _ensureAuthorization();
+    final Map<String, String> requestHeaders = _mergeHeaders(
+      headers: headers,
+      authorizationHeaders: await _authorizationHeaders(),
+    );
     final Response<String> response = await _dio.post<String>(
       path,
       data: body,
-      options: Options(headers: headers),
+      options: Options(headers: requestHeaders),
     );
     return CursorHttpResponse(
       statusCode: response.statusCode ?? 0,
@@ -76,11 +99,14 @@ final class CursorCloudAgentHttpClientImpl
     String path, {
     Map<String, String>? headers,
   }) async* {
-    await _ensureAuthorization();
+    final Map<String, String> requestHeaders = _mergeHeaders(
+      headers: <String, String>{'Accept': 'text/event-stream', ...?headers},
+      authorizationHeaders: await _authorizationHeaders(),
+    );
     final Response<ResponseBody> response = await _dio.get<ResponseBody>(
       path,
       options: Options(
-        headers: <String, String>{'Accept': 'text/event-stream', ...?headers},
+        headers: requestHeaders,
         responseType: ResponseType.stream,
       ),
     );

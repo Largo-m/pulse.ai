@@ -6,7 +6,11 @@ final class CursorHttpResponse {
 }
 
 abstract interface class CursorCloudAgentHttpClient {
-  Future<CursorHttpResponse> get(String path, {Map<String, String>? headers});
+  Future<CursorHttpResponse> get(
+    String path, {
+    Map<String, String>? headers,
+    String? credential,
+  });
 
   Future<CursorHttpResponse> post(
     String path, {

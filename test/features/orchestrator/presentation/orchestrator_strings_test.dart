@@ -134,6 +134,72 @@ void main() {
       );
     });
 
+    test('cursor settings modal copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.cursorSettingsModalTitle, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsModalTitle, contains('Cursor'));
+      expect(OrchestratorStrings.cursorSettingsApiKeyLabel, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsApiKeyHint, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsHelperText, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsConfiguredStatus, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsConfiguredStatus,
+        contains('configurada'),
+      );
+      expect(OrchestratorStrings.cursorSettingsTestButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsTestButton, contains('Testar'));
+      expect(OrchestratorStrings.cursorSettingsSaveButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsDocumentationUrl, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationUrl,
+        startsWith('https://'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationLinkLabel,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsDocumentationLinkLabel,
+        isNot(equals('Cursor documentation')),
+      );
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmTitle, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmBody, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveConfirmButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsRemoveCancelButton, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsCloseSemantics, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsTestSuccessFeedback, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsTestSuccessFeedback,
+        contains('salvar'),
+      );
+      expect(OrchestratorStrings.cursorSettingsSaveFailedFeedback, isNotEmpty);
+    });
+
+    test('cursor settings feedback copy is localized in PT-BR', () {
+      expect(
+        OrchestratorStrings.cursorSettingsSaveBlockedWithoutTest,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsSaveBlockedWithoutTest,
+        contains('Teste'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsUnauthorizedFeedback,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsUnauthorizedFeedback,
+        contains('401'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsMissingCredentialFeedback,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.cursorSettingsNetworkFeedback, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsUnknownFeedback, isNotEmpty);
+    });
+
     test('cursor connection remediation copy is localized in PT-BR', () {
       expect(
         OrchestratorStrings.cursorConnectionMissingCredentialRemediation,
@@ -170,6 +236,9 @@ void main() {
         contains('execução'),
       );
       expect(OrchestratorStrings.prdWorkflowStreamEmpty, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartButton, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartSemantics, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartRetryButton, isNotEmpty);
       expect(OrchestratorStrings.prdWorkflowCancelButton, isNotEmpty);
       expect(
         OrchestratorStrings.prdWorkflowUserActionRequiredTitle,

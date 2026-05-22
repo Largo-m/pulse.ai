@@ -20,6 +20,14 @@ final class CursorPrdAgentServiceStub implements CursorPrdAgentService {
     if (credential == null || credential.trim().isEmpty) {
       return left(const CursorConnectionFailure.missingCredential());
     }
+    return preflightCredential(credential);
+  }
+
+  @override
+  Future<Either<Failure, void>> preflightCredential(String apiKey) async {
+    if (apiKey.trim().isEmpty) {
+      return left(const CursorConnectionFailure.missingCredential());
+    }
     return right(null);
   }
 

@@ -45,7 +45,7 @@ Future<void> showInitializeAgentModal(
             ),
           );
         },
-  );
+  ).whenComplete(branchesCubit.reset);
 }
 
 final class _InitializeAgentModalPage extends StatefulWidget {
@@ -98,7 +98,6 @@ final class _InitializeAgentModalPageState
 
   @override
   void dispose() {
-    context.read<InitializeAgentBranchesCubit>().reset();
     _slugController.removeListener(_onSlugChanged);
     _coreDirectiveController.dispose();
     _agentNameController.dispose();

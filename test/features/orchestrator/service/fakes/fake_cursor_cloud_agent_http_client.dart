@@ -19,14 +19,22 @@ final class FakeCursorCloudAgentHttpClient
 
   int getCallCount = 0;
   int postCallCount = 0;
+  String? lastGetCredential;
+  Exception? nextGetException;
 
   @override
   Future<CursorHttpResponse> get(
     String path, {
     Map<String, String>? headers,
+    String? credential,
   }) async {
     getCallCount++;
     getPaths.add(path);
+    lastGetCredential = credential;
+    final Exception? error = nextGetException;
+    if (error != null) {
+      throw error;
+    }
     return getResponsesByPath[path] ??
         nextGetResponse ??
         const CursorHttpResponse(statusCode: 404, body: '{}');

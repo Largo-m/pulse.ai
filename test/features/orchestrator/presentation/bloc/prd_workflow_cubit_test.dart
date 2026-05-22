@@ -56,6 +56,10 @@ final class _ControllablePrdAgentService implements CursorPrdAgentService {
   Future<Either<Failure, void>> preflight() async => right(null);
 
   @override
+  Future<Either<Failure, void>> preflightCredential(String apiKey) async =>
+      right(null);
+
+  @override
   Future<PrdRunEntity> startRun(PrdRunContext context) async {
     startRunCallCount++;
     if (shouldFailStart) {

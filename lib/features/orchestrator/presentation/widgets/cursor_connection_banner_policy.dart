@@ -3,7 +3,8 @@ import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings
 
 abstract final class CursorConnectionBannerPolicy {
   static bool shouldShow(CursorConnectionStatus status) {
-    return status == CursorConnectionStatus.disconnected;
+    return status == CursorConnectionStatus.disconnected ||
+        status == CursorConnectionStatus.failure;
   }
 
   static String remediationMessage(CursorConnectionState state) {

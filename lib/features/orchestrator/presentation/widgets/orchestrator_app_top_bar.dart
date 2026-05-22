@@ -14,12 +14,14 @@ final class OrchestratorAppTopBar extends StatelessWidget {
     this.isWorkspacesActive = false,
     this.onWorkspaces,
     this.onImportProject,
+    this.onOpenCursorSettings,
   });
 
   final VoidCallback onPlaceholder;
   final bool isWorkspacesActive;
   final VoidCallback? onWorkspaces;
   final VoidCallback? onImportProject;
+  final VoidCallback? onOpenCursorSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +101,7 @@ final class OrchestratorAppTopBar extends StatelessWidget {
                 const SizedBox(width: PulseDimensions.afterImportButtonGap),
                 PulseChromeIconButton(
                   icon: Icons.settings_outlined,
-                  onPressed: onPlaceholder,
+                  onPressed: onOpenCursorSettings ?? onPlaceholder,
                 ),
                 PulseChromeIconButton(
                   icon: Icons.notifications_none_outlined,
