@@ -34,8 +34,10 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_recent_proje
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adrs_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/reconcile_prd_run_status_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/remove_cursor_credential_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/restore_last_finalized_prd_session_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_cursor_credential_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
@@ -92,6 +94,8 @@ final class OrchestratorComposition {
     required this.completePrdAgentRunUseCase,
     required this.cancelPrdAgentRunUseCase,
     required this.failPrdAgentRunUseCase,
+    required this.restoreLastFinalizedPrdSessionUseCase,
+    required this.reconcilePrdRunStatusUseCase,
     required this.cursorPrdAgentService,
     required this.runCursorConnectionPreflightUseCase,
     required this.prdRunCompletionOutputSource,
@@ -118,6 +122,9 @@ final class OrchestratorComposition {
   final CompletePrdAgentRunUseCase completePrdAgentRunUseCase;
   final CancelPrdAgentRunUseCase cancelPrdAgentRunUseCase;
   final FailPrdAgentRunUseCase failPrdAgentRunUseCase;
+  final RestoreLastFinalizedPrdSessionUseCase
+  restoreLastFinalizedPrdSessionUseCase;
+  final ReconcilePrdRunStatusUseCase reconcilePrdRunStatusUseCase;
   final CursorPrdAgentService cursorPrdAgentService;
   final RunCursorConnectionPreflightUseCase runCursorConnectionPreflightUseCase;
   final PrdRunCompletionOutputSource prdRunCompletionOutputSource;
@@ -287,6 +294,18 @@ final class OrchestratorComposition {
           prdRunRepository: prdRunRepository,
           workflowRepository: workflowRepository,
         );
+    final RestoreLastFinalizedPrdSessionUseCase
+    restoreLastFinalizedPrdSessionUseCase =
+        RestoreLastFinalizedPrdSessionUseCase(
+          prdRunRepository: prdRunRepository,
+        );
+    final ReconcilePrdRunStatusUseCase reconcilePrdRunStatusUseCase =
+        ReconcilePrdRunStatusUseCase(
+          credentialStore: cursorCredentialStoreService,
+          cursorPrdAgentService: cursorPrdAgentService,
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+        );
     const PrdRunCompletionOutputSource prdRunCompletionOutputSource =
         DefaultPrdRunCompletionOutputSource();
 
@@ -307,6 +326,9 @@ final class OrchestratorComposition {
       completePrdAgentRunUseCase: completePrdAgentRunUseCase,
       cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
       failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+      restoreLastFinalizedPrdSessionUseCase:
+          restoreLastFinalizedPrdSessionUseCase,
+      reconcilePrdRunStatusUseCase: reconcilePrdRunStatusUseCase,
       cursorPrdAgentService: cursorPrdAgentService,
       runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
       prdRunCompletionOutputSource: prdRunCompletionOutputSource,
@@ -326,6 +348,10 @@ final class OrchestratorComposition {
         completePrdAgentRunUseCase: completePrdAgentRunUseCase,
         cancelPrdAgentRunUseCase: cancelPrdAgentRunUseCase,
         failPrdAgentRunUseCase: failPrdAgentRunUseCase,
+        restoreLastFinalizedPrdSessionUseCase:
+            restoreLastFinalizedPrdSessionUseCase,
+        reconcilePrdRunStatusUseCase: reconcilePrdRunStatusUseCase,
+        prdRunRepository: prdRunRepository,
         cursorPrdAgentService: cursorPrdAgentService,
         completionOutputSource: prdRunCompletionOutputSource,
       ),

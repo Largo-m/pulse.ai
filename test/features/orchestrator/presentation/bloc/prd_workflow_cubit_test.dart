@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:bloc_test/bloc_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/core/error/prd_run_persistence_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_agent_run_output.dart';
@@ -14,6 +16,7 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.da
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_key.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/fakes/fake_artifact_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/fakes/fake_prd_run_repository.dart';
 import 'package:pulse_ai/features/orchestrator/domain/repositories/fakes/fake_workflow_repository.dart';
@@ -26,14 +29,19 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/cancel_prd_agent_
 import 'package:pulse_ai/features/orchestrator/domain/usecases/complete_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/fail_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/reconcile_prd_run_status_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/restore_last_finalized_prd_session_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/start_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_session_view_mode.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_stream_buffer_policy.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_id_codec.dart';
 
+import '../../domain/service/fakes/fake_cursor_credential_store_service.dart';
 import '../../domain/usecases/fake_cursor_prd_agent_service.dart';
 import '../../domain/usecases/fake_local_git_branches_service.dart';
 import '../../domain/usecases/fake_recent_projects_repository.dart';
@@ -47,6 +55,7 @@ final class _ControllablePrdAgentService implements CursorPrdAgentService {
   int startRunCallCount = 0;
   int cancelRunCallCount = 0;
   bool shouldFailStart = false;
+  Either<Failure, CloudRunStatus>? nextFetchRunStatusResult;
 
   static final String cloudRunId = CursorCloudRunIdCodec.encode(
     agentId: 'bc-test',
@@ -86,7 +95,7 @@ final class _ControllablePrdAgentService implements CursorPrdAgentService {
   @override
   Future<Either<Failure, CloudRunStatus>> fetchRunStatus(String cloudRunId) =>
       Future<Either<Failure, CloudRunStatus>>.value(
-        left(const PrdRunFailure.cloudRunFailed()),
+        nextFetchRunStatusResult ?? left(const PrdRunFailure.cloudRunFailed()),
       );
 }
 
@@ -119,7 +128,57 @@ void main() {
   late FakeLocalGitBranchesService gitService;
   late StreamController<PrdStreamEvent> streamController;
   late _ControllablePrdAgentService agentService;
+  late FakeCursorCredentialStoreService credentialStore;
   late WorkflowEntity seededWorkflow;
+
+  final String workflowKey = WorkflowKey.compose(
+    projectId: projectId,
+    slug: slug,
+  );
+
+  Future<PrdRunEntity> seedRun({
+    required PrdRunStatus status,
+    required DateTime startedAt,
+    String? cloudRunId,
+    String? feedback,
+  }) async {
+    final Either<Failure, PrdRunEntity> created = await prdRunRepository
+        .createRun(
+          workflowKey: workflowKey,
+          status: status,
+          cloudRunId: cloudRunId,
+          feedback: feedback,
+        );
+    final PrdRunEntity run = created.getRight().toNullable()!;
+    final Either<Failure, PrdRunEntity> updated = await prdRunRepository
+        .updateRun(
+          PrdRunEntity(
+            id: run.id,
+            workflowKey: run.workflowKey,
+            cloudRunId: run.cloudRunId,
+            status: run.status,
+            supersedesRunId: run.supersedesRunId,
+            feedback: run.feedback,
+            startedAt: startedAt,
+            endedAt: run.endedAt,
+          ),
+        );
+    return updated.getRight().toNullable()!;
+  }
+
+  Future<void> seedStreamEvent({
+    required String runId,
+    required int sequence,
+    String eventType = 'assistant',
+    String payloadSummary = 'Linha restaurada',
+  }) async {
+    await prdRunRepository.appendStreamEvent(
+      runId: runId,
+      eventType: eventType,
+      payloadSummary: payloadSummary,
+      timestamp: fixedNow.add(Duration(seconds: sequence)),
+    );
+  }
 
   PrdWorkflowCubit buildCubit() {
     final StartPrdAgentRunUseCase startUseCase = StartPrdAgentRunUseCase(
@@ -161,6 +220,18 @@ void main() {
         workflowRepository: workflowRepository,
         clock: () => fixedNow,
       ),
+      restoreLastFinalizedPrdSessionUseCase:
+          RestoreLastFinalizedPrdSessionUseCase(
+            prdRunRepository: prdRunRepository,
+          ),
+      reconcilePrdRunStatusUseCase: ReconcilePrdRunStatusUseCase(
+        credentialStore: credentialStore,
+        cursorPrdAgentService: agentService,
+        prdRunRepository: prdRunRepository,
+        workflowRepository: workflowRepository,
+        clock: () => fixedNow,
+      ),
+      prdRunRepository: prdRunRepository,
       cursorPrdAgentService: agentService,
       completionOutputSource: const _FixedCompletionOutputSource(
         FakeCursorPrdAgentServiceForLifecycle.sampleCompletionOutput,
@@ -199,6 +270,8 @@ void main() {
     streamController = StreamController<PrdStreamEvent>();
     agentService = _ControllablePrdAgentService(stream: streamController)
       ..shouldFailStart = false;
+    credentialStore = FakeCursorCredentialStoreService()
+      ..storedCredential = 'cursor-api-key';
     await seedWorkflow();
     seededWorkflow = (await workflowRepository.findBySlug(
       projectId: projectId,
@@ -213,23 +286,25 @@ void main() {
   });
 
   group('PrdWorkflowCubit', () {
-    test('bindWorkflow maps workflow phase to UI status', () {
-      final PrdWorkflowCubit cubit = buildCubit()
-        ..bindWorkflow(
-          workflow: seededWorkflow.copyWith(
-            prdPhaseStatus: PrdPhaseStatus.pendingApproval,
-          ),
-          repoPath: repoPath,
-        );
+    test('bindWorkflow maps workflow phase to UI status', () async {
+      final PrdWorkflowCubit cubit = buildCubit();
+      await cubit.bindWorkflow(
+        workflow: seededWorkflow.copyWith(
+          prdPhaseStatus: PrdPhaseStatus.pendingApproval,
+        ),
+        repoPath: repoPath,
+      );
 
       expect(cubit.state.phaseStatus, PrdWorkflowPhaseUiStatus.pendingApproval);
+      expect(cubit.state.sessionViewMode, PrdSessionViewMode.empty);
+      await cubit.close();
     });
 
     test(
       'start run emits running and appends first stream line to state',
       () async {
-        final PrdWorkflowCubit cubit = buildCubit()
-          ..bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        final PrdWorkflowCubit cubit = buildCubit();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
         final Future<void> startFuture = cubit.startRun(
           directive: 'Build payments PRD',
         );
@@ -267,8 +342,8 @@ void main() {
     test(
       'completed run emits pendingApproval and stops subscription',
       () async {
-        final PrdWorkflowCubit cubit = buildCubit()
-          ..bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        final PrdWorkflowCubit cubit = buildCubit();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
         final Future<void> startFuture = cubit.startRun(
           directive: 'Build payments PRD',
         );
@@ -317,8 +392,8 @@ void main() {
     test(
       'cancel transitions to cancelled and clears active subscription',
       () async {
-        final PrdWorkflowCubit cubit = buildCubit()
-          ..bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        final PrdWorkflowCubit cubit = buildCubit();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
         final Future<void> startFuture = cubit.startRun(
           directive: 'Build payments PRD',
         );
@@ -355,8 +430,8 @@ void main() {
     test(
       'failed run surfaces failure message key without secret substrings',
       () async {
-        final PrdWorkflowCubit cubit = buildCubit()
-          ..bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        final PrdWorkflowCubit cubit = buildCubit();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
         final Future<void> startFuture = cubit.startRun(
           directive: 'Build payments PRD',
         );
@@ -423,12 +498,24 @@ void main() {
           workflowRepository: workflowRepository,
           clock: () => fixedNow,
         ),
+        restoreLastFinalizedPrdSessionUseCase:
+            RestoreLastFinalizedPrdSessionUseCase(
+              prdRunRepository: prdRunRepository,
+            ),
+        reconcilePrdRunStatusUseCase: ReconcilePrdRunStatusUseCase(
+          credentialStore: credentialStore,
+          cursorPrdAgentService: agentService,
+          prdRunRepository: prdRunRepository,
+          workflowRepository: workflowRepository,
+          clock: () => fixedNow,
+        ),
+        prdRunRepository: prdRunRepository,
         cursorPrdAgentService: agentService,
         completionOutputSource: const _FixedCompletionOutputSource(
           FakeCursorPrdAgentServiceForLifecycle.sampleCompletionOutput,
         ),
       );
-      cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
       await cubit.startRun(directive: 'Build payments PRD');
       expect(
         cubit.state.failureMessageKey,
@@ -436,6 +523,204 @@ void main() {
       );
       await cubit.close();
     });
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'bindWorkflow with terminal run emits restored session and stream lines',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        final PrdRunEntity run = await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow,
+        );
+        await seedStreamEvent(runId: run.id, sequence: 1);
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.restored);
+        expect(cubit.state.streamLines, isNotEmpty);
+        expect(cubit.state.restoredConversationMessages, isNotEmpty);
+        expect(cubit.state.restoredRunId, isNotNull);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'bindWorkflow with running latest run emits inProgressOnly and empty lines',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow.subtract(const Duration(hours: 1)),
+        );
+        await seedRun(
+          status: PrdRunStatus.running,
+          startedAt: fixedNow,
+          cloudRunId: _ControllablePrdAgentService.cloudRunId,
+        );
+        agentService.nextFetchRunStatusResult = right(
+          const CloudRunStatus(mappedPrdRunStatus: PrdRunStatus.running),
+        );
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.inProgressOnly);
+        expect(cubit.state.streamLines, isEmpty);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'bindWorkflow when restore fails emits restoreFailed with message key',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        final PrdRunEntity run = await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow,
+        );
+        await seedStreamEvent(runId: run.id, sequence: 1);
+        prdRunRepository.listStreamEventsFailure =
+            const PrdRunPersistenceFailure.hiveError();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.restoreFailed);
+        expect(
+          cubit.state.failureMessageKey,
+          OrchestratorStrings.prdWorkflowSessionRestoreFailed,
+        );
+        expect(cubit.state.streamLines, isEmpty);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'bindWorkflow without terminal runs emits empty session mode',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.empty);
+        expect(cubit.state.streamLines, isEmpty);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'startRun with restored snapshot keeps lines and sets restoredWithActiveRun',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        final PrdRunEntity run = await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow,
+        );
+        await seedStreamEvent(
+          runId: run.id,
+          sequence: 1,
+          payloadSummary: 'Snapshot preservado',
+        );
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        final int restoredLineCount = cubit.state.streamLines.length;
+        expect(restoredLineCount, greaterThan(0));
+
+        final Future<void> startFuture = cubit.startRun(
+          directive: 'Build payments PRD',
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          cubit.state.sessionViewMode,
+          PrdSessionViewMode.restoredWithActiveRun,
+        );
+        expect(cubit.state.streamLines.length, restoredLineCount);
+        expect(
+          cubit.state.streamLines.first.displayText,
+          'Snapshot preservado',
+        );
+
+        streamController.add(
+          PrdStreamEvent(
+            runId: _ControllablePrdAgentService.cloudRunId,
+            eventType: 'status',
+            sequence: 1,
+            timestamp: fixedNow,
+            payloadSummary: 'status=RUNNING',
+          ),
+        );
+        await startFuture;
+        await Future<void>.delayed(Duration.zero);
+        expect(cubit.state.streamLines.length, restoredLineCount);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'bindWorkflow reconciles running run to completed then restores lines',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        final PrdRunEntity runningRun = await seedRun(
+          status: PrdRunStatus.running,
+          startedAt: fixedNow,
+          cloudRunId: _ControllablePrdAgentService.cloudRunId,
+        );
+        await seedStreamEvent(
+          runId: runningRun.id,
+          sequence: 1,
+          payloadSummary: 'Após reconciliação',
+        );
+        agentService.nextFetchRunStatusResult = right(
+          const CloudRunStatus(mappedPrdRunStatus: PrdRunStatus.completed),
+        );
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.restored);
+        expect(cubit.state.streamLines, isNotEmpty);
+        expect(cubit.state.streamLines.first.displayText, 'Após reconciliação');
+        expect(cubit.state.restoredConversationMessages, isNotEmpty);
+      },
+    );
+
+    blocTest<PrdWorkflowCubit, PrdWorkflowState>(
+      'retrySessionRestore re-hydrates after restore failure',
+      build: buildCubit,
+      act: (PrdWorkflowCubit cubit) async {
+        final PrdRunEntity run = await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow,
+        );
+        await seedStreamEvent(runId: run.id, sequence: 1);
+        prdRunRepository.listStreamEventsFailure =
+            const PrdRunPersistenceFailure.hiveError();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.restoreFailed);
+
+        prdRunRepository.listStreamEventsFailure = null;
+        await cubit.retrySessionRestore();
+      },
+      verify: (PrdWorkflowCubit cubit) {
+        expect(cubit.state.sessionViewMode, PrdSessionViewMode.restored);
+        expect(cubit.state.streamLines, isNotEmpty);
+        expect(cubit.state.failureMessageKey, isNull);
+      },
+    );
+
+    test(
+      'integration: open workflow hydrates stream and conversation from repository',
+      () async {
+        final PrdRunEntity run = await seedRun(
+          status: PrdRunStatus.completed,
+          startedAt: fixedNow,
+        );
+        await seedStreamEvent(
+          runId: run.id,
+          sequence: 1,
+          eventType: 'assistant',
+          payloadSummary: 'Resposta do agente',
+        );
+
+        final PrdWorkflowCubit cubit = buildCubit();
+        await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+
+        expect(cubit.state.streamLines.length, greaterThan(0));
+        expect(cubit.state.restoredConversationMessages.length, greaterThan(0));
+        await cubit.close();
+      },
+    );
 
     test('caps in-memory stream lines at policy max', () {
       final List<PrdStreamLineUiModel> lines = <PrdStreamLineUiModel>[];

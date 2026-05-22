@@ -54,9 +54,11 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
     final PrdWorkspaceCubitBundle bundle = composition
         .createPrdWorkspaceCubitBundle();
 
-    bundle.workflowCubit.bindWorkflow(
-      workflow: widget.workflow,
-      repoPath: widget.repoPath,
+    unawaited(
+      bundle.workflowCubit.bindWorkflow(
+        workflow: widget.workflow,
+        repoPath: widget.repoPath,
+      ),
     );
     bundle.reviewCubit.bindReviewContext(
       projectId: widget.workflow.projectId,

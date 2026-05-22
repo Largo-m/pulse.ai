@@ -247,6 +247,9 @@ abstract final class OrchestratorStrings {
       'A execução do agente PRD falhou. Tente novamente ou verifique a conexão.';
   static const String prdWorkflowStreamUnavailable =
       'O stream da execução ficou indisponível. Verifique a rede e tente de novo.';
+  static const String prdWorkflowSessionRestoreFailed =
+      'Não foi possível restaurar a última sessão PRD. Verifique a conexão e tente '
+      'novamente.';
 
   static const String prdWorkflowStreamEventStatus = 'Atualização de status';
   static const String prdWorkflowStreamEventAssistant =

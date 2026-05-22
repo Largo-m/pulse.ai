@@ -1,10 +1,15 @@
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_conversation_message_ui_model.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_session_view_mode.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
 
 final class PrdWorkflowState {
   const PrdWorkflowState({
     this.phaseStatus = PrdWorkflowPhaseUiStatus.notStarted,
+    this.sessionViewMode = PrdSessionViewMode.empty,
     this.streamLines = const <PrdStreamLineUiModel>[],
+    this.restoredConversationMessages = const <PrdConversationMessageUiModel>[],
+    this.restoredRunId,
     this.activeRunId,
     this.failureMessageKey,
     this.requiresUserAction = false,
@@ -14,7 +19,10 @@ final class PrdWorkflowState {
   });
 
   final PrdWorkflowPhaseUiStatus phaseStatus;
+  final PrdSessionViewMode sessionViewMode;
   final List<PrdStreamLineUiModel> streamLines;
+  final List<PrdConversationMessageUiModel> restoredConversationMessages;
+  final String? restoredRunId;
   final String? activeRunId;
   final String? failureMessageKey;
   final bool requiresUserAction;
@@ -27,9 +35,16 @@ final class PrdWorkflowState {
       activeRunId != null &&
       !isCancelling;
 
+  bool get hasRestoredSnapshot =>
+      sessionViewMode == PrdSessionViewMode.restored ||
+      sessionViewMode == PrdSessionViewMode.restoredWithActiveRun;
+
   PrdWorkflowState copyWith({
     PrdWorkflowPhaseUiStatus? phaseStatus,
+    PrdSessionViewMode? sessionViewMode,
     List<PrdStreamLineUiModel>? streamLines,
+    List<PrdConversationMessageUiModel>? restoredConversationMessages,
+    String? restoredRunId,
     String? activeRunId,
     String? failureMessageKey,
     bool? requiresUserAction,
@@ -39,10 +54,19 @@ final class PrdWorkflowState {
     bool clearActiveRunId = false,
     bool clearFailureMessageKey = false,
     bool clearStreamLagMs = false,
+    bool clearRestoredRunId = false,
+    bool clearRestoredConversationMessages = false,
   }) {
     return PrdWorkflowState(
       phaseStatus: phaseStatus ?? this.phaseStatus,
+      sessionViewMode: sessionViewMode ?? this.sessionViewMode,
       streamLines: streamLines ?? this.streamLines,
+      restoredConversationMessages: clearRestoredConversationMessages
+          ? const <PrdConversationMessageUiModel>[]
+          : (restoredConversationMessages ?? this.restoredConversationMessages),
+      restoredRunId: clearRestoredRunId
+          ? null
+          : (restoredRunId ?? this.restoredRunId),
       activeRunId: clearActiveRunId ? null : (activeRunId ?? this.activeRunId),
       failureMessageKey: clearFailureMessageKey
           ? null
@@ -59,7 +83,13 @@ final class PrdWorkflowState {
     return identical(this, other) ||
         other is PrdWorkflowState &&
             other.phaseStatus == phaseStatus &&
+            other.sessionViewMode == sessionViewMode &&
             _listEquals(other.streamLines, streamLines) &&
+            _listEquals(
+              other.restoredConversationMessages,
+              restoredConversationMessages,
+            ) &&
+            other.restoredRunId == restoredRunId &&
             other.activeRunId == activeRunId &&
             other.failureMessageKey == failureMessageKey &&
             other.requiresUserAction == requiresUserAction &&
@@ -71,7 +101,10 @@ final class PrdWorkflowState {
   @override
   int get hashCode => Object.hash(
     phaseStatus,
+    sessionViewMode,
     Object.hashAll(streamLines),
+    Object.hashAll(restoredConversationMessages),
+    restoredRunId,
     activeRunId,
     failureMessageKey,
     requiresUserAction,
@@ -82,7 +115,9 @@ final class PrdWorkflowState {
 
   @override
   String toString() =>
-      'PrdWorkflowState(phaseStatus: $phaseStatus, streamLines: ${streamLines.length}, '
+      'PrdWorkflowState(phaseStatus: $phaseStatus, sessionViewMode: $sessionViewMode, '
+      'streamLines: ${streamLines.length}, restoredConversation: '
+      '${restoredConversationMessages.length}, restoredRunId: $restoredRunId, '
       'activeRunId: $activeRunId, failureMessageKey: $failureMessageKey, '
       'requiresUserAction: $requiresUserAction, streamLagMs: $streamLagMs, '
       'isStarting: $isStarting, isCancelling: $isCancelling)';
