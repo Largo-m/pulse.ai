@@ -1,6 +1,8 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
+import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
@@ -44,5 +46,12 @@ final class CursorPrdAgentServiceStub implements CursorPrdAgentService {
   @override
   Future<void> cancelRun(String cloudRunId) {
     throw UnimplementedError('CursorPrdAgentService.cancelRun is task_07');
+  }
+
+  @override
+  Future<Either<Failure, CloudRunStatus>> fetchRunStatus(String cloudRunId) {
+    return Future<Either<Failure, CloudRunStatus>>.value(
+      left(const PrdRunFailure.cloudRunFailed()),
+    );
   }
 }

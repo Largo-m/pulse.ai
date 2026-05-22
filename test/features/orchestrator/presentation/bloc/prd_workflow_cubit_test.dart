@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_agent_run_output.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
@@ -81,6 +82,12 @@ final class _ControllablePrdAgentService implements CursorPrdAgentService {
   Future<void> cancelRun(String cloudRunId) async {
     cancelRunCallCount++;
   }
+
+  @override
+  Future<Either<Failure, CloudRunStatus>> fetchRunStatus(String cloudRunId) =>
+      Future<Either<Failure, CloudRunStatus>>.value(
+        left(const PrdRunFailure.cloudRunFailed()),
+      );
 }
 
 final class _FixedCompletionOutputSource

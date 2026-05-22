@@ -79,6 +79,17 @@ void main() {
       );
     });
 
+    test('fetchRunStatus returns left failure for tests', () async {
+      final Either<Failure, void> preflight = await stub.preflightCredential(
+        'draft-key',
+      );
+      expect(preflight.isRight(), isTrue);
+
+      final result = await stub.fetchRunStatus('cloud-run-1');
+
+      expect(result.isLeft(), isTrue);
+    });
+
     test('startRun throws UnimplementedError until task_07', () {
       expect(
         () => stub.startRun(

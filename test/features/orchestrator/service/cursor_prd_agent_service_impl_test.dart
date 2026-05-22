@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cloud_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_stream_event.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_service_impl.dart';
@@ -218,6 +220,82 @@ void main() {
         () => service.watchRun('invalid-cloud-run-id').first,
         throwsA(isA<PrdRunOperationException>()),
       );
+    });
+
+    test('fetchRunStatus maps FINISHED to completed CloudRunStatus', () async {
+      httpClient.getResponsesByPath['/v1/agents/bc-agent-1/runs/run-agent-1'] =
+          const CursorHttpResponse(
+            statusCode: 200,
+            body:
+                '{"id":"run-agent-1","agentId":"bc-agent-1","status":"FINISHED"}',
+          );
+
+      final result = await service.fetchRunStatus('bc-agent-1::run-agent-1');
+
+      expect(result.isRight(), isTrue);
+      result.fold((_) => fail('expected right'), (CloudRunStatus status) {
+        expect(status.mappedPrdRunStatus, PrdRunStatus.completed);
+      });
+      expect(
+        httpClient.getPaths.single,
+        '/v1/agents/bc-agent-1/runs/run-agent-1',
+      );
+    });
+
+    test('fetchRunStatus maps 404 to cloudRunNotFound failure', () async {
+      httpClient.getResponsesByPath['/v1/agents/bc-agent-1/runs/run-agent-1'] =
+          const CursorHttpResponse(statusCode: 404, body: '{}');
+
+      final result = await service.fetchRunStatus('bc-agent-1::run-agent-1');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(failure, isA<PrdRunFailure>());
+        expect(
+          (failure as PrdRunFailure).code,
+          PrdRunFailureCode.cloudRunNotFound,
+        );
+      }, (_) => fail('expected left'));
+    });
+
+    test('fetchRunStatus maps 401 to unauthorized failure', () async {
+      httpClient.getResponsesByPath['/v1/agents/bc-agent-1/runs/run-agent-1'] =
+          const CursorHttpResponse(statusCode: 401, body: '{}');
+
+      final result = await service.fetchRunStatus('bc-agent-1::run-agent-1');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(failure, isA<CursorConnectionFailure>());
+        expect(
+          (failure as CursorConnectionFailure).code,
+          CursorConnectionFailureCode.unauthorized,
+        );
+      }, (_) => fail('expected left'));
+    });
+
+    test(
+      'fetchRunStatus returns cloudRunNotFound for invalid cloudRunId',
+      () async {
+        final result = await service.fetchRunStatus('invalid-cloud-run-id');
+
+        expect(result.isLeft(), isTrue);
+        expect(httpClient.getCallCount, 0);
+      },
+    );
+
+    test('fetchRunStatus maps transport errors to network failure', () async {
+      httpClient.nextGetException = const HttpException('Connection failed');
+
+      final result = await service.fetchRunStatus('bc-agent-1::run-agent-1');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(
+          (failure as CursorConnectionFailure).code,
+          CursorConnectionFailureCode.network,
+        );
+      }, (_) => fail('expected left'));
     });
   });
 }
