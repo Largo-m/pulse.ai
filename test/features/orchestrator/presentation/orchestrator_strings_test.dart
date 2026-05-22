@@ -236,6 +236,9 @@ void main() {
         contains('execução'),
       );
       expect(OrchestratorStrings.prdWorkflowStreamEmpty, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartButton, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartSemantics, isNotEmpty);
+      expect(OrchestratorStrings.prdWorkflowStartRetryButton, isNotEmpty);
       expect(OrchestratorStrings.prdWorkflowCancelButton, isNotEmpty);
       expect(
         OrchestratorStrings.prdWorkflowUserActionRequiredTitle,

@@ -208,6 +208,12 @@ abstract final class OrchestratorStrings {
 
   static const String prdWorkflowStreamEmpty =
       'Nenhum evento de execução ainda. Inicie o agente PRD para ver o stream ao vivo.';
+  static const String prdWorkflowStartButton = 'Iniciar agente PRD';
+  static const String prdWorkflowStartSemantics =
+      'Iniciar execução do agente PRD com a diretiva do workflow';
+  static const String prdWorkflowStartRetryButton = 'Tentar novamente';
+  static const String prdWorkflowStartRetrySemantics =
+      'Reiniciar execução do agente PRD após falha ou cancelamento';
   static const String prdWorkflowCancelButton = 'Cancelar execução';
   static const String prdWorkflowCancelSemantics =
       'Cancelar execução do agente PRD em andamento';
