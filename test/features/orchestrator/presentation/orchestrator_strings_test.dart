@@ -294,6 +294,21 @@ void main() {
       );
     });
 
+    test('artifact and ADR section copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdArtifactMissing, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactMissing,
+        isNot(equals('missingArtifact')),
+      );
+      expect(
+        OrchestratorStrings.prdArtifactRestoredRunLabel('run-1'),
+        contains('run-1'),
+      );
+      expect(OrchestratorStrings.prdAdrListSectionTitle, isNotEmpty);
+      expect(OrchestratorStrings.prdAdrListSectionTitle, contains('ADR'));
+      expect(OrchestratorStrings.prdAdrListLoadFailed, isNotEmpty);
+    });
+
     test('prd review copy is localized in PT-BR', () {
       expect(OrchestratorStrings.prdReviewApproveButton, isNotEmpty);
       expect(

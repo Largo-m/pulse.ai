@@ -48,6 +48,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/orchestrator_main_content_cubit.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_adr_list_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/recent_projects_cubit.dart';
@@ -65,14 +66,17 @@ final class PrdWorkspaceCubitBundle {
   PrdWorkspaceCubitBundle({
     required this.workflowCubit,
     required this.reviewCubit,
+    required this.adrListCubit,
   });
 
   final PrdWorkflowCubit workflowCubit;
   final PrdReviewCubit reviewCubit;
+  final PrdAdrListCubit adrListCubit;
 
   void dispose() {
     unawaited(workflowCubit.close());
     unawaited(reviewCubit.close());
+    unawaited(adrListCubit.close());
   }
 }
 
@@ -363,6 +367,9 @@ final class OrchestratorComposition {
         findPrdApprovalUseCase: FindPrdApprovalUseCase(prdRunRepository),
         runCursorConnectionPreflightUseCase:
             runCursorConnectionPreflightUseCase,
+      ),
+      adrListCubit: PrdAdrListCubit(
+        listWorkflowAdrsUseCase: listWorkflowAdrsUseCase,
       ),
     );
   }

@@ -330,6 +330,18 @@ abstract final class OrchestratorStrings {
       'Descartar edições não salvas e carregar o novo rascunho do agente';
   static const String prdReviewUnsavedOverwriteCancelSemantics =
       'Manter o texto atual do editor';
+  static const String prdArtifactMissing =
+      'O arquivo do artefato não foi encontrado no disco. Gere ou restaure o '
+      'PRD para continuar.';
+  static String prdArtifactRestoredRunLabel(String runId) {
+    return 'Execução: $runId';
+  }
+
+  static const String prdAdrListSectionTitle = 'Decisões de arquitetura (ADR)';
+  static const String prdAdrListSectionSemantics = 'Lista de ADRs do workflow';
+  static const String prdAdrListLoadFailed =
+      'Não foi possível carregar os ADRs deste workflow.';
+
   static const String prdReviewLoadFailed =
       'Não foi possível carregar o rascunho do PRD.';
   static const String prdReviewActionFailed =

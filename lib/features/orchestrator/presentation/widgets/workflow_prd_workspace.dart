@@ -8,12 +8,14 @@ import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.
 import 'package:pulse_ai/features/orchestrator/domain/entities/workflow_entity.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_adr_list_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_review_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/workflow_prd_stepper_params.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/cursor_connection_banner.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_adr_list_section.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_conversation_list_section.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_new_run_overlay_banner.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_section.dart';
@@ -76,6 +78,12 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
         .read<CursorConnectionCubit>();
     bundle.reviewCubit.syncConnectionGate(connectionCubit.state);
 
+    bundle.adrListCubit.bindContext(
+      projectId: widget.workflow.projectId,
+      slug: widget.workflow.slug,
+    );
+    unawaited(bundle.adrListCubit.loadAdrs());
+
     if (connectionCubit.state.status == CursorConnectionStatus.initial) {
       unawaited(connectionCubit.runPreflight());
     }
@@ -112,6 +120,7 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
       providers: <BlocProvider<dynamic>>[
         BlocProvider<PrdWorkflowCubit>.value(value: bundle.workflowCubit),
         BlocProvider<PrdReviewCubit>.value(value: bundle.reviewCubit),
+        BlocProvider<PrdAdrListCubit>.value(value: bundle.adrListCubit),
       ],
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -182,6 +191,8 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
                           ),
                           const SizedBox(height: PulseDimensions.sectionGapLg),
                           PrdReviewSection(workflowSlug: widget.workflow.slug),
+                          const SizedBox(height: PulseDimensions.sectionGapLg),
+                          const PrdAdrListSection(),
                         ],
                       );
                     },
