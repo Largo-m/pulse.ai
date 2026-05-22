@@ -46,6 +46,25 @@ void main() {
       expect(result.isLeft(), isTrue);
     });
 
+    test(
+      'preflightCredential returns missingCredential when api key is empty',
+      () async {
+        final Either<Failure, void> result = await stub.preflightCredential(
+          '   ',
+        );
+
+        expect(result.isLeft(), isTrue);
+      },
+    );
+
+    test('preflightCredential succeeds for non-empty draft key', () async {
+      final Either<Failure, void> result = await stub.preflightCredential(
+        'draft-key',
+      );
+
+      expect(result.isRight(), isTrue);
+    });
+
     test('watchRun throws UnimplementedError until task_07', () {
       expect(
         () => stub.watchRun('cloud-run-1'),

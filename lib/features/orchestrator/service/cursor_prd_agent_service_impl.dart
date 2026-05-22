@@ -43,9 +43,17 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
     if (credential == null || credential.trim().isEmpty) {
       return left(const CursorConnectionFailure.missingCredential());
     }
+    return preflightCredential(credential);
+  }
+
+  @override
+  Future<Either<Failure, void>> preflightCredential(String apiKey) async {
+    if (apiKey.trim().isEmpty) {
+      return left(const CursorConnectionFailure.missingCredential());
+    }
 
     final CursorHttpResponse response = await _retryPolicy.execute(
-      () => _httpClient.get('/v1/me'),
+      () => _httpClient.get('/v1/me', credential: apiKey),
     );
     return _mapPreflightResponse(response);
   }

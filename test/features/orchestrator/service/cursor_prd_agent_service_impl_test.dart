@@ -129,6 +129,73 @@ void main() {
       }, (_) => fail('expected left'));
     });
 
+    test('preflightCredential maps 401 to unauthorized failure', () async {
+      httpClient.nextGetResponse = const CursorHttpResponse(
+        statusCode: 401,
+        body: '{}',
+      );
+
+      final result = await service.preflightCredential('draft-api-key');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(
+          (failure as CursorConnectionFailure).code,
+          CursorConnectionFailureCode.unauthorized,
+        );
+      }, (_) => fail('expected left'));
+      expect(httpClient.lastGetCredential, 'draft-api-key');
+      expect(credentialStore.storedCredential, 'cursor-api-key');
+    });
+
+    test('preflightCredential maps 5xx to network failure', () async {
+      httpClient.nextGetResponse = const CursorHttpResponse(
+        statusCode: 503,
+        body: '{}',
+      );
+
+      final result = await service.preflightCredential('draft-api-key');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(
+          (failure as CursorConnectionFailure).code,
+          CursorConnectionFailureCode.network,
+        );
+      }, (_) => fail('expected left'));
+    });
+
+    test(
+      'preflightCredential returns right on 2xx without store write',
+      () async {
+        credentialStore.storedCredential = null;
+        httpClient.nextGetResponse = const CursorHttpResponse(
+          statusCode: 200,
+          body: '{"email":"user@example.com"}',
+        );
+
+        final result = await service.preflightCredential('draft-api-key');
+
+        expect(result.isRight(), isTrue);
+        expect(httpClient.getPaths.single, '/v1/me');
+        expect(httpClient.lastGetCredential, 'draft-api-key');
+        expect(credentialStore.storedCredential, isNull);
+      },
+    );
+
+    test('preflightCredential maps empty key to missingCredential', () async {
+      final result = await service.preflightCredential('  ');
+
+      expect(result.isLeft(), isTrue);
+      result.fold((failure) {
+        expect(
+          (failure as CursorConnectionFailure).code,
+          CursorConnectionFailureCode.missingCredential,
+        );
+      }, (_) => fail('expected left'));
+      expect(httpClient.getCallCount, 0);
+    });
+
     test('watchRun throws when cloudRunId cannot be decoded', () async {
       expect(
         () => service.watchRun('invalid-cloud-run-id').first,

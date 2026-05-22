@@ -28,24 +28,33 @@ final class CursorCloudAgentHttpClientImpl
   final CursorCredentialStoreService _credentialStore;
   final Dio _dio;
 
+  String _basicAuthToken(String apiKey) {
+    return base64Encode(utf8.encode('${apiKey.trim()}:'));
+  }
+
   Future<void> _ensureAuthorization() async {
     final String? apiKey = await _credentialStore.read();
     if (apiKey == null || apiKey.trim().isEmpty) {
       throw StateError('Cursor API credential is missing');
     }
-    final String token = base64Encode(utf8.encode('${apiKey.trim()}:'));
-    _dio.options.headers['Authorization'] = 'Basic $token';
+    _dio.options.headers['Authorization'] = 'Basic ${_basicAuthToken(apiKey)}';
   }
 
   @override
   Future<CursorHttpResponse> get(
     String path, {
     Map<String, String>? headers,
+    String? credential,
   }) async {
-    await _ensureAuthorization();
+    final Map<String, String> requestHeaders = <String, String>{...?headers};
+    if (credential != null) {
+      requestHeaders['Authorization'] = 'Basic ${_basicAuthToken(credential)}';
+    } else {
+      await _ensureAuthorization();
+    }
     final Response<String> response = await _dio.get<String>(
       path,
-      options: Options(headers: headers),
+      options: Options(headers: requestHeaders),
     );
     return CursorHttpResponse(
       statusCode: response.statusCode ?? 0,
