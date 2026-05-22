@@ -34,6 +34,8 @@ abstract final class OrchestratorStrings {
   static const String recentProjectActiveSemantics = 'Projeto ativo';
   static const String recentProjectExpandSemantics = 'Expandir projeto';
   static const String recentProjectCollapseSemantics = 'Recolher projeto';
+  static const String recentProjectAgentSelectSemantics =
+      'Abrir workspace do workflow';
 
   static const String initializeAgentModalTitle = 'Novo agente';
   static const String initializeAgentCoreDirectiveLabel = 'Descrição:';
@@ -42,6 +44,16 @@ abstract final class OrchestratorStrings {
   static const String initializeAgentNameLabel = 'Nome: ';
   static const String initializeAgentNameHint = 'Ex.: Bot-SRE-01';
   static const String initializeAgentProjectLabel = 'Projeto:';
+  static const String initializeAgentSlugLabel = 'Slug do workflow:';
+  static const String initializeAgentSlugHint = 'Ex.: cursor-workflow-agents';
+  static const String initializeAgentSlugRequiredError =
+      'Informe um slug para o workflow.';
+  static const String initializeAgentSlugInvalidFormatError =
+      'O slug deve estar em kebab-case (letras minúsculas, números e hífens).';
+  static const String initializeAgentSlugCollisionError =
+      'Já existe um workflow com este slug neste projeto.';
+  static const String initializeAgentCreateWorkflowFailure =
+      'Não foi possível criar o workflow. Tente novamente.';
   static const String initializeAgentBranchLabel = 'Branch:';
   static const String initializeAgentBranchesLoading = 'Carregando branches…';
   static const String initializeAgentBranchesNotGit =
@@ -70,6 +82,14 @@ abstract final class OrchestratorStrings {
   static const String workflowPhaseQa = 'QA';
   static const String workflowPhaseReview = 'Review';
 
+  static const String workflowTechspecPrdRequiredTitle =
+      'Aprove o PRD para continuar';
+  static const String workflowTechspecPrdRequiredSubtitle =
+      'A fase de TechSpec ficará disponível após você aprovar o PRD deste '
+      'workflow no workspace PRD.';
+  static const String workflowTechspecPrdRequiredSemantics =
+      'TechSpec bloqueada até aprovação do PRD';
+
   static const String workflowTechspecEmptyTitle =
       'Nenhuma especificação técnica ainda';
   static const String workflowTechspecEmptySubtitle =
@@ -85,6 +105,21 @@ abstract final class OrchestratorStrings {
       'Inicializar especificação técnica com IA';
   static const String workflowTechspecApplySemantics =
       'Aplicar instrução manual à especificação técnica';
+  static const String workflowTechspecMappingTitle = 'MAPEAMENTO ARQUITETURAL';
+  static const String workflowTechspecMappingSubtitle =
+      'A IA está convertendo requisitos de produto em decisões de arquitetura, '
+      'contratos e dependências entre módulos.';
+  static const String workflowArchiveTitle = 'ARQUIVO';
+  static const String workflowArchiveApprovedStatus = 'APROVADO';
+  static const String workflowArchivePrdFileNamePrefix = 'PRD_Rascunho_';
+
+  static String prdArtifactFileName(String workflowSlug) {
+    return '$prdArtifactFileNamePrefix$workflowSlug.md';
+  }
+
+  static String workflowArchivePrdFileName(String workflowSlug) {
+    return '$workflowArchivePrdFileNamePrefix$workflowSlug.md';
+  }
 
   static const String cursorConnectionMissingCredentialRemediation =
       'Configure a chave da API do Cursor nas configurações para iniciar '
@@ -119,6 +154,15 @@ abstract final class OrchestratorStrings {
       'Cancelar execução do agente PRD em andamento';
   static const String prdWorkflowStreamPanelSemantics =
       'Painel de stream ao vivo da execução PRD';
+  static const String prdWorkflowSystemProcessingTitle =
+      'PROCESSAMENTO DO SISTEMA';
+  static const String prdArtifactDraftedMessage =
+      'A IA elaborou um rascunho de PRD com base nos seus requisitos.';
+  static const String prdArtifactRequestRevisionsButton = 'Solicitar revisões';
+  static const String prdArtifactApproveButton = 'Aprovar artefato';
+  static const String prdArtifactExpandSemantics =
+      'Expandir visualização do rascunho do PRD';
+  static const String prdArtifactFileNamePrefix = 'PRD_Rascunho_';
   static const String prdWorkflowRunStatusRunningSemantics =
       'Execução PRD em andamento';
   static const String prdWorkflowRunStatusPendingApprovalSemantics =

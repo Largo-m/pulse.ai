@@ -117,4 +117,25 @@ abstract final class PulseInsets {
     horizontal: PulseDimensions.prdReviewUserEditedBadgeHorizontalPadding,
     vertical: PulseDimensions.prdReviewUserEditedBadgeVerticalPadding,
   );
+
+  static const EdgeInsets workflowArchiveHeader = EdgeInsets.fromLTRB(
+    PulseDimensions.sectionGapMd,
+    PulseDimensions.sectionGapMd,
+    PulseDimensions.sectionGapMd,
+    PulseDimensions.sectionGapSm,
+  );
+
+  static const EdgeInsets workflowArchiveList = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sectionGapMd,
+  );
+
+  static const EdgeInsets workflowArchiveStatus = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sectionGapSm,
+    vertical: PulseDimensions.sectionGapSm / 2,
+  );
+
+  static const EdgeInsets prdArtifactTitleBar = EdgeInsets.symmetric(
+    horizontal: PulseDimensions.sectionGapMd,
+    vertical: PulseDimensions.sectionGapSm,
+  );
 }

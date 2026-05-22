@@ -15,6 +15,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/widgets/cursor_conne
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_review_section.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/prd_workflow_stream_panel.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_phase_stepper.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_user_prompt_bubble.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_insets.dart';
 
@@ -97,6 +98,8 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
         workflowPrdStepperParamsForPhase(
           prdPhaseStatus: widget.workflow.prdPhaseStatus,
         );
+    final String? directive = widget.workflow.directive?.trim();
+    final bool showUserBubble = directive != null && directive.isNotEmpty;
 
     return MultiBlocProvider(
       providers: <BlocProvider<dynamic>>[
@@ -112,61 +115,27 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
           ),
           CursorConnectionBanner(onOpenSettings: widget.onOpenCursorSettings),
           Expanded(
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final bool useTwoColumns =
-                    constraints.maxWidth >= PulseDimensions.twoColumnBreakpoint;
-
-                const Widget streamPanel = PrdWorkflowStreamPanel();
-                const Widget reviewSection = PrdReviewSection();
-
-                if (!useTwoColumns) {
-                  return SingleChildScrollView(
-                    padding: PulseInsets.pageScroll,
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: PulseDimensions.maxContentWidth,
-                        ),
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            SizedBox(
-                              height:
-                                  PulseDimensions.workflowStreamPanelMinHeight,
-                              child: streamPanel,
-                            ),
-                            SizedBox(height: PulseDimensions.sectionGapLg),
-                            SizedBox(
-                              height: PulseDimensions.prdReviewEditorMinHeight,
-                              child: reviewSection,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                return Padding(
-                  padding: PulseInsets.pageScroll,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: PulseDimensions.maxContentWidth,
-                      ),
-                      child: const Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          Expanded(child: streamPanel),
-                          SizedBox(width: PulseDimensions.sectionGapLg),
-                          Expanded(flex: 2, child: reviewSection),
-                        ],
-                      ),
-                    ),
+            child: SingleChildScrollView(
+              padding: PulseInsets.pageScroll,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: PulseDimensions.workflowFeedMaxWidth,
                   ),
-                );
-              },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (showUserBubble) ...<Widget>[
+                        WorkflowUserPromptBubble(message: directive),
+                        const SizedBox(height: PulseDimensions.sectionGapLg),
+                      ],
+                      const PrdWorkflowStreamPanel(),
+                      const SizedBox(height: PulseDimensions.sectionGapLg),
+                      PrdReviewSection(workflowSlug: widget.workflow.slug),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ),
         ],

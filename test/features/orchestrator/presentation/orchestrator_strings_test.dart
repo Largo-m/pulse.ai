@@ -51,9 +51,31 @@ void main() {
         expect(OrchestratorStrings.initializeAgentNameLabel, isNotEmpty);
         expect(OrchestratorStrings.initializeAgentProjectLabel, isNotEmpty);
         expect(OrchestratorStrings.initializeAgentBranchLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentSlugLabel, isNotEmpty);
+        expect(OrchestratorStrings.initializeAgentSlugHint, isNotEmpty);
+        expect(
+          OrchestratorStrings.initializeAgentSlugRequiredError,
+          isNotEmpty,
+        );
+        expect(
+          OrchestratorStrings.initializeAgentSlugInvalidFormatError,
+          isNotEmpty,
+        );
         expect(OrchestratorStrings.initializeAgentSubmitButton, isNotEmpty);
       },
     );
+
+    test('techspec PRD gate copy is localized PT-BR', () {
+      expect(OrchestratorStrings.workflowTechspecPrdRequiredTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.workflowTechspecPrdRequiredTitle,
+        contains('PRD'),
+      );
+      expect(
+        OrchestratorStrings.workflowTechspecPrdRequiredSubtitle,
+        isNotEmpty,
+      );
+    });
 
     test('initialize agent branch load states expose non-empty PT-BR copy', () {
       expect(OrchestratorStrings.initializeAgentBranchesLoading, isNotEmpty);
@@ -174,6 +196,25 @@ void main() {
       expect(OrchestratorStrings.prdReviewUserEditedBadge, contains('usuário'));
       expect(OrchestratorStrings.prdReviewApproveSemantics, isNotEmpty);
       expect(OrchestratorStrings.prdReviewRejectSemantics, isNotEmpty);
+    });
+
+    test('workspace feed copy is localized in PT-BR', () {
+      expect(OrchestratorStrings.prdWorkflowSystemProcessingTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdWorkflowSystemProcessingTitle,
+        contains('PROCESSAMENTO'),
+      );
+      expect(OrchestratorStrings.prdArtifactApproveButton, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactApproveButton,
+        contains('artefato'),
+      );
+      expect(OrchestratorStrings.workflowArchiveTitle, isNotEmpty);
+      expect(OrchestratorStrings.workflowTechspecMappingTitle, isNotEmpty);
+      expect(
+        OrchestratorStrings.prdArtifactFileName('meu-agente'),
+        contains('meu-agente'),
+      );
     });
 
     test('workflow techspec initialization copy is localized in PT-BR', () {
