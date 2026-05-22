@@ -19,6 +19,7 @@ import 'package:pulse_ai/features/orchestrator/presentation/import_project_flow_
 import 'package:pulse_ai/features/orchestrator/presentation/initialize_agent_submit_handler.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/initialize_agent_submit_payload.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_placeholder_feedback.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/cursor_integration_settings_sheet.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/initialize_agent_modal.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_app_top_bar.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/orchestrator_bottom_bar.dart';
@@ -79,7 +80,11 @@ final class OrchestratorPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: <Widget>[
-                          const _OrchestratorChrome(),
+                          _OrchestratorChrome(
+                            onOpenCursorSettings: () {
+                              _openCursorIntegrationSettings(context);
+                            },
+                          ),
                           const Expanded(child: _OrchestratorMainContent()),
                           if (!isWorkflowView) const OrchestratorBottomBar(),
                         ],
@@ -92,8 +97,14 @@ final class OrchestratorPage extends StatelessWidget {
   }
 }
 
+void _openCursorIntegrationSettings(BuildContext context) {
+  unawaited(showCursorIntegrationSettingsSheet(context));
+}
+
 final class _OrchestratorChrome extends StatelessWidget {
-  const _OrchestratorChrome();
+  const _OrchestratorChrome({required this.onOpenCursorSettings});
+
+  final VoidCallback onOpenCursorSettings;
 
   @override
   Widget build(BuildContext context) {
@@ -105,6 +116,7 @@ final class _OrchestratorChrome extends StatelessWidget {
           ).pushNamed<void>(RoutePaths.orchestratorImportSelectSource),
         );
       },
+      onOpenCursorSettings: onOpenCursorSettings,
       onPlaceholder: () =>
           OrchestratorPlaceholderFeedback.showComingSoon(context),
     );
@@ -316,6 +328,9 @@ final class _OrchestratorPrdBody extends StatelessWidget {
     return WorkflowPrdWorkspace(
       workflow: workflow,
       repoPath: project.canonicalPath,
+      onOpenCursorSettings: () {
+        _openCursorIntegrationSettings(context);
+      },
     );
   }
 }
