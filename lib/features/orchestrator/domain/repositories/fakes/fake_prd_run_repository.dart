@@ -16,6 +16,9 @@ final class FakePrdRunRepository implements PrdRunRepository {
   final List<StreamEventEntity> _streamEvents = <StreamEventEntity>[];
   final Uuid _uuid = const Uuid();
 
+  Failure? listRunsForWorkflowFailure;
+  Failure? listStreamEventsFailure;
+
   @override
   Future<Either<Failure, PrdRunEntity>> createRun({
     required String workflowKey,
@@ -46,9 +49,17 @@ final class FakePrdRunRepository implements PrdRunRepository {
   Future<Either<Failure, List<PrdRunEntity>>> listRunsForWorkflow(
     String workflowKey,
   ) async {
-    final List<PrdRunEntity> runs = _runs.values
-        .where((PrdRunEntity run) => run.workflowKey == workflowKey)
-        .toList(growable: false);
+    if (listRunsForWorkflowFailure != null) {
+      return left(listRunsForWorkflowFailure!);
+    }
+    final List<PrdRunEntity> runs =
+        _runs.values
+            .where((PrdRunEntity run) => run.workflowKey == workflowKey)
+            .toList(growable: false)
+          ..sort(
+            (PrdRunEntity a, PrdRunEntity b) =>
+                b.startedAt.compareTo(a.startedAt),
+          );
     return right(runs);
   }
 
@@ -97,9 +108,17 @@ final class FakePrdRunRepository implements PrdRunRepository {
   Future<Either<Failure, List<StreamEventEntity>>> listStreamEvents(
     String runId,
   ) async {
-    final List<StreamEventEntity> events = _streamEvents
-        .where((StreamEventEntity event) => event.runId == runId)
-        .toList(growable: false);
+    if (listStreamEventsFailure != null) {
+      return left(listStreamEventsFailure!);
+    }
+    final List<StreamEventEntity> events =
+        _streamEvents
+            .where((StreamEventEntity event) => event.runId == runId)
+            .toList(growable: false)
+          ..sort(
+            (StreamEventEntity a, StreamEventEntity b) =>
+                a.sequence.compareTo(b.sequence),
+          );
     return right(events);
   }
 
