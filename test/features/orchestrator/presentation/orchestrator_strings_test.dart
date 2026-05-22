@@ -134,6 +134,31 @@ void main() {
       );
     });
 
+    test('cursor settings feedback copy is localized in PT-BR', () {
+      expect(
+        OrchestratorStrings.cursorSettingsSaveBlockedWithoutTest,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsSaveBlockedWithoutTest,
+        contains('Teste'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsUnauthorizedFeedback,
+        isNotEmpty,
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsUnauthorizedFeedback,
+        contains('401'),
+      );
+      expect(
+        OrchestratorStrings.cursorSettingsMissingCredentialFeedback,
+        isNotEmpty,
+      );
+      expect(OrchestratorStrings.cursorSettingsNetworkFeedback, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsUnknownFeedback, isNotEmpty);
+    });
+
     test('cursor connection remediation copy is localized in PT-BR', () {
       expect(
         OrchestratorStrings.cursorConnectionMissingCredentialRemediation,

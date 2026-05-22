@@ -35,10 +35,13 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflow_adr
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_workflows_by_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/read_prd_markdown_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/reject_prd_with_feedback_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/remove_cursor_credential_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/run_cursor_connection_preflight_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/save_cursor_credential_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/save_prd_draft_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/select_active_project_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/start_prd_agent_run_use_case.dart';
+import 'package:pulse_ai/features/orchestrator/domain/usecases/validate_cursor_credential_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/import_flow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/initialize_agent_branches_cubit.dart';
@@ -221,8 +224,23 @@ final class OrchestratorComposition {
     runCursorConnectionPreflightUseCase = RunCursorConnectionPreflightUseCase(
       cursorPrdAgentService: cursorPrdAgentService,
     );
+    final ValidateCursorCredentialUseCase validateCursorCredentialUseCase =
+        ValidateCursorCredentialUseCase(
+          cursorPrdAgentService: cursorPrdAgentService,
+        );
+    final SaveCursorCredentialUseCase saveCursorCredentialUseCase =
+        SaveCursorCredentialUseCase(
+          credentialStore: cursorCredentialStoreService,
+        );
+    final RemoveCursorCredentialUseCase removeCursorCredentialUseCase =
+        RemoveCursorCredentialUseCase(
+          credentialStore: cursorCredentialStoreService,
+        );
     final CursorConnectionCubit cursorConnectionCubit = CursorConnectionCubit(
       runCursorConnectionPreflightUseCase: runCursorConnectionPreflightUseCase,
+      validateCursorCredentialUseCase: validateCursorCredentialUseCase,
+      saveCursorCredentialUseCase: saveCursorCredentialUseCase,
+      removeCursorCredentialUseCase: removeCursorCredentialUseCase,
     );
 
     final PreflightPrdRunConnectionGate prdRunConnectionGate =

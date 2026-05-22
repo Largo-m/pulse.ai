@@ -140,6 +140,17 @@ abstract final class OrchestratorStrings {
   static const String cursorConnectionBannerSemantics =
       'Banner de conexão com o Cursor; credencial ausente ou inválida';
 
+  static const String cursorSettingsSaveBlockedWithoutTest =
+      'Teste a conexão antes de salvar a chave.';
+  static const String cursorSettingsUnauthorizedFeedback =
+      'Chave recusada (401). Verifique a chave da API do Cursor.';
+  static const String cursorSettingsMissingCredentialFeedback =
+      'Informe uma chave da API do Cursor válida.';
+  static const String cursorSettingsNetworkFeedback =
+      'Não foi possível validar a chave. Confira a rede e tente novamente.';
+  static const String cursorSettingsUnknownFeedback =
+      'Não foi possível validar a chave. Tente novamente.';
+
   static const String prdWorkflowStatusNotStarted = 'Não iniciado';
   static const String prdWorkflowStatusRunning = 'Em execução';
   static const String prdWorkflowStatusPendingApproval = 'Aguardando aprovação';

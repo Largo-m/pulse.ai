@@ -5,11 +5,15 @@ import 'package:pulse_ai/features/orchestrator/presentation/widgets/cursor_conne
 
 void main() {
   group('CursorConnectionBannerPolicy', () {
-    test('shouldShow returns true only when disconnected', () {
+    test('shouldShow returns true when disconnected or failure', () {
       expect(
         CursorConnectionBannerPolicy.shouldShow(
           CursorConnectionStatus.disconnected,
         ),
+        isTrue,
+      );
+      expect(
+        CursorConnectionBannerPolicy.shouldShow(CursorConnectionStatus.failure),
         isTrue,
       );
       expect(
@@ -19,7 +23,9 @@ void main() {
         isFalse,
       );
       expect(
-        CursorConnectionBannerPolicy.shouldShow(CursorConnectionStatus.failure),
+        CursorConnectionBannerPolicy.shouldShow(
+          CursorConnectionStatus.checking,
+        ),
         isFalse,
       );
     });

@@ -30,14 +30,38 @@ void main() {
       expect(updated.remediationMessage, isNull);
     });
 
-    test('equality compares status and remediation message', () {
+    test('copyWith updates settings session fields', () {
+      const CursorConnectionState original = CursorConnectionState(
+        isDraftTestPassed: true,
+        settingsOperation: CursorSettingsOperationStatus.testing,
+        settingsFeedbackMessageKey: 'feedback',
+      );
+
+      final CursorConnectionState updated = original.copyWith(
+        isDraftTestPassed: false,
+        settingsOperation: CursorSettingsOperationStatus.idle,
+        clearSettingsFeedback: true,
+      );
+
+      expect(updated.isDraftTestPassed, isFalse);
+      expect(updated.settingsOperation, CursorSettingsOperationStatus.idle);
+      expect(updated.settingsFeedbackMessageKey, isNull);
+    });
+
+    test('equality compares connection and settings fields', () {
       const CursorConnectionState left = CursorConnectionState(
         status: CursorConnectionStatus.failure,
         remediationMessage: 'a',
+        isDraftTestPassed: true,
+        settingsOperation: CursorSettingsOperationStatus.saving,
+        settingsFeedbackMessageKey: 'feedback',
       );
       const CursorConnectionState right = CursorConnectionState(
         status: CursorConnectionStatus.failure,
         remediationMessage: 'a',
+        isDraftTestPassed: true,
+        settingsOperation: CursorSettingsOperationStatus.saving,
+        settingsFeedbackMessageKey: 'feedback',
       );
       const CursorConnectionState different = CursorConnectionState(
         status: CursorConnectionStatus.connected,
