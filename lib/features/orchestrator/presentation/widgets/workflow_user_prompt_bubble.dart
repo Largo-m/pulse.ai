@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_preserving_text.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
@@ -32,8 +33,8 @@ final class WorkflowUserPromptBubble extends StatelessWidget {
               horizontal: PulseDimensions.sectionGapMd,
               vertical: PulseDimensions.sectionGapMd,
             ),
-            child: Text(
-              message,
+            child: WorkflowPreservingText(
+              text: message,
               style: textTheme.bodyMedium?.copyWith(
                 color: PulseColors.onSurface,
               ),

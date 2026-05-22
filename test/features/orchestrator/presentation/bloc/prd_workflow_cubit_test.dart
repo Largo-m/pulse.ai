@@ -44,6 +44,7 @@ import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_id_codec
 import '../../domain/service/fakes/fake_cursor_credential_store_service.dart';
 import '../../domain/usecases/fake_cursor_prd_agent_service.dart';
 import '../../domain/usecases/fake_local_git_branches_service.dart';
+import '../../domain/usecases/fake_local_git_origin_remote_service.dart';
 import '../../domain/usecases/fake_recent_projects_repository.dart';
 
 final class _ControllablePrdAgentService implements CursorPrdAgentService {
@@ -190,6 +191,7 @@ void main() {
         listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
           service: gitService,
         ),
+        localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
       ),
       prdRunRepository: prdRunRepository,
       workflowRepository: workflowRepository,
@@ -324,6 +326,7 @@ void main() {
         expect(cubit.state.isStarting, isFalse);
         expect(cubit.state.streamLines.length, 1);
         expect(cubit.state.streamLines.first.displayText, 'status=RUNNING');
+        expect(cubit.state.liveConversationMessages, hasLength(1));
         streamController.add(
           PrdStreamEvent(
             runId: _ControllablePrdAgentService.cloudRunId,
@@ -472,6 +475,7 @@ void main() {
             listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
               service: gitService,
             ),
+            localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
           ),
           prdRunRepository: prdRunRepository,
           workflowRepository: workflowRepository,
@@ -544,7 +548,7 @@ void main() {
     );
 
     blocTest<PrdWorkflowCubit, PrdWorkflowState>(
-      'bindWorkflow with running latest run emits inProgressOnly and empty lines',
+      'bindWorkflow with running latest run attaches stream and updates lines',
       build: buildCubit,
       act: (PrdWorkflowCubit cubit) async {
         await seedRun(
@@ -560,10 +564,26 @@ void main() {
           const CloudRunStatus(mappedPrdRunStatus: PrdRunStatus.running),
         );
         await cubit.bindWorkflow(workflow: seededWorkflow, repoPath: repoPath);
+        streamController.add(
+          PrdStreamEvent(
+            runId: _ControllablePrdAgentService.cloudRunId,
+            eventType: 'assistant',
+            sequence: 1,
+            timestamp: fixedNow,
+            payloadSummary: 'Processando em tempo real',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
       },
       verify: (PrdWorkflowCubit cubit) {
         expect(cubit.state.sessionViewMode, PrdSessionViewMode.inProgressOnly);
-        expect(cubit.state.streamLines, isEmpty);
+        expect(cubit.state.activeRunId, isNotNull);
+        expect(cubit.state.streamLines, hasLength(1));
+        expect(
+          cubit.state.streamLines.first.displayText,
+          'Processando em tempo real',
+        );
+        expect(cubit.state.liveConversationMessages, hasLength(1));
       },
     );
 
@@ -644,7 +664,7 @@ void main() {
         );
         await startFuture;
         await Future<void>.delayed(Duration.zero);
-        expect(cubit.state.streamLines.length, restoredLineCount);
+        expect(cubit.state.streamLines.length, greaterThan(restoredLineCount));
       },
     );
 

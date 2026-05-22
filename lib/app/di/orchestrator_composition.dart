@@ -17,6 +17,7 @@ import 'package:pulse_ai/features/orchestrator/domain/service/artifact_persisten
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_store_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/local_git_branches_service.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/local_git_origin_remote_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_completion_output_source.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/prd_run_connection_gate.dart';
 import 'package:pulse_ai/features/orchestrator/domain/service/project_sandbox_access_service.dart';
@@ -59,6 +60,7 @@ import 'package:pulse_ai/features/orchestrator/service/default_prd_run_completio
 import 'package:pulse_ai/features/orchestrator/service/filesystem_artifact_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_directory_picker_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/local_git_branches_service_impl.dart';
+import 'package:pulse_ai/features/orchestrator/service/local_git_origin_remote_service_impl.dart';
 import 'package:pulse_ai/features/orchestrator/service/project_sandbox_access_service_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -171,6 +173,10 @@ final class OrchestratorComposition {
         LocalGitBranchesServiceImpl(sandboxAccessService: sandboxAccessService);
     final ListLocalGitBranchesUseCase listLocalGitBranchesUseCase =
         ListLocalGitBranchesUseCase(service: localGitBranchesService);
+    final LocalGitOriginRemoteService localGitOriginRemoteService =
+        LocalGitOriginRemoteServiceImpl(
+          sandboxAccessService: sandboxAccessService,
+        );
     final InitializeAgentBranchesCubit initializeAgentBranchesCubit =
         InitializeAgentBranchesCubit(
           listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
@@ -218,6 +224,7 @@ final class OrchestratorComposition {
         BuildPrdRunContextUseCase(
           recentProjectsRepository: repository,
           listLocalGitBranchesUseCase: listLocalGitBranchesUseCase,
+          localGitOriginRemoteService: localGitOriginRemoteService,
         );
 
     final CursorCredentialStoreService cursorCredentialStoreService =

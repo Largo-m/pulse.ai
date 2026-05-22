@@ -51,6 +51,21 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
     _ensureCubitBundle();
   }
 
+  @override
+  void didUpdateWidget(WorkflowPrdWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workflow.workflowKey == widget.workflow.workflowKey) {
+      return;
+    }
+    _disposeCubitBundle();
+    _ensureCubitBundle();
+  }
+
+  void _disposeCubitBundle() {
+    _cubitBundle?.dispose();
+    _cubitBundle = null;
+  }
+
   void _ensureCubitBundle() {
     if (_cubitBundle != null) {
       return;
@@ -98,7 +113,7 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
 
   @override
   void dispose() {
-    _cubitBundle?.dispose();
+    _disposeCubitBundle();
     super.dispose();
   }
 
@@ -174,7 +189,9 @@ final class _WorkflowPrdWorkspaceState extends State<WorkflowPrdWorkspace> {
                           )) ...<Widget>[
                             PrdConversationListSection(
                               messages:
-                                  workflowState.restoredConversationMessages,
+                                  PrdWorkflowSessionPresentation.conversationMessagesFor(
+                                    workflowState,
+                                  ),
                             ),
                             const SizedBox(
                               height: PulseDimensions.sectionGapLg,

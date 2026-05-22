@@ -34,6 +34,7 @@ import 'package:pulse_ai/features/orchestrator/service/fakes/fake_cursor_prd_age
 import '../../domain/usecases/fake_cursor_prd_agent_service.dart'
     as lifecycle_fake;
 import '../../domain/usecases/fake_local_git_branches_service.dart';
+import '../../domain/usecases/fake_local_git_origin_remote_service.dart';
 import '../../domain/usecases/fake_recent_projects_repository.dart';
 
 void main() {
@@ -131,6 +132,7 @@ void main() {
           listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
             service: gitService,
           ),
+          localGitOriginRemoteService: FakeLocalGitOriginRemoteService(),
         );
     startPrdAgentRunUseCase = StartPrdAgentRunUseCase(
       connectionGate: PreflightPrdRunConnectionGate(
@@ -268,6 +270,7 @@ void main() {
         );
         expect(rejected?.feedback, 'add security');
         expect(cubit.state.loadStatus, PrdReviewLoadStatus.unavailable);
+        expect(cubit.state.pendingActiveRunAttachmentId, isNotNull);
         expect(rejectAgentService.lastStartContext?.feedback, 'add security');
       },
     );

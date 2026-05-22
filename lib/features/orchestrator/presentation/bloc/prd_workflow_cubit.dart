@@ -6,6 +6,7 @@ import 'package:pulse_ai/core/error/cursor_connection_failure.dart';
 import 'package:pulse_ai/core/error/failure.dart';
 import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/core/error/prd_run_persistence_failure.dart';
+import 'package:pulse_ai/features/orchestrator/domain/entities/cancel_prd_agent_run_outcome.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_phase_status.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
@@ -26,10 +27,12 @@ import 'package:pulse_ai/features/orchestrator/domain/usecases/reconcile_prd_run
 import 'package:pulse_ai/features/orchestrator/domain/usecases/restore_last_finalized_prd_session_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/start_prd_agent_run_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_conversation_message_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_session_view_mode.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/prd_live_conversation_buffer.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_stream_buffer_policy.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_stream_event_mapper.dart';
 
@@ -178,6 +181,7 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
           streamLines: const <PrdStreamLineUiModel>[],
           clearRestoredRunId: true,
           clearRestoredConversationMessages: true,
+          clearLiveConversationMessages: true,
         ),
       );
       return;
@@ -194,6 +198,7 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
             streamLines: const <PrdStreamLineUiModel>[],
             clearRestoredRunId: true,
             clearRestoredConversationMessages: true,
+            clearLiveConversationMessages: true,
             clearFailureMessageKey: true,
           ),
         );
@@ -204,9 +209,11 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
             streamLines: const <PrdStreamLineUiModel>[],
             clearRestoredRunId: true,
             clearRestoredConversationMessages: true,
+            clearLiveConversationMessages: true,
             clearFailureMessageKey: true,
           ),
         );
+        await _attachToLatestInProgressRun(runs);
       case RestorePrdSessionOutcome.restored:
         final snapshot = result.snapshot!;
         emit(
@@ -245,6 +252,16 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
         ? PrdSessionViewMode.restoredWithActiveRun
         : state.sessionViewMode;
 
+    final DateTime runStartedAt = DateTime.now().toUtc();
+    final List<PrdConversationMessageUiModel> liveConversationSeed =
+        preserveRestoredSnapshot
+        ? const <PrdConversationMessageUiModel>[]
+        : PrdLiveConversationBuffer.seedFromRunInput(
+            directive: directive,
+            feedback: feedback,
+            timestamp: runStartedAt,
+          );
+
     emit(
       state.copyWith(
         isStarting: true,
@@ -253,6 +270,7 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
         streamLines: preserveRestoredSnapshot
             ? state.streamLines
             : const <PrdStreamLineUiModel>[],
+        liveConversationMessages: liveConversationSeed,
         requiresUserAction: false,
         clearFailureMessageKey: true,
         clearActiveRunId: true,
@@ -316,7 +334,7 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
     await _disposeStreamSubscription();
     _terminalRunHandled = true;
 
-    final Either<Failure, PrdRunEntity> cancelResult =
+    final Either<Failure, CancelPrdAgentRunOutcome> cancelResult =
         await _cancelPrdAgentRunUseCase(
           runId: runId,
           projectId: projectId,
@@ -341,14 +359,99 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
       return;
     }
 
+    final CancelPrdAgentRunOutcome outcome = cancelResult
+        .getRight()
+        .toNullable()!;
     emit(
       state.copyWith(
         isCancelling: false,
         phaseStatus: PrdWorkflowPhaseUiStatus.cancelled,
+        failureMessageKey: outcome.cloudCancelFailed
+            ? OrchestratorStrings.prdWorkflowCancelCloudFailed
+            : null,
+        clearFailureMessageKey: !outcome.cloudCancelFailed,
         clearActiveRunId: true,
         requiresUserAction: false,
       ),
     );
+  }
+
+  Future<void> attachToActiveRun(String runId) async {
+    if (isClosed) {
+      return;
+    }
+
+    final PrdRunEntity? run = await _prdRunRepository.findRunById(runId);
+    if (run == null || run.status.isTerminal) {
+      return;
+    }
+
+    final String? cloudRunId = run.cloudRunId;
+    if (cloudRunId == null || cloudRunId.isEmpty) {
+      return;
+    }
+
+    _terminalRunHandled = false;
+    final bool preserveRestoredSnapshot = state.hasRestoredSnapshot;
+    final PrdSessionViewMode nextSessionMode = preserveRestoredSnapshot
+        ? PrdSessionViewMode.restoredWithActiveRun
+        : PrdSessionViewMode.empty;
+
+    final String? directive = _boundWorkflow?.directive;
+    final List<PrdConversationMessageUiModel> liveConversationSeed =
+        directive == null
+        ? const <PrdConversationMessageUiModel>[]
+        : PrdLiveConversationBuffer.seedFromRunInput(
+            directive: directive,
+            feedback: run.feedback,
+            timestamp: DateTime.now().toUtc(),
+          );
+
+    emit(
+      state.copyWith(
+        phaseStatus: PrdWorkflowPhaseUiStatus.running,
+        sessionViewMode: nextSessionMode,
+        activeRunId: run.id,
+        streamLines: preserveRestoredSnapshot
+            ? state.streamLines
+            : const <PrdStreamLineUiModel>[],
+        liveConversationMessages: liveConversationSeed,
+        clearFailureMessageKey: true,
+      ),
+    );
+    await _subscribeToRun(run);
+  }
+
+  Future<void> _attachToLatestInProgressRun(List<PrdRunEntity> runs) async {
+    if (isClosed) {
+      return;
+    }
+    final PrdRunEntity? activeRun = _latestNonTerminalRun(runs);
+    if (activeRun == null) {
+      return;
+    }
+    final String? cloudRunId = activeRun.cloudRunId;
+    if (cloudRunId == null || cloudRunId.isEmpty) {
+      return;
+    }
+
+    _terminalRunHandled = false;
+    emit(
+      state.copyWith(
+        phaseStatus: PrdWorkflowPhaseUiStatus.running,
+        activeRunId: activeRun.id,
+      ),
+    );
+    await _subscribeToRun(activeRun);
+  }
+
+  PrdRunEntity? _latestNonTerminalRun(List<PrdRunEntity> runs) {
+    for (final PrdRunEntity run in runs) {
+      if (!run.status.isTerminal) {
+        return run;
+      }
+    }
+    return null;
   }
 
   Future<void> _subscribeToRun(PrdRunEntity run) async {
@@ -406,16 +509,6 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
       return;
     }
 
-    if (state.sessionViewMode == PrdSessionViewMode.restoredWithActiveRun) {
-      if (_streamEventMapper.isTerminalStreamEvent(
-        eventType: event.eventType,
-        payloadSummary: event.payloadSummary,
-      )) {
-        await _completeActiveRun(runId: runId);
-      }
-      return;
-    }
-
     final bool lineRequiresUserAction = _streamEventMapper
         .eventRequiresUserAction(event.payloadSummary);
     final List<PrdStreamLineUiModel> nextLines = _appendBufferedLine(
@@ -423,10 +516,20 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
       event,
       lineRequiresUserAction,
     );
+    final PrdConversationMessageUiModel? agentMessage = _streamEventMapper
+        .conversationMessageFromLiveEvent(event);
+    final List<PrdConversationMessageUiModel> nextConversation =
+        agentMessage == null
+        ? state.liveConversationMessages
+        : PrdLiveConversationBuffer.appendAgentMessage(
+            state.liveConversationMessages,
+            agentMessage,
+          );
 
     emit(
       state.copyWith(
         streamLines: nextLines,
+        liveConversationMessages: nextConversation,
         requiresUserAction: state.requiresUserAction || lineRequiresUserAction,
         streamLagMs: streamLagMs,
       ),
@@ -609,6 +712,8 @@ final class PrdWorkflowCubit extends Cubit<PrdWorkflowState> {
         PrdRunFailureCode.runNotActive ||
         PrdRunFailureCode.cancelled =>
           OrchestratorStrings.prdWorkflowRunFailedGeneric,
+        PrdRunFailureCode.githubRemoteUnavailable =>
+          OrchestratorStrings.prdWorkflowGithubRemoteUnavailable,
         PrdRunFailureCode.projectNotFound ||
         PrdRunFailureCode.branchInvalid ||
         PrdRunFailureCode.gitContextUnavailable ||

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_conversation_message_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_preserving_text.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_section_header.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
@@ -109,8 +110,8 @@ final class _PrdConversationMessageTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: PulseDimensions.sectionGapSm),
-                Text(
-                  message.displayText,
+                WorkflowPreservingText(
+                  text: message.displayText,
                   style: textTheme.bodyMedium?.copyWith(
                     color: PulseColors.onSurface,
                   ),

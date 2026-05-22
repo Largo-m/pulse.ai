@@ -8,6 +8,7 @@ final class PrdWorkflowState {
     this.phaseStatus = PrdWorkflowPhaseUiStatus.notStarted,
     this.sessionViewMode = PrdSessionViewMode.empty,
     this.streamLines = const <PrdStreamLineUiModel>[],
+    this.liveConversationMessages = const <PrdConversationMessageUiModel>[],
     this.restoredConversationMessages = const <PrdConversationMessageUiModel>[],
     this.restoredRunId,
     this.activeRunId,
@@ -21,6 +22,7 @@ final class PrdWorkflowState {
   final PrdWorkflowPhaseUiStatus phaseStatus;
   final PrdSessionViewMode sessionViewMode;
   final List<PrdStreamLineUiModel> streamLines;
+  final List<PrdConversationMessageUiModel> liveConversationMessages;
   final List<PrdConversationMessageUiModel> restoredConversationMessages;
   final String? restoredRunId;
   final String? activeRunId;
@@ -43,6 +45,7 @@ final class PrdWorkflowState {
     PrdWorkflowPhaseUiStatus? phaseStatus,
     PrdSessionViewMode? sessionViewMode,
     List<PrdStreamLineUiModel>? streamLines,
+    List<PrdConversationMessageUiModel>? liveConversationMessages,
     List<PrdConversationMessageUiModel>? restoredConversationMessages,
     String? restoredRunId,
     String? activeRunId,
@@ -56,11 +59,15 @@ final class PrdWorkflowState {
     bool clearStreamLagMs = false,
     bool clearRestoredRunId = false,
     bool clearRestoredConversationMessages = false,
+    bool clearLiveConversationMessages = false,
   }) {
     return PrdWorkflowState(
       phaseStatus: phaseStatus ?? this.phaseStatus,
       sessionViewMode: sessionViewMode ?? this.sessionViewMode,
       streamLines: streamLines ?? this.streamLines,
+      liveConversationMessages: clearLiveConversationMessages
+          ? const <PrdConversationMessageUiModel>[]
+          : (liveConversationMessages ?? this.liveConversationMessages),
       restoredConversationMessages: clearRestoredConversationMessages
           ? const <PrdConversationMessageUiModel>[]
           : (restoredConversationMessages ?? this.restoredConversationMessages),
@@ -86,6 +93,10 @@ final class PrdWorkflowState {
             other.sessionViewMode == sessionViewMode &&
             _listEquals(other.streamLines, streamLines) &&
             _listEquals(
+              other.liveConversationMessages,
+              liveConversationMessages,
+            ) &&
+            _listEquals(
               other.restoredConversationMessages,
               restoredConversationMessages,
             ) &&
@@ -103,6 +114,7 @@ final class PrdWorkflowState {
     phaseStatus,
     sessionViewMode,
     Object.hashAll(streamLines),
+    Object.hashAll(liveConversationMessages),
     Object.hashAll(restoredConversationMessages),
     restoredRunId,
     activeRunId,
@@ -116,7 +128,8 @@ final class PrdWorkflowState {
   @override
   String toString() =>
       'PrdWorkflowState(phaseStatus: $phaseStatus, sessionViewMode: $sessionViewMode, '
-      'streamLines: ${streamLines.length}, restoredConversation: '
+      'streamLines: ${streamLines.length}, liveConversation: '
+      '${liveConversationMessages.length}, restoredConversation: '
       '${restoredConversationMessages.length}, restoredRunId: $restoredRunId, '
       'activeRunId: $activeRunId, failureMessageKey: $failureMessageKey, '
       'requiresUserAction: $requiresUserAction, streamLagMs: $streamLagMs, '

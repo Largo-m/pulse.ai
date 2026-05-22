@@ -7,7 +7,6 @@ import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connecti
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/cursor_connection_state.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_cubit.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
-import 'package:pulse_ai/features/orchestrator/presentation/models/prd_session_view_mode.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/prd_workflow_session_presentation.dart';
@@ -46,7 +45,9 @@ final class PrdWorkflowStreamPanel extends StatelessWidget {
                 streamLineCount: terminalLines.length,
               );
               final bool showInProgressAffordance =
-                  state.sessionViewMode == PrdSessionViewMode.inProgressOnly;
+                  PrdWorkflowSessionPresentation.showsInProgressOnlyAffordance(
+                    state,
+                  );
 
               return DecoratedBox(
                 decoration: BoxDecoration(

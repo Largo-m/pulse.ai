@@ -1,6 +1,8 @@
 import 'package:pulse_ai/features/orchestrator/presentation/bloc/prd_workflow_state.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_conversation_message_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_session_view_mode.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/models/prd_workflow_phase_ui_status.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
 
 abstract final class PrdWorkflowFailureMessageKeys {
@@ -19,13 +21,31 @@ final class PrdWorkflowSessionPresentation {
   const PrdWorkflowSessionPresentation._();
 
   static List<PrdStreamLineUiModel> terminalLinesFor(PrdWorkflowState state) {
-    return switch (state.sessionViewMode) {
-      PrdSessionViewMode.restored ||
-      PrdSessionViewMode.restoredWithActiveRun => state.streamLines,
-      PrdSessionViewMode.empty ||
-      PrdSessionViewMode.inProgressOnly ||
-      PrdSessionViewMode.restoreFailed => const <PrdStreamLineUiModel>[],
-    };
+    if (state.sessionViewMode == PrdSessionViewMode.restoreFailed) {
+      return const <PrdStreamLineUiModel>[];
+    }
+    return state.streamLines;
+  }
+
+  static List<PrdConversationMessageUiModel> conversationMessagesFor(
+    PrdWorkflowState state,
+  ) {
+    if (state.liveConversationMessages.isEmpty) {
+      return state.restoredConversationMessages;
+    }
+    if (state.restoredConversationMessages.isEmpty) {
+      return state.liveConversationMessages;
+    }
+    return <PrdConversationMessageUiModel>[
+      ...state.restoredConversationMessages,
+      ...state.liveConversationMessages,
+    ];
+  }
+
+  static bool showsLiveStreamPanel(PrdWorkflowState state) {
+    return state.streamLines.isNotEmpty ||
+        state.phaseStatus == PrdWorkflowPhaseUiStatus.running ||
+        state.activeRunId != null;
   }
 
   static String terminalEmptyMessageFor(PrdWorkflowState state) {
@@ -50,14 +70,22 @@ final class PrdWorkflowSessionPresentation {
   }
 
   static bool showsConversationSection(PrdWorkflowState state) {
-    return state.restoredConversationMessages.isNotEmpty;
+    return conversationMessagesFor(state).isNotEmpty;
   }
 
   static bool showsDirectiveBubble({
     required bool hasDirective,
     required PrdWorkflowState state,
   }) {
-    return hasDirective && !showsConversationSection(state);
+    return hasDirective &&
+        state.liveConversationMessages.isEmpty &&
+        state.restoredConversationMessages.isEmpty;
+  }
+
+  static bool showsInProgressOnlyAffordance(PrdWorkflowState state) {
+    return state.sessionViewMode == PrdSessionViewMode.inProgressOnly &&
+        state.streamLines.isEmpty &&
+        state.phaseStatus != PrdWorkflowPhaseUiStatus.running;
   }
 
   static bool showsRunFailureBanner(PrdWorkflowState state) {

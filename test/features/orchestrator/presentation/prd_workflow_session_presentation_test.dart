@@ -32,31 +32,43 @@ void main() {
   });
 
   group('PrdWorkflowSessionPresentation', () {
-    test('terminalLinesFor returns stream lines only when restored', () {
-      const PrdStreamLineUiModel line = PrdStreamLineUiModel(
-        sequence: 1,
-        eventType: 'assistant',
-        displayText: 'log',
-      );
-      const PrdWorkflowState restored = PrdWorkflowState(
-        sessionViewMode: PrdSessionViewMode.restored,
-        streamLines: <PrdStreamLineUiModel>[line],
-      );
+    test(
+      'terminalLinesFor returns stream lines for live and restored sessions',
+      () {
+        const PrdStreamLineUiModel line = PrdStreamLineUiModel(
+          sequence: 1,
+          eventType: 'assistant',
+          displayText: 'log',
+        );
+        const PrdWorkflowState restored = PrdWorkflowState(
+          sessionViewMode: PrdSessionViewMode.restored,
+          streamLines: <PrdStreamLineUiModel>[line],
+        );
 
-      expect(
-        PrdWorkflowSessionPresentation.terminalLinesFor(restored),
-        hasLength(1),
-      );
-      expect(
-        PrdWorkflowSessionPresentation.terminalLinesFor(
-          const PrdWorkflowState(
-            sessionViewMode: PrdSessionViewMode.inProgressOnly,
-            streamLines: <PrdStreamLineUiModel>[line],
+        expect(
+          PrdWorkflowSessionPresentation.terminalLinesFor(restored),
+          hasLength(1),
+        );
+        expect(
+          PrdWorkflowSessionPresentation.terminalLinesFor(
+            const PrdWorkflowState(
+              sessionViewMode: PrdSessionViewMode.inProgressOnly,
+              streamLines: <PrdStreamLineUiModel>[line],
+            ),
           ),
-        ),
-        isEmpty,
-      );
-    });
+          hasLength(1),
+        );
+        expect(
+          PrdWorkflowSessionPresentation.terminalLinesFor(
+            const PrdWorkflowState(
+              sessionViewMode: PrdSessionViewMode.restoreFailed,
+              streamLines: <PrdStreamLineUiModel>[line],
+            ),
+          ),
+          isEmpty,
+        );
+      },
+    );
 
     test(
       'terminalEmptyMessageFor distinguishes empty and in-progress modes',

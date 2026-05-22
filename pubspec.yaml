@@ -11,6 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   dio: ^5.9.0
+  pretty_dio_logger: ^1.4.0
   fpdart: ^1.1.0
   git2dart: ^0.4.0
   flutter_bloc: ^9.1.1

@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import 'package:pulse_ai/features/orchestrator/presentation/models/prd_stream_line_ui_model.dart';
 import 'package:pulse_ai/features/orchestrator/presentation/orchestrator_strings.dart';
+import 'package:pulse_ai/features/orchestrator/presentation/widgets/workflow_preserving_text.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_colors.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_dimensions.dart';
 import 'package:pulse_ai/shared/theme/tokens/pulse_radii.dart';
 
-final class WorkflowTerminalLog extends StatelessWidget {
+final class WorkflowTerminalLog extends StatefulWidget {
   const WorkflowTerminalLog({
     super.key,
     required this.lines,
@@ -17,6 +18,36 @@ final class WorkflowTerminalLog extends StatelessWidget {
   final List<PrdStreamLineUiModel> lines;
   final String emptyMessage;
   final List<String> placeholderLines;
+
+  @override
+  State<WorkflowTerminalLog> createState() => _WorkflowTerminalLogState();
+}
+
+final class _WorkflowTerminalLogState extends State<WorkflowTerminalLog> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(WorkflowTerminalLog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.lines.length != widget.lines.length) {
+      _scrollToEnd();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToEnd() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,10 +66,10 @@ final class WorkflowTerminalLog extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.all(PulseDimensions.sectionGapMd),
-        child: lines.isEmpty && placeholderLines.isEmpty
+        child: widget.lines.isEmpty && widget.placeholderLines.isEmpty
             ? Center(
                 child: Text(
-                  emptyMessage,
+                  widget.emptyMessage,
                   style: textTheme.bodyMedium?.copyWith(
                     color: PulseColors.onSurfaceVariant,
                   ),
@@ -46,22 +77,23 @@ final class WorkflowTerminalLog extends StatelessWidget {
                 ),
               )
             : ListView.separated(
-                itemCount: lines.isEmpty
-                    ? placeholderLines.length
-                    : lines.length,
+                controller: _scrollController,
+                itemCount: widget.lines.isEmpty
+                    ? widget.placeholderLines.length
+                    : widget.lines.length,
                 separatorBuilder: (BuildContext context, int index) {
                   return const SizedBox(
                     height: PulseDimensions.workflowStreamLineHeight / 2,
                   );
                 },
                 itemBuilder: (BuildContext context, int index) {
-                  if (lines.isEmpty) {
+                  if (widget.lines.isEmpty) {
                     return _TerminalLine(
-                      text: placeholderLines[index],
+                      text: widget.placeholderLines[index],
                       style: monoBase,
                     );
                   }
-                  final PrdStreamLineUiModel line = lines[index];
+                  final PrdStreamLineUiModel line = widget.lines[index];
                   return _TerminalLine(text: line.displayText, style: monoBase);
                 },
               ),
@@ -134,14 +166,14 @@ final class _TerminalLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        style: style,
-        children: <TextSpan>[
-          TextSpan(text: '> ', style: style),
-          TextSpan(text: text),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text('> ', style: style),
+        Expanded(
+          child: WorkflowPreservingText(text: text, style: style),
+        ),
+      ],
     );
   }
 }

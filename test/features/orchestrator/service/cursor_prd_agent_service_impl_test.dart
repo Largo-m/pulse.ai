@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -26,6 +27,7 @@ void main() {
       projectId: 'project-1',
       slug: 'agent-a',
       canonicalPath: '/Users/dev/repo',
+      machineName: 'pulse-project-1',
       branchName: 'main',
       composedPrompt: 'Create PRD',
     );
@@ -57,6 +59,27 @@ void main() {
         expect(httpClient.postPaths.single, '/v1/agents');
       },
     );
+
+    test('startRun targets My Machines worker on local workspace', () async {
+      httpClient.nextPostResponse = const CursorHttpResponse(
+        statusCode: 200,
+        body: '{"agent":{"id":"bc-agent-1"},"run":{"id":"run-agent-1"}}',
+      );
+
+      await service.startRun(validContext);
+
+      expect(httpClient.postBodies, hasLength(1));
+      final Map<String, dynamic> decoded =
+          jsonDecode(httpClient.postBodies.single) as Map<String, dynamic>;
+      expect(decoded.containsKey('repos'), isFalse);
+      final Map<String, dynamic> env = decoded['env'] as Map<String, dynamic>;
+      expect(env['type'], 'machine');
+      expect(env['name'], 'pulse-project-1');
+      final Map<String, dynamic> model =
+          decoded['model'] as Map<String, dynamic>;
+      expect(model['id'], 'composer-2.5');
+      expect(decoded.containsKey('mode'), isFalse);
+    });
 
     test('watchRun emits three ordered events from SSE fixture', () async {
       httpClient

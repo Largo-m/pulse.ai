@@ -95,16 +95,22 @@ final class CursorRunSseParser {
   String? _summarizePayload(String eventType, Map<String, dynamic> payload) {
     switch (eventType) {
       case 'status':
-      case 'result':
         final Object? status = payload['status'];
         return status == null ? null : 'status=$status';
+      case 'result':
+        final Object? resultText = payload['result'];
+        if (resultText is String && resultText.isNotEmpty) {
+          return resultText;
+        }
+        final Object? resultStatus = payload['status'];
+        return resultStatus == null ? null : 'status=$resultStatus';
       case 'assistant':
       case 'thinking':
         final Object? text = payload['text'];
         if (text is! String || text.isEmpty) {
           return null;
         }
-        return text.length <= 120 ? text : '${text.substring(0, 120)}…';
+        return text;
       case 'tool_call':
         final Object? name = payload['name'];
         final Object? toolStatus = payload['status'];

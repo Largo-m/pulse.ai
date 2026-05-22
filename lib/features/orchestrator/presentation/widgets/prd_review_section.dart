@@ -48,6 +48,20 @@ final class PrdReviewSection extends StatelessWidget {
         ),
         BlocListener<PrdReviewCubit, PrdReviewState>(
           listenWhen: (PrdReviewState previous, PrdReviewState current) =>
+              previous.pendingActiveRunAttachmentId !=
+                  current.pendingActiveRunAttachmentId &&
+              current.pendingActiveRunAttachmentId != null,
+          listener: (BuildContext context, PrdReviewState state) {
+            unawaited(
+              context.read<PrdWorkflowCubit>().attachToActiveRun(
+                state.pendingActiveRunAttachmentId!,
+              ),
+            );
+            context.read<PrdReviewCubit>().clearPendingActiveRunAttachment();
+          },
+        ),
+        BlocListener<PrdReviewCubit, PrdReviewState>(
+          listenWhen: (PrdReviewState previous, PrdReviewState current) =>
               !previous.mustConfirmOverwrite && current.mustConfirmOverwrite,
           listener: (BuildContext context, PrdReviewState state) async {
             final bool? confirmed = await PrdReviewUnsavedOverwriteDialog.show(

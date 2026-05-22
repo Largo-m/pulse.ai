@@ -97,6 +97,7 @@ void main() {
             projectId: 'p1',
             slug: 'agent-a',
             canonicalPath: '/repo',
+            machineName: 'pulse-p1',
             branchName: 'main',
             composedPrompt: 'build prd',
           ),

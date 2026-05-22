@@ -217,6 +217,9 @@ abstract final class OrchestratorStrings {
   static const String prdWorkflowCancelButton = 'Cancelar execução';
   static const String prdWorkflowCancelSemantics =
       'Cancelar execução do agente PRD em andamento';
+  static const String prdWorkflowCancelCloudFailed =
+      'A execução foi encerrada no Pulse, mas o Cursor não confirmou o '
+      'cancelamento. Verifique o status no Cursor se o agente ainda estiver ativo.';
   static const String prdWorkflowStreamPanelSemantics =
       'Painel de stream ao vivo da execução PRD';
   static const String prdWorkflowSystemProcessingTitle =
@@ -245,6 +248,9 @@ abstract final class OrchestratorStrings {
 
   static const String prdWorkflowRunFailedGeneric =
       'A execução do agente PRD falhou. Tente novamente ou verifique a conexão.';
+  static const String prdWorkflowGithubRemoteUnavailable =
+      'Configure o remote origin com uma URL HTTPS do GitHub (ex.: '
+      'https://github.com/org/repo) para o agente na nuvem acessar o repositório.';
   static const String prdWorkflowStreamUnavailable =
       'O stream da execução ficou indisponível. Verifique a rede e tente de novo.';
   static const String prdWorkflowSessionRestoreFailed =

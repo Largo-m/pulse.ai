@@ -5,26 +5,31 @@ import 'package:pulse_ai/core/error/prd_run_failure.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/local_project_entity.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_context.dart';
 import 'package:pulse_ai/features/orchestrator/domain/entities/prd_run_request.dart';
+import 'package:pulse_ai/features/orchestrator/domain/service/local_git_origin_remote_service.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/build_prd_run_context_use_case.dart';
 import 'package:pulse_ai/features/orchestrator/domain/usecases/list_local_git_branches_use_case.dart';
 
 import 'fake_local_git_branches_service.dart';
+import 'fake_local_git_origin_remote_service.dart';
 import 'fake_recent_projects_repository.dart';
 
 void main() {
   group('BuildPrdRunContextUseCase', () {
     late FakeRecentProjectsRepository projectsRepository;
     late FakeLocalGitBranchesService gitService;
+    late FakeLocalGitOriginRemoteService originRemoteService;
     late BuildPrdRunContextUseCase useCase;
 
     setUp(() {
       projectsRepository = FakeRecentProjectsRepository();
       gitService = FakeLocalGitBranchesService();
+      originRemoteService = FakeLocalGitOriginRemoteService();
       useCase = BuildPrdRunContextUseCase(
         recentProjectsRepository: projectsRepository,
         listLocalGitBranchesUseCase: ListLocalGitBranchesUseCase(
           service: gitService,
         ),
+        localGitOriginRemoteService: originRemoteService,
       );
     });
 
@@ -79,7 +84,11 @@ void main() {
       expect(result.isRight(), isTrue);
       result.fold((_) => fail('expected right'), (PrdRunContext context) {
         expect(context.canonicalPath, '/Users/dev/repo');
+        expect(context.machineName, 'pulse-project-1');
+        expect(context.repositoryUrl, 'https://github.com/acme/repo');
         expect(context.composedPrompt, contains('/Users/dev/repo'));
+        expect(context.composedPrompt, contains('pulse-project-1'));
+        expect(context.composedPrompt, contains('Do not modify remote GitHub'));
         expect(context.composedPrompt, contains('agent-a'));
         expect(context.composedPrompt, isNot(contains('/should-not-be-used')));
       });
@@ -194,5 +203,45 @@ void main() {
         );
       }, (_) => fail('expected left'));
     });
+
+    test(
+      'succeeds without GitHub origin when local git context is valid',
+      () async {
+        projectsRepository.projects.add(
+          LocalProjectEntity(
+            id: 'project-1',
+            canonicalPath: '/Users/dev/repo',
+            displayName: 'Repo',
+            lastAccessedAt: DateTime.utc(2026, 5, 20),
+          ),
+        );
+        gitService.resultsByPath['/Users/dev/repo'] =
+            const LocalGitBranchesResult(
+              LocalGitBranchesOutcome.success,
+              branches: <String>['main'],
+              headBranchName: 'main',
+            );
+        originRemoteService.resultsByPath['/Users/dev/repo'] =
+            const LocalGitOriginRemoteResult(
+              LocalGitOriginRemoteOutcome.unsupportedHost,
+            );
+
+        final Either<Failure, PrdRunContext> result = await useCase(
+          const PrdRunRequest(
+            projectId: 'project-1',
+            slug: 'agent-a',
+            repoPath: '/ignored',
+            branchName: 'main',
+            directive: 'Create PRD',
+          ),
+        );
+
+        expect(result.isRight(), isTrue);
+        result.fold((_) => fail('expected right'), (PrdRunContext context) {
+          expect(context.repositoryUrl, isNull);
+          expect(context.machineName, 'pulse-project-1');
+        });
+      },
+    );
   });
 }

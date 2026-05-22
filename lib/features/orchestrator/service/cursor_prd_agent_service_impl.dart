@@ -16,6 +16,7 @@ import 'package:pulse_ai/features/orchestrator/domain/service/cursor_prd_agent_s
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_agent_http_client.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_id_codec.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_cloud_run_status_mapper.dart';
+import 'package:pulse_ai/features/orchestrator/service/cursor_prd_agent_config.dart';
 import 'package:pulse_ai/features/orchestrator/service/cursor_run_sse_parser.dart';
 import 'package:pulse_ai/features/orchestrator/service/transient_http_retry.dart';
 import 'package:uuid/uuid.dart';
@@ -27,20 +28,29 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
     CursorRunSseParser? sseParser,
     CursorCloudRunStatusMapper? statusMapper,
     TransientHttpRetry? retryPolicy,
+    TransientHttpRetry? cancelRetryPolicy,
     Uuid? uuid,
   }) : _credentialStore = credentialStore,
        _httpClient = httpClient,
        _sseParser = sseParser ?? const CursorRunSseParser(),
        _statusMapper = statusMapper ?? const CursorCloudRunStatusMapper(),
        _retryPolicy = retryPolicy ?? const TransientHttpRetry(),
+       _cancelRetryPolicyOverride = cancelRetryPolicy,
        _uuid = uuid ?? const Uuid();
+
+  static const TransientHttpRetry _defaultCancelRetryPolicy =
+      TransientHttpRetry(maxAttempts: 1);
 
   final CursorCredentialStoreService _credentialStore;
   final CursorCloudAgentHttpClient _httpClient;
   final CursorRunSseParser _sseParser;
   final CursorCloudRunStatusMapper _statusMapper;
   final TransientHttpRetry _retryPolicy;
+  final TransientHttpRetry? _cancelRetryPolicyOverride;
   final Uuid _uuid;
+
+  TransientHttpRetry get _cancelRetryPolicy =>
+      _cancelRetryPolicyOverride ?? _defaultCancelRetryPolicy;
 
   @override
   Future<Either<Failure, void>> preflight() async {
@@ -84,7 +94,8 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
   Future<PrdRunEntity> startRun(PrdRunContext context) async {
     final String body = jsonEncode(<String, Object>{
       'prompt': <String, String>{'text': context.composedPrompt},
-      'mode': 'agent',
+      'model': <String, String>{'id': CursorPrdAgentConfig.defaultModelId},
+      'env': <String, String>{'type': 'machine', 'name': context.machineName},
     });
 
     final CursorHttpResponse response = await _retryPolicy.execute(
@@ -199,7 +210,7 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
       throw const PrdRunOperationException(PrdRunFailure.cloudRunNotFound());
     }
 
-    final CursorHttpResponse response = await _retryPolicy.execute(
+    final CursorHttpResponse response = await _cancelRetryPolicy.execute(
       () => _httpClient.post(
         '/v1/agents/${ids.agentId}/runs/${ids.runId}/cancel',
       ),

@@ -3,8 +3,10 @@ final class PrdRunContext {
     required this.projectId,
     required this.slug,
     required this.canonicalPath,
+    required this.machineName,
     required this.branchName,
     required this.composedPrompt,
+    this.repositoryUrl,
     this.macosSecurityScopedBookmark,
     this.supersedesRunId,
     this.feedback,
@@ -13,6 +15,8 @@ final class PrdRunContext {
   final String projectId;
   final String slug;
   final String canonicalPath;
+  final String machineName;
+  final String? repositoryUrl;
   final String branchName;
   final String composedPrompt;
   final String? macosSecurityScopedBookmark;

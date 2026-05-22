@@ -4,6 +4,7 @@ enum PrdRunFailureCode {
   projectNotFound,
   branchInvalid,
   gitContextUnavailable,
+  githubRemoteUnavailable,
   cloudRunFailed,
   cloudRunNotFound,
   streamUnavailable,
@@ -23,6 +24,9 @@ final class PrdRunFailure implements Failure {
 
   const PrdRunFailure.gitContextUnavailable()
     : this(code: PrdRunFailureCode.gitContextUnavailable, message: '');
+
+  const PrdRunFailure.githubRemoteUnavailable()
+    : this(code: PrdRunFailureCode.githubRemoteUnavailable, message: '');
 
   const PrdRunFailure.cloudRunFailed()
     : this(code: PrdRunFailureCode.cloudRunFailed, message: '');
