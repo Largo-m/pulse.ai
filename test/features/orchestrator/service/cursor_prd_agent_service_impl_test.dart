@@ -183,6 +183,23 @@ void main() {
       },
     );
 
+    test(
+      'preflightCredential maps transport errors to network failure',
+      () async {
+        httpClient.nextGetException = const HttpException('Connection failed');
+
+        final result = await service.preflightCredential('draft-api-key');
+
+        expect(result.isLeft(), isTrue);
+        result.fold((failure) {
+          expect(
+            (failure as CursorConnectionFailure).code,
+            CursorConnectionFailureCode.network,
+          );
+        }, (_) => fail('expected left'));
+      },
+    );
+
     test('preflightCredential maps empty key to missingCredential', () async {
       final result = await service.preflightCredential('  ');
 

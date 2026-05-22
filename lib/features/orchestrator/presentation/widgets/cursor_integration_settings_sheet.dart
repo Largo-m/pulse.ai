@@ -32,14 +32,18 @@ Future<void> showCursorIntegrationSettingsSheet(BuildContext context) {
         ) {
           return BlocProvider<CursorConnectionCubit>.value(
             value: connectionCubit,
-            child: const _CursorIntegrationSettingsSheetPage(),
+            child: _CursorIntegrationSettingsSheetPage(
+              connectionCubit: connectionCubit,
+            ),
           );
         },
   );
 }
 
 final class _CursorIntegrationSettingsSheetPage extends StatefulWidget {
-  const _CursorIntegrationSettingsSheetPage();
+  const _CursorIntegrationSettingsSheetPage({required this.connectionCubit});
+
+  final CursorConnectionCubit connectionCubit;
 
   @override
   State<_CursorIntegrationSettingsSheetPage> createState() =>
@@ -49,10 +53,12 @@ final class _CursorIntegrationSettingsSheetPage extends StatefulWidget {
 final class _CursorIntegrationSettingsSheetPageState
     extends State<_CursorIntegrationSettingsSheetPage> {
   late final TextEditingController _apiKeyController;
+  late final CursorConnectionCubit _connectionCubit;
 
   @override
   void initState() {
     super.initState();
+    _connectionCubit = widget.connectionCubit;
     _apiKeyController = TextEditingController();
     _apiKeyController.addListener(_onDraftChanged);
   }
@@ -61,17 +67,17 @@ final class _CursorIntegrationSettingsSheetPageState
   void dispose() {
     _apiKeyController.removeListener(_onDraftChanged);
     _apiKeyController.dispose();
-    context.read<CursorConnectionCubit>().resetSettingsSession();
+    _connectionCubit.resetSettingsSession();
     super.dispose();
   }
 
   void _onDraftChanged() {
-    context.read<CursorConnectionCubit>().onDraftCredentialChanged();
+    _connectionCubit.onDraftCredentialChanged();
   }
 
   void _closeSheet(BuildContext context) {
     _apiKeyController.clear();
-    context.read<CursorConnectionCubit>().resetSettingsSession();
+    _connectionCubit.resetSettingsSession();
     Navigator.of(context).pop();
   }
 
@@ -83,7 +89,7 @@ final class _CursorIntegrationSettingsSheetPageState
       return;
     }
 
-    await context.read<CursorConnectionCubit>().removeCredential();
+    await _connectionCubit.removeCredential();
     if (!context.mounted) {
       return;
     }
@@ -173,6 +179,7 @@ final class _CursorIntegrationSettingsSheetPageState
               child: Semantics(
                 scopesRoute: true,
                 namesRoute: true,
+                explicitChildNodes: true,
                 label: OrchestratorStrings.cursorSettingsModalSemantics,
                 child: Material(
                   color: PulseColors.surfaceContainer,
@@ -309,6 +316,10 @@ final class _CursorIntegrationSettingsSheetPageState
                                                     );
                                                 final String? feedback = state
                                                     .settingsFeedbackMessageKey;
+                                                final bool isSuccessFeedback =
+                                                    feedback ==
+                                                    OrchestratorStrings
+                                                        .cursorSettingsTestSuccessFeedback;
 
                                                 return Column(
                                                   crossAxisAlignment:
@@ -426,12 +437,17 @@ final class _CursorIntegrationSettingsSheetPageState
                                                       ),
                                                       Text(
                                                         feedback,
-                                                        style: tt.bodySmall
-                                                            ?.copyWith(
-                                                              color: Theme.of(
-                                                                context,
-                                                              ).colorScheme.error,
-                                                            ),
+                                                        style: tt.bodySmall?.copyWith(
+                                                          color:
+                                                              isSuccessFeedback
+                                                              ? PulseColors
+                                                                    .tertiary
+                                                              : Theme.of(
+                                                                      context,
+                                                                    )
+                                                                    .colorScheme
+                                                                    .error,
+                                                        ),
                                                       ),
                                                     ],
                                                     const SizedBox(
@@ -482,13 +498,10 @@ final class _CursorIntegrationSettingsSheetPageState
                                                               onPressed: canTest
                                                                   ? () {
                                                                       unawaited(
-                                                                        context
-                                                                            .read<
-                                                                              CursorConnectionCubit
-                                                                            >()
-                                                                            .testDraftCredential(
-                                                                              draft.trim(),
-                                                                            ),
+                                                                        _connectionCubit.testDraftCredential(
+                                                                          draft
+                                                                              .trim(),
+                                                                        ),
                                                                       );
                                                                     }
                                                                   : null,
@@ -542,13 +555,10 @@ final class _CursorIntegrationSettingsSheetPageState
                                                               onPressed: canSave
                                                                   ? () {
                                                                       unawaited(
-                                                                        context
-                                                                            .read<
-                                                                              CursorConnectionCubit
-                                                                            >()
-                                                                            .saveDraftCredential(
-                                                                              draft.trim(),
-                                                                            ),
+                                                                        _connectionCubit.saveDraftCredential(
+                                                                          draft
+                                                                              .trim(),
+                                                                        ),
                                                                       );
                                                                     }
                                                                   : null,

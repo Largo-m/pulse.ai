@@ -4,7 +4,11 @@ import 'package:pulse_ai/features/orchestrator/domain/service/cursor_credential_
 final class CursorCredentialStoreServiceImpl
     implements CursorCredentialStoreService {
   CursorCredentialStoreServiceImpl({FlutterSecureStorage? storage})
-    : _storage = storage ?? const FlutterSecureStorage();
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            mOptions: MacOsOptions(useDataProtectionKeyChain: false),
+          );
 
   static const String _storageKey = 'cursor_prd_agent_credential';
 

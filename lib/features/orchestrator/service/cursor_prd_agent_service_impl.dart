@@ -52,10 +52,14 @@ final class CursorPrdAgentServiceImpl implements CursorPrdAgentService {
       return left(const CursorConnectionFailure.missingCredential());
     }
 
-    final CursorHttpResponse response = await _retryPolicy.execute(
-      () => _httpClient.get('/v1/me', credential: apiKey),
-    );
-    return _mapPreflightResponse(response);
+    try {
+      final CursorHttpResponse response = await _retryPolicy.execute(
+        () => _httpClient.get('/v1/me', credential: apiKey),
+      );
+      return _mapPreflightResponse(response);
+    } on Object {
+      return left(const CursorConnectionFailure.network());
+    }
   }
 
   Either<Failure, void> _mapPreflightResponse(CursorHttpResponse response) {

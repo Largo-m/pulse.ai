@@ -189,7 +189,13 @@ abstract final class OrchestratorStrings {
   static const String cursorSettingsMissingCredentialFeedback =
       'Informe uma chave da API do Cursor válida.';
   static const String cursorSettingsNetworkFeedback =
-      'Não foi possível validar a chave. Confira a rede e tente novamente.';
+      'Não foi possível validar a chave. Confira a rede, permissões do app no macOS '
+      'e tente novamente.';
+  static const String cursorSettingsTestSuccessFeedback =
+      'Conexão verificada. Você já pode salvar a chave.';
+  static const String cursorSettingsSaveFailedFeedback =
+      'Não foi possível salvar a chave neste dispositivo. Reinicie o app e tente '
+      'novamente.';
   static const String cursorSettingsUnknownFeedback =
       'Não foi possível validar a chave. Tente novamente.';
 

@@ -167,6 +167,12 @@ void main() {
       expect(OrchestratorStrings.cursorSettingsRemoveConfirmButton, isNotEmpty);
       expect(OrchestratorStrings.cursorSettingsRemoveCancelButton, isNotEmpty);
       expect(OrchestratorStrings.cursorSettingsCloseSemantics, isNotEmpty);
+      expect(OrchestratorStrings.cursorSettingsTestSuccessFeedback, isNotEmpty);
+      expect(
+        OrchestratorStrings.cursorSettingsTestSuccessFeedback,
+        contains('salvar'),
+      );
+      expect(OrchestratorStrings.cursorSettingsSaveFailedFeedback, isNotEmpty);
     });
 
     test('cursor settings feedback copy is localized in PT-BR', () {

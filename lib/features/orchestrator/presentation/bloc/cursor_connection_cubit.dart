@@ -58,30 +58,41 @@ final class CursorConnectionCubit extends Cubit<CursorConnectionState> {
       ),
     );
 
-    final Either<Failure, void> result = await _validateCursorCredentialUseCase(
-      apiKey,
-    );
+    try {
+      final Either<Failure, void> result =
+          await _validateCursorCredentialUseCase(apiKey);
 
-    result.fold(
-      (Failure failure) {
-        emit(
-          state.copyWith(
-            isDraftTestPassed: false,
-            settingsOperation: CursorSettingsOperationStatus.idle,
-            settingsFeedbackMessageKey: _settingsFeedbackForFailure(failure),
-          ),
-        );
-      },
-      (_) {
-        emit(
-          state.copyWith(
-            isDraftTestPassed: true,
-            settingsOperation: CursorSettingsOperationStatus.idle,
-            clearSettingsFeedback: true,
-          ),
-        );
-      },
-    );
+      result.fold(
+        (Failure failure) {
+          emit(
+            state.copyWith(
+              isDraftTestPassed: false,
+              settingsOperation: CursorSettingsOperationStatus.idle,
+              settingsFeedbackMessageKey: _settingsFeedbackForFailure(failure),
+            ),
+          );
+        },
+        (_) {
+          emit(
+            state.copyWith(
+              isDraftTestPassed: true,
+              settingsOperation: CursorSettingsOperationStatus.idle,
+              settingsFeedbackMessageKey:
+                  OrchestratorStrings.cursorSettingsTestSuccessFeedback,
+            ),
+          );
+        },
+      );
+    } on Object {
+      emit(
+        state.copyWith(
+          isDraftTestPassed: false,
+          settingsOperation: CursorSettingsOperationStatus.idle,
+          settingsFeedbackMessageKey:
+              OrchestratorStrings.cursorSettingsNetworkFeedback,
+        ),
+      );
+    }
   }
 
   Future<void> saveDraftCredential(String apiKey) async {
@@ -103,8 +114,19 @@ final class CursorConnectionCubit extends Cubit<CursorConnectionState> {
       ),
     );
 
-    await _saveCursorCredentialUseCase(apiKey);
-    await runPreflight();
+    try {
+      await _saveCursorCredentialUseCase(apiKey);
+      await runPreflight();
+    } on Object {
+      emit(
+        state.copyWith(
+          isDraftTestPassed: false,
+          settingsOperation: CursorSettingsOperationStatus.idle,
+          settingsFeedbackMessageKey:
+              OrchestratorStrings.cursorSettingsSaveFailedFeedback,
+        ),
+      );
+    }
   }
 
   Future<void> removeCredential() async {
@@ -115,8 +137,18 @@ final class CursorConnectionCubit extends Cubit<CursorConnectionState> {
       ),
     );
 
-    await _removeCursorCredentialUseCase();
-    await runPreflight();
+    try {
+      await _removeCursorCredentialUseCase();
+      await runPreflight();
+    } on Object {
+      emit(
+        state.copyWith(
+          settingsOperation: CursorSettingsOperationStatus.idle,
+          settingsFeedbackMessageKey:
+              OrchestratorStrings.cursorSettingsSaveFailedFeedback,
+        ),
+      );
+    }
   }
 
   Future<void> runPreflight() async {

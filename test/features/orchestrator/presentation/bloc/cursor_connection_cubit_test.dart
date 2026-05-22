@@ -35,7 +35,9 @@ void main() {
 
     setUp(() {
       fakeService = FakeCursorPrdAgentService();
-      fakeStore = FakeCursorCredentialStoreService();
+      fakeStore = FakeCursorCredentialStoreService()
+        ..throwOnWrite = null
+        ..throwOnDelete = null;
       preflightUseCase = RunCursorConnectionPreflightUseCase(
         cursorPrdAgentService: fakeService,
       );
@@ -177,6 +179,8 @@ void main() {
         const CursorConnectionState(
           isDraftTestPassed: true,
           settingsOperation: CursorSettingsOperationStatus.idle,
+          settingsFeedbackMessageKey:
+              OrchestratorStrings.cursorSettingsTestSuccessFeedback,
         ),
       ],
     );
@@ -241,6 +245,33 @@ void main() {
       ],
       verify: (_) {
         expect(fakeStore.storedCredential, 'saved-key');
+      },
+    );
+
+    blocTest<CursorConnectionCubit, CursorConnectionState>(
+      'saveDraftCredential store failure surfaces save failed feedback',
+      build: buildCubit,
+      seed: () => const CursorConnectionState(isDraftTestPassed: true),
+      setUp: () {
+        fakeStore.throwOnWrite = Exception('keychain entitlement missing');
+      },
+      act: (CursorConnectionCubit cubit) async {
+        await cubit.saveDraftCredential('saved-key');
+      },
+      expect: () => <CursorConnectionState>[
+        const CursorConnectionState(
+          isDraftTestPassed: true,
+          settingsOperation: CursorSettingsOperationStatus.saving,
+        ),
+        const CursorConnectionState(
+          isDraftTestPassed: false,
+          settingsOperation: CursorSettingsOperationStatus.idle,
+          settingsFeedbackMessageKey:
+              OrchestratorStrings.cursorSettingsSaveFailedFeedback,
+        ),
+      ],
+      verify: (_) {
+        expect(fakeStore.storedCredential, isNull);
       },
     );
 
