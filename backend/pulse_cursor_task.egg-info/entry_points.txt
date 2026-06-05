@@ -1,2 +1,0 @@
-[console_scripts]
-cursor-task = cursor_task.cli:main

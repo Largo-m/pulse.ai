@@ -1,6 +1,6 @@
 ---
 name: create-pr
-description: Opens a PR from the current branch to main using the GitHub MCP, following references/pull-request-template.md and, if present, .github/pull_request_template.md. PR body and user-facing text are in PT-BR; the PR title follows Conventional Commits in English. On-demand only. Use only when the user explicitly asks to create a PR, open a pull request, or prepare a PR to main. Never run automatically.
+description: Opens a PR from the current branch to main using the GitHub MCP. PR body follows the monorepo template at <git-root>/.github/pull_request_template.md (fallback references/pull-request-template.md). PR body and user-facing text are in PT-BR; the PR title follows Conventional Commits in English with monorepo area scope (backend, frontend, or backend,frontend). On-demand only. Use only when the user explicitly asks to create a PR, open a pull request, or prepare a PR to main. Never run automatically.
 readonly: false
 ---
 
@@ -8,9 +8,16 @@ readonly: false
 
 ## Goal
 
-Create a PR from the current branch to `main` via **GitHub MCP** (server `user-github`, tool `create_pull_request`), following the reference model [references/pull-request-template.md](references/pull-request-template.md); if the repository has one, also align with [.github/pull_request_template.md](.github/pull_request_template.md) (**repository template takes precedence**).
+Create a PR from the current branch to `main` via **GitHub MCP** (server `user-github`, tool `create_pull_request`), using the PR body template resolved from the **monorepo git root** (not `backend/` or `frontend/` alone).
 
-**Output language:** the PR **title** is in **English** (Conventional Commits, step 2). The PR **body** (`body`), any manual-creation fallback, and the user summary (step 5) must be in **Brazilian Portuguese (pt-BR)** — even if the reference template is in English, **translate or adapt** section headings, labels, and prose to pt-BR when filling; keep technical names (classes, APIs, flags) as they appear in code when those are the canonical identifiers.
+**Template resolution (precedence):**
+
+1. `<git-root>/.github/pull_request_template.md` — official GitHub template at the repository root (`pulse.ai/.github/…`)
+2. [references/pull-request-template.md](references/pull-request-template.md) — skill fallback if (1) is missing
+
+Resolve `<git-root>` with `git rev-parse --show-toplevel` (run from any subdirectory).
+
+**Output language:** the PR **title** is in **English** (Conventional Commits, step 2). The PR **body** (`body`), any manual-creation fallback, and the user summary (step 5) must be in **Brazilian Portuguese (pt-BR)**; keep technical names (classes, APIs, flags) as they appear in code when those are the canonical identifiers.
 
 ## Workflow
 
@@ -28,24 +35,64 @@ git remote get-url origin
 Extract `owner` and `repo` from the remote.
 Read changed files to understand what was done.
 
+**Monorepo areas:** classify changed paths into `backend/` (Python API/services) and `frontend/` (Flutter app). A PR may touch one area or both.
+
+```bash
+git diff main..HEAD --name-only
+```
+
 ### 2. Generate the PR title
 
-Use the format:
+Use Conventional Commits in English:
 
 ```
-<type>(<scope>): <subject>
+<type>(<area>[/<feature>]): <subject>
 ```
 
-Use Conventional Commits: feat, fix, docs, style, refactor, test, chore, etc.
-The title should summarize the PR concisely (e.g. `feat(hourly-rate): add get and upsert endpoints`).
+- **`<type>`:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, etc.
+- **`<area>`:** where the change lands in the monorepo — required:
+  - `backend` — only `backend/` changed
+  - `frontend` — only `frontend/` changed
+  - `backend,frontend` — both areas changed (cross-cutting feature or integration)
+- **`<feature>`:** optional domain/module when it clarifies the PR (e.g. `orchestrator`, `hourly-rate`, `auth`). Omit when the subject alone is clear.
+- **`<subject>`:** imperative, lowercase, no trailing period; describe the user-visible or architectural outcome, not file names.
+
+**Choosing `<area>`:**
+
+| Changed paths | `<area>` |
+|---------------|----------|
+| `backend/**` only | `backend` |
+| `frontend/**` only | `frontend` |
+| both | `backend,frontend` |
+| repo root / shared config only (`.github/`, `.cursor/`, root docs) | infer from intent; default `chore` without area or use the area most affected |
+
+**Examples:**
+
+| Scenario | Title |
+|----------|-------|
+| New API endpoints | `feat(backend/hourly-rate): add get and upsert endpoints` |
+| Flutter screen only | `feat(frontend/orchestrator): add PRD session restore UI` |
+| API + UI wiring | `feat(backend,frontend/orchestrator): wire PRD run status reconciliation` |
+| Backend bugfix | `fix(backend/auth): validate token expiry on refresh` |
+| CI in both stacks | `chore(backend,frontend): align PR templates and CI checks` |
+| Docs at repo root | `docs: document monorepo setup and local dev` |
+
+**Anti-patterns (avoid):**
+
+- Scope by file or layer alone: `feat(api):`, `feat(ui):` — use `backend` / `frontend` instead.
+- Generic scope when area is known: `feat(app):` or `feat(pulse):`.
+- Subject that hides cross-area work: if both stacks change, use `backend,frontend`, not a single-area scope.
 
 ### 3. Fill the PR body
 
-Use [references/pull-request-template.md](references/pull-request-template.md) (market-style structure; section headings in the file may be English). Fill each section from commits and code.
+Read the template using template resolution above. Fill each section from commits and code.
 
-**Required:** the final Markdown `body` must be **fully in pt-BR** (`##` headings, paragraphs, lists, checklists). Do not send an English PR description to GitHub unless the repository’s official template is fixed in English **and** the user explicitly requests another language.
+```bash
+git rev-parse --show-toplevel
+# then read: <git-root>/.github/pull_request_template.md
+```
 
-If [.github/pull_request_template.md](.github/pull_request_template.md) exists, follow its section order and checklist items while keeping filled content in **pt-BR** unless the user overrides.
+**Required:** the final Markdown `body` must be **fully in pt-BR** (`##` headings, paragraphs, lists, checklists). Follow the template’s **section order and checklist items** exactly. Do not send an English PR description unless the user explicitly requests another language.
 
 ### 4. Create the PR via GitHub MCP
 
@@ -78,6 +125,7 @@ If the MCP call fails (auth, permissions, etc.), provide a ready-to-paste title 
 - Prefer GitHub MCP over the `gh` CLI
 - Screenshots and evidence are optional
 - Always inspect commits and code before writing
-- **Title:** English, Conventional Commits (step 2)
-- **PR body, manual fallback, and user summary:** **pt-BR** (mandatory); the English text in the reference file is only a structural skeleton
-- Follow the template’s structure (section order and types); the language of filled content is **pt-BR**
+- **Title:** English, Conventional Commits with monorepo `<area>` (`backend`, `frontend`, or `backend,frontend`) — step 2
+- **PR body, manual fallback, and user summary:** **pt-BR** (mandatory)
+- **Template path:** `<git-root>/.github/pull_request_template.md` at monorepo root; never `backend/.github/` or `frontend/.github/`
+- Follow the resolved template’s section order and checklist items
