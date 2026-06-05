@@ -1,8 +1,0 @@
-event: status
-data: {"runId":"run-fake-001","status":"RUNNING"}
-
-event: assistant
-data: {"text":"Generating PRD draft."}
-
-event: done
-data: {}

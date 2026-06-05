@@ -13,20 +13,12 @@ dependencies:
   dio: ^5.9.0
   pretty_dio_logger: ^1.4.0
   fpdart: ^1.1.0
-  git2dart: ^0.4.0
-  flutter_bloc: ^9.1.1
   flutter_secure_storage: ^9.2.4
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   path: ^1.9.1
-  shared_preferences: ^2.5.3
-  uuid: ^4.5.1
-  path_provider: ^2.1.5
-  screen_retriever: ^0.2.0
-  window_manager: ^0.5.1
 
 dev_dependencies:
-  bloc_test: ^10.0.0
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
