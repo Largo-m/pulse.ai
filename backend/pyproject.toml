@@ -19,7 +19,8 @@ dev = [
 
 [project.scripts]
 cursor-task = "cursor_task.cli:main"
+pulse-execute-specs = "pulse_specs.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cursor_task*"]
+include = ["cursor_task*", "pulse_specs*"]

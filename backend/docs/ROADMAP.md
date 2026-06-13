@@ -3,18 +3,25 @@
 Documento consolidado das decisões de arquitetura e plano de implementação em fases.
 Cada fase corresponde a **um PR** com responsabilidade única e diff pequeno (~100–400 linhas).
 
+**Especificações detalhadas:** [specs/README.md](specs/README.md) — produto e técnico por fase em `specs/phases/`.
+
 ---
 
 ## Contexto
 
 O **pulse-cursor-task** é um orquestrador Python que executa workflows interativos (PRD, TechSpec, ADRs) via agentes de IA. Hoje opera como CLI terminal-first, acoplado ao Cursor, com paths hardcoded e artefatos salvos em disco.
 
+**Escopo deste roadmap:** backend Python com **interações de view exclusivamente via terminal (TUI)** e **execução exclusivamente via Cursor** (SDK, ACP, stream-cli).  
+**Fora de escopo:** Flutter Desktop, sidecar HTTP/WebSocket, empacotamento gráfico e providers alternativos (Ollama, cloud).
+
 ### Estado atual
 
 ```
-Flutter Desktop (futuro)
-        ↕ (ainda não existe)
+Terminal (stdout + input())
+        ↕
 cursor-task CLI / biblioteca Python
+        ├── StreamRenderer (tags [STATUS], [OUTPUT], [QUESTION]…)
+        └── QuestionHandler (input de linha única)
         ↕
 Executores Cursor (SDK, ACP, stream-cli)
         ↕
@@ -24,14 +31,16 @@ Skills em references/ + artefatos em .workflow/tasks/
 ### Estado alvo
 
 ```
-Flutter Desktop
-        ↕ REST + WebSocket (localhost)
-Sidecar Python (pulse-orchestrator)
+Terminal TUI (Textual) — pulse CLI interativo
+        ↕
+Orquestrador Python (cursor-task / pulse)
         ├── Workflow Engine (skills, fases, aprovação)
+        ├── TerminalView (StreamRenderer + QuestionHandler injetáveis)
         ├── ProjectContextScanner (re-sync a cada workflow)
         ├── ArtifactRepository (SQLite)
         ├── Project Registry
-        └── AgentProviders (Cursor, Ollama, OpenAI, Anthropic...)
+        └── AgentProvider (abstração)
+                └── Cursor apenas (SDK, ACP, stream-cli)
                 ↕
         project_path dinâmico (filesystem do usuário)
 ```
@@ -42,14 +51,40 @@ Sidecar Python (pulse-orchestrator)
 
 | # | Decisão | Detalhe |
 |---|---------|---------|
-| 1 | **Sidecar local** | FastAPI + WebSocket em `127.0.0.1`; Flutter não fala com LLMs diretamente |
-| 2 | **Multi-LLM** | Contrato `AgentProvider`; Cursor primeiro; Ollama valida abstração; cloud depois |
+| 1 | **Terminal-first** | Toda interação de view (streaming, perguntas, menus, projetos) via TUI no terminal; skill `terminal-ui` como guia de UX |
+| 2 | **Cursor-only (runtime)** | Único provider operacional é Cursor; contrato `AgentProvider` prepara extensão futura sem expor outros vendors agora |
 | 3 | **Paths dinâmicos** | `project_path` por projeto, registrado no SQLite; sem defaults hardcoded |
 | 4 | **Artefatos no DB** | SQLite como fonte da verdade para PRD, TechSpec e ADRs; export `.md` opcional |
 | 5 | **Rules/tools sem cache** | Re-scan do filesystem no início de **cada workflow**; DB guarda só overrides (toggles) |
 | 6 | **Três camadas de contexto** | Pulse (skills globais) → Projeto (rules/tools) → Tarefa (artefatos do DB) |
-| 7 | **Instalação transparente** | Sidecar embarcado via PyInstaller no bundle Flutter; Lifecycle Manager sobe o processo |
+| 7 | **View injetável** | `StreamRenderer` e `QuestionHandler` são contratos; TUI, modo plain e `--json` compartilham o runner |
 | 8 | **PRs pequenos** | Uma responsabilidade por fase; ideal < 250 linhas de diff |
+
+### Camada de view terminal
+
+Implementação alvo: **[Textual](https://textual.textualize.io/)** (Python), seguindo os princípios da skill `backend/.cursor/skills/terminal-ui/`:
+
+| Princípio (skill) | Aplicação no Pulse |
+|-------------------|-------------------|
+| `render-overwrite-dont-clear`, `render-partial-updates` | Painéis de streaming atualizados in-place, sem limpar tela |
+| `render-synchronized-output` | Synchronized Output Protocol para animações de status |
+| `input-escape-routes` | Esc/Ctrl+C cancela prompt ou workflow com saída limpa |
+| `input-immediate-feedback` | Destaque visual imediato em seleção de opções A/B/C/D |
+| `prompt-validation`, `prompt-cancellation` | Respostas vazias rejeitadas; cancelamento gracioso |
+| `prompt-spinner-tasks`, `ux-progress-indicators` | Spinner durante execução do agente (> 1 s) |
+| `tuicomp-static-for-logs` | Log de output/thinking em região estática (scrollback preservado) |
+| `ux-color-semantics` | Verde sucesso, vermelho erro, amarelo thinking, neutro output |
+| `robust-tty-detection` | Sem TTY → fallback plain ou `--json` (CI/scripts) |
+| `robust-terminal-restore` | Restaurar estado do terminal ao sair (sucesso ou erro) |
+| `tuicfg-json-output`, `tuicfg-flags-over-args` | `--json` para automação; flags explícitas na CLI |
+
+Modos de operação:
+
+| Modo | Quando | Renderer / Handler |
+|------|--------|-------------------|
+| **TUI** | TTY interativo (padrão) | `TextualStreamRenderer` + `TextualQuestionHandler` |
+| **Plain** | `PULSE_PLAIN=1` ou `--plain` | `StreamRenderer` + `QuestionHandler` (atual) |
+| **JSON** | `--json` ou pipe/CI | `JsonStreamRenderer` + respostas via stdin JSON |
 
 ### Precedência de contexto
 
@@ -113,17 +148,15 @@ flowchart LR
     P5 --> P6[6 Scanner]
     P6 --> P7[7 Composer]
     P7 --> P8[8 Overrides]
-    P8 --> P9[9 Sidecar]
-    P9 --> P10[10 API Projects]
-    P10 --> P11[11 API Workflows]
-    P11 --> P12[12 WebSocket]
-    P12 --> P13[13 Ollama]
-    P12 --> P15[15 MCP Cursor]
-    P12 --> P16[16 Bundle]
-    P13 --> P14[14 Cloud LLM]
+    P8 --> P9[9 View contracts]
+    P9 --> P10[10 TUI Renderer]
+    P10 --> P11[11 TUI Prompts]
+    P11 --> P12[12 TUI App shell]
+    P12 --> P13[13 MCP Cursor]
+    P12 --> P14[14 Headless JSON]
 ```
 
-Fases 13–15 paralelizáveis após a 12. Fase 16 depende da 12.
+Fases 13 e 14 paralelizáveis após a 12.
 
 ---
 
@@ -144,7 +177,7 @@ Fases 13–15 paralelizáveis após a 12. Fase 16 depende da 12.
 
 **Entrega:** ~150 linhas. Zero feature nova.
 
-**Fora de escopo:** novos providers, API, DB.
+**Fora de escopo:** novos providers (Ollama, OpenAI), TUI, DB, flags `--provider`.
 
 ---
 
@@ -172,7 +205,7 @@ Fases 13–15 paralelizáveis após a 12. Fase 16 depende da 12.
 
 **PR:** `feat: persistência de projetos em SQLite`
 
-**Responsabilidade:** CRUD de projetos — sem artefatos ou API.
+**Responsabilidade:** CRUD de projetos — sem artefatos ou TUI.
 
 **Tasks:**
 
@@ -275,7 +308,7 @@ Fases 13–15 paralelizáveis após a 12. Fase 16 depende da 12.
 
 **Tasks:**
 
-- [ ] Migration: `project_settings` (`disabled_rules`, `disabled_mcp`, `provider_override`)
+- [ ] Migration: `project_settings` (`disabled_rules`, `disabled_mcp`, `model_override`, `executor_override`)
 - [ ] `SettingsRepository` + merge pós-scan
 - [ ] Testes: rule desabilitada não aparece no prompt
 
@@ -285,142 +318,105 @@ Fases 13–15 paralelizáveis após a 12. Fase 16 depende da 12.
 
 ---
 
-### Fase 9 — Sidecar: servidor mínimo
+### Fase 9 — Contratos de view terminal
 
-**PR:** `feat: sidecar HTTP com health check`
+**PR:** `refactor: formalizar contratos StreamRenderer e QuestionHandler`
 
-**Responsabilidade:** processo servível — sem workflows ainda.
+**Responsabilidade:** preparar injeção de renderers/handlers sem mudar comportamento plain.
 
 **Tasks:**
 
-- [ ] Adicionar `fastapi`, `uvicorn` ao `pyproject.toml`
-- [ ] Criar `server/app.py` com `GET /health` → `{ status, version }`
-- [ ] Entry point: `pulse-orchestrator serve --host 127.0.0.1 --port 8765`
-- [ ] Inicializar DB na subida do servidor
-- [ ] Manter `cursor-task` CLI como alias legado
+- [ ] Extrair protocolos/ABCs em `view/base.py` a partir de `StreamRenderer` e `QuestionHandler`
+- [ ] Factory `create_view_mode(plain | tui | json)` com detecção TTY (`robust-tty-detection`)
+- [ ] Runner e executores recebem renderer/handler via `ExecutionContext`
+- [ ] Testes: mock renderer captura eventos `status`, `output`, `question`, `success`, `error`
+- [ ] Documentar modos plain / TUI / JSON na CLI
 
-**Entrega:** ~120 linhas.
+**Entrega:** ~150 linhas.
 
-**Depende de:** Fase 3.
+**Depende de:** Fase 8.
 
 ---
 
-### Fase 10 — API REST de projetos
+### Fase 10 — TUI: renderer de streaming
 
-**PR:** `feat: REST CRUD de projetos`
+**PR:** `feat: TextualStreamRenderer com painéis de output e thinking`
 
-**Responsabilidade:** expor projetos para o Flutter.
-
-**Tasks:**
-
-- [ ] `POST /projects` — valida `local_path`
-- [ ] `GET /projects`, `GET /projects/{id}`, `DELETE /projects/{id}`
-- [ ] `GET /projects/{id}/context/preview` — scanner on-demand
-- [ ] `PATCH /projects/{id}/settings` — overrides
-- [ ] Testes com `TestClient` FastAPI
-
-**Entrega:** ~200 linhas.
-
-**Depende de:** Fases 6, 8, 9.
-
----
-
-### Fase 11 — API de workflows (REST)
-
-**PR:** `feat: iniciar workflow via REST`
-
-**Responsabilidade:** disparar PRD/TechSpec e consultar status — streaming na fase seguinte.
+**Responsabilidade:** substituir tags `[OUTPUT]`/`[THINKING]` por layout Textual responsivo.
 
 **Tasks:**
 
-- [ ] `POST /workflows` — `{ project_id, kind, prompt?, prd_artifact_id? }`
-- [ ] Executar runner em thread/async; status `pending → running → completed | failed`
-- [ ] `GET /workflows/{id}` — status + `artifact_id`
-- [ ] `GET /artifacts/{id}` — conteúdo markdown
-- [ ] Re-sync de contexto no POST
-
-**Entrega:** ~250 linhas. Limitação conhecida: perguntas interativas bloqueiam até Fase 12.
-
-**Depende de:** Fases 5, 7, 10.
-
----
-
-### Fase 12 — WebSocket para streaming e perguntas
-
-**PR:** `feat: WebSocket de sessão interativa`
-
-**Responsabilidade:** desacoplar UI do terminal — habilita Flutter.
-
-**Tasks:**
-
-- [ ] Protocolo de eventos: `status`, `output`, `thinking`, `question`, `success`, `error`
-- [ ] `WebSocketStreamRenderer` implementa `StreamRenderer`
-- [ ] `WebSocketQuestionHandler` aguarda `{ type: "answer" }`
-- [ ] `WS /workflows/{id}/stream`
-- [ ] Refatorar runner para renderer/handler injetados
-- [ ] Teste de integração com cliente WS fake
+- [ ] Adicionar `textual` ao `pyproject.toml`
+- [ ] `view/textual_renderer.py` implementa contrato `StreamRenderer`
+- [ ] Painéis: status bar, output (estático/scroll), thinking (colapsável), erro
+- [ ] Atualização in-place sem flicker (`render-overwrite-dont-clear`, `render-partial-updates`)
+- [ ] Spinner de progresso durante execução longa (`ux-progress-indicators`)
+- [ ] Restaurar terminal ao sair (`robust-terminal-restore`)
+- [ ] Testes com `textual.pilot` ou renderer fake
 
 **Entrega:** ~300 linhas.
 
-**Depende de:** Fase 11.
-
-**Contrato WebSocket:**
-
-```
-Servidor → Cliente:
-  { "type": "status",   "message": "..." }
-  { "type": "output",   "text": "...", "delta": true }
-  { "type": "thinking", "text": "..." }
-  { "type": "question", "text": "...", "options": ["A) ...", "B) ..."] }
-  { "type": "success",  "artifact_id": "...", "output_file": "..." }
-  { "type": "error",    "message": "..." }
-
-Cliente → Servidor:
-  { "type": "answer", "text": "A) Aprovado" }
-```
+**Depende de:** Fase 9.
 
 ---
 
-### Fase 13 — Provider Ollama + WorkspaceTools
+### Fase 11 — TUI: prompts interativos
 
-**PR:** `feat: provider Ollama com tools de workspace`
+**PR:** `feat: TextualQuestionHandler com seleção de opções`
 
-**Responsabilidade:** primeiro provider não-Cursor — valida abstração da Fase 1.
+**Responsabilidade:** perguntas A/B/C/D e aprovação via teclado, não `input()` de linha única.
 
 **Tasks:**
 
-- [ ] `workspace/tools.py`: `read_file`, `grep`, `list_dir` (sandboxed em `project_path`)
-- [ ] `providers/ollama.py` implementa `AgentProvider`
-- [ ] Factory: `--provider ollama`
-- [ ] Tool catalog para Ollama
-- [ ] Testes com mock HTTP
+- [ ] `view/textual_prompts.py` — select/radio para opções; texto livre quando sem opções
+- [ ] Reutilizar lógica de parsing em `QuestionHandler` (extração ACP, aprovação)
+- [ ] Feedback visual imediato na seleção (`input-immediate-feedback`)
+- [ ] Esc cancela com mensagem clara (`input-escape-routes`, `prompt-cancellation`)
+- [ ] Validação de resposta vazia (`prompt-validation`)
+- [ ] Cores semânticas: pergunta, opção selecionada, confirmação (`ux-color-semantics`)
+- [ ] Testes de integração com perguntas de aprovação e clarificação
+
+**Entrega:** ~250 linhas.
+
+**Depende de:** Fase 10.
+
+---
+
+### Fase 12 — TUI: shell do aplicativo
+
+**PR:** `feat: pulse TUI — projetos, workflows e preview de contexto`
+
+**Responsabilidade:** experiência terminal completa substituindo subcomandos avulsos.
+
+**Tasks:**
+
+- [ ] App Textual principal: menu → projeto → workflow (PRD / TechSpec / tasks)
+- [ ] Listar/criar projetos via `ProjectRepository` (paths validados)
+- [ ] Tela de preview de contexto (`scanner.scan` on-demand)
+- [ ] Tela de settings/overrides por projeto
+- [ ] Sessão de workflow embute renderer + prompts das fases 10–11
+- [ ] Intro/outro de sessão (`ux-intro-outro`); próximos passos ao concluir (`ux-next-steps`)
+- [ ] Entry point: `pulse` (TUI padrão); `cursor-task` mantido como alias plain/legado
+- [ ] Testes de navegação com pilot
 
 **Entrega:** ~350 linhas.
 
-**Depende de:** Fases 1, 7.
+**Depende de:** Fases 8 e 11.
+
+**Fluxo TUI (alvo):**
+
+```
+pulse
+  → Selecionar ou registrar projeto
+  → Escolher workflow (PRD | TechSpec | tasks)
+  → [opcional] Preview de rules/skills/MCP
+  → Sessão streaming + perguntas interativas
+  → Artefato salvo no DB (+ export .md opcional)
+```
 
 ---
 
-### Fase 14 — Provider OpenAI ou Anthropic
-
-**PR:** `feat: provider cloud com function calling`
-
-**Responsabilidade:** provider cloud — reutiliza `WorkspaceTools` da Fase 13.
-
-**Tasks:**
-
-- [ ] `providers/openai.py` ou `providers/anthropic.py` (um por PR)
-- [ ] Mapear tool catalog → function definitions
-- [ ] Credencial via env
-- [ ] `--provider openai` na CLI e no `POST /workflows`
-
-**Entrega:** ~300 linhas. Split em 14a/14b se ambos forem necessários.
-
-**Depende de:** Fase 13.
-
----
-
-### Fase 15 — MCP do projeto no provider Cursor
+### Fase 13 — MCP do projeto no provider Cursor
 
 **PR:** `feat: carregar MCP servers do scan na sessão Cursor`
 
@@ -439,48 +435,38 @@ Cliente → Servidor:
 
 ---
 
-### Fase 16 — Empacotamento do sidecar
+### Fase 14 — Modo headless e saída JSON
 
-**PR:** `feat: binário standalone do sidecar via PyInstaller`
+**PR:** `feat: modo não-interativo para CI e scripts`
 
-**Responsabilidade:** preparar bundle para Flutter.
+**Responsabilidade:** automação sem TUI — complementa a experiência terminal interativa.
 
 **Tasks:**
 
-- [ ] `packaging/pyinstaller.spec`
-- [ ] `scripts/build-sidecar.sh` (macOS primeiro)
-- [ ] `/health` retorna versão semver
-- [ ] Documentar paths de embarque no Flutter
-- [ ] CI: build smoke test
+- [ ] `JsonStreamRenderer` emite NDJSON: `status`, `output`, `question`, `success`, `error`
+- [ ] Respostas via stdin JSON quando `--json` e pergunta pendente
+- [ ] Detecção automática: pipe → plain/json; TTY → TUI (`robust-tty-detection`)
+- [ ] Exit codes significativos (`robust-exit-codes`)
+- [ ] Documentar contrato JSON no README
+- [ ] Testes de integração headless
 
-**Entrega:** ~100 linhas de config + script.
+**Entrega:** ~200 linhas.
 
 **Depende de:** Fase 12.
 
----
+**Contrato JSON (referência):**
 
-## Track Flutter (repositório separado)
+```
+{"type": "status",   "message": "..."}
+{"type": "output",   "text": "...", "delta": true}
+{"type": "thinking", "text": "..."}
+{"type": "question", "text": "...", "options": ["A) ...", "B) ..."]}
+{"type": "success",  "artifact_id": "...", "output_file": "..."}
+{"type": "error",    "message": "..."}
 
-Depende da Fase 12+.
-
-| PR | Conteúdo |
-|----|----------|
-| F1 | `OrchestratorLifecycle` — sobe sidecar, health check |
-| F2 | Onboarding — provider, API key, primeiro projeto |
-| F3 | Lista projetos + preview de context (`GET .../context/preview`) |
-| F4 | Tela workflow — WebSocket chat + perguntas A/B/C/D |
-| F5 | Visualização de artefatos versionados |
-| F6 | Bundle sidecar no instalador (DMG / MSI / AppImage) |
-
-### Experiência de instalação (alvo)
-
-1. Usuário baixa instalador único (~120 MB)
-2. Instala normalmente (sem Python, pip ou CLI manual)
-3. Primeira execução: wizard (provider, API key, pasta do projeto)
-4. Sidecar sobe automaticamente em `127.0.0.1`
-5. Uso diário: abrir app → sidecar inicia → workflow com re-sync de contexto
-
-Dados do usuário: `~/Library/Application Support/Pulse/` (macOS), `%APPDATA%\Pulse\` (Windows), `~/.local/share/pulse/` (Linux).
+stdin (resposta):
+{"type": "answer", "text": "A) Aprovado"}
+```
 
 ---
 
@@ -495,7 +481,8 @@ project_settings (
   project_id,
   disabled_rules JSON,
   disabled_mcp JSON,
-  provider_override TEXT
+  model_override TEXT,
+  executor_override TEXT
 )
 
 workflows (
@@ -517,6 +504,7 @@ Rules e tools **não** têm tabela de cache — apenas toggles em `project_setti
 - [ ] Diff < ~400 linhas (ideal < 250)
 - [ ] Testes cobrindo comportamento novo
 - [ ] CLI existente não quebra (breaking change documentado só na Fase 2)
+- [ ] Interações de view seguem skill `terminal-ui` quando tocando TUI/prompts
 - [ ] Sem escopo extra — se crescer, dividir fase
 
 ---
@@ -533,13 +521,19 @@ Rules e tools **não** têm tabela de cache — apenas toggles em `project_setti
 | 6 | Scanner rules/tools | 300 | 2 |
 | 7 | Composer + re-sync | 200 | 5, 6 |
 | 8 | Overrides toggles | 150 | 3, 7 |
-| 9 | Sidecar health | 120 | 3 |
-| 10 | REST projects | 200 | 6, 8, 9 |
-| 11 | REST workflows | 250 | 5, 7, 10 |
-| 12 | WebSocket | 300 | 11 |
-| 13 | Ollama + tools | 350 | 1, 7 |
-| 14 | Cloud LLM | 300 | 13 |
-| 15 | MCP Cursor | 150 | 6, 12 |
-| 16 | PyInstaller | 100 | 12 |
+| 9 | Contratos de view | 150 | 8 |
+| 10 | TUI renderer | 300 | 9 |
+| 11 | TUI prompts | 250 | 10 |
+| 12 | TUI app shell | 350 | 8, 11 |
+| 13 | MCP Cursor | 150 | 6, 12 |
+| 14 | Headless JSON | 200 | 12 |
 
-**Ordem de execução:** `1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12`, depois `13 → 14`, `15` e `16` em paralelo.
+**Ordem de execução:** `1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12`, depois `13` e `14` em paralelo.
+
+**Experiência de uso (alvo):**
+
+1. Desenvolvedor instala Pulse via pip/uv no ambiente Python
+2. Executa `pulse` no terminal — TUI abre com seleção de projeto
+3. CI/scripts usam `cursor-task --json` ou `--plain` sem TTY
+
+Dados locais: `~/.local/share/pulse/` (Linux), `~/Library/Application Support/Pulse/` (macOS), `%APPDATA%\Pulse\` (Windows).

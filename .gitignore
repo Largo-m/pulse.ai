@@ -1,0 +1,4 @@
+backend/docs/*
+backend/cursor-execute-tasks.sh
+backend/cursor-execute-specs.sh
+backend/skills-lock.json

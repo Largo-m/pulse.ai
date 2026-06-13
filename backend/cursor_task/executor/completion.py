@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from cursor_task.executor.base import ExecutionContext
 from cursor_task.task_tracker import is_task_completed
+from pulse_specs.tracker import is_spec_completed
 
 APPROVAL_REQUIRED_PROMPT = (
     "O documento foi gravado antes da aprovação do usuário. "
@@ -22,8 +23,15 @@ MISSING_EXECUTE_TASK_COMPLETION = (
     "Atualize checkboxes e status no task file e em `_tasks.md` conforme a skill execute-task."
 )
 
+MISSING_EXECUTE_SPEC_COMPLETION = (
+    "A implementação parece concluída, mas o status file não reflete completion. "
+    "Atualize `_status.md` com `status: completed`, faça commit e abra o PR conforme execute-spec."
+)
+
 
 def resolve_completion(context: ExecutionContext) -> tuple[bool, str | None]:
+    if context.execution_mode == "spec":
+        return _resolve_spec_completion(context)
     if context.execution_mode == "execute":
         return _resolve_execute_completion(context)
 
@@ -40,6 +48,15 @@ def resolve_completion(context: ExecutionContext) -> tuple[bool, str | None]:
         return False, APPROVAL_REQUIRED_PROMPT
 
     return False, None
+
+
+def _resolve_spec_completion(context: ExecutionContext) -> tuple[bool, str | None]:
+    status_file = context.execute_spec_status_file
+    if status_file is None:
+        raise ValueError("contexto spec incompleto: status file ausente")
+    if is_spec_completed(status_file):
+        return True, None
+    return False, MISSING_EXECUTE_SPEC_COMPLETION
 
 
 def _resolve_execute_completion(context: ExecutionContext) -> tuple[bool, str | None]:

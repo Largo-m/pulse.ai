@@ -9,7 +9,7 @@ from cursor_task.artifact_writer import ArtifactWriter
 from cursor_task.question_handler import QuestionHandler
 from cursor_task.stream_renderer import StreamRenderer
 
-ExecutionMode = Literal["artifact", "execute"]
+ExecutionMode = Literal["artifact", "execute", "spec"]
 
 
 @dataclass
@@ -25,6 +25,7 @@ class ExecutionContext:
     execute_task_file: Path | None = None
     execute_master_tasks_file: Path | None = None
     execute_task_number: str | None = None
+    execute_spec_status_file: Path | None = None
 
 
 @dataclass

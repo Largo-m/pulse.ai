@@ -5,7 +5,7 @@ from cursor_task.executor.completion import resolve_completion
 
 
 def is_unattended_execution(context: ExecutionContext) -> bool:
-    return context.execution_mode == "execute"
+    return context.execution_mode in ("execute", "spec")
 
 
 def resolve_finished_iteration(
