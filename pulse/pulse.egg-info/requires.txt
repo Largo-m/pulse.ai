@@ -1,5 +1,0 @@
-questionary>=2.0
-rich>=13.0
-
-[dev]
-pytest>=8.0
