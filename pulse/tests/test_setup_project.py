@@ -1,0 +1,102 @@
+from pathlib import Path
+
+import pytest
+
+from pulse.plan.setup_project_prompt import (
+    build_setup_project_artifact_prompt,
+    build_setup_project_prompt,
+    resolve_tlc_spec_skill,
+)
+from pulse.presentation.prompt.ask_question import (
+    format_option_label,
+    parse_questionnaire_meta,
+    resolve_question_progress,
+)
+from pulse.skills.loader import bundled_skill_dir, load_bundled_skill
+
+
+def test_bundled_skill_dir():
+    skill_dir = bundled_skill_dir("tlc-spec-driven")
+    assert skill_dir.name == "tlc-spec-driven"
+    assert (skill_dir / "SKILL.md").is_file()
+
+
+def test_resolve_tlc_spec_skill_loads_references():
+    skill_dir, documents = resolve_tlc_spec_skill()
+    assert skill_dir.name == "tlc-spec-driven"
+    assert "SKILL.md" in documents
+    assert "project-init.md" in documents
+    assert "roadmap.md" in documents
+    assert "user-input.md" in documents
+
+
+def test_load_bundled_skill_missing_raises():
+    with pytest.raises(FileNotFoundError, match="nonexistent-skill"):
+        load_bundled_skill("nonexistent-skill", references=())
+
+
+def test_build_setup_project_prompt_includes_optional_questionnaire():
+    _, documents = resolve_tlc_spec_skill()
+    workspace = Path("/tmp/my-project")
+    prompt = build_setup_project_prompt(
+        workspace=workspace,
+        user_prompt="App de trading",
+        documents=documents,
+    )
+    assert "tlc-spec-driven" in prompt
+    assert "App de trading" in prompt
+    assert "project-init.md" in prompt
+    assert "## user-input.md" not in prompt
+    assert str(workspace) in prompt
+    assert "cursor/ask_question" in prompt
+    assert "SETUP_READY" in prompt
+    assert "Isolamento" in prompt
+    assert "Uma pergunta por chamada" in prompt
+    assert "somente via ACP" in prompt
+    assert "Pulse **não** gera perguntas" in prompt
+    assert "## project-init.md" not in prompt
+
+
+def test_build_setup_project_artifact_prompt_targets_specs():
+    _, documents = resolve_tlc_spec_skill()
+    prompt = build_setup_project_artifact_prompt(
+        workspace=Path("/tmp/my-project"),
+        user_prompt="App",
+        documents=documents,
+        analysis_summary="Stack: Vue + Node",
+    )
+    assert ".specs/project/PROJECT.md" in prompt
+    assert ".specs/project/ROADMAP.md" in prompt
+    assert ".specs/project/STATE.md" in prompt
+    assert "Vue + Node" in prompt
+    assert "Análise desta execução" in prompt
+    assert "sessão anterior" not in prompt.lower()
+
+
+def test_format_option_label_adds_letter_prefix():
+    assert format_option_label(0, "Paper trading") == "A) Paper trading"
+    assert format_option_label(1, "B) Já prefixado") == "B) Já prefixado"
+
+
+def test_parse_questionnaire_meta():
+    meta = parse_questionnaire_meta(
+        {
+            "title": "Preciso de algumas informações antes de continuar.",
+            "questionIndex": 2,
+            "totalQuestions": 4,
+        }
+    )
+    assert meta["title"].startswith("Preciso")
+    assert meta["index"] == 2
+    assert meta["total"] == 4
+
+
+def test_resolve_question_progress_prefers_explicit_meta():
+    index, total = resolve_question_progress(
+        question={"id": "q1", "prompt": "Pergunta?"},
+        position=1,
+        batch_size=1,
+        meta={"index": 3, "total": 4},
+    )
+    assert index == 3
+    assert total == 4

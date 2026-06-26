@@ -1,0 +1,3 @@
+[console_scripts]
+pulse = pulse.cli:main
+pulse-mcp-ask = pulse.mcp.ask_stdio:main

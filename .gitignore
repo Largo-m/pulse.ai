@@ -7,3 +7,6 @@ specs/*
 .pulse/worktrees/
 .pulse/runs/
 .pulse/artifacts/*/acp-events.jsonl
+.venv/
+__pycache__/
+*.py[cod]
