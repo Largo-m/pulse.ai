@@ -1,10 +1,4 @@
-from pulse.acp.models import is_unsupported_interview_model, resolve_interview_model_id
-
-
-def test_is_unsupported_interview_model():
-    assert not is_unsupported_interview_model(model_id="auto", name="Auto")
-    assert is_unsupported_interview_model(model_id="composer-2.5", name="Composer 2.5")
-    assert not is_unsupported_interview_model(model_id="claude-sonnet-4-6", name="Claude Sonnet")
+from pulse.acp.models import resolve_interview_model_id
 
 
 def test_resolve_interview_model_id_uses_auto_when_config_is_auto():
@@ -20,7 +14,7 @@ def test_resolve_interview_model_id_uses_auto_when_config_is_auto():
     assert resolve_interview_model_id(session, None) == "auto-id"
 
 
-def test_resolve_interview_model_id_honors_explicit_supported_preference():
+def test_resolve_interview_model_id_honors_explicit_preference():
     session = {
         "models": {
             "availableModels": [
@@ -32,7 +26,7 @@ def test_resolve_interview_model_id_honors_explicit_supported_preference():
     assert resolve_interview_model_id(session, "gpt-5.5") == "gpt-id"
 
 
-def test_resolve_interview_model_id_skips_composer_preference():
+def test_resolve_interview_model_id_honors_composer_preference():
     session = {
         "models": {
             "availableModels": [
@@ -41,4 +35,15 @@ def test_resolve_interview_model_id_skips_composer_preference():
             ]
         }
     }
-    assert resolve_interview_model_id(session, "composer-2.5") == "sonnet-id"
+    assert resolve_interview_model_id(session, "composer-2.5") == "composer-id"
+
+
+def test_resolve_interview_model_id_returns_none_when_preference_not_available():
+    session = {
+        "models": {
+            "availableModels": [
+                {"modelId": "gpt-id", "name": "gpt-5.5"},
+            ]
+        }
+    }
+    assert resolve_interview_model_id(session, "composer-2.5") is None
