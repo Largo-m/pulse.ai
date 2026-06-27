@@ -5,6 +5,7 @@ from pathlib import Path
 
 import questionary
 
+from pulse.plan.runner import run_plan
 from pulse.plan.spec_types import SPEC_TYPES, SpecType
 from pulse.terminal.styles import MENU_STYLE
 from pulse.terminal.tty import is_interactive
@@ -13,24 +14,21 @@ from pulse.terminal.tty import is_interactive
 @dataclass(frozen=True)
 class WelcomeOption:
     label: str
-    argv: list[str]
+    action: str
 
 
 def build_welcome_options(ready: bool) -> list[WelcomeOption]:
     if ready:
         return [
-            WelcomeOption("Iniciar pipeline de spec", ["plan"]),
-            WelcomeOption("Verificar ambiente", ["doctor"]),
-            WelcomeOption("Reconfigurar Pulse", ["init", "--force"]),
-            WelcomeOption("Ver todos os comandos", ["--help"]),
-            WelcomeOption("Sair", []),
+            WelcomeOption("Iniciar pipeline de spec", "plan"),
+            WelcomeOption("Configurações", "settings"),
+            WelcomeOption("Sair", "exit"),
         ]
 
     return [
-        WelcomeOption("Configurar Pulse", ["init"]),
-        WelcomeOption("Verificar ambiente", ["doctor"]),
-        WelcomeOption("Ver todos os comandos", ["--help"]),
-        WelcomeOption("Sair", []),
+        WelcomeOption("Configurar Pulse", "init"),
+        WelcomeOption("Configurações", "settings"),
+        WelcomeOption("Sair", "exit"),
     ]
 
 
@@ -50,16 +48,16 @@ def _prompt_spec_type() -> SpecType | None:
     ).ask()
 
 
-def _resolve_plan_argv() -> list[str] | None:
+def run_plan_flow(*, cwd: Path | None = None) -> int:
     spec_type = _prompt_spec_type()
     if spec_type is None:
-        return None
+        return 0
 
     if spec_type.id == "setup-project":
-        return ["plan", "Novo projeto", "--type", spec_type.id]
+        return run_plan(spec_type_id=spec_type.id, user_prompt="Novo projeto")
 
     if spec_type.id == "analyze-codebase":
-        return ["plan", "Mapear codebase existente", "--type", spec_type.id]
+        return run_plan(spec_type_id=spec_type.id, user_prompt="Mapear codebase existente")
 
     prompt = questionary.text(
         "Descreva o workflow:",
@@ -67,19 +65,19 @@ def _resolve_plan_argv() -> list[str] | None:
         style=MENU_STYLE,
     ).ask()
     if prompt is None:
-        return None
+        return 0
     prompt = prompt.strip()
     if not prompt:
         questionary.print("Descrição vazia. Operação cancelada.", style="fg:yellow")
-        return None
-    return ["plan", prompt, "--type", spec_type.id]
+        return 0
+    return run_plan(spec_type_id=spec_type.id, user_prompt=prompt)
 
 
 def prompt_welcome_action(
     *,
     cwd: Path | None = None,
     initialized: bool | None = None,
-) -> list[str] | None:
+) -> str | None:
     if not is_interactive():
         return None
 
@@ -96,13 +94,7 @@ def prompt_welcome_action(
         use_shortcuts=len(options) <= 9,
     ).ask()
 
-    if choice is None:
+    if choice is None or choice.action == "exit":
         return None
 
-    if not choice.argv:
-        return None
-
-    if choice.argv == ["plan"]:
-        return _resolve_plan_argv()
-
-    return list(choice.argv)
+    return choice.action

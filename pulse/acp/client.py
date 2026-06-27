@@ -11,6 +11,7 @@ from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
+from pulse.acp.models import extract_model_labels
 
 
 @dataclass
@@ -160,18 +161,27 @@ class AcpClient:
         return "".join(chunks)
 
 
+def fetch_acp_available_models(
+    *,
+    command: list[str] | None = None,
+    cwd: str,
+    timeout_seconds: float = 30.0,
+) -> list[str]:
+    acp_command = command or ["agent", "acp"]
+    client = AcpClient(acp_command, timeout_seconds=timeout_seconds)
+    try:
+        client.start()
+        client.initialize()
+        session = client.new_session(cwd)
+        return extract_model_labels(session)
+    except (RuntimeError, TimeoutError, OSError):
+        return []
+    finally:
+        client.close()
+
+
 def _extract_models(session_result: dict[str, Any]) -> list[str]:
-    models = session_result.get("models", {})
-    available = models.get("availableModels", [])
-    result: list[str] = []
-    for item in available:
-        if not isinstance(item, dict):
-            continue
-        model_id = item.get("modelId")
-        name = item.get("name", model_id)
-        if model_id:
-            result.append(str(name or model_id))
-    return result
+    return extract_model_labels(session_result)
 
 
 def probe_acp_connection(

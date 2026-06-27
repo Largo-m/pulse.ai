@@ -15,24 +15,11 @@ from pulse.config import (
     mark_onboarding_complete,
     project_config_file,
 )
-from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.doctor.checks import CheckResult, check_agent_in_path, check_auth, find_agent_binary
 from pulse.doctor.report import print_doctor_report, run_agent_login
+from pulse.terminal.prompts import prompt_model, prompt_permission_policy, prompt_workspace_dir
 from pulse.terminal.styles import MENU_STYLE
 from pulse.terminal.tty import is_interactive
-
-DEFAULT_MODELS = [
-    "Auto",
-    "claude-sonnet-4-6",
-    "gpt-5.5",
-    "composer-2.5",
-]
-
-PERMISSION_LABELS = {
-    "ask": "Perguntar antes de cada permissão",
-    "auto_approve": "Aprovar automaticamente",
-    "deny_writes": "Permitir leitura, bloquear escrita",
-}
 
 
 def _print_intro(console: Console) -> None:
@@ -40,7 +27,7 @@ def _print_intro(console: Console) -> None:
     console.print(
         Panel(
             "Configure o Pulse para orquestrar workflows com o Cursor Agent via ACP.",
-            title="[bold cyan]pulse init[/bold cyan]",
+            title="[bold cyan]Configurar Pulse[/bold cyan]",
             border_style="cyan",
         )
     )
@@ -87,7 +74,7 @@ def _ensure_auth(console: Console, auth_check: CheckResult) -> CheckResult:
         return check_auth()
 
     questionary.print(
-        "Exporte CURSOR_API_KEY e execute `pulse init` novamente.",
+        "Exporte CURSOR_API_KEY e execute `pulse` novamente.",
         style="fg:yellow",
     )
     return auth_check
@@ -105,44 +92,22 @@ def _run_acp_probe(console: Console, cwd: Path) -> AcpProbeResult:
 
 
 def _prompt_workspace_dir(default: Path) -> Path | None:
-    while True:
-        value = questionary.path(
-            "Diretório para testar conexão ACP (pasta do seu projeto):",
-            default=str(default),
-            style=MENU_STYLE,
-        ).ask()
-        if value is None:
-            return None
-        path = Path(value).expanduser()
-        if not path.is_dir():
-            questionary.print("Diretório inválido. Escolha uma pasta existente.", style="fg:yellow")
-            continue
-        return path.resolve()
+    return prompt_workspace_dir(default)
 
 
 def _prompt_model(available: list[str]) -> str | None:
-    choices = available or DEFAULT_MODELS
+    from pulse.terminal.prompts import DEFAULT_MODELS
+
+    choices = available or list(DEFAULT_MODELS)
     unique: list[str] = []
     for item in choices:
         if item not in unique:
             unique.append(item)
-
-    return questionary.select(
-        "Modelo preferido:",
-        choices=unique,
-        style=MENU_STYLE,
-    ).ask()
+    return prompt_model(choices=unique, label="Modelo preferido:")
 
 
 def _prompt_permission_policy() -> str | None:
-    return questionary.select(
-        "Política de permissões:",
-        choices=[
-            questionary.Choice(PERMISSION_LABELS[key], value=key)
-            for key in PERMISSION_POLICIES
-        ],
-        style=MENU_STYLE,
-    ).ask()
+    return prompt_permission_policy()
 
 
 def run_onboarding_wizard(*, force: bool = False, console: Console | None = None) -> int:
@@ -246,8 +211,6 @@ def run_onboarding_wizard(*, force: bool = False, console: Console | None = None
 
     output.print()
     output.print("[bold]Próximos passos[/bold]")
-    output.print("  pulse doctor          Verificar ambiente")
-    output.print("  pulse config          Ver config efetiva")
-    output.print('  pulse plan "..."      Iniciar pipeline')
+    output.print("  pulse                 Abrir o menu principal")
     output.print()
     return 0

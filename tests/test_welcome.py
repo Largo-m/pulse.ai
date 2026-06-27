@@ -5,7 +5,8 @@ from pathlib import Path
 from rich.console import Console
 
 from pulse.plan.spec_types import SPEC_TYPES
-from pulse.terminal.menu import _resolve_plan_argv, build_welcome_options, prompt_welcome_action
+from pulse.terminal.menu import build_welcome_options, prompt_welcome_action, run_plan_flow
+from pulse.terminal.settings_menu import run_settings_menu
 from pulse.terminal.welcome import is_pulse_ready, render_welcome
 
 
@@ -53,14 +54,17 @@ def test_build_welcome_options_uninitialized():
     options = build_welcome_options(False)
     labels = [option.label for option in options]
     assert "Configurar Pulse" in labels
-    assert options[0].argv == ["init"]
+    assert "Configurações" in labels
+    assert options[0].action == "init"
 
 
 def test_build_welcome_options_ready():
     options = build_welcome_options(True)
     labels = [option.label for option in options]
     assert "Iniciar pipeline de spec" in labels
-    assert any(option.argv == ["init", "--force"] for option in options)
+    assert "Configurações" in labels
+    assert "Verificar ambiente" not in labels
+    assert all(option.action != "doctor" for option in options)
 
 
 def test_prompt_welcome_action_non_tty(monkeypatch):
@@ -68,7 +72,7 @@ def test_prompt_welcome_action_non_tty(monkeypatch):
     assert prompt_welcome_action(initialized=False) is None
 
 
-def test_resolve_plan_argv_includes_spec_type(monkeypatch):
+def test_run_plan_flow_includes_spec_type(monkeypatch):
     monkeypatch.setattr(
         "pulse.terminal.menu._prompt_spec_type",
         lambda: SPEC_TYPES[0],
@@ -77,14 +81,35 @@ def test_resolve_plan_argv_includes_spec_type(monkeypatch):
         "pulse.terminal.menu.questionary.text",
         lambda *args, **kwargs: type("Answer", (), {"ask": lambda self: "Meu workflow"})(),
     )
-    argv = _resolve_plan_argv()
-    assert argv == ["plan", "Meu workflow", "--type", "new-issue"]
+    monkeypatch.setattr(
+        "pulse.terminal.menu.run_plan",
+        lambda **kwargs: 0 if kwargs["user_prompt"] == "Meu workflow" else 1,
+    )
+    assert run_plan_flow() == 0
 
 
-def test_resolve_plan_argv_setup_project_skips_prompt(monkeypatch):
+def test_run_plan_flow_setup_project_skips_prompt(monkeypatch):
     monkeypatch.setattr(
         "pulse.terminal.menu._prompt_spec_type",
         lambda: SPEC_TYPES[2],
     )
-    argv = _resolve_plan_argv()
-    assert argv == ["plan", "Novo projeto", "--type", "setup-project"]
+    captured: dict[str, str] = {}
+
+    def fake_run_plan(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("pulse.terminal.menu.run_plan", fake_run_plan)
+    assert run_plan_flow() == 0
+    assert captured == {"spec_type_id": "setup-project", "user_prompt": "Novo projeto"}
+
+
+def test_run_settings_menu_doctor(monkeypatch, tmp_path: Path):
+    choices = iter(["doctor", "back"])
+
+    def fake_select(*args, **kwargs):
+        return type("Answer", (), {"ask": lambda self: next(choices)})()
+
+    monkeypatch.setattr("pulse.terminal.settings_menu.questionary.select", fake_select)
+    monkeypatch.setattr("pulse.terminal.settings_menu.run_doctor", lambda **kwargs: 0)
+    assert run_settings_menu(cwd=tmp_path) == 0

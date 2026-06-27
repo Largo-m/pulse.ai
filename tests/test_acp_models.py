@@ -1,4 +1,25 @@
-from pulse.acp.models import resolve_interview_model_id
+from pulse.acp.models import extract_model_labels, resolve_interview_model_id
+
+
+def test_extract_model_labels_returns_all_available():
+    session = {
+        "models": {
+            "availableModels": [
+                {"modelId": "auto-id", "name": "Auto"},
+                {"modelId": "gpt-id", "name": "gpt-5.5"},
+                {"modelId": "sonnet-id", "name": "claude-sonnet-4-6"},
+                {"modelId": "composer-id", "name": "composer-2.5"},
+                {"modelId": "opus-id", "name": "claude-opus-4.8"},
+            ]
+        }
+    }
+    assert extract_model_labels(session) == [
+        "Auto",
+        "gpt-5.5",
+        "claude-sonnet-4-6",
+        "composer-2.5",
+        "claude-opus-4.8",
+    ]
 
 
 def test_resolve_interview_model_id_uses_auto_when_config_is_auto():

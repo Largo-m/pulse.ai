@@ -153,6 +153,31 @@ def save_global_config(config: GlobalConfig, path: Path | None = None) -> Path:
     return config_path
 
 
+def update_global_defaults(
+    *,
+    model: str | None = None,
+    permission_policy: str | None = None,
+    path: Path | None = None,
+) -> Path | None:
+    config = load_global_config(path)
+    if config is None:
+        return None
+
+    from dataclasses import replace
+
+    updates: dict[str, str] = {}
+    if model is not None:
+        updates["model"] = model
+    if permission_policy is not None:
+        if permission_policy not in PERMISSION_POLICIES:
+            return None
+        updates["permission_policy"] = permission_policy
+    if not updates:
+        return path or GLOBAL_CONFIG_FILE
+
+    return save_global_config(replace(config, **updates), path)
+
+
 def mark_onboarding_complete(
     *,
     agent_binary: str,

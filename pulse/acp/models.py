@@ -29,6 +29,18 @@ def _find_auto_model_id(available: list[dict[str, Any]]) -> str | None:
     return None
 
 
+def extract_model_labels(session: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for item in _available_models(session):
+        model_id, name = _model_fields(item)
+        if not model_id:
+            continue
+        label = str(name or model_id)
+        if label not in result:
+            result.append(label)
+    return result
+
+
 def resolve_interview_model_id(
     session: dict[str, Any],
     preferred_model: str | None,

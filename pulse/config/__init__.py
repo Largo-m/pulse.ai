@@ -11,6 +11,7 @@ from pulse.config.global_config import (
     mark_onboarding_complete,
     migrate_legacy_global_config,
     save_global_config,
+    update_global_defaults,
 )
 from pulse.config.paths import (
     GLOBAL_CONFIG_DIR,
@@ -29,6 +30,7 @@ from pulse.config.project_config import (
     parse_project_config,
     project_config_exists,
     render_project_config,
+    update_project_defaults,
 )
 from pulse.config.resolved import ResolvedConfig, resolve_config
 
@@ -59,4 +61,6 @@ __all__ = [
     "render_project_config",
     "resolve_config",
     "save_global_config",
+    "update_global_defaults",
+    "update_project_defaults",
 ]

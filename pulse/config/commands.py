@@ -77,7 +77,7 @@ def _show(output: Console, base: Path, workflow: str | None) -> int:
     else:
         output.print(
             "\n[dim]Nenhuma config de projeto (.pulse/config.yaml). "
-            "Use `pulse config init`.[/dim]"
+            "Crie uma em Configurações → Modelo ou Permissões (escopo projeto).[/dim]"
         )
     return 0
 
