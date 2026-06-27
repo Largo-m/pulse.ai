@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-from pulse.config.paths import GLOBAL_CONFIG_DIR, GLOBAL_CONFIG_FILE
+from pulse.config.agents import (
+    DEFAULT_AGENT_NAME,
+    AgentConfig,
+    WorkflowConfig,
+    parse_agents,
+    parse_workflows,
+)
+from pulse.config.paths import (
+    GLOBAL_CONFIG_DIR,
+    GLOBAL_CONFIG_FILE,
+    LEGACY_GLOBAL_CONFIG_FILE,
+)
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -28,6 +39,9 @@ class GlobalConfig:
     permission_policy: str
     completed_at: str | None = None
     acp_test_passed: bool = False
+    default_agent: str = DEFAULT_AGENT_NAME
+    agents: dict[str, AgentConfig] = field(default_factory=dict)
+    workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
 
     @property
     def is_onboarded(self) -> bool:
@@ -38,7 +52,7 @@ class GlobalConfig:
         completed = f'"{self.completed_at}"' if self.completed_at else "null"
         acp_passed = "true" if self.acp_test_passed else "false"
         workspace = str(self.workspace_dir).replace("\\", "\\\\")
-        return (
+        toml = (
             f'version = {self.version}\n\n'
             f"[agent]\n"
             f'binary = "{self.agent_binary}"\n'
@@ -46,6 +60,7 @@ class GlobalConfig:
             f'[auth]\n'
             f'method = "{self.auth_method}"\n\n'
             f"[defaults]\n"
+            f'agent = "{self.default_agent}"\n'
             f'workspace_dir = "{workspace}"\n'
             f'model = "{self.model}"\n'
             f'permission_policy = "{self.permission_policy}"\n\n'
@@ -53,13 +68,54 @@ class GlobalConfig:
             f"completed_at = {completed}\n"
             f"acp_test_passed = {acp_passed}\n"
         )
+        toml += self._agents_toml()
+        toml += self._workflows_toml()
+        return toml
+
+    def _agents_toml(self) -> str:
+        blocks = ""
+        for name, agent in self.agents.items():
+            command = ", ".join(f'"{part}"' for part in agent.acp_command)
+            models = ", ".join(f'"{model}"' for model in agent.models)
+            blocks += (
+                f"\n[agents.{name}]\n"
+                f'binary = "{agent.binary}"\n'
+                f"acp_command = [{command}]\n"
+                f"models = [{models}]\n"
+            )
+        return blocks
+
+    def _workflows_toml(self) -> str:
+        blocks = ""
+        for workflow_id, workflow in self.workflows.items():
+            blocks += f"\n[workflows.{workflow_id}]\n"
+            if workflow.agent:
+                blocks += f'agent = "{workflow.agent}"\n'
+            if workflow.model:
+                blocks += f'model = "{workflow.model}"\n'
+        return blocks
+
+
+def migrate_legacy_global_config() -> bool:
+    if GLOBAL_CONFIG_FILE.exists():
+        return False
+    if not LEGACY_GLOBAL_CONFIG_FILE.exists():
+        return False
+    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(LEGACY_GLOBAL_CONFIG_FILE, GLOBAL_CONFIG_FILE)
+    return True
 
 
 def global_config_exists(path: Path | None = None) -> bool:
-    return (path or GLOBAL_CONFIG_FILE).is_file()
+    if path is None:
+        migrate_legacy_global_config()
+        return GLOBAL_CONFIG_FILE.is_file()
+    return path.is_file()
 
 
 def load_global_config(path: Path | None = None) -> GlobalConfig | None:
+    if path is None:
+        migrate_legacy_global_config()
     config_path = path or GLOBAL_CONFIG_FILE
     if not config_path.is_file():
         return None
@@ -84,6 +140,9 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
         permission_policy=policy,
         completed_at=onboarding.get("completed_at"),
         acp_test_passed=bool(onboarding.get("acp_test_passed", False)),
+        default_agent=str(defaults.get("agent", DEFAULT_AGENT_NAME)),
+        agents=parse_agents(data.get("agents")),
+        workflows=parse_workflows(data.get("workflows")),
     )
 
 

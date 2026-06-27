@@ -1,0 +1,27 @@
+version: 1
+
+defaults:
+  agent: cursor
+  model: claude-sonnet-4-6
+  permission_policy: deny_writes
+
+workspace:
+  root: .
+
+agents:
+  cursor:
+    binary: agent
+    acp_command: [agent, acp]
+    models: [Auto, gpt-5.5]
+  claude:
+    binary: claude-code
+    acp_command: [claude-code, acp]
+    models: [claude-opus-4.8]
+
+workflows:
+  setup-project:
+    agent: claude
+    model: claude-opus-4.8
+  analyze-codebase:
+    agent: cursor
+    model: gpt-5.5

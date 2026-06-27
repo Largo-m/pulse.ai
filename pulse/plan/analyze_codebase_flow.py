@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.config import load_global_config
+from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
 from pulse.plan.analyze_codebase_prompt import (
     TLC_SPEC_SKILL,
@@ -31,11 +31,11 @@ def run_analyze_codebase(*, user_prompt: str, workspace: Path | None = None) -> 
         print("[pulse] Corrija agent e autenticação antes de iniciar.", file=sys.stderr)
         return 1
 
-    config = load_global_config()
-    workspace_root = (workspace or Path.cwd()).resolve()
-    permission_policy = config.permission_policy if config else "ask"
-    acp_command = config.acp_command if config else ["agent", "acp"]
-    preferred_model = config.model if config else "auto"
+    resolved = resolve_config(workspace=workspace, workflow="analyze-codebase")
+    workspace_root = resolved.workspace_dir
+    permission_policy = resolved.permission_policy
+    acp_command = resolved.acp_command
+    preferred_model = resolved.model
 
     cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
 

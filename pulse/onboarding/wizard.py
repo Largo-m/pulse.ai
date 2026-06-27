@@ -10,8 +10,10 @@ from pulse.acp.client import AcpProbeResult, probe_acp_connection
 from pulse.config import (
     GLOBAL_CONFIG_FILE,
     global_config_exists,
+    init_project_config,
     load_global_config,
     mark_onboarding_complete,
+    project_config_file,
 )
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.doctor.checks import CheckResult, check_agent_in_path, check_auth, find_agent_binary
@@ -234,9 +236,18 @@ def run_onboarding_wizard(*, force: bool = False, console: Console | None = None
 
     output.print()
     output.print(f"[green]✓[/green] Config salvo em [cyan]{config_path}[/cyan]")
+
+    project_path = project_config_file(workspace)
+    if project_path.is_file():
+        output.print(f"[dim]Config de projeto já existe em {project_path}[/dim]")
+    else:
+        created = init_project_config(workspace)
+        output.print(f"[green]✓[/green] Config de projeto criada em [cyan]{created}[/cyan]")
+
     output.print()
     output.print("[bold]Próximos passos[/bold]")
     output.print("  pulse doctor          Verificar ambiente")
+    output.print("  pulse config          Ver config efetiva")
     output.print('  pulse plan "..."      Iniciar pipeline')
     output.print()
     return 0

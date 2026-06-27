@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "questionary>=2.0",
     "rich>=13.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

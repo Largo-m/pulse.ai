@@ -5,6 +5,7 @@ import sys
 
 from pulse import __version__
 from pulse.config import global_config_exists
+from pulse.config.commands import run_config_command
 from pulse.doctor import run_doctor
 from pulse.onboarding import run_onboarding_wizard
 from pulse.plan.runner import run_plan
@@ -33,7 +34,25 @@ def _build_parser() -> argparse.ArgumentParser:
     init_parser.add_argument(
         "--force",
         action="store_true",
-        help="Reconfigurar mesmo se ~/.dev-orchestrator/config.toml existir",
+        help="Reconfigurar mesmo se ~/.pulse/config.toml existir",
+    )
+
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Mostrar config efetiva ou criar config de projeto",
+    )
+    config_parser.add_argument(
+        "action",
+        nargs="?",
+        choices=["show", "init"],
+        default="show",
+        help="show: config efetiva (padrão); init: criar .pulse/config.yaml",
+    )
+    config_parser.add_argument(
+        "--workflow",
+        choices=list(SPEC_TYPE_IDS),
+        default=None,
+        help="Mostrar config efetiva para um workflow específico",
     )
 
     doctor_parser = subparsers.add_parser("doctor", help="Verificar ambiente e dependências")
@@ -74,6 +93,12 @@ def _run_command(command: str | None, args: argparse.Namespace) -> int:
 
     if command == "doctor":
         return run_doctor(test_acp=getattr(args, "test_acp", False))
+
+    if command == "config":
+        return run_config_command(
+            action=getattr(args, "action", "show"),
+            workflow=getattr(args, "workflow", None),
+        )
 
     if command == "plan":
         return run_plan(

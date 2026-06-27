@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pulse.config.agents import AgentConfig, WorkflowConfig
 from pulse.config.global_config import (
     GlobalConfig,
     global_config_exists,
@@ -50,6 +51,42 @@ def test_global_config_to_toml_contains_sections():
     assert "[defaults]" in toml
     assert "[onboarding]" in toml
     assert 'permission_policy = "auto_approve"' in toml
+
+
+def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
+    config_path = tmp_path / "config.toml"
+    config = GlobalConfig(
+        version=1,
+        agent_binary="agent",
+        acp_command=["agent", "acp"],
+        auth_method="cursor_login",
+        workspace_dir=tmp_path,
+        model="Auto",
+        permission_policy="auto_approve",
+        completed_at="2026-06-21T12:00:00+00:00",
+        acp_test_passed=True,
+        default_agent="cursor",
+        agents={
+            "cursor": AgentConfig(
+                name="cursor",
+                binary="agent",
+                acp_command=["agent", "acp"],
+                models=["Auto", "gpt-5.5"],
+            ),
+        },
+        workflows={
+            "setup-project": WorkflowConfig(agent="cursor", model="gpt-5.5"),
+        },
+    )
+    save_global_config(config, config_path)
+
+    loaded = load_global_config(config_path)
+
+    assert loaded is not None
+    assert loaded.default_agent == "cursor"
+    assert loaded.agents["cursor"].models == ["Auto", "gpt-5.5"]
+    assert loaded.workflows["setup-project"].agent == "cursor"
+    assert loaded.workflows["setup-project"].model == "gpt-5.5"
 
 
 def test_save_global_config_creates_parent(tmp_path: Path):

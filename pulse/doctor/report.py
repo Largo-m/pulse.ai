@@ -8,7 +8,12 @@ from rich.console import Console
 from rich.table import Table
 
 from pulse.acp.client import probe_acp_connection
-from pulse.config import GLOBAL_CONFIG_FILE, global_config_exists, load_global_config
+from pulse.config import (
+    GLOBAL_CONFIG_FILE,
+    global_config_exists,
+    load_global_config,
+    load_project_config,
+)
 from pulse.doctor.checks import CheckResult, run_environment_checks
 
 
@@ -61,14 +66,43 @@ def run_doctor(*, test_acp: bool = False, console: Console | None = None) -> int
     if global_config_exists():
         config = load_global_config()
         if config:
+            global_detail = f"modelo={config.model}, permissões={config.permission_policy}"
+            if config.agents:
+                global_detail += f", agentes={len(config.agents)}"
+            if config.workflows:
+                global_detail += f", workflows={len(config.workflows)}"
             checks.append(
                 CheckResult(
                     name="Config global",
                     status="ok",
                     message=f"Config em {GLOBAL_CONFIG_FILE}",
-                    detail=f"modelo={config.model}, permissões={config.permission_policy}",
+                    detail=global_detail,
                 )
             )
+
+    project = load_project_config()
+    if project is not None:
+        overrides = []
+        if project.default_agent:
+            overrides.append(f"agent={project.default_agent}")
+        if project.model:
+            overrides.append(f"modelo={project.model}")
+        if project.permission_policy:
+            overrides.append(f"permissões={project.permission_policy}")
+        if project.workspace:
+            overrides.append(f"workspace={project.workspace}")
+        if project.agents:
+            overrides.append(f"agentes={len(project.agents)}")
+        if project.workflows:
+            overrides.append(f"workflows={len(project.workflows)}")
+        checks.append(
+            CheckResult(
+                name="Config projeto",
+                status="ok",
+                message=f"Config em {project.source_file}",
+                detail=", ".join(overrides) or "sem overrides",
+            )
+        )
 
     if test_acp:
         agent_ok = any(check.name == "Agent CLI" and check.status == "ok" for check in checks)
