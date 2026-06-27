@@ -56,9 +56,9 @@ def build_analyze_codebase_prompt(
         f"Analise **somente** o workspace `{workspace}`.",
         "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
         "",
-        "## Fase 1 — Exploração do codebase (ACP)",
+        "## Fase 1 — Exploração do codebase",
         "",
-        "Você está conectado ao cliente **Pulse** via ACP.",
+        "Você está conectado ao cliente **Pulse**.",
         "Explore o repositório sistematicamente **antes** de encerrar esta fase.",
         "",
         "### O que explorar",
@@ -77,19 +77,22 @@ def build_analyze_codebase_prompt(
         "",
         "### Perguntas — somente se indispensável",
         "",
-        "Este fluxo é **autônomo**. Só invoque `cursor/ask_question` se for impossível",
-        "prosseguir sem uma decisão do usuário (ex.: monorepo com múltiplos produtos,",
-        "escopo ambíguo). Documentação: https://cursor.com/docs/cli/acp#cursorask_question",
+        "Este fluxo é **autônomo**. Só pergunte se for impossível prosseguir sem uma decisão do",
+        "usuário (ex.: monorepo com múltiplos produtos, escopo ambíguo).",
         "",
-        "Regras do questionário ACP (quando necessário):",
-        "- **Uma pergunta por chamada** — envie exatamente um item em `questions`.",
-        "- Na **primeira** pergunta de um lote, inclua `title`:",
-        '  `"Preciso de algumas informações antes de continuar."`',
-        "- Informe progresso com `questionIndex` e `totalQuestions`.",
+        "Você **não** tem ferramentas externas para perguntar. Se precisar, escreva as perguntas",
+        "em um **bloco de texto** que o Pulse renderiza no terminal, no formato:",
+        "```text",
+        "Preciso de algumas informações antes de continuar.",
+        "1. Pergunta?",
+        "A) Opção A",
+        "B) Opção B",
+        "```",
+        "Faça todas as perguntas necessárias em um único bloco e não escreva texto fora dele.",
         "",
         "PROIBIDO nesta fase:",
         "- Criar ou editar arquivos.",
-        "- Escrever perguntas no texto do chat (use `cursor/ask_question`).",
+        "- Se for perguntar, enviar qualquer texto fora do bloco ```text.",
         "- Inventar stack, padrões ou integrações sem evidência no código.",
         "",
         "Ao concluir a exploração, responda **somente** a palavra `ANALYZE_READY` — "
@@ -118,8 +121,10 @@ def build_analyze_codebase_artifact_prompt(
     user_prompt: str,
     documents: dict[str, str],
     analysis_summary: str = "",
+    questionnaire_answers: str = "",
 ) -> str:
     summary = format_analysis_summary(analysis_summary)
+    answers = questionnaire_answers.strip()
     artifact_list = "\n".join(f"- `.specs/codebase/{name}`" for name in CODEBASE_ARTIFACTS)
     sections = [
         "Fase 2 do Analyze codebase — criar documentação brownfield em `.specs/codebase/`.",
@@ -135,17 +140,32 @@ def build_analyze_codebase_artifact_prompt(
         "",
         summary or "(Reexplore o workspace — nenhum resumo capturado da fase 1.)",
         "",
-        "Se ainda faltar informação crítica, invoque `cursor/ask_question` (uma pergunta por vez).",
-        "",
-        "Crie os 7 artefatos conforme `brownfield-mapping.md`:",
-        artifact_list,
-        "",
-        "Para `CONCERNS.md`, siga o template em `concerns.md`.",
-        "Documente apenas o que tiver evidência concreta (caminhos, padrões, comandos).",
-        "Respeite os limites de tamanho de cada arquivo descritos em `brownfield-mapping.md`.",
-        "Responda em português.",
-        "",
     ]
+
+    if answers:
+        sections.extend(
+            [
+                "## Respostas do usuário (questionário)",
+                "",
+                "Estas respostas foram coletadas no terminal e são autoritativas:",
+                "",
+                answers,
+                "",
+            ]
+        )
+
+    sections.extend(
+        [
+            "Crie os 7 artefatos conforme `brownfield-mapping.md`:",
+            artifact_list,
+            "",
+            "Para `CONCERNS.md`, siga o template em `concerns.md`.",
+            "Documente apenas o que tiver evidência concreta (caminhos, padrões, comandos).",
+            "Respeite os limites de tamanho de cada arquivo descritos em `brownfield-mapping.md`.",
+            "Responda em português.",
+            "",
+        ]
+    )
 
     for name, content in documents.items():
         if name == "SKILL.md":

@@ -144,7 +144,7 @@ def format_questionnaire_answers(
         lines.append("")
     lines.append(
         "Continue o fluxo com base nestas respostas. "
-        "Se ainda faltarem campos, invoque `cursor/ask_question` (uma pergunta por vez)."
+        "Se ainda faltarem campos, invoque a ferramenta `AskQuestion` (uma pergunta por vez)."
     )
     return "\n".join(lines)
 

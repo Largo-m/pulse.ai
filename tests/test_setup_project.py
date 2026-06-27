@@ -48,12 +48,11 @@ def test_build_setup_project_prompt_includes_optional_questionnaire():
     assert "project-init.md" in prompt
     assert "## user-input.md" not in prompt
     assert str(workspace) in prompt
-    assert "cursor/ask_question" in prompt
     assert "SETUP_READY" in prompt
     assert "Isolamento" in prompt
-    assert "Uma pergunta por chamada" in prompt
-    assert "somente via ACP" in prompt
-    assert "Pulse **não** gera perguntas" in prompt
+    assert "Preciso de algumas informações antes de continuar." in prompt
+    assert "bloco de texto" in prompt
+    assert "```text" in prompt
     assert "## project-init.md" not in prompt
 
 

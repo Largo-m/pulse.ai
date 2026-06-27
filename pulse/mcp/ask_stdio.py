@@ -1,58 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any
 
 from pulse.mcp.ask_bridge import SOCKET_ENV, request_ask_question_via_socket
+from pulse.mcp.ask_protocol import DEFAULT_PROTOCOL_VERSION, tool_definition
 
-_PROTOCOL_VERSION = "2024-11-05"
-_TOOL_NAME = "AskQuestion"
+_TOOL_NAME = tool_definition()["name"]
 
 
 def _send(message: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(message) + "\n")
     sys.stdout.flush()
-
-
-def _tool_definition() -> dict[str, Any]:
-    return {
-        "name": _TOOL_NAME,
-        "description": (
-            "Apresenta perguntas de múltipla escolha ao usuário e aguarda a resposta. "
-            "Use para entrevistas e esclarecimentos."
-        ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string"},
-                "questions": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "string"},
-                            "prompt": {"type": "string"},
-                            "options": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "id": {"type": "string"},
-                                        "label": {"type": "string"},
-                                    },
-                                    "required": ["id", "label"],
-                                },
-                            },
-                            "allowMultiple": {"type": "boolean"},
-                        },
-                        "required": ["id", "prompt"],
-                    },
-                },
-            },
-            "required": ["questions"],
-        },
-    }
 
 
 def _handle_initialize(request_id: int | str) -> None:
@@ -61,7 +22,7 @@ def _handle_initialize(request_id: int | str) -> None:
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "protocolVersion": _PROTOCOL_VERSION,
+                "protocolVersion": DEFAULT_PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name": "pulse-ask", "version": "0.1.0"},
             },
@@ -74,13 +35,13 @@ def _handle_tools_list(request_id: int | str) -> None:
         {
             "jsonrpc": "2.0",
             "id": request_id,
-            "result": {"tools": [_tool_definition()]},
+            "result": {"tools": [tool_definition()]},
         }
     )
 
 
 def _handle_tools_call(request_id: int | str, params: dict[str, Any]) -> None:
-    socket_path = sys.environ.get(SOCKET_ENV, "").strip()
+    socket_path = os.environ.get(SOCKET_ENV, "").strip()
     if not socket_path:
         _send(
             {

@@ -12,11 +12,12 @@ from typing import Any
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
 from pulse.acp.models import resolve_interview_model_id
-from pulse.mcp.ask_bridge import AskQuestionBridgeServer
 from pulse.mcp.config import pulse_ask_mcp_server
+from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
 from pulse.plan.setup_project_prompt import build_setup_project_artifact_prompt
 from pulse.presentation.prompt.handler import PermissionPolicy, PromptHandler
+from pulse.presentation.prompt.text_questionnaire import parse_text_questionnaire
 from pulse.presentation.stream_renderer import StreamRenderer
 
 INTERVIEW_MODE = "agent"
@@ -42,7 +43,7 @@ class AcpSessionRunner:
         self._stream = stream or StreamRenderer()
         self._prompt_handler = prompt_handler or PromptHandler()
         self._enable_mcp_ask = enable_mcp_ask
-        self._ask_bridge: AskQuestionBridgeServer | None = None
+        self._ask_bridge: AskQuestionHttpServer | None = None
         self._process: subprocess.Popen[str] | None = None
         self._responses: dict[int, dict[str, Any]] = {}
         self._response_queue: Queue[int] = Queue()
@@ -112,11 +113,19 @@ class AcpSessionRunner:
                 return interview_result
 
             phase1_analysis = self._stream.agent_text()
+            answers_text = self._run_text_questionnaire(phase1_analysis)
+            if answers_text is None:
+                return {
+                    "stopReason": "cancelled",
+                    "interviewStopReason": interview_result.get("stopReason"),
+                    "askQuestionCount": self.ask_question_count,
+                }
             artifact_prompt = build_setup_project_artifact_prompt(
                 workspace=workspace,
                 user_prompt=user_prompt,
                 documents=documents,
                 analysis_summary=phase1_analysis,
+                questionnaire_answers=answers_text,
             )
 
             self.set_mode(self._session_id, AGENT_MODE)
@@ -180,11 +189,19 @@ class AcpSessionRunner:
                 return explore_result
 
             phase1_analysis = self._stream.agent_text()
+            answers_text = self._run_text_questionnaire(phase1_analysis)
+            if answers_text is None:
+                return {
+                    "stopReason": "cancelled",
+                    "exploreStopReason": explore_result.get("stopReason"),
+                    "askQuestionCount": self.ask_question_count,
+                }
             artifact_prompt = build_analyze_codebase_artifact_prompt(
                 workspace=workspace,
                 user_prompt=user_prompt,
                 documents=documents,
                 analysis_summary=phase1_analysis,
+                questionnaire_answers=answers_text,
             )
 
             self.set_mode(self._session_id, AGENT_MODE)
@@ -211,7 +228,7 @@ class AcpSessionRunner:
     def start(self) -> None:
         self._logger.log_event("process_start", {"command": self._command, "cwd": self._cwd})
         if self._enable_mcp_ask:
-            self._ask_bridge = AskQuestionBridgeServer(
+            self._ask_bridge = AskQuestionHttpServer(
                 prompt_handler=self._prompt_handler,
                 on_question=self._record_ask_question,
             )
@@ -420,7 +437,17 @@ class AcpSessionRunner:
     def _mcp_servers(self) -> list[dict[str, Any]]:
         if not self._enable_mcp_ask or self._ask_bridge is None:
             return []
-        return [pulse_ask_mcp_server(socket_path=self._ask_bridge.socket_path)]
+        return [pulse_ask_mcp_server(url=self._ask_bridge.url)]
+
+    def _run_text_questionnaire(self, phase1_text: str) -> str | None:
+        questionnaire = parse_text_questionnaire(phase1_text)
+        if questionnaire is None:
+            return ""
+        answers = self._prompt_handler.run_parsed_questionnaire(questionnaire)
+        if answers is None:
+            return None
+        self.ask_question_count += len(questionnaire.questions)
+        return answers
 
     def _record_ask_question(self) -> None:
         self.ask_question_count += 1

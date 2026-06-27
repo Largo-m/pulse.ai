@@ -35,7 +35,7 @@ def test_build_analyze_codebase_prompt_includes_exploration_rules():
     assert "brownfield-mapping.md" in prompt
     assert "## user-input.md" not in prompt
     assert str(workspace) in prompt
-    assert "cursor/ask_question" in prompt
+    assert "Preciso de algumas informações antes de continuar." in prompt
     assert "ANALYZE_READY" in prompt
     assert "Isolamento" in prompt
     assert "autônomo" in prompt.lower() or "autonomo" in prompt.lower()

@@ -41,59 +41,53 @@ def build_setup_project_prompt(
         f"Analise **somente** o workspace `{workspace}`.",
         "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
         "",
-        "## Fase 1 — Análise e questionário (ACP)",
+        "## Fase 1 — Análise e questionário",
         "",
-        "Você está conectado ao cliente **Pulse** via ACP.",
+        "Você está conectado ao cliente **Pulse**.",
         "Analise o workspace e os artefatos existentes **antes** de perguntar qualquer coisa.",
         "",
-        "### Perguntas — somente via ACP",
+        "### Perguntas — em bloco de texto estruturado",
         "",
-        "Todas as perguntas ao usuário **devem** usar o método bloqueante **`cursor/ask_question`**.",
-        "O Pulse **não** gera perguntas — apenas renderiza o que o agente enviar via ACP.",
-        "Documentação: https://cursor.com/docs/cli/acp#cursorask_question",
+        "Você **não** tem ferramentas externas para perguntar ao usuário. Quando precisar de",
+        "informação, escreva as perguntas em um **bloco de texto** no formato exato abaixo.",
+        "O Pulse detecta esse bloco, renderiza um questionário interativo no terminal e coleta",
+        "as respostas para a próxima fase.",
         "",
-        "Após analisar o workspace, verifique se `.specs/project/PROJECT.md` documenta **explicitamente**:",
-        "visão, público-alvo, foco da v1 e restrições.",
+        "Após analisar o workspace, verifique se há informação **explícita** sobre:",
+        "visão, público-alvo, foco da v1 e restrições (em `.specs/project/PROJECT.md`, README ou docs).",
         "",
-        "Se **qualquer** campo estiver ausente ou ambíguo, invoque `cursor/ask_question`",
-        "(uma pergunta por chamada) **antes** de `SETUP_READY`.",
-        "Se todos estiverem claros no repositório, encerre com `SETUP_READY` sem perguntar.",
+        "- Se **qualquer** campo estiver ausente ou ambíguo, responda **apenas** com o bloco de",
+        "  perguntas (sem `SETUP_READY` e sem texto antes ou depois).",
+        "- Se estiver tudo claro no repositório, responda **somente** `SETUP_READY`.",
         "",
-        "### Regras do questionário ACP",
-        "- **Uma pergunta por chamada** — envie exatamente um item em `questions`.",
-        "- **Todas respondidas antes de continuar** — se iniciar um questionário, faça todas as",
-        "  chamadas necessárias na mesma sessão antes de encerrar a fase.",
-        "- Na **primeira** pergunta de um lote, inclua `title`:",
-        '  `"Preciso de algumas informações antes de continuar."`',
-        "- Informe progresso com `questionIndex` e `totalQuestions` (ex.: 2 de 4).",
-        "- Opções concretas em `options`; o Pulse adiciona **Outro** automaticamente.",
-        "- Siga os tópicos de `project-init.md` (visão, público, escopo v1, restrições).",
+        "### Formato obrigatório do bloco de perguntas",
         "",
-        "Exemplo de params para a pergunta 2 de 4:",
-        "```json",
-        "{",
-        '  "title": "Preciso de algumas informações antes de continuar.",',
-        '  "questionIndex": 2,',
-        '  "totalQuestions": 4,',
-        '  "questions": [{',
-        '    "id": "audience",',
-        '    "prompt": "2. Quem é o público-alvo e qual problema resolve?",',
-        '    "options": [',
-        '      {"id": "beginners", "label": "Investidores iniciantes aprendendo a operar"},',
-        '      {"id": "devs", "label": "Desenvolvedores estudando arquitetura"}',
-        "    ]",
-        "  }]",
-        "}",
+        "- Abra uma cerca ```text e use como primeira linha, exatamente:",
+        '  `Preciso de algumas informações antes de continuar.`',
+        "- Cada pergunta numerada (`1.`, `2.`, …), uma por linha.",
+        "- Cada opção com letra maiúscula (`A)`, `B)`, …); o Pulse adiciona **Outro** automaticamente.",
+        "- Faça **todas** as perguntas necessárias em um **único** bloco.",
+        "- Cubra os tópicos de `project-init.md` (visão, público, escopo v1, restrições).",
+        "",
+        "Exemplo:",
+        "```text",
+        "Preciso de algumas informações antes de continuar.",
+        "1. Qual é a visão do produto?",
+        "A) Plataforma de paper trading para estudo",
+        "B) Ferramenta de análise para investidores reais",
+        "2. Quem é o público-alvo?",
+        "A) Investidores iniciantes",
+        "B) Desenvolvedores estudando arquitetura",
         "```",
         "",
         "PROIBIDO nesta fase:",
         "- Criar ou editar arquivos.",
-        "- Escrever perguntas no texto do chat (use `cursor/ask_question`).",
+        "- Se for perguntar, enviar qualquer texto fora do bloco ```text.",
         "- Executar shell/python para simular perguntas.",
         "- Ler `.pulse/skills/` ou arquivos de entrevista legados.",
-        "- Encerrar com `SETUP_READY` se ainda faltarem campos obrigatórios não documentados.",
+        "- Responder `SETUP_READY` se ainda faltarem campos obrigatórios não documentados.",
         "",
-        "Ao concluir a análise (com ou sem perguntas), responda **somente** a palavra `SETUP_READY` — "
+        "Quando tudo estiver claro (sem perguntas), responda **somente** a palavra `SETUP_READY` — "
         "sem frases antes ou depois. O Pulse usa isso internamente e não exibe no terminal.",
         "",
     ]
@@ -119,8 +113,10 @@ def build_setup_project_artifact_prompt(
     user_prompt: str,
     documents: dict[str, str],
     analysis_summary: str = "",
+    questionnaire_answers: str = "",
 ) -> str:
     summary = format_analysis_summary(analysis_summary)
+    answers = questionnaire_answers.strip()
     sections = [
         "Fase 2 do Setup project — criar artefatos em `.specs/project/`.",
         f"Workspace: `{workspace}`",
@@ -135,15 +131,37 @@ def build_setup_project_artifact_prompt(
         "",
         summary or "(Reanalise o workspace — nenhum resumo capturado da fase 1.)",
         "",
-        "Se ainda faltar informação crítica, invoque `cursor/ask_question` (uma pergunta por vez).",
-        "",
-        "Explore o workspace se necessário e crie:",
-        "- `.specs/project/PROJECT.md` conforme `project-init.md`.",
-        "- `.specs/project/ROADMAP.md` conforme `roadmap.md`.",
-        "- `.specs/project/STATE.md` conforme `state-management.md`.",
-        "- Responda em português.",
-        "",
     ]
+
+    if answers:
+        sections.extend(
+            [
+                "## Respostas do usuário (questionário)",
+                "",
+                "Estas respostas foram coletadas no terminal e são autoritativas:",
+                "",
+                answers,
+                "",
+            ]
+        )
+
+    sections.extend(
+        [
+            "Use as respostas acima como fonte de verdade. Não invente o que não foi respondido.",
+            "",
+        ]
+    )
+
+    sections.extend(
+        [
+            "Explore o workspace se necessário e crie:",
+            "- `.specs/project/PROJECT.md` conforme `project-init.md`.",
+            "- `.specs/project/ROADMAP.md` conforme `roadmap.md`.",
+            "- `.specs/project/STATE.md` conforme `state-management.md`.",
+            "- Responda em português.",
+            "",
+        ]
+    )
 
     for name, content in documents.items():
         if name == "SKILL.md":
