@@ -31,6 +31,10 @@ def test_global_config_roundtrip(tmp_path: Path):
     assert loaded.model == "composer-2.5"
     assert loaded.permission_policy == "ask"
     assert loaded.workspace_dir == tmp_path.resolve()
+    assert loaded.default_agent == "cursor"
+    assert "cursor" in loaded.agents
+    assert "claude" in loaded.agents
+    assert loaded.workflows["setup-project"].agent == "claude"
 
 
 def test_global_config_to_toml_contains_sections():

@@ -16,6 +16,7 @@ from pulse.config import (
 from pulse.doctor import run_doctor
 from pulse.terminal.prompts import prompt_config_scope, prompt_model, prompt_permission_policy
 from pulse.terminal.styles import MENU_STYLE
+from pulse.terminal.workflow_settings import configure_workflows
 
 
 def _ensure_global_config(console: Console) -> bool:
@@ -110,6 +111,7 @@ def run_settings_menu(*, cwd: Path | None = None, console: Console | None = None
             choices=[
                 questionary.Choice("Modelo", value="model"),
                 questionary.Choice("Permissões", value="permissions"),
+                questionary.Choice("Workflows", value="workflows"),
                 questionary.Choice("Verificar ambiente", value="doctor"),
                 questionary.Choice("Voltar", value="back"),
             ],
@@ -127,6 +129,10 @@ def run_settings_menu(*, cwd: Path | None = None, console: Console | None = None
 
         if choice == "permissions":
             _configure_permissions(base, output)
+            continue
+
+        if choice == "workflows":
+            configure_workflows(base, output)
             continue
 
         if choice == "doctor":

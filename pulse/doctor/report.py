@@ -91,8 +91,6 @@ def run_doctor(*, test_acp: bool = False, console: Console | None = None) -> int
             overrides.append(f"permissões={project.permission_policy}")
         if project.workspace:
             overrides.append(f"workspace={project.workspace}")
-        if project.agents:
-            overrides.append(f"agentes={len(project.agents)}")
         if project.workflows:
             overrides.append(f"workflows={len(project.workflows)}")
         checks.append(

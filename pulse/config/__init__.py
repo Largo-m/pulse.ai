@@ -12,6 +12,7 @@ from pulse.config.global_config import (
     migrate_legacy_global_config,
     save_global_config,
     update_global_defaults,
+    update_global_workflow,
 )
 from pulse.config.paths import (
     GLOBAL_CONFIG_DIR,
@@ -31,6 +32,7 @@ from pulse.config.project_config import (
     project_config_exists,
     render_project_config,
     update_project_defaults,
+    update_project_workflow,
 )
 from pulse.config.resolved import ResolvedConfig, resolve_config
 
@@ -62,5 +64,7 @@ __all__ = [
     "resolve_config",
     "save_global_config",
     "update_global_defaults",
+    "update_global_workflow",
     "update_project_defaults",
+    "update_project_workflow",
 ]

@@ -10,6 +10,8 @@ from pulse.config.agents import (
     DEFAULT_AGENT_NAME,
     AgentConfig,
     WorkflowConfig,
+    default_global_agents,
+    default_global_workflows,
     parse_agents,
     parse_workflows,
 )
@@ -130,6 +132,14 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
     if policy not in PERMISSION_POLICIES:
         policy = "ask"
 
+    agents = parse_agents(data.get("agents"))
+    if not agents:
+        agents = default_global_agents()
+
+    workflows = parse_workflows(data.get("workflows"))
+    if not workflows:
+        workflows = default_global_workflows()
+
     return GlobalConfig(
         version=int(data.get("version", 1)),
         agent_binary=str(agent.get("binary", "agent")),
@@ -141,8 +151,8 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
         completed_at=onboarding.get("completed_at"),
         acp_test_passed=bool(onboarding.get("acp_test_passed", False)),
         default_agent=str(defaults.get("agent", DEFAULT_AGENT_NAME)),
-        agents=parse_agents(data.get("agents")),
-        workflows=parse_workflows(data.get("workflows")),
+        agents=agents,
+        workflows=workflows,
     )
 
 
@@ -178,6 +188,28 @@ def update_global_defaults(
     return save_global_config(replace(config, **updates), path)
 
 
+def update_global_workflow(
+    workflow_id: str,
+    *,
+    agent: str | None = None,
+    model: str | None = None,
+    path: Path | None = None,
+) -> Path | None:
+    config = load_global_config(path)
+    if config is None:
+        return None
+
+    from dataclasses import replace
+
+    workflows = dict(config.workflows)
+    existing = workflows.get(workflow_id, WorkflowConfig())
+    workflows[workflow_id] = WorkflowConfig(
+        agent=agent if agent is not None else existing.agent,
+        model=model if model is not None else existing.model,
+    )
+    return save_global_config(replace(config, workflows=workflows), path)
+
+
 def mark_onboarding_complete(
     *,
     agent_binary: str,
@@ -199,5 +231,8 @@ def mark_onboarding_complete(
         permission_policy=permission_policy,
         completed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         acp_test_passed=acp_test_passed,
+        default_agent="cursor",
+        agents=default_global_agents(),
+        workflows=default_global_workflows(),
     )
     return save_global_config(config, path)

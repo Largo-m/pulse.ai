@@ -8,16 +8,6 @@ defaults:
 workspace:
   root: .
 
-agents:
-  cursor:
-    binary: agent
-    acp_command: [agent, acp]
-    models: [Auto, gpt-5.5]
-  claude:
-    binary: claude-code
-    acp_command: [claude-code, acp]
-    models: [claude-opus-4.8]
-
 workflows:
   setup-project:
     agent: claude

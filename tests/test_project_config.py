@@ -71,17 +71,12 @@ def test_no_project_config_returns_none(tmp_path: Path):
     assert project_config_exists(tmp_path) is False
 
 
-def test_load_project_config_parses_agents_and_workflows(tmp_path: Path):
+def test_load_project_config_parses_workflows(tmp_path: Path):
     _write_project_config(
         tmp_path,
         "version: 1\n"
         "defaults:\n"
         "  agent: claude\n"
-        "agents:\n"
-        "  claude:\n"
-        "    binary: claude-code\n"
-        "    acp_command: [claude-code, acp]\n"
-        "    models: [claude-opus-4.8, claude-sonnet-4-6]\n"
         "workflows:\n"
         "  setup-project:\n"
         "    agent: claude\n"
@@ -92,9 +87,6 @@ def test_load_project_config_parses_agents_and_workflows(tmp_path: Path):
 
     assert config is not None
     assert config.default_agent == "claude"
-    assert "claude" in config.agents
-    assert config.agents["claude"].binary == "claude-code"
-    assert config.agents["claude"].models == ["claude-opus-4.8", "claude-sonnet-4-6"]
     assert config.workflows["setup-project"].agent == "claude"
     assert config.workflows["setup-project"].model == "claude-opus-4.8"
 
@@ -108,11 +100,10 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert config.default_agent == "cursor"
     assert config.model == "claude-sonnet-4-6"
     assert config.permission_policy == "deny_writes"
-    assert set(config.agents) == {"cursor", "claude"}
-    assert config.agents["claude"].binary == "claude-code"
-    assert config.agents["claude"].acp_command == ["claude-code", "acp"]
-    assert config.agents["cursor"].acp_command == ["agent", "acp"]
     assert config.workflows["setup-project"].agent == "claude"
     assert config.workflows["setup-project"].model == "claude-opus-4.8"
     assert config.workflows["analyze-codebase"].agent == "cursor"
     assert config.workflows["analyze-codebase"].model == "gpt-5.5"
+
+    content = path.read_text(encoding="utf-8")
+    assert "agents:" not in content

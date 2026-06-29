@@ -6,6 +6,7 @@ import questionary
 from rich.console import Console
 
 from pulse.acp.client import fetch_acp_available_models
+from pulse.config.agents import AgentConfig
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.paths import find_project_config_file
 from pulse.config.resolved import resolve_config
@@ -35,6 +36,7 @@ def collect_available_models(
     cwd: Path | None = None,
     *,
     console: Console | None = None,
+    agent_name: str | None = None,
 ) -> list[str]:
     base = (cwd or Path.cwd()).resolve()
     resolved = resolve_config(base)
@@ -42,8 +44,12 @@ def collect_available_models(
     workspace = str(resolved.workspace_dir)
     seen_commands: set[tuple[str, ...]] = set()
 
+    agents_to_query = list(resolved.agents.values())
+    if agent_name and agent_name in resolved.agents:
+        agents_to_query = [resolved.agents[agent_name]]
+
     def load_from_acp() -> None:
-        for agent in resolved.agents.values():
+        for agent in agents_to_query:
             command_key = tuple(agent.acp_command)
             if command_key in seen_commands:
                 continue
@@ -63,7 +69,7 @@ def collect_available_models(
     if resolved.model:
         _merge_unique_models(models, [resolved.model])
 
-    for agent in resolved.agents.values():
+    for agent in agents_to_query:
         _merge_unique_models(models, agent.models)
 
     if models:
@@ -100,10 +106,11 @@ def prompt_model(
     choices: list[str] | None = None,
     label: str = "Modelo:",
     console: Console | None = None,
+    agent_name: str | None = None,
 ) -> str | None:
     options = choices
     if options is None:
-        options = collect_available_models(cwd, console=console)
+        options = collect_available_models(cwd, console=console, agent_name=agent_name)
     if current and current not in options:
         options = [current, *options]
     return questionary.select(
@@ -143,3 +150,25 @@ def prompt_workspace_dir(default: Path) -> Path | None:
             questionary.print("Diretório inválido. Escolha uma pasta existente.", style="fg:yellow")
             continue
         return path.resolve()
+
+
+def prompt_agent(
+    agents: dict[str, AgentConfig],
+    *,
+    current: str | None = None,
+) -> str | None:
+    if not agents:
+        questionary.print("Nenhum agente configurado.", style="fg:yellow")
+        return None
+
+    choices = [
+        questionary.Choice(f"{name} ({agent.binary})", value=name)
+        for name, agent in sorted(agents.items())
+    ]
+    return questionary.select(
+        "Agente:",
+        choices=choices,
+        default=current if current in agents else None,
+        style=MENU_STYLE,
+        use_indicator=True,
+    ).ask()

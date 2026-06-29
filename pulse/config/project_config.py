@@ -5,12 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from pulse.config.agents import (
-    AgentConfig,
-    WorkflowConfig,
-    parse_agents,
-    parse_workflows,
-)
+from pulse.config.agents import WorkflowConfig, parse_workflows
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.paths import find_project_config_file, project_config_file
 
@@ -22,12 +17,7 @@ class ProjectConfig:
     permission_policy: str | None = None
     workspace: Path | None = None
     default_agent: str | None = None
-    agents: dict[str, AgentConfig] = field(default_factory=dict)
     workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
-
-    @property
-    def project_root(self) -> Path:
-        return self.source_file.parent.parent
 
 
 def load_project_config(start: Path | None = None) -> ProjectConfig | None:
@@ -74,7 +64,6 @@ def parse_project_config(config_file: Path) -> ProjectConfig:
         permission_policy=policy,
         workspace=workspace_path,
         default_agent=default_agent,
-        agents=parse_agents(raw.get("agents")),
         workflows=parse_workflows(raw.get("workflows")),
     )
 
@@ -93,14 +82,6 @@ defaults:
 
 workspace:
   root: .
-
-agents:
-  cursor:
-    binary: agent
-    models: [Auto, gpt-5.5]
-  claude:
-    binary: claude-code
-    models: [claude-opus-4.8]
 
 workflows:
   setup-project:
@@ -148,6 +129,43 @@ def update_project_defaults(
         if permission_policy not in PERMISSION_POLICIES:
             raise ValueError(f"Política inválida: {permission_policy}")
         defaults["permission_policy"] = permission_policy
+
+    config_path.write_text(
+        yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def update_project_workflow(
+    root: Path,
+    workflow_id: str,
+    *,
+    agent: str | None = None,
+    model: str | None = None,
+) -> Path:
+    config_path = find_project_config_file(root)
+    if config_path is None:
+        config_path = init_project_config(root)
+
+    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raw = {}
+
+    workflows = raw.setdefault("workflows", {})
+    if not isinstance(workflows, dict):
+        workflows = {}
+        raw["workflows"] = workflows
+
+    entry = workflows.get(workflow_id)
+    if not isinstance(entry, dict):
+        entry = {}
+        workflows[workflow_id] = entry
+
+    if agent is not None:
+        entry["agent"] = agent
+    if model is not None:
+        entry["model"] = model
 
     config_path.write_text(
         yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),

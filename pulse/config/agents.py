@@ -58,3 +58,27 @@ def parse_workflows(raw: Any) -> dict[str, WorkflowConfig]:
             model=str(model) if model else None,
         )
     return workflows
+
+
+def default_global_agents() -> dict[str, AgentConfig]:
+    return {
+        "cursor": AgentConfig(
+            name="cursor",
+            binary="agent",
+            acp_command=["agent", "acp"],
+            models=["Auto", "gpt-5.5"],
+        ),
+        "claude": AgentConfig(
+            name="claude",
+            binary="claude-code",
+            acp_command=["claude-code", "acp"],
+            models=["claude-opus-4.8"],
+        ),
+    }
+
+
+def default_global_workflows() -> dict[str, WorkflowConfig]:
+    return {
+        "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+        "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
+    }
