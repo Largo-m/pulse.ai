@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from pulse.config.paths import find_project_config_file
+from pulse.config.paths import PROJECT_SPECS_DIRNAME, project_specs_dir
+
+
+def test_project_specs_dir(tmp_path: Path):
+    assert PROJECT_SPECS_DIRNAME == ".pulse/specs"
+    assert project_specs_dir(tmp_path) == tmp_path / ".pulse" / "specs"
 from pulse.config.project_config import (
     init_project_config,
     load_project_config,

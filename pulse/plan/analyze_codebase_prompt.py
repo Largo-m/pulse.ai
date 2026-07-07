@@ -125,9 +125,9 @@ def build_analyze_codebase_artifact_prompt(
 ) -> str:
     summary = format_analysis_summary(analysis_summary)
     answers = questionnaire_answers.strip()
-    artifact_list = "\n".join(f"- `.specs/codebase/{name}`" for name in CODEBASE_ARTIFACTS)
+    artifact_list = "\n".join(f"- `.pulse/specs/codebase/{name}`" for name in CODEBASE_ARTIFACTS)
     sections = [
-        "Fase 2 do Analyze codebase — criar documentação brownfield em `.specs/codebase/`.",
+        "Fase 2 do Analyze codebase — criar documentação brownfield em `.pulse/specs/codebase/`.",
         f"Workspace: `{workspace}`",
         f"Contexto inicial: {user_prompt.strip() or 'Mapear codebase existente'}",
         "",

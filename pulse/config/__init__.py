@@ -21,8 +21,10 @@ from pulse.config.paths import (
     LEGACY_GLOBAL_CONFIG_FILE,
     PROJECT_CONFIG_DIRNAME,
     PROJECT_CONFIG_FILENAME,
+    PROJECT_SPECS_DIRNAME,
     find_project_config_file,
     project_config_file,
+    project_specs_dir,
 )
 from pulse.config.project_config import (
     ProjectConfig,
@@ -43,6 +45,7 @@ __all__ = [
     "LEGACY_GLOBAL_CONFIG_FILE",
     "PROJECT_CONFIG_DIRNAME",
     "PROJECT_CONFIG_FILENAME",
+    "PROJECT_SPECS_DIRNAME",
     "AgentConfig",
     "GlobalConfig",
     "ProjectConfig",
@@ -60,6 +63,7 @@ __all__ = [
     "parse_project_config",
     "project_config_exists",
     "project_config_file",
+    "project_specs_dir",
     "render_project_config",
     "resolve_config",
     "save_global_config",

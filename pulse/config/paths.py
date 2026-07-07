@@ -10,6 +10,11 @@ LEGACY_GLOBAL_CONFIG_FILE = LEGACY_GLOBAL_CONFIG_DIR / "config.toml"
 
 PROJECT_CONFIG_DIRNAME = ".pulse"
 PROJECT_CONFIG_FILENAME = "config.yaml"
+PROJECT_SPECS_DIRNAME = f"{PROJECT_CONFIG_DIRNAME}/specs"
+
+
+def project_specs_dir(root: Path) -> Path:
+    return root / PROJECT_CONFIG_DIRNAME / "specs"
 
 
 def project_config_file(root: Path) -> Path:

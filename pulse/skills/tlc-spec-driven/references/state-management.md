@@ -4,7 +4,7 @@
 
 ## Structure
 
-**Output:** `.specs/project/STATE.md`
+**Output:** `.pulse/specs/project/STATE.md`
 
 ```markdown
 # State
@@ -51,11 +51,12 @@
 
 ---
 
-## Quick Tasks Completed
+## Quick Tasks
 
-| #   | Description              | Date   | Commit | Status  |
-| --- | ------------------------ | ------ | ------ | ------- |
-| 001 | [Quick task description] | [date] | [hash] | ✅ Done |
+| #   | Description              | Date   | Spec                         | Status                |
+| --- | ------------------------ | ------ | ---------------------------- | --------------------- |
+| 001 | [Quick task description] | [date] | `.pulse/specs/quick/001-slug/`     | ⏳ Awaiting Approval  |
+| 002 | [Quick task description] | [date] | `.pulse/specs/quick/002-slug/`     | ✅ Done               |
 
 ---
 
@@ -83,7 +84,8 @@ Capture in-progress thoughts and action items that don't fit in active tasks.
 | Significant architectural choice | Add AD-[NNN]                           |
 | Implementation blocked           | Add B-[NNN]                            |
 | Important discovery/learning     | Add L-[NNN]                            |
-| Quick task completed             | Add row to Quick Tasks table           |
+| Quick task started (plan ready)  | Create `.pulse/specs/quick/NNN-slug/TASK.md`, update Current Work, add Quick Tasks row ⏳ |
+| Quick task completed             | Update TASK.md, create SUMMARY.md, set Quick Tasks row ✅ Done          |
 | Scope creep captured             | Add to Deferred Ideas                  |
 | In-progress thought              | Add to Todos                           |
 | Session end                      | Update "Last Updated" + "Current Work" |

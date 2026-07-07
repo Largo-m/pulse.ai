@@ -64,9 +64,9 @@ def test_build_setup_project_artifact_prompt_targets_specs():
         documents=documents,
         analysis_summary="Stack: Vue + Node",
     )
-    assert ".specs/project/PROJECT.md" in prompt
-    assert ".specs/project/ROADMAP.md" in prompt
-    assert ".specs/project/STATE.md" in prompt
+    assert ".pulse/specs/project/PROJECT.md" in prompt
+    assert ".pulse/specs/project/ROADMAP.md" in prompt
+    assert ".pulse/specs/project/STATE.md" in prompt
     assert "Vue + Node" in prompt
     assert "Análise desta execução" in prompt
     assert "sessão anterior" not in prompt.lower()

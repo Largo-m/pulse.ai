@@ -4,7 +4,7 @@
 
 **Two levels of verification:**
 
-1. **Per-task verification (always):** After implementing each task, verify its "Done when" criteria before committing. This is mandatory and automatic.
+1. **Per-task verification (always):** After implementing each task, verify its "Done when" criteria. This is mandatory and automatic. Do not commit or suggest commit messages unless the user explicitly asks for git help.
 
 2. **Feature-level validation (on completion or on demand):** After all tasks for a feature (or priority group) are done, run a comprehensive validation. Includes acceptance criteria check, code quality review, and optionally interactive UAT.
 
@@ -81,31 +81,23 @@ For each changed file, verify against [coding-principles.md](coding-principles.m
 
 ### 6. Interactive UAT (if user-facing feature)
 
-For each testable deliverable, present **one test per response** using strict CLI layout from [user-input.md](user-input.md). Wrap in ` ```text ` fence:
+For each testable deliverable, present one test at a time:
 
-```text
-Preciso de algumas informações antes de continuar.
+```
+Test [N]: [Test Name]
 
-1. Teste: [Nome do teste]
+Expected: [What should happen — specific and observable]
 
-Esperado: [comportamento observável e específico]
-
-A) Funciona como esperado
-B) Não funciona (descreva o que vê)
-C) Pular / não aplicável
-
-Resposta:
+→ Does this work? Describe what you see.
 ```
 
-End the response immediately after `Resposta:`. Continue to the next test only after the user replies.
-
-User response interpretation:
+Wait for user response:
 
 | User says                      | Interpret as            |
 | ------------------------------ | ----------------------- |
-| "yes", "pass", "works", "next", "A" | ✅ Pass                 |
-| "skip", "can't test", "n/a", "C"    | ⏭️ Skip                 |
-| "B" or anything else           | ❌ Issue — log verbatim |
+| "yes", "pass", "works", "next" | ✅ Pass                 |
+| "skip", "can't test", "n/a"    | ⏭️ Skip                 |
+| Anything else                  | ❌ Issue — log verbatim |
 
 **Severity inference (never ask the user for severity):**
 
@@ -127,7 +119,7 @@ For each issue found during UAT:
    - Where: File paths
    - Verify: How to prove the fix works
    - Done when: Acceptance criteria for the fix
-3. **Present fix plan** — Show all fix tasks; if approval is required, collect via [user-input.md](user-input.md) CLI format
+3. **Present fix plan** — Show all fix tasks to user for approval
 
 Fix tasks follow the same format as regular tasks and can be executed with the implement phase.
 
@@ -143,7 +135,7 @@ Fix tasks follow the same format as regular tasks and can be executed with the i
 # [Feature] Validation
 
 **Date**: [YYYY-MM-DD]
-**Spec**: `.specs/features/[feature]/spec.md`
+**Spec**: `.pulse/specs/features/[feature]/spec.md`
 
 ---
 

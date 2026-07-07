@@ -8,7 +8,7 @@
 2. **Work first, ask last** — Continue executing until it is impossible to proceed without a user decision. Do as much autonomous work as allowed (codebase analysis, drafting, validation) before stopping.
 3. **Batch pending questions** — When blocked, present **all** pending questions together at the **end** of the response.
 4. **Stop after questions** — End the response immediately after the questions. Do not continue the workflow, create deliverables that depend on answers, or add closing commentary.
-5. **Never invent mandatory answers** — Do not assume defaults or fabricate values when information is required. Infer only from explicit user input or verifiable project artifacts (code, `.specs/`, docs).
+5. **Never invent mandatory answers** — Do not assume defaults or fabricate values when information is required. Infer only from explicit user input or verifiable project artifacts (code, `.pulse/specs/`, docs).
 6. **Resume from interruption** — After the user replies (e.g. `A`, `B`, `1`, `Sim`, or free text), continue exactly from where execution stopped.
 
 ## Format
@@ -144,16 +144,17 @@ Keep option text short (one line each). If an option needs a sub-prompt (e.g. "d
 
 These are **deliverables**, not question mechanisms — still create them after answers are received:
 
-- `.specs/project/PROJECT.md`, `ROADMAP.md`, `STATE.md`
-- `.specs/features/[feature]/spec.md`, `context.md`, `design.md`, `tasks.md`
-- `.specs/codebase/*` brownfield docs
+- `.pulse/specs/project/PROJECT.md`, `ROADMAP.md`, `STATE.md`
+- `.pulse/specs/features/[feature]/spec.md`, `context.md`, `design.md`, `tasks.md`
+- `.pulse/specs/quick/NNN-slug/TASK.md`, `SUMMARY.md`
+- `.pulse/specs/codebase/*` brownfield docs
 - Validation reports, fix plans, task summaries
 
 `context.md` stores **decisions already made** — never use it (or any file) as a questionnaire or pending-questions log.
 
 ## Approval and confirmation
 
-When a phase requires user approval (design, tasks, quick-task pre-check, fix plans), present the deliverable summary first, then blocking questions in CLI format:
+When a phase requires user approval (design, tasks, quick-task pre-check, fix plans), create spec deliverables first when applicable (e.g. `.pulse/specs/quick/NNN-slug/TASK.md`), present the summary, then blocking questions in CLI format:
 
 ```
 Preciso de algumas informações antes de continuar.
@@ -167,6 +168,31 @@ Resposta:
 ```
 
 If the user chooses adjustments, wait for their description before revising.
+
+## Pipeline migration (Quick mode → full spec)
+
+When a request triggered as Quick mode but fails **Scope Eligibility** in [quick-mode.md](quick-mode.md), present:
+
+```text
+Preciso de algumas informações antes de continuar.
+
+1. Este pedido excede o escopo do Quick mode: [motivo concreto — ex.: 5 arquivos, decisão de arquitetura, escopo vago]. Como deseja prosseguir?
+
+A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute, conforme escopo)
+B) Quick fix: [recorte pré-definido 1 — uma linha, ≤3 arquivos]
+C) Quick fix: [recorte pré-definido 2 — uma linha, ≤3 arquivos]
+D) Cancelar
+
+Resposta:
+```
+
+- **A)** Start [specify.md](specify.md) for the feature — do not keep a quick TASK.md
+- **B/C…)** Re-assess eligibility with that predefined narrowed scope; if it passes, continue Quick mode
+- **Last option (Cancelar)** Stop; no spec files unless the user reopens the request
+
+**Closed choices only:** Do not use "descreva" or free-text options in this block. Do not include "Outro" — Pulse suppresses it for migration gates. List concrete quick-fix alternatives derived from your codebase analysis.
+
+**Never** auto-start Specify, Design, or Tasks without the user selecting **A**.
 
 ## UAT and verification
 

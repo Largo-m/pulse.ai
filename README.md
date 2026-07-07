@@ -74,6 +74,11 @@ Campos sobrescrevíveis por projeto: `agent`, `model`, `permission_policy` e `wo
 
 Workflows disponíveis: `new-issue`, `fix-bug`, `setup-project`, `analyze-codebase`.
 
+O workflow `fix-bug` executa o Quick Mode do `tlc-spec-driven`: descreve →
+plano + `.pulse/specs/quick/NNN-slug/TASK.md` → aprovação no terminal → implementa →
+verifica → `SUMMARY.md`. Nada de código de aplicação é alterado sem aprovação
+explícita.
+
 A resolução por workflow segue: `projeto.workflows[id]` → `global.workflows[id]` →
 `projeto.defaults` → `global.defaults` → padrões do código.
 

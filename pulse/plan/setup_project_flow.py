@@ -94,5 +94,5 @@ def run_setup_project(*, user_prompt: str, workspace: Path | None = None) -> int
         console.print(f"[dim]{ask_count} pergunta(s) respondida(s) no terminal[/dim]")
     else:
         console.print("[dim]Nenhum questionário necessário — contexto inferido do workspace[/dim]")
-    console.print("[dim]Artefatos esperados em .specs/project/[/dim]")
+    console.print("[dim]Artefatos esperados em .pulse/specs/project/[/dim]")
     return 0

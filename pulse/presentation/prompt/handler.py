@@ -13,9 +13,11 @@ from pulse.presentation.prompt.ask_question import (
     build_ask_question_cancelled,
     format_option_label,
     is_other_option,
+    option_requires_description,
     parse_ask_question_params,
     parse_questionnaire_meta,
     resolve_question_progress,
+    should_add_other_option,
 )
 from pulse.presentation.prompt.text_questionnaire import (
     TextQuestion,
@@ -116,6 +118,12 @@ class PromptHandler:
         if not selected:
             return ""
         value = str(selected[0])
+        if "::" in value:
+            letter, detail = value.split("::", 1)
+            for option_letter, label in question.options:
+                if letter == option_letter:
+                    return f"{letter}) {label} — {detail}"
+            return f"{value.replace('::', ' — ')}"
         for letter, label in question.options:
             if value == letter:
                 return f"{letter}) {label}"
@@ -174,7 +182,7 @@ class PromptHandler:
                 "selectedOptionIds": [free_text.strip()],
             }
 
-        choices = self._build_choices(options)
+        choices = self._build_choices(options, prompt=prompt)
         if not choices:
             return None
 
@@ -214,7 +222,18 @@ class PromptHandler:
                 return None
             return {"questionId": question_id, "selectedOptionIds": [custom]}
 
-        return {"questionId": question_id, "selectedOptionIds": [str(selected)]}
+        selected_id = str(selected)
+        selected_label = self._choice_label(choices, selected_id)
+        if selected_label and option_requires_description(selected_label):
+            custom = self._prompt_follow_up_text(prompt, selected_label)
+            if custom is None:
+                return None
+            return {
+                "questionId": question_id,
+                "selectedOptionIds": [f"{selected_id}::{custom}"],
+            }
+
+        return {"questionId": question_id, "selectedOptionIds": [selected_id]}
 
     def _render_question_header(
         self,
@@ -251,16 +270,18 @@ class PromptHandler:
                 )
             )
 
-    def _build_choices(self, options: list[Any]) -> list[questionary.Choice]:
+    def _build_choices(self, options: list[Any], *, prompt: str = "") -> list[questionary.Choice]:
         choices: list[questionary.Choice] = []
         has_other = False
         option_index = 0
+        option_labels: list[str] = []
 
         for option in options:
             if not isinstance(option, dict):
                 continue
             option_id = str(option.get("id", option.get("label", "")))
             label = str(option.get("label", option_id))
+            option_labels.append(label)
             if is_other_option(option_id, label):
                 has_other = True
                 option_id = OTHER_OPTION_ID
@@ -270,11 +291,35 @@ class PromptHandler:
                 option_index += 1
             choices.append(questionary.Choice(label, value=option_id))
 
-        if choices and not has_other:
+        if choices and not has_other and should_add_other_option(
+            prompt=prompt,
+            option_labels=option_labels,
+        ):
             other_label = format_option_label(option_index, "Outro (descreva)")
             choices.append(questionary.Choice(other_label, value=OTHER_OPTION_ID))
 
         return choices
+
+    @staticmethod
+    def _choice_label(choices: list[questionary.Choice], selected_id: str) -> str | None:
+        for choice in choices:
+            if str(choice.value) == selected_id:
+                return str(choice.title)
+        return None
+
+    def _prompt_follow_up_text(self, prompt: str, option_label: str) -> str | None:
+        self._console.print()
+        value = questionary.text(
+            f"{prompt}\n[{option_label}]",
+            style=MENU_STYLE,
+        ).ask()
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            questionary.print("Descreva a opção escolhida.", style="fg:yellow")
+            return self._prompt_follow_up_text(prompt, option_label)
+        return value
 
     def _prompt_other_text(self, prompt: str) -> str | None:
         self._console.print()

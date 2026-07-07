@@ -36,7 +36,7 @@
 
 | Scope                               | What happens                                                      |
 | ----------------------------------- | ----------------------------------------------------------------- |
-| **Small** (≤3 files)                | Quick mode — describe → implement → verify → commit               |
+| **Small** (≤3 files)                | Quick mode — describe → plan → spec files → **approve** → implement → verify → track |
 | **Medium** (clear feature)          | Specify → Execute (design and tasks inline)                       |
 | **Large** (multi-component)         | Full pipeline with formal design and task breakdown               |
 | **Complex** (ambiguity, new domain) | Full pipeline + gray area discussion + research + interactive UAT |
@@ -65,10 +65,10 @@ npx @tech-leads-club/agent-skills install -s tlc-spec-driven
 
 ## 📁 Project Structure
 
-The skill creates a `.specs/` directory to organize all project documentation:
+The skill creates a `.pulse/specs/` directory to organize all project documentation:
 
 ```
-.specs/
+.pulse/specs/
 ├── project/
 │   ├── PROJECT.md      # Vision, goals, tech stack, constraints
 │   ├── ROADMAP.md      # Milestones, features, status tracking
@@ -93,7 +93,7 @@ The skill creates a `.specs/` directory to organize all project documentation:
 └── quick/              # Ad-hoc tasks (quick mode)
     └── NNN-slug/
         ├── TASK.md     # Description + verification
-        └── SUMMARY.md  # What was done + commit
+        └── SUMMARY.md  # What was done
 ```
 
 ## 🔄 The Four Adaptive Phases
@@ -143,32 +143,24 @@ The agent acts as a thinking partner. When user input is required, it follows [u
 |               | T3: Create submit button          |
 |               | T4: Add form state management     |
 
-Each task includes: What (deliverable), Where (file path), Depends on (prerequisites), Reuses (existing code), Requirement (traceable ID), Done when (verifiable criteria), Commit (message format).
+Each task includes: What (deliverable), Where (file path), Depends on (prerequisites), Reuses (existing code), Requirement (traceable ID), Done when (verifiable criteria).
 
 ### Execute (always)
 
-**Goal:** Implement one task at a time. Verify. Commit. Repeat.
+**Goal:** Implement one task at a time. Verify. Repeat.
 
 Every task follows the same cycle:
 
 ```
-Plan → Implement → Verify → Commit → Next
+Plan → Implement → Verify → Next
 ```
 
 **Key principles:**
 
 - **Surgical changes** — Only touch required files
 - **No scope creep** — If it's not in the task, don't touch it. Capture ideas in STATE.md as Deferred Ideas
-- **Verify before commit** — Check all "Done when" criteria
-- **Atomic git commits** — One task = one commit, following [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
-
-```
-feat(auth): add email validation to login form
-
-refactor(api): extract token refresh logic into service
-
-fix(cart): prevent negative quantity on item decrement
-```
+- **Verify before marking done** — Check all "Done when" criteria
+- **No git operations** — Do not commit or suggest commit messages unless the user explicitly asks
 
 **Feature-level validation** happens after all tasks complete — including acceptance criteria checks, code quality review, and optionally interactive UAT for complex user-facing features.
 
@@ -179,17 +171,33 @@ For small tasks (bug fixes, config changes, tweaks ≤3 files) that don't need t
 ```
 You: Quick fix: login button returns 401 because token refresh skips expired check
 
-Agent: Quick Task: Fix token refresh expired check
+Agent: [Creates .pulse/specs/quick/001-token-refresh/TASK.md + updates STATE.md]
+
+       Quick Task 001: Fix token refresh expired check
+       Spec: .pulse/specs/quick/001-token-refresh/TASK.md
        Files: src/services/auth.ts
        Approach: Add expiry validation before refresh attempt
        Verify: Login with expired token returns new session, not 401
 
-       [Implements...]
+```text
+Preciso de algumas informações antes de continuar.
 
-       ✅ Done. Committed: fix(auth): add expiry check to token refresh
+1. Aprovar quick task 001 e implementar?
+
+A) Sim, aprovar e implementar
+B) Não, preciso de ajustes (descreva abaixo)
+
+Resposta:
 ```
 
-**Guardrails:** Max 3 files, max 1 hour, no design decisions, no new dependencies. If any of these are exceeded, the agent recommends the full pipeline.
+You: A
+
+Agent: [Implements...]
+
+       ✅ Done. Verification passed. SUMMARY.md updated.
+```
+
+**Guardrails:** Scope check first — out of scope asks pipeline migration; spec files before plan reply when eligible; CLI approval before application code; max 3 files, max 1 hour, no design decisions, no new dependencies.
 
 ## 📋 Complete Command Reference
 
@@ -252,7 +260,7 @@ Resposta:
 
 You: D, C
 
-Agent: ✅ Created .specs/project/PROJECT.md
+Agent: ✅ Created .pulse/specs/project/PROJECT.md
        Next: Would you like to create a roadmap? Say "Create roadmap"
 ```
 
@@ -268,7 +276,7 @@ Agent: I'll analyze your existing codebase and document:
 
        [Analyzes codebase...]
 
-       ✅ Created 7 brownfield docs in .specs/codebase/
+       ✅ Created 7 brownfield docs in .pulse/specs/codebase/
        Next: Initialize project to define goals and roadmap
 ```
 
@@ -297,7 +305,7 @@ Agent: Implementing T1: Create auth service interface
 
        [Implements...]
 
-       ✅ Committed: feat(auth): create auth service interface
+       ✅ Done. Verification passed.
        Next available: T2, T3 [P] (parallel)
 ```
 
@@ -306,14 +314,19 @@ Agent: Implementing T1: Create auth service interface
 ```
 You: Quick fix: dark mode toggle doesn't persist after page refresh
 
-Agent: Quick Task: Persist dark mode preference
+Agent: [Creates .pulse/specs/quick/002-dark-mode/TASK.md + updates STATE.md]
+
+       Quick Task 002: Persist dark mode preference
+       Spec: .pulse/specs/quick/002-dark-mode/TASK.md
        Files: src/hooks/useTheme.ts, src/utils/storage.ts
        Approach: Save preference to localStorage on toggle
        Verify: Toggle dark mode, refresh page, preference persists
 
+       [CLI approval block — user selects A) Sim]
+
        [Implements...]
 
-       ✅ Committed: fix(theme): persist dark mode preference to localStorage
+       ✅ Done. Verification passed.
 ```
 
 ### Session Continuity
@@ -321,9 +334,9 @@ Agent: Quick Task: Persist dark mode preference
 ```
 You: Pause work
 
-Agent: ✅ Created .specs/HANDOFF.md
+Agent: ✅ Created .pulse/specs/HANDOFF.md
        - Feature: user-authentication
-       - Completed: T1, T2 (committed)
+       - Completed: T1, T2 (verified, uncommitted)
        - In progress: T3 (70%)
        - Next session: Continue T3, then T4
 
@@ -379,7 +392,7 @@ The skill includes detailed reference documentation loaded on-demand:
 | `discuss.md`            | Gray area discussion and context capture                               |
 | `design.md`             | Architecture, research, and component design                           |
 | `tasks.md`              | Granular task breakdown methodology                                    |
-| `implement.md`          | Execute: implementation + verification + atomic commits                |
+| `implement.md`          | Execute: implementation + verification                                   |
 | `validate.md`           | Feature validation and interactive UAT                                 |
 | `quick-mode.md`         | Express lane for ad-hoc tasks                                          |
 | `session-handoff.md`    | Pause/resume work process                                              |
@@ -441,13 +454,19 @@ A: Yes! The skill auto-sizes. Design and Tasks are skipped for simple features. 
 A: Use `"Map codebase"` first. This creates 7 documents analyzing your existing architecture, conventions, stack, and concerns before you start adding features.
 
 **Q: How does requirement traceability work?**
-A: Each requirement gets a unique ID (e.g., `AUTH-01`) in spec.md. Tasks reference these IDs, and validation checks which requirements are verified. You get a clear trail from spec → design → task → commit.
+A: Each requirement gets a unique ID (e.g., `AUTH-01`) in spec.md. Tasks reference these IDs, and validation checks which requirements are verified. You get a clear trail from spec → design → task → verification.
 
-**Q: What are atomic git commits?**
-A: Each task produces exactly one commit following [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/). This means clean git history, easy bisect for debugging, and simple rollbacks when needed.
+**Q: Does the skill handle git commits?**
+A: No. The agent does not commit and does not suggest commit messages. You control git history entirely.
 
 **Q: Can I use this for small tasks or quick fixes?**
-A: Yes! Say `"Quick fix: [description]"` for bug fixes, config changes, or small tweaks. You get quality guardrails (verify + commit) without the planning overhead.
+A: Yes! Say `"Quick fix: [description]"` for bug fixes, config changes, or small tweaks. The agent creates `.pulse/specs/quick/NNN-slug/TASK.md` before presenting the plan, asks for CLI approval, then implements.
+
+**Q: Will the agent implement quick fixes immediately?**
+A: No. Quick mode creates spec files first, presents the plan, and ends with a CLI approval question. Application code changes only after you confirm.
+
+**Q: What if my request is too big for Quick mode?**
+A: The agent explains why (e.g. too many files, needs design) and asks whether you want to **migrate to the full pipeline** (Specify → … → Execute), **narrow the scope**, or **cancel**. It never auto-escalates without your choice.
 
 **Q: What happens if I close my session mid-task?**
 A: Say `"Pause work"` before ending your session. This creates a handoff document. Next session, say `"Resume work"` to continue exactly where you left off.

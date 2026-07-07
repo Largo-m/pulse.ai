@@ -6,7 +6,7 @@
 
 **Purpose:** Checkpoint current state for resumption.
 
-**Output:** `.specs/HANDOFF.md` (overwrites previous)
+**Output:** `.pulse/specs/HANDOFF.md` (overwrites previous)
 
 **Size target:** ~500 tokens
 

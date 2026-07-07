@@ -50,7 +50,7 @@ def test_build_analyze_codebase_artifact_prompt_targets_codebase_specs():
         analysis_summary="Stack: Python + FastAPI",
     )
     for artifact in CODEBASE_ARTIFACTS:
-        assert f".specs/codebase/{artifact}" in prompt
+        assert f".pulse/specs/codebase/{artifact}" in prompt
     assert "Python + FastAPI" in prompt
     assert "Análise desta execução" in prompt
     assert "concerns.md" in prompt

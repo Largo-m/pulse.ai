@@ -39,11 +39,11 @@
 
 ### 1. Review Design
 
-Read `.specs/[feature]/design.md` before creating tasks.
+Read `.pulse/specs/[feature]/design.md` before creating tasks.
 
 ### 1.5. Load Test Coverage Matrix
 
-Read `.specs/codebase/TESTING.md` (if it exists) before creating tasks. The Test Coverage Matrix
+Read `.pulse/specs/codebase/TESTING.md` (if it exists) before creating tasks. The Test Coverage Matrix
 and Parallelism Assessment drive two critical decisions:
 
 **Co-located tests:** Every task that creates or modifies a code layer with a required test type
@@ -62,7 +62,8 @@ MUST include writing/updating those tests in the same task. Tests are NOT separa
 - If a task's required test type is marked "Parallel-Safe: Yes" → `[P]` is allowed
 - If a task has no tests → `[P]` depends only on code dependencies
 
-If TESTING.md does not exist (greenfield project), stop and collect test types and gate commands via [user-input.md](user-input.md) before creating tasks.
+If TESTING.md does not exist (greenfield project), ask the user what test types and commands
+the project will use before creating tasks.
 
 ### 2. Break Into Atomic Tasks
 
@@ -91,18 +92,23 @@ Before showing tasks to the user, run ALL three pre-approval checks. These are N
 
 **Output both tables with the tasks** so the user can see the validation results. Any ❌ means you MUST restructure before presenting — do not show failing tasks to the user and ask them to approve.
 
-### 6. MCPs and Skills (before execution)
+### 6. ASK About MCPs and Skills
 
-**CRITICAL**: Before execution, if tool choices are not already documented, stop and collect preferences via [user-input.md](user-input.md). Include available MCPs and Skills as lettered options in the CLI batch.
+**CRITICAL**: Before execution, ask the user:
+
+> "For each task, which tools should I use?"
+>
+> **Available MCPs**: [list from project or user]
+> **Available Skills**: [list from project or user]
 
 ---
 
-## Template: `.specs/[feature]/tasks.md`
+## Template: `.pulse/specs/[feature]/tasks.md`
 
 ```markdown
 # [Feature] Tasks
 
-**Design**: `.specs/[feature]/design.md`
+**Design**: `.pulse/specs/[feature]/design.md`
 **Status**: Draft | Approved | In Progress | Done
 
 ---
@@ -236,8 +242,6 @@ T8 → T9
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat([scope]): [description]`
-
 ---
 
 ## Parallel Execution Map
@@ -363,7 +367,6 @@ Pick whichever option keeps tasks atomic and cohesive. The goal: no task produce
 - **Dependencies are gates** — Clear what blocks what
 - **Done when = Testable** — If you can't verify it, rewrite it
 - **Requirement ID = Traceable** — Every task traces back to a spec requirement
-- **One commit per task** — Plan the commit message format in advance
 
 ---
 

@@ -81,4 +81,5 @@ def default_global_workflows() -> dict[str, WorkflowConfig]:
     return {
         "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
         "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
+        "fix-bug": WorkflowConfig(agent="cursor", model="gpt-5.5"),
     }

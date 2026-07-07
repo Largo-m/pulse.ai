@@ -54,7 +54,7 @@ def build_setup_project_prompt(
         "as respostas para a próxima fase.",
         "",
         "Após analisar o workspace, verifique se há informação **explícita** sobre:",
-        "visão, público-alvo, foco da v1 e restrições (em `.specs/project/PROJECT.md`, README ou docs).",
+        "visão, público-alvo, foco da v1 e restrições (em `.pulse/specs/project/PROJECT.md`, README ou docs).",
         "",
         "- Se **qualquer** campo estiver ausente ou ambíguo, responda **apenas** com o bloco de",
         "  perguntas (sem `SETUP_READY` e sem texto antes ou depois).",
@@ -118,7 +118,7 @@ def build_setup_project_artifact_prompt(
     summary = format_analysis_summary(analysis_summary)
     answers = questionnaire_answers.strip()
     sections = [
-        "Fase 2 do Setup project — criar artefatos em `.specs/project/`.",
+        "Fase 2 do Setup project — criar artefatos em `.pulse/specs/project/`.",
         f"Workspace: `{workspace}`",
         f"Contexto inicial: {user_prompt.strip() or 'Novo projeto'}",
         "",
@@ -155,9 +155,9 @@ def build_setup_project_artifact_prompt(
     sections.extend(
         [
             "Explore o workspace se necessário e crie:",
-            "- `.specs/project/PROJECT.md` conforme `project-init.md`.",
-            "- `.specs/project/ROADMAP.md` conforme `roadmap.md`.",
-            "- `.specs/project/STATE.md` conforme `state-management.md`.",
+            "- `.pulse/specs/project/PROJECT.md` conforme `project-init.md`.",
+            "- `.pulse/specs/project/ROADMAP.md` conforme `roadmap.md`.",
+            "- `.pulse/specs/project/STATE.md` conforme `state-management.md`.",
             "- Responda em português.",
             "",
         ]

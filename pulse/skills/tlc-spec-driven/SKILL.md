@@ -1,6 +1,6 @@
 ---
 name: tlc-spec-driven
-description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. Creates atomic tasks with verification criteria, atomic git commits, requirement traceability, and persistent memory across sessions. Stack-agnostic. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification and atomic commits, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
+description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. Creates atomic tasks with verification criteria, requirement traceability, and persistent memory across sessions. Stack-agnostic. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
 license: CC-BY-4.0
 metadata:
   author: Felipe Rodrigues - github.com/felipfr
@@ -45,7 +45,7 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 ## Project Structure
 
 ```
-.specs/
+.pulse/specs/
 ├── project/
 │   ├── PROJECT.md      # Vision & goals
 │   ├── ROADMAP.md      # Features & milestones
@@ -83,7 +83,33 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 2. Initialize project → PROJECT.md + ROADMAP.md
 3. For each feature → same adaptive workflow
 
-**Quick mode:** Describe → Implement → Verify → Commit (for ≤3 files, one-sentence scope)
+**Quick mode:** Describe → Plan → **Spec files** → **Approve** → Implement → Verify → Track
+
+## Quick Mode Approval
+
+**Never implement a quick task automatically.** The user must approve the plan first.
+
+**Scope gate:** If the request does not fit Quick mode (see [quick-mode.md](references/quick-mode.md) **Scope Eligibility**), **ask** whether to migrate to the full pipeline — do not create quick spec files or implement until the user chooses.
+
+1. Check scope eligibility (research and read files is OK)
+2. If out of scope → explain why → **Pipeline migration** CLI question → stop
+3. If in scope → **create spec files before responding:** `.pulse/specs/quick/NNN-slug/TASK.md` + update `STATE.md`
+4. Present pre-implementation check in chat (reference the TASK.md path) and **stop**
+5. Collect approval via [user-input.md](references/user-input.md) CLI format — wait for explicit confirmation before any **application code** changes
+6. Only then: Implement → Verify → Track (SUMMARY.md)
+
+Creating `.pulse/specs/` quick files is required and allowed before approval when eligible. Editing application source is not. Full pipeline starts only after explicit user confirmation.
+
+See [quick-mode.md](references/quick-mode.md) for the full process and approval anti-patterns.
+
+## Git Policy
+
+**The user controls git.** The agent does not commit and does not suggest commit messages.
+
+- Do not run `git commit`, `git add` + `git commit`, or equivalent unless the user explicitly asks
+- Do not suggest commit messages, Conventional Commits formats, or "ready to commit" prompts after tasks
+- After verification, mark the task done and update tracking docs — leave git entirely to the user
+- Session handoff may note uncommitted files; that is informational only
 
 ## User Input (CLI)
 
@@ -195,7 +221,7 @@ parallel execution. The orchestrating agent plans and coordinates; sub-agents do
 | Parallel `[P]` tasks | Yes (one per task) | The only way to actually run tasks in parallel |
 | Sequential tasks with no `[P]` | Yes | Keeps implementation artifacts out of the main context |
 | Planning, task creation, validation reports | No | These require the full accumulated context to be coherent |
-| Quick mode tasks | No | Too small to justify the overhead |
+| Quick mode tasks | No | Too small to justify the overhead; **never auto-implement** — create spec files, present plan, wait for user approval via CLI |
 
 **Context each sub-agent receives:**
 
@@ -263,7 +289,7 @@ When researching, designing, or making any technical decision, follow this chain
 
 ```
 Step 1: Codebase → check existing code, conventions, and patterns already in use
-Step 2: Project docs → README, docs/, inline comments, .specs/codebase/
+Step 2: Project docs → README, docs/, inline comments, .pulse/specs/codebase/
 Step 3: Context7 MCP → resolve library ID, then query for current API/patterns
 Step 4: Web search → official docs, reputable sources, community patterns
 Step 5: Flag as uncertain → "I'm not certain about X — here's my reasoning, but verify"

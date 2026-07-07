@@ -10,7 +10,7 @@ Based on PROJECT.md, decompose vision into:
 - Features (user-facing capabilities)
 - Status tracking (planned/in-progress/complete)
 
-## Output: .specs/project/ROADMAP.md
+## Output: .pulse/specs/project/ROADMAP.md
 
 **Structure:**
 

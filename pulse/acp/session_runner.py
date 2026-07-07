@@ -15,6 +15,11 @@ from pulse.acp.models import resolve_interview_model_id
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
+from pulse.plan.quick_prompt import (
+    build_quick_continuation_prompt,
+    build_quick_implement_prompt,
+    classify_quick_questionnaire_outcome,
+)
 from pulse.plan.setup_project_prompt import build_setup_project_artifact_prompt
 from pulse.presentation.prompt.handler import PermissionPolicy, PromptHandler
 from pulse.presentation.prompt.text_questionnaire import parse_text_questionnaire
@@ -22,6 +27,7 @@ from pulse.presentation.stream_renderer import StreamRenderer
 
 INTERVIEW_MODE = "agent"
 AGENT_MODE = "agent"
+MAX_QUICK_PLAN_TURNS = 4
 
 
 class AcpSessionRunner:
@@ -129,7 +135,7 @@ class AcpSessionRunner:
             )
 
             self.set_mode(self._session_id, AGENT_MODE)
-            self._stream.begin_phase("Fase 2 — Gerando .specs/project/")
+            self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/project/")
             self._stream.reset_capture()
             artifact_result = self.prompt(self._session_id, artifact_prompt)
             artifact_result["interviewStopReason"] = interview_result.get("stopReason")
@@ -205,7 +211,7 @@ class AcpSessionRunner:
             )
 
             self.set_mode(self._session_id, AGENT_MODE)
-            self._stream.begin_phase("Fase 2 — Gerando .specs/codebase/")
+            self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/codebase/")
             self._stream.reset_capture()
             artifact_result = self.prompt(self._session_id, artifact_prompt)
             artifact_result["exploreStopReason"] = explore_result.get("stopReason")
@@ -220,6 +226,145 @@ class AcpSessionRunner:
                 },
             )
             return artifact_result
+        finally:
+            self._stream.finish()
+            self.close_session()
+            self.close()
+
+    def run_quick(
+        self,
+        *,
+        plan_prompt: str,
+        workspace: Path,
+        user_prompt: str,
+        documents: dict[str, str],
+        preferred_model: str | None = None,
+    ) -> dict[str, Any]:
+        self._run_id = str(uuid.uuid4())
+        self._logger = AcpLogger(self._run_id)
+        self._logger.log_event(
+            "run_quick_start",
+            {"workspace": str(workspace), "preferred_model": preferred_model},
+        )
+        self.start()
+        try:
+            self.initialize()
+            self.authenticate()
+            session = self.new_session(self._cwd, workflow="fix-bug")
+            session_id = session.get("sessionId")
+            if not session_id:
+                raise RuntimeError("Sessão ACP não retornou sessionId")
+            self._session_id = str(session_id)
+            self._logger.set_session_id(self._session_id)
+
+            model_id = resolve_interview_model_id(session, preferred_model)
+            if model_id:
+                self.set_model(self._session_id, model_id)
+                self._emit_info(f"Modelo: {model_id}")
+
+            self.set_mode(self._session_id, INTERVIEW_MODE)
+            next_prompt = plan_prompt
+            plan_summary = ""
+            answers_text = ""
+            approved = False
+            outcome = "unknown"
+
+            for turn in range(MAX_QUICK_PLAN_TURNS):
+                phase_label = (
+                    "Fase 1 — Planejando quick task"
+                    if turn == 0
+                    else f"Fase 1 — Continuando ({turn + 1})"
+                )
+                self._stream.begin_phase(phase_label)
+                self._stream.reset_capture()
+                plan_result = self.prompt(self._session_id, next_prompt)
+                if plan_result.get("stopReason") == "cancelled":
+                    plan_result["askQuestionCount"] = self.ask_question_count
+                    plan_result["approved"] = False
+                    plan_result["outcome"] = "cancelled"
+                    return plan_result
+
+                plan_summary = self._stream.agent_text()
+                answers_text = self._run_text_questionnaire(plan_summary)
+                if answers_text is None:
+                    return {
+                        "stopReason": "cancelled",
+                        "planStopReason": plan_result.get("stopReason"),
+                        "askQuestionCount": self.ask_question_count,
+                        "approved": False,
+                        "outcome": "cancelled",
+                    }
+
+                if not answers_text.strip():
+                    if turn == 0:
+                        approved = False
+                        outcome = "unknown"
+                    break
+
+                outcome = classify_quick_questionnaire_outcome(answers_text)
+                if outcome == "approve":
+                    approved = True
+                    break
+                if outcome == "cancel":
+                    return {
+                        "stopReason": plan_result.get("stopReason", "end_turn"),
+                        "planStopReason": plan_result.get("stopReason"),
+                        "askQuestionCount": self.ask_question_count,
+                        "approved": False,
+                        "outcome": "cancel",
+                    }
+
+                next_prompt = build_quick_continuation_prompt(
+                    workspace=workspace,
+                    user_prompt=user_prompt,
+                    documents=documents,
+                    plan_summary=plan_summary,
+                    questionnaire_answers=answers_text,
+                    outcome=outcome,
+                )
+
+            if not approved:
+                self._logger.log_event(
+                    "run_quick_not_approved",
+                    {
+                        "ask_question_count": self.ask_question_count,
+                        "outcome": outcome,
+                        "log_path": str(self._logger.path),
+                    },
+                )
+                return {
+                    "stopReason": plan_result.get("stopReason", "end_turn"),
+                    "planStopReason": plan_result.get("stopReason"),
+                    "askQuestionCount": self.ask_question_count,
+                    "approved": False,
+                    "outcome": outcome,
+                }
+
+            implement_prompt = build_quick_implement_prompt(
+                workspace=workspace,
+                user_prompt=user_prompt,
+                documents=documents,
+                plan_summary=plan_summary,
+                approval_answers=answers_text,
+            )
+
+            self.set_mode(self._session_id, AGENT_MODE)
+            self._stream.begin_phase("Fase 2 — Implementando quick task")
+            self._stream.reset_capture()
+            implement_result = self.prompt(self._session_id, implement_prompt)
+            implement_result["planStopReason"] = plan_result.get("stopReason")
+            implement_result["askQuestionCount"] = self.ask_question_count
+            implement_result["approved"] = True
+            self._logger.log_event(
+                "run_quick_done",
+                {
+                    "stop_reason": implement_result.get("stopReason"),
+                    "plan_stop_reason": implement_result.get("planStopReason"),
+                    "ask_question_count": self.ask_question_count,
+                    "log_path": str(self._logger.path),
+                },
+            )
+            return implement_result
         finally:
             self._stream.finish()
             self.close_session()

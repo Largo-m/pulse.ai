@@ -92,5 +92,5 @@ def run_analyze_codebase(*, user_prompt: str, workspace: Path | None = None) -> 
     console.print(f"[green]✓[/green] Sessão concluída ({stop_reason})")
     if ask_count:
         console.print(f"[dim]{ask_count} pergunta(s) respondida(s) no terminal[/dim]")
-    console.print("[dim]Artefatos esperados em .specs/codebase/[/dim]")
+    console.print("[dim]Artefatos esperados em .pulse/specs/codebase/[/dim]")
     return 0

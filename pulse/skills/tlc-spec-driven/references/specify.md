@@ -8,7 +8,7 @@ If the feature has ambiguous gray areas (multiple valid approaches for user-faci
 
 ### 1. Clarify Requirements
 
-You are a thinking partner, not an interviewer. Start by reading existing project context (`.specs/`, codebase, user message). Draft requirements from what is already known.
+You are a thinking partner, not an interviewer. Start by reading existing project context (`.pulse/specs/`, codebase, user message). Draft requirements from what is already known.
 
 When mandatory information is missing or vague, follow [user-input.md](user-input.md) — batch all pending questions at the end of the response in CLI format. Challenge vagueness in the question options themselves (make abstract choices concrete).
 
@@ -36,7 +36,7 @@ Use **WHEN/THEN/SHALL** format - it's precise and testable:
 
 ---
 
-## Template: `.specs/[feature]/spec.md`
+## Template: `.pulse/specs/[feature]/spec.md`
 
 ```markdown
 # [Feature Name] Specification

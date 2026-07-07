@@ -59,8 +59,13 @@ def run_plan_flow(*, cwd: Path | None = None) -> int:
     if spec_type.id == "analyze-codebase":
         return run_plan(spec_type_id=spec_type.id, user_prompt="Mapear codebase existente")
 
+    if spec_type.id == "fix-bug":
+        label = "Descreva a quick task (uma frase: o quê e por quê):"
+    else:
+        label = "Descreva o workflow:"
+
     prompt = questionary.text(
-        "Descreva o workflow:",
+        label,
         default="",
         style=MENU_STYLE,
     ).ask()

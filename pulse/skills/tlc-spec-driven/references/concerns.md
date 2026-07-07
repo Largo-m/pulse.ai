@@ -35,7 +35,7 @@ Focus on concerns that could cause real damage — data loss, security breaches,
 
 ---
 
-## Template: `.specs/codebase/CONCERNS.md`
+## Template: `.pulse/specs/codebase/CONCERNS.md`
 
 **Size limit:** 5,000 tokens (~3,000 words)
 

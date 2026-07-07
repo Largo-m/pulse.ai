@@ -20,7 +20,7 @@ Gather project vision using the topics below. Follow [user-input.md](user-input.
 
 **Do not** start with a conversational interview or spread questions across multiple turns before doing autonomous work.
 
-## Output: .specs/project/PROJECT.md
+## Output: .pulse/specs/project/PROJECT.md
 
 **Structure:**
 

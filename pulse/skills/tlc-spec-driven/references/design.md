@@ -8,7 +8,7 @@
 
 ### 1. Load Context
 
-Read `.specs/features/[feature]/spec.md` before designing. If `.specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
+Read `.pulse/specs/features/[feature]/spec.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
 
 ### 1.5. Research (Optional but Recommended)
 
@@ -32,7 +32,7 @@ Overview of how components interact. Use mermaid diagrams when helpful. Before c
 
 **CRITICAL**: What existing code can we leverage? This saves tokens and reduces errors.
 
-If `.specs/codebase/CONCERNS.md` exists, check it before designing. Any component flagged as fragile, carrying tech debt, or having test coverage gaps requires extra care in the design — document how the design mitigates those concerns.
+If `.pulse/specs/codebase/CONCERNS.md` exists, check it before designing. Any component flagged as fragile, carrying tech debt, or having test coverage gaps requires extra care in the design — document how the design mitigates those concerns.
 
 ### 4. Define Components and Interfaces
 
@@ -44,12 +44,12 @@ If the feature involves data, define models before implementation.
 
 ---
 
-## Template: `.specs/[feature]/design.md`
+## Template: `.pulse/specs/[feature]/design.md`
 
 ````markdown
 # [Feature] Design
 
-**Spec**: `.specs/[feature]/spec.md`
+**Spec**: `.pulse/specs/[feature]/spec.md`
 **Status**: Draft | Approved
 
 ---

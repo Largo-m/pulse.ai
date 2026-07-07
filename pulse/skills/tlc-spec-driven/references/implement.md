@@ -1,8 +1,10 @@
 # Execute
 
-**Goal**: Implement ONE task at a time. Surgical changes. Verify. Commit. Repeat.
+**Goal**: Implement ONE task at a time. Surgical changes. Verify. Repeat.
 
-This is where code gets written. Every task follows the same cycle: plan → implement → verify → commit. Verification is built into every task, not a separate phase.
+This is where code gets written. Every task follows the same cycle: plan → implement → verify. Verification is built into every task, not a separate phase.
+
+**Git policy:** Do not commit and do not suggest commit messages unless the user explicitly asks for git help.
 
 ---
 
@@ -33,16 +35,15 @@ If there is no `tasks.md` for this feature, you MUST list atomic steps before wr
 ```
 ## Execution Plan
 
-1. [Step] → files: [list] → verify: [how] → commit: [message]
-2. [Step] → files: [list] → verify: [how] → commit: [message]
-3. [Step] → files: [list] → verify: [how] → commit: [message]
+1. [Step] → files: [list] → verify: [how]
+2. [Step] → files: [list] → verify: [how]
+3. [Step] → files: [list] → verify: [how]
 ```
 
 **Each step must be:**
 
 - ONE deliverable (one component, one function, one endpoint, one file change)
 - Independently verifiable (can prove it works before moving on)
-- Independently committable (gets its own atomic git commit)
 
 If listing steps reveals >5 steps or complex dependencies, STOP and create a formal `tasks.md` instead. The Tasks phase was wrongly skipped.
 
@@ -137,79 +138,9 @@ After the gate check passes:
 
 3. Quick complexity check: "Would senior engineer flag this as overcomplicated?"
    - Yes → Simplify, re-run gate
-   - No → Proceed to commit
+   - No → Proceed to update task status
 
-### 7. Atomic Git Commit
-
-Each task gets its own commit immediately after verification. Never batch multiple tasks into one commit.
-
-**Format ([Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)):**
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-**Types:**
-
-| Type       | When to use                                             |
-| ---------- | ------------------------------------------------------- |
-| `feat`     | New feature or capability                               |
-| `fix`      | Bug fix                                                 |
-| `refactor` | Code change that neither fixes a bug nor adds a feature |
-| `docs`     | Documentation only                                      |
-| `test`     | Adding or correcting tests                              |
-| `style`    | Formatting, missing semicolons, etc. (no code change)   |
-| `perf`     | Performance improvement                                 |
-| `build`    | Build system or external dependencies                   |
-| `ci`       | CI configuration files and scripts                      |
-| `chore`    | Maintenance tasks that don't modify src or test files   |
-
-**Scope:** Feature name or module area, lowercase, e.g., `auth`, `cart`, `api`
-
-**Description rules:**
-
-- Imperative mood ("add", not "added" or "adds")
-- Lowercase first letter
-- No period at the end
-- Complete the sentence: "If applied, this commit will _[your description]_"
-
-**Breaking changes:** Append `!` after type/scope AND add `BREAKING CHANGE:` footer:
-
-```
-feat(api)!: change authentication endpoint response format
-
-BREAKING CHANGE: login endpoint now returns JWT in body instead of cookie
-```
-
-**Examples:**
-
-```
-feat(auth): add email validation to login form
-```
-
-```
-fix(cart): prevent negative quantity on item decrement
-```
-
-```
-refactor(api): extract token refresh logic into service
-
-Move token refresh from inline handler to dedicated AuthTokenService
-for reuse across multiple endpoints.
-```
-
-**Rules:**
-
-- One task = one commit
-- Description references what was DONE, not what was planned
-- Include only files listed in the task — never sneak in "while I'm here" changes
-- If tests are part of the task, include them in the same commit
-
-### 8. Scope Guardrail
+### 7. Scope Guardrail
 
 During implementation, you will notice things that could be improved, refactored, or added. **Do not act on them.** Instead:
 
@@ -219,7 +150,7 @@ During implementation, you will notice things that could be improved, refactored
 
 **The heuristic:** "Is this in my task definition?" If no, don't touch it.
 
-### 9. Update Task Status
+### 8. Update Task Status
 
 Mark task complete in tasks.md. Update requirement traceability in spec.md if requirement IDs are used.
 
@@ -276,8 +207,8 @@ Mark task complete in tasks.md. Update requirement traceability in spec.md if re
 - **One task at a time** — Focus prevents errors
 - **Tools matter** — Wrong MCP = wrong approach
 - **Reuses save tokens** — Copy patterns, don't reinvent
-- **Check before commit** — Verify all criteria, then commit
+- **Verify before marking done** — Check all criteria, then update task status
 - **Stay surgical** — Touch only what's necessary
-- **Commit per task** — Clean git history enables bisect and rollback
+- **No git operations** — Do not commit or suggest commit messages unless the user explicitly asks
 - **Never "while I'm here"** — Scope creep during implementation is the #1 quality killer
 - **Learn from mistakes** — If something goes wrong, add a Lesson Learned to STATE.md

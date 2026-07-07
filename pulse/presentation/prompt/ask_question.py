@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 OTHER_OPTION_ID = "__other__"
 DEFAULT_QUESTIONNAIRE_TITLE = "Preciso de algumas informações antes de continuar."
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+_DESCRIBE_PATTERN = re.compile(r"\(descreva|descreva abaixo|descreva o|descreva qual", re.IGNORECASE)
 
 
 def parse_ask_question_params(params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -71,6 +73,34 @@ def is_other_option(option_id: str, label: str = "") -> bool:
         "outro",
         "other",
     }
+
+
+def option_requires_description(label: str) -> bool:
+    return bool(_DESCRIBE_PATTERN.search(label.strip()))
+
+
+def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
+    prompt_lower = prompt.lower()
+    labels_lower = [label.lower() for label in option_labels]
+
+    if any("cancelar" in label for label in labels_lower):
+        return False
+    if any("aprovar e implementar" in label for label in labels_lower):
+        return False
+    if any("migrar para" in label and "pipeline" in label for label in labels_lower):
+        return False
+    if any(label.startswith("quick fix:") for label in labels_lower):
+        return False
+
+    closed_prompt_markers = (
+        "aprovar quick task",
+        "excede o escopo do quick mode",
+        "excede o quick mode",
+        "como deseja prosseguir",
+        "funciona como esperado",
+        "não funciona (descreva",
+    )
+    return not any(marker in prompt_lower for marker in closed_prompt_markers)
 
 
 def build_ask_question_answer(

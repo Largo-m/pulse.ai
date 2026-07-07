@@ -23,7 +23,7 @@ Before starting, check if the `codenavi` skill is available for code exploration
 - Focus on consistency and patterns, not exhaustive coverage
 - Extract actual examples, not assumptions
 
-## Output: 7 Files in .specs/codebase/
+## Output: 7 Files in .pulse/specs/codebase/
 
 ---
 
