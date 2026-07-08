@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.skills.loader import load_bundled_skill
 
 TLC_SPEC_SKILL = "tlc-spec-driven"
@@ -56,6 +57,10 @@ def build_analyze_codebase_prompt(
         f"Analise **somente** o workspace `{workspace}`.",
         "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
         "",
+    ]
+    extend_prompt_with_workspace_context(sections, workspace)
+    sections.extend(
+        [
         "## Fase 1 — Exploração do codebase",
         "",
         "Você está conectado ao cliente **Pulse**.",
@@ -98,7 +103,8 @@ def build_analyze_codebase_prompt(
         "Ao concluir a exploração, responda **somente** a palavra `ANALYZE_READY` — "
         "sem frases antes ou depois. O Pulse usa isso internamente e não exibe no terminal.",
         "",
-    ]
+        ]
+    )
 
     for name, content in documents.items():
         if name in {"user-input.md", "SKILL.md"}:
@@ -136,11 +142,16 @@ def build_analyze_codebase_artifact_prompt(
         f"Use **somente** o workspace `{workspace}` e a análise desta execução abaixo.",
         "Não reutilize conversas anteriores, outros repositórios ou execuções passadas do Pulse.",
         "",
+    ]
+    extend_prompt_with_workspace_context(sections, workspace)
+    sections.extend(
+        [
         "## Análise desta execução (fase 1)",
         "",
         summary or "(Reexplore o workspace — nenhum resumo capturado da fase 1.)",
         "",
-    ]
+        ]
+    )
 
     if answers:
         sections.extend(

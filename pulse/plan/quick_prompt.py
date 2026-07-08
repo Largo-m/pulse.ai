@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.skills.loader import load_bundled_skill
 
 TLC_SPEC_SKILL = "tlc-spec-driven"
@@ -77,6 +78,10 @@ def build_quick_plan_prompt(
         f"Analise **somente** o workspace `{workspace}`.",
         "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
         "",
+    ]
+    extend_prompt_with_workspace_context(sections, workspace)
+    sections.extend(
+        [
         "## Fase 1 — Verificar escopo e planejar (SEM implementar)",
         "",
         "Você está conectado ao cliente **Pulse**.",
@@ -139,11 +144,12 @@ def build_quick_plan_prompt(
         "- Editar código de aplicação (apenas arquivos `.pulse/specs/` são permitidos).",
         "- Enviar qualquer texto fora do bloco ```text quando for perguntar/aprovar.",
         "- Implementar antes da aprovação explícita.",
-        "- Ler `.pulse/skills/` ou artefatos de entrevista legados.",
+        "- Ler `.pulse/skills/` legado (entrevistas) — use as skills do projeto listadas acima sob demanda.",
         "",
         "Responda em português.",
         "",
-    ]
+        ]
+    )
 
     for name, content in documents.items():
         if name in {"user-input.md", "SKILL.md"}:
@@ -180,11 +186,16 @@ def build_quick_implement_prompt(
         f"Use **somente** o workspace `{workspace}` e o plano desta execução abaixo.",
         "Não reutilize conversas anteriores, outros repositórios ou execuções passadas do Pulse.",
         "",
+    ]
+    extend_prompt_with_workspace_context(sections, workspace)
+    sections.extend(
+        [
         "## Plano desta execução (fase 1)",
         "",
         summary or "(Releia o TASK.md em `.pulse/specs/quick/` — nenhum resumo capturado da fase 1.)",
         "",
-    ]
+        ]
+    )
 
     if answers:
         sections.extend(
@@ -257,6 +268,7 @@ def build_quick_continuation_prompt(
         summary or "(Sem resumo anterior.)",
         "",
     ]
+    extend_prompt_with_workspace_context(sections, workspace)
 
     if outcome == "migrate":
         sections.extend(
