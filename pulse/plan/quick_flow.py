@@ -40,7 +40,7 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
     cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
 
     try:
-        _, documents = resolve_quick_skill()
+        skill_dir = resolve_quick_skill()
     except FileNotFoundError as error:
         print(f"[pulse] {error}", file=sys.stderr)
         return 1
@@ -48,7 +48,7 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
     plan_prompt = build_quick_plan_prompt(
         workspace=workspace_root,
         user_prompt=user_prompt,
-        documents=documents,
+        skill_dir=skill_dir,
     )
 
     console = Console(highlight=False, soft_wrap=True)
@@ -75,7 +75,7 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
             plan_prompt=plan_prompt,
             workspace=workspace_root,
             user_prompt=user_prompt,
-            documents=documents,
+            skill_dir=skill_dir,
             preferred_model=preferred_model,
         )
     except (RuntimeError, TimeoutError, OSError) as error:

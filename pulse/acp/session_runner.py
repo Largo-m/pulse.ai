@@ -85,7 +85,7 @@ class AcpSessionRunner:
         interview_prompt: str,
         workspace: Path,
         user_prompt: str,
-        documents: dict[str, str],
+        skill_dir: Path,
         preferred_model: str | None = None,
     ) -> dict[str, Any]:
         self._run_id = str(uuid.uuid4())
@@ -129,7 +129,7 @@ class AcpSessionRunner:
             artifact_prompt = build_setup_project_artifact_prompt(
                 workspace=workspace,
                 user_prompt=user_prompt,
-                documents=documents,
+                skill_dir=skill_dir,
                 analysis_summary=phase1_analysis,
                 questionnaire_answers=answers_text,
             )
@@ -161,7 +161,7 @@ class AcpSessionRunner:
         explore_prompt: str,
         workspace: Path,
         user_prompt: str,
-        documents: dict[str, str],
+        skill_dir: Path,
         preferred_model: str | None = None,
     ) -> dict[str, Any]:
         self._run_id = str(uuid.uuid4())
@@ -205,7 +205,7 @@ class AcpSessionRunner:
             artifact_prompt = build_analyze_codebase_artifact_prompt(
                 workspace=workspace,
                 user_prompt=user_prompt,
-                documents=documents,
+                skill_dir=skill_dir,
                 analysis_summary=phase1_analysis,
                 questionnaire_answers=answers_text,
             )
@@ -237,7 +237,7 @@ class AcpSessionRunner:
         plan_prompt: str,
         workspace: Path,
         user_prompt: str,
-        documents: dict[str, str],
+        skill_dir: Path,
         preferred_model: str | None = None,
     ) -> dict[str, Any]:
         self._run_id = str(uuid.uuid4())
@@ -317,7 +317,7 @@ class AcpSessionRunner:
                 next_prompt = build_quick_continuation_prompt(
                     workspace=workspace,
                     user_prompt=user_prompt,
-                    documents=documents,
+                    skill_dir=skill_dir,
                     plan_summary=plan_summary,
                     questionnaire_answers=answers_text,
                     outcome=outcome,
@@ -343,7 +343,7 @@ class AcpSessionRunner:
             implement_prompt = build_quick_implement_prompt(
                 workspace=workspace,
                 user_prompt=user_prompt,
-                documents=documents,
+                skill_dir=skill_dir,
                 plan_summary=plan_summary,
                 approval_answers=answers_text,
             )

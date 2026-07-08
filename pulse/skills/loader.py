@@ -9,6 +9,15 @@ def bundled_skill_dir(skill_name: str) -> Path:
     return _SKILLS_PACKAGE_DIR / skill_name
 
 
+def resolve_bundled_skill(skill_name: str) -> Path:
+    skill_dir = bundled_skill_dir(skill_name)
+    if not (skill_dir / "SKILL.md").is_file():
+        raise FileNotFoundError(
+            f"Skill `{skill_name}` não encontrada em `{skill_dir / 'SKILL.md'}`"
+        )
+    return skill_dir
+
+
 def load_bundled_skill(
     skill_name: str,
     *,

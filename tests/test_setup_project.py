@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from pulse.plan.setup_project_prompt import (
+    SETUP_PROJECT_REFERENCES,
     build_setup_project_artifact_prompt,
     build_setup_project_prompt,
     resolve_tlc_spec_skill,
@@ -12,7 +13,7 @@ from pulse.presentation.prompt.ask_question import (
     parse_questionnaire_meta,
     resolve_question_progress,
 )
-from pulse.skills.loader import bundled_skill_dir, load_bundled_skill
+from pulse.skills.loader import bundled_skill_dir, load_bundled_skill, resolve_bundled_skill
 
 
 def test_bundled_skill_dir():
@@ -21,13 +22,12 @@ def test_bundled_skill_dir():
     assert (skill_dir / "SKILL.md").is_file()
 
 
-def test_resolve_tlc_spec_skill_loads_references():
-    skill_dir, documents = resolve_tlc_spec_skill()
+def test_resolve_tlc_spec_skill_returns_skill_dir():
+    skill_dir = resolve_tlc_spec_skill()
     assert skill_dir.name == "tlc-spec-driven"
-    assert "SKILL.md" in documents
-    assert "project-init.md" in documents
-    assert "roadmap.md" in documents
-    assert "user-input.md" in documents
+    assert (skill_dir / "SKILL.md").is_file()
+    for reference in SETUP_PROJECT_REFERENCES:
+        assert (skill_dir / "references" / reference).is_file()
 
 
 def test_load_bundled_skill_missing_raises():
@@ -35,33 +35,40 @@ def test_load_bundled_skill_missing_raises():
         load_bundled_skill("nonexistent-skill", references=())
 
 
-def test_build_setup_project_prompt_includes_optional_questionnaire():
-    _, documents = resolve_tlc_spec_skill()
+def test_resolve_bundled_skill_missing_raises():
+    with pytest.raises(FileNotFoundError, match="nonexistent-skill"):
+        resolve_bundled_skill("nonexistent-skill")
+
+
+def test_build_setup_project_prompt_uses_skill_reference_not_inline_content():
+    skill_dir = resolve_tlc_spec_skill()
     workspace = Path("/tmp/my-project")
     prompt = build_setup_project_prompt(
         workspace=workspace,
         user_prompt="App de trading",
-        documents=documents,
+        skill_dir=skill_dir,
     )
-    assert "tlc-spec-driven" in prompt
+    assert "Use a skill instalada: `tlc-spec-driven`" in prompt
+    assert "Siga o workflow **Setup project**." in prompt
+    assert f"`{skill_dir / 'SKILL.md'}`" in prompt
     assert "App de trading" in prompt
     assert "project-init.md" in prompt
-    assert "## user-input.md" not in prompt
+    assert "## roadmap.md" not in prompt
     assert str(workspace) in prompt
     assert "SETUP_READY" in prompt
     assert "Isolamento" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
     assert "bloco de texto" in prompt
     assert "```text" in prompt
-    assert "## project-init.md" not in prompt
+    assert len(prompt) < 8_000
 
 
 def test_build_setup_project_artifact_prompt_targets_specs():
-    _, documents = resolve_tlc_spec_skill()
+    skill_dir = resolve_tlc_spec_skill()
     prompt = build_setup_project_artifact_prompt(
         workspace=Path("/tmp/my-project"),
         user_prompt="App",
-        documents=documents,
+        skill_dir=skill_dir,
         analysis_summary="Stack: Vue + Node",
     )
     assert ".pulse/specs/project/PROJECT.md" in prompt
@@ -70,6 +77,7 @@ def test_build_setup_project_artifact_prompt_targets_specs():
     assert "Vue + Node" in prompt
     assert "Análise desta execução" in prompt
     assert "sessão anterior" not in prompt.lower()
+    assert "## state-management.md" not in prompt
 
 
 def test_format_option_label_adds_letter_prefix():

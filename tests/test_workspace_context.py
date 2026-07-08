@@ -73,11 +73,11 @@ def test_extend_prompt_with_workspace_context_inlines_rules(tmp_path: Path):
 
 def test_build_setup_project_prompt_includes_workspace_rules(tmp_path: Path):
     _write(tmp_path / "AGENTS.md", "Não commite sem pedir.")
-    _, documents = resolve_tlc_spec_skill()
+    skill_dir = resolve_tlc_spec_skill()
     prompt = build_setup_project_prompt(
         workspace=tmp_path,
         user_prompt="App",
-        documents=documents,
+        skill_dir=skill_dir,
     )
     assert "Leia `AGENTS.md` e `CLAUDE.md`" in prompt
     assert "Não commite sem pedir." in prompt
@@ -85,11 +85,11 @@ def test_build_setup_project_prompt_includes_workspace_rules(tmp_path: Path):
 
 def test_build_analyze_codebase_prompt_includes_workspace_rules(tmp_path: Path):
     _write(tmp_path / "CLAUDE.md", "Responda em português no código.")
-    _, documents = resolve_analyze_codebase_skill()
+    skill_dir = resolve_analyze_codebase_skill()
     prompt = build_analyze_codebase_prompt(
         workspace=tmp_path,
         user_prompt="Mapear",
-        documents=documents,
+        skill_dir=skill_dir,
     )
     assert "Leia `AGENTS.md` e `CLAUDE.md`" in prompt
     assert "Responda em português no código." in prompt
@@ -100,11 +100,11 @@ def test_build_quick_plan_prompt_lists_project_skills(tmp_path: Path):
         tmp_path / ".cursor" / "skills" / "test-skill" / "SKILL.md",
         "---\ndescription: Executar testes do projeto.\n---\n# Tests\n",
     )
-    _, documents = resolve_quick_skill()
+    skill_dir = resolve_quick_skill()
     prompt = build_quick_plan_prompt(
         workspace=tmp_path,
         user_prompt="Fix bug",
-        documents=documents,
+        skill_dir=skill_dir,
     )
     assert "Skills do projeto (sob demanda)" in prompt
     assert ".cursor/skills/test-skill/SKILL.md" in prompt

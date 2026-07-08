@@ -3,7 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.context.workspace_context import extend_prompt_with_workspace_context
-from pulse.skills.loader import load_bundled_skill
+from pulse.skills.loader import resolve_bundled_skill
+from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
 TLC_SPEC_SKILL = "tlc-spec-driven"
 QUICK_REFERENCES = (
@@ -15,8 +16,8 @@ QUICK_REFERENCES = (
 _PLAN_MAX_CHARS = 8_000
 
 
-def resolve_quick_skill() -> tuple[Path, dict[str, str]]:
-    return load_bundled_skill(TLC_SPEC_SKILL, references=QUICK_REFERENCES)
+def resolve_quick_skill() -> Path:
+    return resolve_bundled_skill(TLC_SPEC_SKILL)
 
 
 def format_plan_summary(text: str) -> str:
@@ -65,10 +66,9 @@ def build_quick_plan_prompt(
     *,
     workspace: Path,
     user_prompt: str,
-    documents: dict[str, str],
+    skill_dir: Path,
 ) -> str:
     sections = [
-        "Execute a **Fase 1 do Quick Mode** do skill `tlc-spec-driven`.",
         f"Workspace: `{workspace}`",
         f"Tarefa do usuário: {user_prompt.strip() or 'Tarefa rápida'}",
         "",
@@ -79,89 +79,84 @@ def build_quick_plan_prompt(
         "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
         "",
     ]
+    extend_prompt_with_bundled_skill(
+        sections,
+        skill_dir=skill_dir,
+        skill_name=TLC_SPEC_SKILL,
+        workflow="Quick mode",
+        references=QUICK_REFERENCES,
+    )
     extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
-        "## Fase 1 — Verificar escopo e planejar (SEM implementar)",
-        "",
-        "Você está conectado ao cliente **Pulse**.",
-        "Pesquise e leia arquivos para localizar onde a mudança vive.",
-        "**Não edite código de aplicação nesta fase** — apenas planeje e crie arquivos em `.pulse/specs/`.",
-        "",
-        "### 1. Elegibilidade de escopo (verifique PRIMEIRO)",
-        "",
-        "Siga **Scope Eligibility** de `quick-mode.md`. Se **qualquer** desqualificador se aplicar",
-        "(>3 arquivos, escopo ambíguo, decisão de arquitetura, nova dependência, >1h, nova",
-        "feature/multi-story, mudança arquitetural):",
-        "",
-        "- **Não** crie `.pulse/specs/quick/NNN-slug/TASK.md`.",
-        "- **Não** implemente código de aplicação.",
-        "- Explique **por que** excede o Quick Mode (concreto: contagem de arquivos, ambiguidade…).",
-        "- Termine a resposta **apenas** com o bloco de perguntas de migração de pipeline (abaixo).",
-        "",
-        "#### Bloco de migração (escolhas fechadas — obrigatório quando fora do escopo)",
-        "",
-        "- **Não** use opções com \"descreva\" ou texto livre.",
-        "- **Não** inclua \"Outro\" — o Pulse não adicionará opção livre neste bloco.",
-        "- Opção **A:** migrar para o pipeline completo (Specify → … → Execute).",
-        "- Opções **B, C, D…:** quick fixes **pré-definidos** derivados da análise do código",
-        "  (uma linha cada: o quê, quais arquivos, como verificar). Cada um deve caber no Quick Mode.",
-        "- Última opção: **Cancelar**.",
-        "",
-        "Exemplo:",
-        "```text",
-        "Preciso de algumas informações antes de continuar.",
-        "1. Este pedido excede o Quick mode: [motivo]. Como deseja prosseguir?",
-        "A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute)",
-        "B) Quick fix: reutilizar TokenResponseAdapter no RefreshTokenInterceptor",
-        "C) Quick fix: adicionar testes unitários do RefreshTokenInterceptor",
-        "D) Cancelar",
-        "```",
-        "",
-        "### 2. Se estiver dentro do escopo — criar spec ANTES de pedir aprovação",
-        "",
-        "1. Garanta que `.pulse/specs/project/STATE.md` exista (crie a partir de `state-management.md` se faltar).",
-        "2. Escolha o próximo `NNN` varrendo `.pulse/specs/quick/` (001, 002, …).",
-        "3. Crie `.pulse/specs/quick/NNN-slug/TASK.md` com **Status: Awaiting Approval** (template de `quick-mode.md`).",
-        "4. Atualize `STATE.md` → **Current Work:** `Quick NNN-slug` e adicione a linha em Quick Tasks com ⏳ Awaiting Approval.",
-        "",
-        "Depois, apresente um resumo curto no chat com o caminho do TASK.md, arquivos a tocar,",
-        "abordagem (uma frase) e como verificar.",
-        "",
-        "### 3. Bloco de aprovação (formato obrigatório)",
-        "",
-        "Você **não** tem ferramentas externas para perguntar. Termine a resposta com um **bloco",
-        "de texto** que o Pulse renderiza no terminal, exatamente neste formato:",
-        "",
-        "```text",
-        "Preciso de algumas informações antes de continuar.",
-        "1. Aprovar quick task NNN e implementar?",
-        "A) Sim, aprovar e implementar",
-        "B) Não, preciso de ajustes (descreva)",
-        "```",
-        "",
-        "PROIBIDO nesta fase:",
-        "- Editar código de aplicação (apenas arquivos `.pulse/specs/` são permitidos).",
-        "- Enviar qualquer texto fora do bloco ```text quando for perguntar/aprovar.",
-        "- Implementar antes da aprovação explícita.",
-        "- Ler `.pulse/skills/` legado (entrevistas) — use as skills do projeto listadas acima sob demanda.",
-        "",
-        "Responda em português.",
-        "",
+            "## Fase 1 — Verificar escopo e planejar (SEM implementar)",
+            "",
+            "Você está conectado ao cliente **Pulse**.",
+            "Pesquise e leia arquivos para localizar onde a mudança vive.",
+            "**Não edite código de aplicação nesta fase** — apenas planeje e crie arquivos em `.pulse/specs/`.",
+            "",
+            "### 1. Elegibilidade de escopo (verifique PRIMEIRO)",
+            "",
+            "Siga **Scope Eligibility** de `quick-mode.md`. Se **qualquer** desqualificador se aplicar",
+            "(>3 arquivos, escopo ambíguo, decisão de arquitetura, nova dependência, >1h, nova",
+            "feature/multi-story, mudança arquitetural):",
+            "",
+            "- **Não** crie `.pulse/specs/quick/NNN-slug/TASK.md`.",
+            "- **Não** implemente código de aplicação.",
+            "- Explique **por que** excede o Quick Mode (concreto: contagem de arquivos, ambiguidade…).",
+            "- Termine a resposta **apenas** com o bloco de perguntas de migração de pipeline (abaixo).",
+            "",
+            "#### Bloco de migração (escolhas fechadas — obrigatório quando fora do escopo)",
+            "",
+            "- **Não** use opções com \"descreva\" ou texto livre.",
+            "- **Não** inclua \"Outro\" — o Pulse não adicionará opção livre neste bloco.",
+            "- Opção **A:** migrar para o pipeline completo (Specify → … → Execute).",
+            "- Opções **B, C, D…:** quick fixes **pré-definidos** derivados da análise do código",
+            "  (uma linha cada: o quê, quais arquivos, como verificar). Cada um deve caber no Quick Mode.",
+            "- Última opção: **Cancelar**.",
+            "",
+            "Exemplo:",
+            "```text",
+            "Preciso de algumas informações antes de continuar.",
+            "1. Este pedido excede o Quick mode: [motivo]. Como deseja prosseguir?",
+            "A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute)",
+            "B) Quick fix: reutilizar TokenResponseAdapter no RefreshTokenInterceptor",
+            "C) Quick fix: adicionar testes unitários do RefreshTokenInterceptor",
+            "D) Cancelar",
+            "```",
+            "",
+            "### 2. Se estiver dentro do escopo — criar spec ANTES de pedir aprovação",
+            "",
+            "1. Garanta que `.pulse/specs/project/STATE.md` exista (crie a partir de `state-management.md` se faltar).",
+            "2. Escolha o próximo `NNN` varrendo `.pulse/specs/quick/` (001, 002, …).",
+            "3. Crie `.pulse/specs/quick/NNN-slug/TASK.md` com **Status: Awaiting Approval** (template de `quick-mode.md`).",
+            "4. Atualize `STATE.md` → **Current Work:** `Quick NNN-slug` e adicione a linha em Quick Tasks com ⏳ Awaiting Approval.",
+            "",
+            "Depois, apresente um resumo curto no chat com o caminho do TASK.md, arquivos a tocar,",
+            "abordagem (uma frase) e como verificar.",
+            "",
+            "### 3. Bloco de aprovação (formato obrigatório)",
+            "",
+            "Você **não** tem ferramentas externas para perguntar. Termine a resposta com um **bloco",
+            "de texto** que o Pulse renderiza no terminal, exatamente neste formato:",
+            "",
+            "```text",
+            "Preciso de algumas informações antes de continuar.",
+            "1. Aprovar quick task NNN e implementar?",
+            "A) Sim, aprovar e implementar",
+            "B) Não, preciso de ajustes (descreva)",
+            "```",
+            "",
+            "PROIBIDO nesta fase:",
+            "- Editar código de aplicação (apenas arquivos `.pulse/specs/` são permitidos).",
+            "- Enviar qualquer texto fora do bloco ```text quando for perguntar/aprovar.",
+            "- Implementar antes da aprovação explícita.",
+            "- Ler `.pulse/skills/` legado (entrevistas) — use as skills do projeto listadas acima sob demanda.",
+            "",
+            "Responda em português.",
+            "",
         ]
     )
-
-    for name, content in documents.items():
-        if name in {"user-input.md", "SKILL.md"}:
-            continue
-        sections.extend(
-            [
-                "---",
-                f"## {name}",
-                content.strip(),
-                "",
-            ]
-        )
 
     return "\n".join(sections)
 
@@ -170,7 +165,7 @@ def build_quick_implement_prompt(
     *,
     workspace: Path,
     user_prompt: str,
-    documents: dict[str, str],
+    skill_dir: Path,
     plan_summary: str = "",
     approval_answers: str = "",
 ) -> str:
@@ -187,13 +182,20 @@ def build_quick_implement_prompt(
         "Não reutilize conversas anteriores, outros repositórios ou execuções passadas do Pulse.",
         "",
     ]
+    extend_prompt_with_bundled_skill(
+        sections,
+        skill_dir=skill_dir,
+        skill_name=TLC_SPEC_SKILL,
+        workflow="Quick mode",
+        references=QUICK_REFERENCES,
+    )
     extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
-        "## Plano desta execução (fase 1)",
-        "",
-        summary or "(Releia o TASK.md em `.pulse/specs/quick/` — nenhum resumo capturado da fase 1.)",
-        "",
+            "## Plano desta execução (fase 1)",
+            "",
+            summary or "(Releia o TASK.md em `.pulse/specs/quick/` — nenhum resumo capturado da fase 1.)",
+            "",
         ]
     )
 
@@ -229,18 +231,6 @@ def build_quick_implement_prompt(
         ]
     )
 
-    for name, content in documents.items():
-        if name == "SKILL.md":
-            continue
-        sections.extend(
-            [
-                "---",
-                f"## {name}",
-                content.strip(),
-                "",
-            ]
-        )
-
     return "\n".join(sections)
 
 
@@ -248,7 +238,7 @@ def build_quick_continuation_prompt(
     *,
     workspace: Path,
     user_prompt: str,
-    documents: dict[str, str],
+    skill_dir: Path,
     plan_summary: str,
     questionnaire_answers: str,
     outcome: str,
@@ -268,6 +258,13 @@ def build_quick_continuation_prompt(
         summary or "(Sem resumo anterior.)",
         "",
     ]
+    extend_prompt_with_bundled_skill(
+        sections,
+        skill_dir=skill_dir,
+        skill_name=TLC_SPEC_SKILL,
+        workflow="Quick mode",
+        references=QUICK_REFERENCES,
+    )
     extend_prompt_with_workspace_context(sections, workspace)
 
     if outcome == "migrate":
@@ -310,18 +307,6 @@ def build_quick_continuation_prompt(
             [
                 "Prossiga conforme a escolha do usuário e as regras de `quick-mode.md`.",
                 "Responda em português.",
-                "",
-            ]
-        )
-
-    for name, content in documents.items():
-        if name == "SKILL.md":
-            continue
-        sections.extend(
-            [
-                "---",
-                f"## {name}",
-                content.strip(),
                 "",
             ]
         )
