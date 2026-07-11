@@ -3,9 +3,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 RULE_FILENAMES = ("AGENTS.md", "CLAUDE.md")
 RULE_DIR_NAMES = (".cursor/rules",)
+ContextMode = Literal["index", "full"]
 _SKILL_FILENAME = "SKILL.md"
 _SKILL_SEARCH_SKIP_DIRS = {
     ".git",
@@ -44,15 +46,23 @@ class WorkspaceContext:
     skills: tuple[WorkspaceSkill, ...]
 
 
-def load_workspace_context(workspace: Path) -> WorkspaceContext:
+def load_workspace_context(
+    workspace: Path,
+    *,
+    load_rule_content: bool = True,
+) -> WorkspaceContext:
     return WorkspaceContext(
         workspace=workspace,
-        rules=tuple(discover_workspace_rules(workspace)),
+        rules=tuple(discover_workspace_rules(workspace, load_content=load_rule_content)),
         skills=tuple(discover_workspace_skills(workspace)),
     )
 
 
-def discover_workspace_rules(workspace: Path) -> list[WorkspaceRule]:
+def discover_workspace_rules(
+    workspace: Path,
+    *,
+    load_content: bool = True,
+) -> list[WorkspaceRule]:
     rules: list[WorkspaceRule] = []
     seen: set[str] = set()
 
@@ -65,7 +75,7 @@ def discover_workspace_rules(workspace: Path) -> list[WorkspaceRule]:
                 rules.append(
                     WorkspaceRule(
                         relative_path=relative,
-                        content=path.read_text(encoding="utf-8"),
+                        content=path.read_text(encoding="utf-8") if load_content else "",
                     )
                 )
 
@@ -83,7 +93,7 @@ def discover_workspace_rules(workspace: Path) -> list[WorkspaceRule]:
             rules.append(
                 WorkspaceRule(
                     relative_path=relative,
-                    content=path.read_text(encoding="utf-8"),
+                    content=path.read_text(encoding="utf-8") if load_content else "",
                 )
             )
 
@@ -152,16 +162,69 @@ def extend_prompt_with_workspace_context(
     sections: list[str],
     workspace: Path,
     *,
+    mode: ContextMode = "full",
     rule_inline_budget: int = _DEFAULT_RULE_INLINE_BUDGET,
 ) -> None:
-    context = load_workspace_context(workspace)
-    sections.extend(format_workspace_context_sections(context, rule_inline_budget=rule_inline_budget))
+    context = load_workspace_context(
+        workspace,
+        load_rule_content=mode == "full",
+    )
+    sections.extend(
+        format_workspace_context_sections(
+            context,
+            mode=mode,
+            rule_inline_budget=rule_inline_budget,
+        )
+    )
 
 
 def format_workspace_context_sections(
     context: WorkspaceContext,
     *,
+    mode: ContextMode = "full",
     rule_inline_budget: int = _DEFAULT_RULE_INLINE_BUDGET,
+) -> list[str]:
+    if mode == "index":
+        return _format_index_context_sections(context)
+    return _format_full_context_sections(context, rule_inline_budget=rule_inline_budget)
+
+
+def _format_index_context_sections(context: WorkspaceContext) -> list[str]:
+    sections = [
+        "## Regras e contexto do projeto (índice)",
+        "",
+        "Nesta fase o conteúdo das rules **não** está inlined.",
+        "Leia no disco **somente** se afetarem requisitos, escopo ou decisões desta fase.",
+        "Não releia todas as rules por rotina.",
+        "",
+    ]
+
+    if context.rules:
+        sections.extend(
+            [
+                "### Arquivos de regras do projeto",
+                "",
+            ]
+        )
+        for rule in context.rules:
+            sections.append(f"- `{rule.relative_path}`")
+        sections.append("")
+    else:
+        sections.extend(
+            [
+                "Nenhum arquivo de regras foi encontrado (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules`).",
+                "",
+            ]
+        )
+
+    sections.extend(format_workspace_skills_section(context.skills, planning=True))
+    return sections
+
+
+def _format_full_context_sections(
+    context: WorkspaceContext,
+    *,
+    rule_inline_budget: int,
 ) -> list[str]:
     sections = [
         "## Regras e contexto do projeto",
@@ -224,18 +287,35 @@ def format_workspace_context_sections(
             ]
         )
 
-    sections.extend(format_workspace_skills_section(context.skills))
+    sections.extend(format_workspace_skills_section(context.skills, planning=False))
     return sections
 
 
-def format_workspace_skills_section(skills: tuple[WorkspaceSkill, ...]) -> list[str]:
+def format_workspace_skills_section(
+    skills: tuple[WorkspaceSkill, ...],
+    *,
+    planning: bool = False,
+) -> list[str]:
     sections = [
         "### Skills do projeto (sob demanda)",
         "",
-        "Skills são recursos especializados. Quando uma skill for relevante para a tarefa, "
-        "**leia o arquivo `SKILL.md` correspondente antes de agir**, assim como agentes LLM fazem.",
-        "",
     ]
+    if planning:
+        sections.extend(
+            [
+                "Índice apenas. Não carregue skills nesta fase a menos que sejam necessárias "
+                "para requisitos ou decisões de escopo.",
+                "",
+            ]
+        )
+    else:
+        sections.extend(
+            [
+                "Skills são recursos especializados. Quando uma skill for relevante para a tarefa, "
+                "**leia o arquivo `SKILL.md` correspondente antes de agir**, assim como agentes LLM fazem.",
+                "",
+            ]
+        )
 
     if not skills:
         sections.extend(

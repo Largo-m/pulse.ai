@@ -90,9 +90,7 @@ def render_welcome(
 
         lines = Text("Próximos passos\n", style="bold")
         for option in build_welcome_options(ready):
-            command = " ".join(option.argv) if option.argv else "sair"
-            lines.append(f"  {command}\n", style="bold cyan")
-            lines.append(f"    {option.label}\n", style="dim")
+            lines.append(f"  {option.label}\n", style="bold cyan")
         body = Group(status, "", lines)
 
     panel_kwargs: dict = {

@@ -7,12 +7,18 @@ from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
 TLC_SPEC_SKILL = "tlc-spec-driven"
-QUICK_REFERENCES = (
+QUICK_PLAN_REFERENCES = (
+    "quick-mode.md",
+    "state-management.md",
+    "user-input.md",
+)
+QUICK_IMPLEMENT_REFERENCES = (
     "quick-mode.md",
     "coding-principles.md",
     "state-management.md",
     "user-input.md",
 )
+QUICK_REFERENCES = QUICK_IMPLEMENT_REFERENCES
 _PLAN_MAX_CHARS = 8_000
 
 
@@ -84,9 +90,9 @@ def build_quick_plan_prompt(
         skill_dir=skill_dir,
         skill_name=TLC_SPEC_SKILL,
         workflow="Quick mode",
-        references=QUICK_REFERENCES,
+        references=QUICK_PLAN_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
+    extend_prompt_with_workspace_context(sections, workspace, mode="index")
     sections.extend(
         [
             "## Fase 1 — Verificar escopo e planejar (SEM implementar)",
@@ -94,6 +100,7 @@ def build_quick_plan_prompt(
             "Você está conectado ao cliente **Pulse**.",
             "Pesquise e leia arquivos para localizar onde a mudança vive.",
             "**Não edite código de aplicação nesta fase** — apenas planeje e crie arquivos em `.pulse/specs/`.",
+            "Não releia todas as rules/skills do projeto — use o índice e abra só o necessário para o escopo.",
             "",
             "### 1. Elegibilidade de escopo (verifique PRIMEIRO)",
             "",
@@ -187,9 +194,9 @@ def build_quick_implement_prompt(
         skill_dir=skill_dir,
         skill_name=TLC_SPEC_SKILL,
         workflow="Quick mode",
-        references=QUICK_REFERENCES,
+        references=QUICK_IMPLEMENT_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
+    extend_prompt_with_workspace_context(sections, workspace, mode="full")
     sections.extend(
         [
             "## Plano desta execução (fase 1)",
@@ -263,9 +270,9 @@ def build_quick_continuation_prompt(
         skill_dir=skill_dir,
         skill_name=TLC_SPEC_SKILL,
         workflow="Quick mode",
-        references=QUICK_REFERENCES,
+        references=QUICK_PLAN_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
+    extend_prompt_with_workspace_context(sections, workspace, mode="index")
 
     if outcome == "migrate":
         sections.extend(

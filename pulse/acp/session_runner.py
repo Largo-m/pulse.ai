@@ -7,6 +7,7 @@ import time
 import uuid
 from queue import Empty, Queue
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
@@ -15,6 +16,10 @@ from pulse.acp.models import resolve_interview_model_id
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
+from pulse.plan.new_issue_prompt import (
+    build_phase_continuation_prompt,
+    classify_phase_questionnaire_outcome,
+)
 from pulse.plan.quick_prompt import (
     build_quick_continuation_prompt,
     build_quick_implement_prompt,
@@ -28,6 +33,7 @@ from pulse.presentation.stream_renderer import StreamRenderer
 INTERVIEW_MODE = "agent"
 AGENT_MODE = "agent"
 MAX_QUICK_PLAN_TURNS = 4
+MAX_PHASE_APPROVAL_TURNS = 4
 
 
 class AcpSessionRunner:
@@ -230,6 +236,163 @@ class AcpSessionRunner:
             self._stream.finish()
             self.close_session()
             self.close()
+
+    def run_isolated_phase(
+        self,
+        *,
+        workflow: str,
+        phase_label: str,
+        initial_prompt: str,
+        preferred_model: str | None = None,
+        build_continuation: Callable[..., str] | None = None,
+        continuation_kwargs: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self._logger.log_event(
+            "run_isolated_phase_start",
+            {"workflow": workflow, "phase": phase_label},
+        )
+        session = self.new_session(self._cwd, workflow=workflow)
+        session_id = session.get("sessionId")
+        if not session_id:
+            raise RuntimeError("Sessão ACP não retornou sessionId")
+        self._session_id = str(session_id)
+
+        model_id = resolve_interview_model_id(session, preferred_model)
+        if model_id:
+            self.set_model(self._session_id, model_id)
+            self._emit_info(f"Modelo: {model_id}")
+
+        self.set_mode(self._session_id, INTERVIEW_MODE)
+        next_prompt = initial_prompt
+        phase_summary = ""
+        answers_text = ""
+        approved = False
+        outcome = "unknown"
+        phase_result: dict[str, Any] = {}
+
+        try:
+            for turn in range(MAX_PHASE_APPROVAL_TURNS):
+                label = phase_label if turn == 0 else f"{phase_label} — continuação ({turn + 1})"
+                self._stream.begin_phase(label)
+                self._stream.reset_capture()
+                phase_result = self.prompt(self._session_id, next_prompt)
+                if phase_result.get("stopReason") == "cancelled":
+                    phase_result["approved"] = False
+                    phase_result["outcome"] = "cancelled"
+                    phase_result["phaseSummary"] = phase_summary
+                    return phase_result
+
+                phase_summary = self._stream.agent_text()
+                answers_text = self._run_text_questionnaire(phase_summary)
+                if answers_text is None:
+                    return {
+                        "stopReason": "cancelled",
+                        "phaseStopReason": phase_result.get("stopReason"),
+                        "askQuestionCount": self.ask_question_count,
+                        "approved": False,
+                        "outcome": "cancelled",
+                        "phaseSummary": phase_summary,
+                    }
+
+                if not answers_text.strip():
+                    break
+
+                outcome = classify_phase_questionnaire_outcome(answers_text)
+                if outcome == "approve":
+                    approved = True
+                    break
+                if outcome == "cancel":
+                    return {
+                        "stopReason": phase_result.get("stopReason", "end_turn"),
+                        "phaseStopReason": phase_result.get("stopReason"),
+                        "askQuestionCount": self.ask_question_count,
+                        "approved": False,
+                        "outcome": "cancel",
+                        "phaseSummary": phase_summary,
+                    }
+                if outcome == "skip":
+                    return {
+                        "stopReason": phase_result.get("stopReason", "end_turn"),
+                        "phaseStopReason": phase_result.get("stopReason"),
+                        "askQuestionCount": self.ask_question_count,
+                        "approved": False,
+                        "outcome": "skip",
+                        "phaseSummary": phase_summary,
+                    }
+
+                if build_continuation is not None:
+                    kwargs = dict(continuation_kwargs or {})
+                    next_prompt = build_continuation(
+                        phase_summary=phase_summary,
+                        questionnaire_answers=answers_text,
+                        outcome=outcome,
+                        **kwargs,
+                    )
+                else:
+                    next_prompt = build_phase_continuation_prompt(
+                        phase_summary=phase_summary,
+                        questionnaire_answers=answers_text,
+                        outcome=outcome,
+                        **(continuation_kwargs or {}),
+                    )
+
+            phase_result["approved"] = approved
+            phase_result["outcome"] = outcome if approved else outcome
+            phase_result["phaseSummary"] = phase_summary
+            phase_result["approvalAnswers"] = answers_text
+            phase_result["askQuestionCount"] = self.ask_question_count
+            self._logger.log_event(
+                "run_isolated_phase_done",
+                {
+                    "phase": phase_label,
+                    "approved": approved,
+                    "outcome": outcome,
+                },
+            )
+            return phase_result
+        finally:
+            self.close_session()
+
+    def run_isolated_prompt(
+        self,
+        *,
+        workflow: str,
+        phase_label: str,
+        prompt_text: str,
+        preferred_model: str | None = None,
+        agent_mode: bool = True,
+    ) -> dict[str, Any]:
+        self._logger.log_event(
+            "run_isolated_prompt_start",
+            {"workflow": workflow, "phase": phase_label},
+        )
+        session = self.new_session(self._cwd, workflow=workflow)
+        session_id = session.get("sessionId")
+        if not session_id:
+            raise RuntimeError("Sessão ACP não retornou sessionId")
+        self._session_id = str(session_id)
+
+        model_id = resolve_interview_model_id(session, preferred_model)
+        if model_id:
+            self.set_model(self._session_id, model_id)
+            self._emit_info(f"Modelo: {model_id}")
+
+        mode = AGENT_MODE if agent_mode else INTERVIEW_MODE
+        self.set_mode(self._session_id, mode)
+        self._stream.begin_phase(phase_label)
+        self._stream.reset_capture()
+
+        try:
+            result = self.prompt(self._session_id, prompt_text)
+            result["phaseSummary"] = self._stream.agent_text()
+            result["askQuestionCount"] = self.ask_question_count
+            self._logger.log_event(
+                "run_isolated_prompt_done",
+                {"phase": phase_label, "stop_reason": result.get("stopReason")},
+            )
+            return result
+        finally:
+            self.close_session()
 
     def run_quick(
         self,

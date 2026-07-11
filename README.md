@@ -74,10 +74,20 @@ Campos sobrescrevíveis por projeto: `agent`, `model`, `permission_policy` e `wo
 
 Workflows disponíveis: `new-issue`, `fix-bug`, `setup-project`, `analyze-codebase`.
 
+O workflow `new-issue` executa o pipeline Specify → Design → Tasks → Execute.
+Nas fases de planejamento (Specify/Design/Tasks) o Pulse envia só o **índice** de
+rules/skills do projeto (sem inline). No Execute, rules são inlined e
+`coding-principles.md` entra no prompt. As tasks do `tasks.md` são agrupadas em
+**waves** (até 5 tasks prontas por sessão): sequenciais quando compartilham
+dependências resolvidas, e em batch quando marcadas `[P]`. O Pulse só marca a
+wave como `done` depois de rodar os comandos de gate extraídos do `Done when` /
+`Verify`.
+
 O workflow `fix-bug` executa o Quick Mode do `tlc-spec-driven`: descreve →
 plano + `.pulse/specs/quick/NNN-slug/TASK.md` → aprovação no terminal → implementa →
 verifica → `SUMMARY.md`. Nada de código de aplicação é alterado sem aprovação
-explícita.
+explícita. A fase de plano também usa contexto em índice; a implementação usa
+contexto completo.
 
 A resolução por workflow segue: `projeto.workflows[id]` → `global.workflows[id]` →
 `projeto.defaults` → `global.defaults` → padrões do código.
@@ -91,13 +101,14 @@ pulse config show --workflow setup-project
 
 ## Comandos
 
+Todos os workflows são iniciados pelo menu interativo do `pulse` — não há subcomando `plan`.
+
 ```bash
-pulse                  Welcome + menu (ou wizard no primeiro uso)
+pulse                  Welcome + menu interativo (ou wizard no primeiro uso)
 pulse init             Wizard de onboarding
 pulse init --force     Reconfigurar
 pulse doctor           Verificar ambiente
 pulse doctor --test-acp Incluir teste ACP
 pulse config           Mostrar config efetiva (global + projeto)
 pulse config init      Criar .pulse/config.yaml no projeto atual
-pulse plan "meu app" --type setup-project   Inicializar projeto via tlc-spec-driven
 ```
