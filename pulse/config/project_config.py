@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from pulse.config.agents import WorkflowConfig, parse_workflows
+from pulse.config.agents import AgentConfig, WorkflowConfig, parse_agents, parse_workflows
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.paths import find_project_config_file, project_config_file
 
@@ -17,7 +17,12 @@ class ProjectConfig:
     permission_policy: str | None = None
     workspace: Path | None = None
     default_agent: str | None = None
+    agents: dict[str, AgentConfig] = field(default_factory=dict)
     workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
+
+    @property
+    def project_root(self) -> Path:
+        return self.source_file.parent.parent.resolve()
 
 
 def load_project_config(start: Path | None = None) -> ProjectConfig | None:
@@ -64,6 +69,7 @@ def parse_project_config(config_file: Path) -> ProjectConfig:
         permission_policy=policy,
         workspace=workspace_path,
         default_agent=default_agent,
+        agents=parse_agents(raw.get("agents")),
         workflows=parse_workflows(raw.get("workflows")),
     )
 
@@ -71,6 +77,13 @@ def parse_project_config(config_file: Path) -> ProjectConfig:
 def project_config_exists(start: Path | None = None) -> bool:
     return find_project_config_file(start) is not None
 
+
+DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {
+    "new-issue": WorkflowConfig(agent="cursor", model="Auto"),
+    "fix-bug": WorkflowConfig(agent="cursor", model="Auto"),
+    "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+    "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
+}
 
 DEFAULT_PROJECT_CONFIG = """\
 version: 1
@@ -84,6 +97,12 @@ workspace:
   root: .
 
 workflows:
+  new-issue:
+    agent: cursor
+    model: Auto
+  fix-bug:
+    agent: cursor
+    model: Auto
   setup-project:
     agent: claude
     model: claude-opus-4.8
@@ -104,12 +123,7 @@ def init_project_config(root: Path) -> Path:
     return target
 
 
-def update_project_defaults(
-    root: Path,
-    *,
-    model: str | None = None,
-    permission_policy: str | None = None,
-) -> Path:
+def _load_raw_project_config(root: Path) -> tuple[Path, dict]:
     config_path = find_project_config_file(root)
     if config_path is None:
         config_path = init_project_config(root)
@@ -117,6 +131,52 @@ def update_project_defaults(
     raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raw = {}
+    return config_path, raw
+
+
+def _write_raw_project_config(config_path: Path, raw: dict) -> Path:
+    config_path.write_text(
+        yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def _ensure_workflows_in_raw(raw: dict) -> bool:
+    workflows = raw.setdefault("workflows", {})
+    if not isinstance(workflows, dict):
+        workflows = {}
+        raw["workflows"] = workflows
+
+    changed = False
+    for workflow_id, defaults in DEFAULT_PROJECT_WORKFLOWS.items():
+        entry = workflows.get(workflow_id)
+        if isinstance(entry, dict):
+            continue
+        workflows[workflow_id] = {
+            key: value
+            for key, value in (("agent", defaults.agent), ("model", defaults.model))
+            if value is not None
+        }
+        changed = True
+    return changed
+
+
+def ensure_project_workflows(root: Path) -> Path:
+    config_path, raw = _load_raw_project_config(root)
+    if _ensure_workflows_in_raw(raw):
+        return _write_raw_project_config(config_path, raw)
+    return config_path
+
+
+def update_project_defaults(
+    root: Path,
+    *,
+    model: str | None = None,
+    permission_policy: str | None = None,
+    agent: str | None = None,
+) -> Path:
+    config_path, raw = _load_raw_project_config(root)
 
     defaults = raw.setdefault("defaults", {})
     if not isinstance(defaults, dict):
@@ -129,12 +189,10 @@ def update_project_defaults(
         if permission_policy not in PERMISSION_POLICIES:
             raise ValueError(f"Política inválida: {permission_policy}")
         defaults["permission_policy"] = permission_policy
+    if agent is not None:
+        defaults["agent"] = agent
 
-    config_path.write_text(
-        yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    return config_path
+    return _write_raw_project_config(config_path, raw)
 
 
 def update_project_workflow(
@@ -144,19 +202,10 @@ def update_project_workflow(
     agent: str | None = None,
     model: str | None = None,
 ) -> Path:
-    config_path = find_project_config_file(root)
-    if config_path is None:
-        config_path = init_project_config(root)
+    config_path, raw = _load_raw_project_config(root)
+    _ensure_workflows_in_raw(raw)
 
-    raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raw = {}
-
-    workflows = raw.setdefault("workflows", {})
-    if not isinstance(workflows, dict):
-        workflows = {}
-        raw["workflows"] = workflows
-
+    workflows = raw["workflows"]
     entry = workflows.get(workflow_id)
     if not isinstance(entry, dict):
         entry = {}
@@ -167,8 +216,40 @@ def update_project_workflow(
     if model is not None:
         entry["model"] = model
 
-    config_path.write_text(
-        yaml.dump(raw, default_flow_style=False, allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
-    return config_path
+    return _write_raw_project_config(config_path, raw)
+
+
+def update_project_agent(
+    root: Path,
+    agent_name: str,
+    *,
+    binary: str | None = None,
+    models: list[str] | None = None,
+    acp_command: list[str] | None = None,
+) -> Path:
+    config_path, raw = _load_raw_project_config(root)
+
+    agents = raw.setdefault("agents", {})
+    if not isinstance(agents, dict):
+        agents = {}
+        raw["agents"] = agents
+
+    entry = agents.get(agent_name)
+    if not isinstance(entry, dict):
+        entry = {}
+        agents[agent_name] = entry
+
+    if binary is not None:
+        entry["binary"] = binary
+        if acp_command is None and "acp_command" not in entry:
+            entry["acp_command"] = [binary, "acp"]
+    if models is not None:
+        entry["models"] = list(models)
+    if acp_command is not None:
+        entry["acp_command"] = list(acp_command)
+    if "binary" not in entry:
+        entry["binary"] = agent_name
+    if "models" not in entry:
+        entry["models"] = []
+
+    return _write_raw_project_config(config_path, raw)

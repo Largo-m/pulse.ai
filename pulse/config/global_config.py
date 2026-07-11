@@ -167,6 +167,7 @@ def update_global_defaults(
     *,
     model: str | None = None,
     permission_policy: str | None = None,
+    agent: str | None = None,
     path: Path | None = None,
 ) -> Path | None:
     config = load_global_config(path)
@@ -182,10 +183,50 @@ def update_global_defaults(
         if permission_policy not in PERMISSION_POLICIES:
             return None
         updates["permission_policy"] = permission_policy
+    if agent is not None:
+        updates["default_agent"] = agent
     if not updates:
         return path or GLOBAL_CONFIG_FILE
 
     return save_global_config(replace(config, **updates), path)
+
+
+def update_global_agent(
+    agent_name: str,
+    *,
+    binary: str | None = None,
+    models: list[str] | None = None,
+    acp_command: list[str] | None = None,
+    path: Path | None = None,
+) -> Path | None:
+    config = load_global_config(path)
+    if config is None:
+        return None
+
+    from dataclasses import replace
+
+    agents = dict(config.agents)
+    existing = agents.get(agent_name)
+    next_binary = binary if binary is not None else (existing.binary if existing else agent_name)
+    next_models = (
+        list(models)
+        if models is not None
+        else (list(existing.models) if existing else [])
+    )
+    if acp_command is not None:
+        next_command = list(acp_command)
+    elif existing is not None:
+        next_command = list(existing.acp_command)
+    else:
+        next_command = [next_binary, "acp"]
+
+    agents[agent_name] = AgentConfig(
+        name=agent_name,
+        binary=next_binary,
+        acp_command=next_command,
+        models=next_models,
+    )
+    return save_global_config(replace(config, agents=agents), path)
 
 
 def update_global_workflow(

@@ -46,15 +46,13 @@ defaults:
 workspace:
   root: .
 
-agents:
-  cursor:
-    binary: agent
-    models: [Auto, gpt-5.5]
-  claude:
-    binary: claude-code
-    models: [claude-opus-4.8]
-
 workflows:
+  new-issue:
+    agent: cursor
+    model: Auto
+  fix-bug:
+    agent: cursor
+    model: Auto
   setup-project:
     agent: claude
     model: claude-opus-4.8
@@ -63,7 +61,11 @@ workflows:
     model: gpt-5.5
 ```
 
-Campos sobrescrevíveis por projeto: `agent`, `model`, `permission_policy` e `workspace.root`.
+Campos sobrescrevíveis por projeto: `defaults.agent`, `defaults.model`,
+`permission_policy`, `workspace.root` e `workflows.*`.
+
+Opcionalmente, um bloco `agents:` no YAML do projeto pode sobrescrever ou
+estender os agents do `~/.pulse/config.toml` (binary, models, acp_command).
 
 ### Agentes e workflows
 

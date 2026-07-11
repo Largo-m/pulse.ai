@@ -9,6 +9,12 @@ workspace:
   root: .
 
 workflows:
+  new-issue:
+    agent: cursor
+    model: Auto
+  fix-bug:
+    agent: cursor
+    model: Auto
   setup-project:
     agent: claude
     model: claude-opus-4.8

@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 from pulse.config import (
+    ensure_project_workflows,
     resolve_config,
     update_global_workflow,
     update_project_workflow,
@@ -236,5 +237,8 @@ def configure_workflows(base: Path, console: Console) -> None:
             )
             console.print()
             return
+    else:
+        path = ensure_project_workflows(base)
+        console.print(f"[dim]Workflows do projeto: {path}[/dim]")
 
     run_workflow_settings(base, console, scope=scope)

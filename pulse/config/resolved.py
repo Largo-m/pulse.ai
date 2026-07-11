@@ -37,6 +37,8 @@ def _merge_agents(
     agents: dict[str, AgentConfig] = {}
     if global_cfg:
         agents.update(global_cfg.agents)
+    if project_cfg:
+        agents.update(project_cfg.agents)
     if DEFAULT_AGENT_NAME not in agents:
         if global_cfg:
             agents[DEFAULT_AGENT_NAME] = AgentConfig(

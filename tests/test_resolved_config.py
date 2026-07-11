@@ -184,6 +184,43 @@ def test_project_workflow_overrides_global_workflow(monkeypatch, tmp_path: Path)
     assert resolved.sources["model"] == "project.workflow"
 
 
+def test_project_agents_override_and_extend_global(monkeypatch, tmp_path: Path):
+    cfg = _global(
+        agents={
+            "cursor": AgentConfig(
+                name="cursor",
+                binary="agent",
+                acp_command=["agent", "acp"],
+                models=["Auto"],
+            ),
+        },
+        default_agent="cursor",
+    )
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+    _write_project_config(
+        tmp_path,
+        "version: 1\n"
+        "defaults:\n"
+        "  agent: local\n"
+        "agents:\n"
+        "  cursor:\n"
+        "    binary: agent-local\n"
+        "    models: [LocalAuto]\n"
+        "  local:\n"
+        "    binary: my-agent\n"
+        "    models: [fast]\n",
+    )
+
+    resolved = resolve_config(tmp_path)
+
+    assert resolved.agent_name == "local"
+    assert resolved.agent_binary == "my-agent"
+    assert resolved.sources["agent"] == "project.default"
+    assert resolved.agents["cursor"].binary == "agent-local"
+    assert resolved.agents["cursor"].models == ["LocalAuto"]
+    assert "local" in resolved.agents
+
+
 def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
     _write_project_config(tmp_path, "version: 1\nworkspace:\n  root: sub\n")

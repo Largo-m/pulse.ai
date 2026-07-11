@@ -11,6 +11,7 @@ from pulse.config.global_config import (
     mark_onboarding_complete,
     migrate_legacy_global_config,
     save_global_config,
+    update_global_agent,
     update_global_defaults,
     update_global_workflow,
 )
@@ -28,11 +29,13 @@ from pulse.config.paths import (
 )
 from pulse.config.project_config import (
     ProjectConfig,
+    ensure_project_workflows,
     init_project_config,
     load_project_config,
     parse_project_config,
     project_config_exists,
     render_project_config,
+    update_project_agent,
     update_project_defaults,
     update_project_workflow,
 )
@@ -55,6 +58,7 @@ __all__ = [
     "parse_agents",
     "parse_workflows",
     "global_config_exists",
+    "ensure_project_workflows",
     "init_project_config",
     "load_global_config",
     "load_project_config",
@@ -67,8 +71,10 @@ __all__ = [
     "render_project_config",
     "resolve_config",
     "save_global_config",
+    "update_global_agent",
     "update_global_defaults",
     "update_global_workflow",
+    "update_project_agent",
     "update_project_defaults",
     "update_project_workflow",
 ]
