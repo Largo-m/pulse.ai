@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import sqlite3
+from pathlib import Path
+
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 
@@ -30,11 +34,11 @@ def test_cockpit_sink_streams_assistant_and_tools():
                 "toolCallId": "call-1",
                 "title": "Read File",
                 "kind": "read",
+                "rawInput": {},
             }
         }
     )
-    assert state.entries[-1].kind == LogKind.READ
-    assert state.entries[-1].title == "…"
+    assert state.entries[-1].kind == LogKind.ASSISTANT
 
     sink.handle_update(
         {
@@ -46,8 +50,38 @@ def test_cockpit_sink_streams_assistant_and_tools():
             }
         }
     )
+    assert state.entries[-1].kind == LogKind.READ
     assert state.entries[-1].title == "Specify"
     assert dirty["n"] > 0
+
+
+def test_read_update_prefers_locations_over_body():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state, cwd="/repo")
+    sink.begin_phase("Specify")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "call-loc",
+                "title": "Read File",
+                "kind": "read",
+            }
+        }
+    )
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "call-loc",
+                "locations": [{"path": "/repo/.pulse/specs/project/STATE.md"}],
+                "rawOutput": {"content": "version: 1\n"},
+            }
+        }
+    )
+    assert state.entries[-1].title.endswith("STATE.md")
+    assert "version" not in state.entries[-1].title
 
 
 def test_edit_update_fills_path():
@@ -86,7 +120,50 @@ def test_edit_update_fills_path():
     assert "features" in entry.title
 
 
-def test_search_update_shows_file_count():
+def test_search_update_shows_query_scope_and_hits():
+    state = CockpitState()
+    state.configure_workflow("fix-bug")
+    sink = CockpitSink(state, cwd="/repo")
+    sink.begin_phase("Planejar")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "find-1",
+                "title": "Find",
+                "kind": "search",
+                "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+            }
+        }
+    )
+    assert state.entries[-1].title == "“dashboard”"
+    assert "in .pulse/specs" in state.entries[-1].detail
+
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "find-1",
+                "status": "completed",
+                "rawOutput": {"totalFiles": 4, "truncated": False},
+                "locations": [
+                    "/repo/.pulse/specs/features/a/spec.md",
+                    "/repo/.pulse/specs/features/b/spec.md",
+                    "/repo/.pulse/specs/features/c/spec.md",
+                    "/repo/.pulse/specs/project/STATE.md",
+                ],
+            }
+        }
+    )
+    entry = state.entries[-1]
+    assert entry.kind == LogKind.SEARCH
+    assert entry.title == "“dashboard”"
+    assert "4 files" in entry.detail
+    assert "in .pulse/specs" in entry.detail
+    assert "(+1)" in entry.detail
+
+
+def test_search_update_count_only_fallback():
     state = CockpitState()
     state.configure_workflow("fix-bug")
     sink = CockpitSink(state)
@@ -101,6 +178,7 @@ def test_search_update_shows_file_count():
             }
         }
     )
+    assert all(entry.kind != LogKind.SEARCH for entry in state.entries)
     sink.handle_update(
         {
             "update": {
@@ -113,6 +191,70 @@ def test_search_update_shows_file_count():
     )
     assert state.entries[-1].kind == LogKind.SEARCH
     assert state.entries[-1].title == "4 files"
+
+
+def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
+    session_id = "sess-enrich"
+    root = tmp_path / "acp-sessions" / session_id
+    root.mkdir(parents=True)
+    db = root / "store.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)")
+    blob = {
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "call-read\nfc_1",
+                "toolName": "Read",
+                "args": {"path": "/repo/.pulse/skills/tlc-spec-driven/SKILL.md"},
+            },
+            {
+                "type": "tool-call",
+                "toolCallId": "call-glob\nfc_2",
+                "toolName": "Glob",
+                "args": {"glob_pattern": ".pulse/specs/features/**/*"},
+            },
+        ],
+    }
+    con.execute("INSERT INTO blobs(id, data) VALUES (?, ?)", ("1", json.dumps(blob).encode()))
+    con.commit()
+    con.close()
+    monkeypatch.setattr("pulse.tui.cursor_store._ACP_SESSIONS", tmp_path / "acp-sessions")
+    monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
+
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state, cwd="/repo", session_id=session_id)
+    sink.begin_phase("Specify")
+
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "call-read\nfc_1",
+                "title": "Read File",
+                "kind": "read",
+                "rawInput": {},
+            }
+        }
+    )
+    assert state.entries[-1].kind == LogKind.READ
+    assert state.entries[-1].title.endswith("SKILL.md")
+
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "call-glob\nfc_2",
+                "title": "Find",
+                "kind": "search",
+                "rawInput": {},
+            }
+        }
+    )
+    assert state.entries[-1].kind == LogKind.SEARCH
+    assert ".pulse/specs/features/**/*" in state.entries[-1].title
 
 
 def test_cockpit_sink_suppresses_questionnaire_stream():

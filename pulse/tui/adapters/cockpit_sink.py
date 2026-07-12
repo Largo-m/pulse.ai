@@ -5,8 +5,9 @@ from collections.abc import Callable
 from typing import Any
 
 from pulse.presentation.prompt.text_questionnaire import extract_questionnaire_block
+from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
-from pulse.tui.tool_detail import build_tool_labels, extract_tool_target, is_generic_title
+from pulse.tui.tool_detail import build_tool_labels, is_generic_title, merge_tool_update
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
 _QUESTIONNAIRE_START = re.compile(
@@ -19,6 +20,13 @@ _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 NotifyFn = Callable[[], None]
 
 
+def _is_placeholder(title: str, detail: str = "") -> bool:
+    text = title.strip()
+    if text in {"", "…", "..."}:
+        return not detail.strip()
+    return False
+
+
 class CockpitSink:
     cockpit = True
 
@@ -28,6 +36,7 @@ class CockpitSink:
         *,
         on_change: NotifyFn | None = None,
         cwd: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         self._state = state
         self._on_change = on_change
@@ -36,10 +45,15 @@ class CockpitSink:
         self._agent_text = ""
         self._questionnaire_mode = False
         self._questionnaire_announced = False
-        self._tool_ids: set[str] = set()
+        self._visible_tool_ids: set[str] = set()
+        self._tool_payloads: dict[str, dict[str, Any]] = {}
+        self._store = CursorStoreIndex(session_id)
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
+
+    def set_session_id(self, session_id: str | None) -> None:
+        self._store.set_session(session_id)
 
     def reset_capture(self) -> None:
         self._agent_text = ""
@@ -98,7 +112,8 @@ class CockpitSink:
 
     def begin_phase(self, title: str) -> None:
         self.finish()
-        self._tool_ids.clear()
+        self._visible_tool_ids.clear()
+        self._tool_payloads.clear()
         self._state.begin_phase(title)
         self._state.add_info(title)
         self._emit()
@@ -111,15 +126,48 @@ class CockpitSink:
         self._state.finish_assistant()
         self._emit()
 
+    def _enrich_from_store(self, merged: dict[str, Any], tool_id: str) -> dict[str, Any]:
+        if not tool_id:
+            return merged
+        raw_input = merged.get("rawInput")
+        if isinstance(raw_input, dict) and raw_input:
+            return merged
+        args = self._store.lookup_args(tool_id)
+        if not args:
+            return merged
+        return merge_tool_update(merged, {"rawInput": args})
+
     def _handle_tool(self, update: dict[str, Any], *, kind: str) -> None:
         tool_id = str(update.get("toolCallId") or "")
-        log_kind, target, detail = build_tool_labels(update, cwd=self._cwd)
+        if tool_id:
+            previous = self._tool_payloads.get(tool_id, {})
+            merged = merge_tool_update(previous, update)
+            merged = self._enrich_from_store(merged, tool_id)
+            self._tool_payloads[tool_id] = merged
+        else:
+            merged = update
+
+        existing_kind = None
+        if tool_id:
+            for entry in self._state.entries:
+                if entry.tool_id == tool_id:
+                    existing_kind = entry.kind
+                    break
+
+        log_kind, target, detail = build_tool_labels(
+            merged,
+            cwd=self._cwd,
+            fallback_kind=existing_kind,
+        )
+        placeholder = _is_placeholder(target, detail)
 
         if kind == "tool_call":
-            if tool_id and tool_id in self._tool_ids:
+            if tool_id and tool_id in self._visible_tool_ids:
+                return
+            if placeholder:
                 return
             if tool_id:
-                self._tool_ids.add(tool_id)
+                self._visible_tool_ids.add(tool_id)
             self._finish_message_line()
             self._state.add_tool_entry(
                 log_kind,
@@ -131,34 +179,28 @@ class CockpitSink:
             return
 
         if kind in {"tool_call_update", "tool_result"}:
-            target = extract_tool_target(update, cwd=self._cwd)
-            if tool_id and tool_id in self._tool_ids:
-                if not target or target == "…":
+            if tool_id and tool_id in self._visible_tool_ids:
+                if placeholder:
                     return
-                existing_kind = None
-                for entry in self._state.entries:
-                    if entry.tool_id == tool_id:
-                        existing_kind = entry.kind
-                        break
                 updated = self._state.update_tool_entry(
                     tool_id,
-                    kind=existing_kind,
+                    kind=existing_kind or log_kind,
                     title=target,
-                    detail=target,
+                    detail=detail,
                 )
                 if updated is not None:
                     self._emit()
                 return
 
-            if not target and not update.get("title"):
+            if placeholder:
                 return
             if tool_id:
-                self._tool_ids.add(tool_id)
+                self._visible_tool_ids.add(tool_id)
             self._finish_message_line()
             self._state.add_tool_entry(
                 log_kind,
-                target or log_kind.value,
-                target or log_kind.value,
+                target,
+                detail,
                 tool_id=tool_id,
             )
             self._emit()

@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from pulse.tui.state import LogKind
-from pulse.tui.tool_detail import build_tool_labels, extract_tool_target, shorten_path, summarize_content
+from pulse.tui.tool_detail import (
+    build_tool_labels,
+    extract_tool_target,
+    format_search_labels,
+    merge_tool_update,
+    shorten_path,
+    summarize_content,
+)
 
 
 def test_shorten_path_relative_to_cwd(tmp_path):
@@ -45,7 +52,7 @@ def test_build_tool_labels_avoids_generic_duplication():
     )
     assert kind == LogKind.READ
     assert title == "…"
-    assert detail == "…"
+    assert detail == ""
 
     kind, title, detail = build_tool_labels(
         {
@@ -57,3 +64,148 @@ def test_build_tool_labels_avoids_generic_duplication():
     )
     assert kind == LogKind.EDIT
     assert title.endswith("spec.md")
+    assert detail == ""
+
+
+def test_build_tool_labels_rejects_yaml_key_only():
+    kind, title, detail = build_tool_labels(
+        {
+            "title": "Read File",
+            "kind": "read",
+            "rawOutput": {"content": "phases:\n  - specify\n"},
+        }
+    )
+    assert kind == LogKind.READ
+    assert title != "phases:"
+    assert title == "…" or "specify" in title.lower() or title.startswith("-")
+
+
+def test_build_tool_labels_read_prefers_path():
+    kind, title, detail = build_tool_labels(
+        {
+            "title": "Read File",
+            "kind": "read",
+            "rawInput": {"path": "/repo/.pulse/skills/tlc-spec-driven/workflow.yaml"},
+            "rawOutput": {"content": "version: 1\n"},
+        },
+        cwd="/repo",
+    )
+    assert kind == LogKind.READ
+    assert title.endswith("workflow.yaml")
+    assert "version" not in title
+    assert detail == ""
+
+
+def test_build_tool_labels_read_from_title_path():
+    kind, title, detail = build_tool_labels(
+        {
+            "title": "Reading .pulse/specs/project/STATE.md",
+            "kind": "read",
+        }
+    )
+    assert kind == LogKind.READ
+    assert title.endswith("STATE.md")
+    assert detail == ""
+
+
+def test_build_tool_labels_read_from_locations():
+    kind, title, detail = build_tool_labels(
+        {
+            "title": "Read File",
+            "kind": "read",
+            "locations": [{"path": "/repo/.pulse/specs/features/demo/spec.md"}],
+        },
+        cwd="/repo",
+    )
+    assert kind == LogKind.READ
+    assert title.endswith("spec.md")
+
+
+def test_build_tool_labels_read_from_nested_content_text():
+    kind, title, detail = build_tool_labels(
+        {
+            "title": "Read File",
+            "kind": "read",
+            "content": [
+                {
+                    "type": "content",
+                    "content": {
+                        "type": "text",
+                        "text": "# Specify\n\nGoal",
+                    },
+                }
+            ],
+        }
+    )
+    assert kind == LogKind.READ
+    assert title == "Specify"
+
+
+def test_format_search_labels_with_hits():
+    title, detail = format_search_labels(
+        {
+            "kind": "search",
+            "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+            "rawOutput": {"totalFiles": 4},
+            "locations": [
+                "/repo/.pulse/specs/features/build-dashboard-home/spec.md",
+                "/repo/.pulse/specs/skills/tlc-spec-driven/prompts/specify.md",
+                "/repo/.pulse/specs/skills/tlc-spec-driven/workflow.yaml",
+                "/repo/.pulse/specs/project/STATE.md",
+            ],
+        },
+        cwd="/repo",
+    )
+    assert title == "“dashboard”"
+    assert "in .pulse/specs" in detail
+    assert "4 files" in detail
+    assert "spec.md" in detail
+    assert "(+1)" in detail
+
+
+def test_format_search_ignores_tool_name_query():
+    title, detail = format_search_labels(
+        {
+            "title": "grep",
+            "kind": "search",
+            "rawOutput": {"totalFiles": 6},
+        }
+    )
+    assert title == "6 files"
+    assert "grep" not in title.lower()
+
+
+def test_format_search_labels_glob():
+    title, detail = format_search_labels(
+        {
+            "kind": "search",
+            "rawInput": {"glob": "**/*dashboard*"},
+            "rawOutput": {"totalFiles": 2},
+            "locations": [
+                "/repo/lib/features/home/ui/dashboard_page.dart",
+                "/repo/lib/features/home/ui/dashboard_card.dart",
+            ],
+        },
+        cwd="/repo",
+    )
+    assert title == "**/*dashboard*"
+    assert "2 files" in detail
+    assert "dashboard_page.dart" in detail
+
+
+def test_merge_tool_update_keeps_raw_input():
+    merged = merge_tool_update(
+        {"rawInput": {"pattern": "dashboard", "path": ".pulse"}, "kind": "search"},
+        {"rawOutput": {"totalFiles": 4}, "locations": ["a.md"]},
+    )
+    assert merged["rawInput"]["pattern"] == "dashboard"
+    assert merged["rawOutput"]["totalFiles"] == 4
+    assert merged["locations"] == ["a.md"]
+
+
+def test_merge_tool_update_parses_json_raw_input():
+    merged = merge_tool_update(
+        {},
+        {"rawInput": '{"path": "/repo/a.md", "pattern": "x"}'},
+    )
+    assert merged["rawInput"]["path"] == "/repo/a.md"

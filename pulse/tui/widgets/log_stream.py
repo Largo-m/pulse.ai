@@ -88,8 +88,7 @@ class LogStream(Widget):
             output.append(f"{target}\n", style="#A2D729")
             detail = entry.detail.strip()
             if detail and detail != target:
-                output.append(f"    {detail}\n", style="#888888")
-            else:
-                output.append(f"    {target}\n", style="#888888")
+                for line in detail.splitlines():
+                    output.append(f"    {line}\n", style="#888888")
             output.append("\n")
         return output

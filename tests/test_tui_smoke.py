@@ -62,6 +62,7 @@ def test_log_stream_and_sidebar_render_text():
                             "toolCallId": "t1",
                             "title": "Read File",
                             "kind": "read",
+                            "rawInput": {"path": "/repo/pulse/cli.py"},
                         }
                     }
                 )

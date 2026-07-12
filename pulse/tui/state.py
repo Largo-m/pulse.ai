@@ -184,7 +184,7 @@ class CockpitState:
         entry = LogEntry(
             kind=kind,
             title=title,
-            detail=detail or title,
+            detail=detail,
             active=True,
             entry_id=self._next_entry_id,
             tool_id=tool_id,
@@ -214,7 +214,7 @@ class CockpitState:
                 entry.kind = kind
             if title is not None and title.strip():
                 entry.title = title.strip()
-            if detail is not None and detail.strip():
+            if detail is not None:
                 entry.detail = detail.strip()
             self._clear_active_flags()
             entry.active = True

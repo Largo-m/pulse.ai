@@ -76,8 +76,7 @@ class AcpSessionRunner:
             session_id = session.get("sessionId")
             if not session_id:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._session_id = str(session_id)
-            self._logger.set_session_id(self._session_id)
+            self._activate_session(str(session_id))
             result = self.prompt(self._session_id, prompt_text)
             self._logger.log_event("run_prompt_done", {"stop_reason": result.get("stopReason")})
             return result
@@ -108,8 +107,7 @@ class AcpSessionRunner:
             session_id = session.get("sessionId")
             if not session_id:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._session_id = str(session_id)
-            self._logger.set_session_id(self._session_id)
+            self._activate_session(str(session_id))
 
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
@@ -184,8 +182,7 @@ class AcpSessionRunner:
             session_id = session.get("sessionId")
             if not session_id:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._session_id = str(session_id)
-            self._logger.set_session_id(self._session_id)
+            self._activate_session(str(session_id))
 
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
@@ -255,7 +252,7 @@ class AcpSessionRunner:
         session_id = session.get("sessionId")
         if not session_id:
             raise RuntimeError("Sessão ACP não retornou sessionId")
-        self._session_id = str(session_id)
+        self._activate_session(str(session_id))
 
         model_id = resolve_interview_model_id(session, preferred_model)
         if model_id:
@@ -370,7 +367,7 @@ class AcpSessionRunner:
         session_id = session.get("sessionId")
         if not session_id:
             raise RuntimeError("Sessão ACP não retornou sessionId")
-        self._session_id = str(session_id)
+        self._activate_session(str(session_id))
 
         model_id = resolve_interview_model_id(session, preferred_model)
         if model_id:
@@ -417,8 +414,7 @@ class AcpSessionRunner:
             session_id = session.get("sessionId")
             if not session_id:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._session_id = str(session_id)
-            self._logger.set_session_id(self._session_id)
+            self._activate_session(str(session_id))
 
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
@@ -716,6 +712,12 @@ class AcpSessionRunner:
             },
         }
         return self._request("session/new", params)
+
+    def _activate_session(self, session_id: str) -> None:
+        self._session_id = str(session_id)
+        self._logger.set_session_id(self._session_id)
+        if hasattr(self._stream, "set_session_id"):
+            self._stream.set_session_id(self._session_id)
 
     def close_session(self) -> None:
         if self._session_id is None:
