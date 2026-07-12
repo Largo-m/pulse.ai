@@ -44,8 +44,8 @@ class AcpSessionRunner:
         cwd: str,
         permission_policy: PermissionPolicy = "ask",
         timeout_seconds: float = 600.0,
-        stream: StreamRenderer | None = None,
-        prompt_handler: PromptHandler | None = None,
+        stream: Any | None = None,
+        prompt_handler: Any | None = None,
         enable_mcp_ask: bool = True,
     ) -> None:
         self._command = command
@@ -596,7 +596,12 @@ class AcpSessionRunner:
             if method == "session/update":
                 params = message.get("params", {})
                 self._logger.log_update(params)
-                if self._session_id is None or params.get("sessionId") == self._session_id:
+                session_id = params.get("sessionId")
+                if (
+                    self._session_id is None
+                    or session_id is None
+                    or session_id == self._session_id
+                ):
                     self._stream.handle_update(params)
                 continue
 

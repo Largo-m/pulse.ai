@@ -35,7 +35,7 @@ def test_collect_available_models_from_acp(tmp_path: Path):
         ):
             models = collect_available_models(tmp_path)
 
-    assert models == acp_models + ["gpt-5.5"]
+    assert models == acp_models + ["gpt-5.5", "Auto"]
 
 
 def test_collect_available_models_falls_back_to_defaults(tmp_path: Path):
@@ -53,4 +53,4 @@ def test_collect_available_models_falls_back_to_defaults(tmp_path: Path):
         with patch("pulse.terminal.prompts.fetch_acp_available_models", return_value=[]):
             models = collect_available_models(tmp_path)
 
-    assert len(models) >= 4
+    assert models == ["auto"]

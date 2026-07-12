@@ -6,10 +6,8 @@ import sys
 from pulse import __version__
 from pulse.config import global_config_exists
 from pulse.onboarding import run_onboarding_wizard
-from pulse.terminal.actions import run_menu_action
-from pulse.terminal.menu import prompt_welcome_action
 from pulse.terminal.tty import is_interactive
-from pulse.terminal.welcome import is_pulse_ready, render_welcome
+from pulse.terminal.welcome import render_welcome
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -27,7 +25,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
-    args = parser.parse_args(argv)
+    parser.parse_args(argv)
 
     if not is_interactive():
         render_welcome()
@@ -38,15 +36,9 @@ def main(argv: list[str] | None = None) -> int:
         if code != 0:
             return code
 
-    while True:
-        initialized = is_pulse_ready()
-        render_welcome()
-        action = prompt_welcome_action(initialized=initialized)
-        if action is None:
-            return 0
-        code = run_menu_action(action, initialized=initialized)
-        if code != 0 and action == "init":
-            return code
+    from pulse.tui.app import run_pulse_app
+
+    return run_pulse_app()
 
 
 if __name__ == "__main__":

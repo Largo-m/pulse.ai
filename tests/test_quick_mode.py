@@ -73,7 +73,7 @@ def test_load_bundled_skill_missing_raises():
 def test_run_plan_fix_bug_delegates(monkeypatch):
     calls: list[str] = []
 
-    def fake_run(*, user_prompt: str) -> int:
+    def fake_run(*, user_prompt: str, **_kwargs) -> int:
         calls.append(user_prompt)
         return 0
 

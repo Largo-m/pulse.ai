@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -20,7 +21,14 @@ from pulse.presentation.stream_renderer import StreamRenderer
 from pulse.terminal.tty import is_interactive
 
 
-def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
+def run_quick(
+    *,
+    user_prompt: str,
+    workspace: Path | None = None,
+    stream: Any | None = None,
+    prompt_handler: Any | None = None,
+    render_header: bool = True,
+) -> int:
     if not is_interactive():
         print("[pulse] Quick mode requer terminal interativo.", file=sys.stderr)
         return 1
@@ -52,22 +60,26 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
     )
 
     console = Console(highlight=False, soft_wrap=True)
-    console.print()
-    console.print(
-        Panel(
-            f"Skill: tlc-spec-driven\nWorkspace: {workspace_root}\nTarefa: {user_prompt.strip() or '—'}",
-            title="[bold cyan]Quick mode[/bold cyan]",
-            border_style="cyan",
+    cockpit = stream is not None and getattr(stream, "cockpit", False)
+    if render_header and not cockpit:
+        console.print()
+        console.print(
+            Panel(
+                f"Skill: tlc-spec-driven\nWorkspace: {workspace_root}\nTarefa: {user_prompt.strip() or '—'}",
+                title="[bold cyan]Quick mode[/bold cyan]",
+                border_style="cyan",
+            )
         )
-    )
-    console.print()
+        console.print()
 
+    active_stream = stream or StreamRenderer(console)
+    active_handler = prompt_handler or PromptHandler(console=console)
     runner = AcpSessionRunner(
         acp_command,
         cwd=str(workspace_root),
         permission_policy=permission_policy,
-        stream=StreamRenderer(console),
-        prompt_handler=PromptHandler(console=console),
+        stream=active_stream,
+        prompt_handler=active_handler,
     )
 
     try:
@@ -79,6 +91,8 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
             preferred_model=preferred_model,
         )
     except (RuntimeError, TimeoutError, OSError) as error:
+        if cockpit:
+            raise
         console.print(f"[red]Falha na sessão ACP:[/red] {error}")
         return 1
 
@@ -86,6 +100,11 @@ def run_quick(*, user_prompt: str, workspace: Path | None = None) -> int:
     ask_count = int(result.get("askQuestionCount", 0))
     approved = bool(result.get("approved", False))
     outcome = str(result.get("outcome", ""))
+    if cockpit:
+        if stop_reason == "cancelled" or outcome == "cancelled":
+            return 1
+        return 0
+
     console.print()
     if stop_reason == "cancelled" or outcome == "cancelled":
         console.print("[yellow]Quick task cancelada.[/yellow]")

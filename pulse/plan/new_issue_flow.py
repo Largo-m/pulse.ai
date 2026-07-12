@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -40,7 +41,14 @@ from pulse.presentation.stream_renderer import StreamRenderer
 from pulse.terminal.tty import is_interactive
 
 
-def run_new_issue(*, user_prompt: str, workspace: Path | None = None) -> int:
+def run_new_issue(
+    *,
+    user_prompt: str,
+    workspace: Path | None = None,
+    stream: Any | None = None,
+    prompt_handler: Any | None = None,
+    render_header: bool = True,
+) -> int:
     if not is_interactive():
         print("[pulse] New issue requer terminal interativo.", file=sys.stderr)
         return 1
@@ -65,19 +73,29 @@ def run_new_issue(*, user_prompt: str, workspace: Path | None = None) -> int:
         print(f"[pulse] {error}", file=sys.stderr)
         return 1
 
-    state = _resolve_workflow_state(workspace_root, user_prompt)
+    active_handler = prompt_handler or PromptHandler()
+    state = _resolve_workflow_state(workspace_root, user_prompt, prompt_handler=active_handler)
     if state is None:
         return 0
 
-    console = Console(highlight=False, soft_wrap=True)
-    _print_header(console, workspace_root, state, user_prompt)
+    from io import StringIO
 
+    cockpit = stream is not None and getattr(stream, "cockpit", False)
+    console = (
+        Console(file=StringIO(), highlight=False, soft_wrap=True)
+        if cockpit
+        else Console(highlight=False, soft_wrap=True)
+    )
+    if render_header and not cockpit:
+        _print_header(console, workspace_root, state, user_prompt)
+
+    active_stream = stream or StreamRenderer(console)
     runner = AcpSessionRunner(
         acp_command,
         cwd=str(workspace_root),
         permission_policy=permission_policy,
-        stream=StreamRenderer(console),
-        prompt_handler=PromptHandler(console=console),
+        stream=active_stream,
+        prompt_handler=active_handler if prompt_handler else PromptHandler(console=console),
     )
 
     try:
@@ -91,14 +109,26 @@ def run_new_issue(*, user_prompt: str, workspace: Path | None = None) -> int:
             preferred_model=preferred_model,
         )
     except (RuntimeError, TimeoutError, OSError) as error:
+        if cockpit:
+            raise
         console.print(f"[red]Falha na sessão ACP:[/red] {error}")
         return 1
 
 
-def _resolve_workflow_state(workspace: Path, user_prompt: str) -> WorkflowState | None:
+def _resolve_workflow_state(
+    workspace: Path,
+    user_prompt: str,
+    *,
+    prompt_handler: PromptHandler | None = None,
+) -> WorkflowState | None:
     resumable = find_resumable_workflows(workspace)
     if resumable:
-        return _pick_resumable(workspace, resumable, user_prompt)
+        return _pick_resumable(
+            workspace,
+            resumable,
+            user_prompt,
+            prompt_handler=prompt_handler,
+        )
     slug = slugify_feature(user_prompt)
     state = WorkflowState.create_new(feature_slug=slug, user_prompt=user_prompt)
     state.save(workspace)
@@ -109,22 +139,34 @@ def _pick_resumable(
     workspace: Path,
     workflows: list[WorkflowState],
     user_prompt: str,
+    *,
+    prompt_handler: PromptHandler | None = None,
 ) -> WorkflowState | None:
-    import questionary
-
-    from pulse.terminal.styles import MENU_STYLE
+    select_choice = getattr(prompt_handler, "select_choice", None) if prompt_handler else None
 
     if len(workflows) == 1:
         only = workflows[0]
-        choice = questionary.select(
-            f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
-            choices=[
-                questionary.Choice("Continuar workflow existente", value="resume"),
-                questionary.Choice("Iniciar novo workflow", value="new"),
-                questionary.Choice("Cancelar", value="cancel"),
-            ],
-            style=MENU_STYLE,
-        ).ask()
+        choices = [
+            ("Continuar workflow existente", "resume"),
+            ("Iniciar novo workflow", "new"),
+            ("Cancelar", "cancel"),
+        ]
+        if select_choice is not None:
+            choice = select_choice(
+                f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
+                choices,
+                title="Resume",
+            )
+        else:
+            import questionary
+
+            from pulse.terminal.styles import MENU_STYLE
+
+            choice = questionary.select(
+                f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
+                choices=[questionary.Choice(label, value=value) for label, value in choices],
+                style=MENU_STYLE,
+            ).ask()
         if choice is None or choice == "cancel":
             return None
         if choice == "resume":
@@ -134,18 +176,29 @@ def _pick_resumable(
         state.save(workspace)
         return state
 
-    choices = [
-        questionary.Choice(f"Continuar: {wf.feature_slug} (fase: {wf.current_phase})", value=wf)
+    choices: list[tuple[str, object]] = [
+        (f"Continuar: {wf.feature_slug} (fase: {wf.current_phase})", wf)
         for wf in workflows
     ]
-    choices.append(questionary.Choice("Iniciar novo workflow", value="new"))
-    choices.append(questionary.Choice("Cancelar", value="cancel"))
+    choices.append(("Iniciar novo workflow", "new"))
+    choices.append(("Cancelar", "cancel"))
 
-    picked = questionary.select(
-        "Workflows em andamento encontrados. O que deseja?",
-        choices=choices,
-        style=MENU_STYLE,
-    ).ask()
+    if select_choice is not None:
+        picked = select_choice(
+            "Workflows em andamento encontrados. O que deseja?",
+            choices,
+            title="Resume",
+        )
+    else:
+        import questionary
+
+        from pulse.terminal.styles import MENU_STYLE
+
+        picked = questionary.select(
+            "Workflows em andamento encontrados. O que deseja?",
+            choices=[questionary.Choice(label, value=value) for label, value in choices],
+            style=MENU_STYLE,
+        ).ask()
     if picked is None or picked == "cancel":
         return None
     if picked == "new":

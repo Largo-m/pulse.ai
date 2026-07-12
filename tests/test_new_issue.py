@@ -172,7 +172,7 @@ def test_approval_is_positive():
 def test_run_plan_new_issue_delegates(monkeypatch):
     calls: list[str] = []
 
-    def fake_run(*, user_prompt: str) -> int:
+    def fake_run(*, user_prompt: str, **_kwargs) -> int:
         calls.append(user_prompt)
         return 0
 
