@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import re
+import textwrap
+
+from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
@@ -7,6 +11,53 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from pulse.tui.state import CockpitState, LogKind
+
+_SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+_INLINE_RE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__")
+_ASSIST_INDENT = "  "
+_ASSIST_GUTTER = "│ "
+
+
+def _assistant_line(text: str) -> Text:
+    line = Text()
+    pos = 0
+    for match in _INLINE_RE.finditer(text):
+        if match.start() > pos:
+            line.append(text[pos : match.start()], style="#E0E0E0")
+        code, bold_a, bold_b = match.groups()
+        if code is not None:
+            line.append(code, style="bold #A2D729")
+        else:
+            line.append(bold_a or bold_b or "", style="bold #E0E0E0")
+        pos = match.end()
+    if pos < len(text):
+        line.append(text[pos:], style="#E0E0E0")
+    if not line.plain:
+        line.append(text, style="#E0E0E0")
+    return line
+
+
+def format_assistant_lines(body: str, *, width: int = 72) -> list[str]:
+    text = (body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return []
+    wrap_width = max(24, width)
+    lines: list[str] = []
+    paragraphs = re.split(r"\n\s*\n", text)
+    for index, paragraph in enumerate(paragraphs):
+        chunk = " ".join(part.strip() for part in paragraph.splitlines() if part.strip())
+        if not chunk:
+            continue
+        wrapped = textwrap.wrap(
+            chunk,
+            width=wrap_width,
+            break_long_words=True,
+            break_on_hyphens=False,
+        )
+        lines.extend(wrapped or [chunk])
+        if index < len(paragraphs) - 1:
+            lines.append("")
+    return lines
 
 
 class LogStream(Widget):
@@ -16,6 +67,7 @@ class LogStream(Widget):
         super().__init__(**kwargs)
         self._state = state
         self._fingerprint: tuple[object, ...] | None = None
+        self._spin_frame = 0
 
     def compose(self) -> ComposeResult:
         yield Static("", id="stream-header", classes="stream-title")
@@ -24,6 +76,16 @@ class LogStream(Widget):
             yield Static("", id="stream-content")
 
     def on_mount(self) -> None:
+        self.sync_from_state(self._state, force=True)
+        self.set_interval(0.08, self._tick_spinner)
+
+    def on_resize(self) -> None:
+        self.sync_from_state(self._state, force=True)
+
+    def _tick_spinner(self) -> None:
+        if not any(entry.pending for entry in self._state.entries):
+            return
+        self._spin_frame = (self._spin_frame + 1) % len(_SPINNER)
         self.sync_from_state(self._state, force=True)
 
     def sync_from_state(self, state: CockpitState, *, force: bool = False) -> None:
@@ -48,12 +110,47 @@ class LogStream(Widget):
         content.update(self._render_entries(state))
         body.scroll_end(animate=False)
 
+    def _content_width(self) -> int:
+        width = self.size.width if self.size.width > 0 else 80
+        return max(24, width - 6)
+
     @staticmethod
     def _state_fingerprint(state: CockpitState) -> tuple[object, ...]:
         if not state.entries:
-            return (0, "", 0)
+            return (0, "", 0, False)
         last = state.entries[-1]
-        return (len(state.entries), last.entry_id, len(last.body), last.title, last.detail, last.active)
+        pending = any(entry.pending for entry in state.entries)
+        return (
+            len(state.entries),
+            last.entry_id,
+            len(last.body),
+            last.title,
+            last.detail,
+            last.active,
+            last.pending,
+            pending,
+            state.model_label,
+        )
+
+    def _render_assistant(self, entry_active: bool, body: str) -> Text:
+        output = Text()
+        prefix = "▌ " if entry_active else "  "
+        output.append(prefix, style="#A2D729" if entry_active else "#333333")
+        output.append("Assistente\n", style="bold #E0E0E0")
+        lines = format_assistant_lines(body, width=max(24, self._content_width() - 4))
+        if not lines:
+            output.append("\n")
+            return output
+        for line in lines:
+            output.append(_ASSIST_INDENT)
+            if line:
+                output.append(_ASSIST_GUTTER, style="#4A5F1A")
+                output.append_text(_assistant_line(line))
+            else:
+                output.append(_ASSIST_GUTTER.rstrip(), style="#4A5F1A")
+            output.append("\n")
+        output.append("\n")
+        return output
 
     def _render_entries(self, state: CockpitState) -> Text:
         output = Text()
@@ -62,33 +159,33 @@ class LogStream(Widget):
             output.append("Aguardando atividade do agente…\n", style="#888888")
             return output
 
+        spin = _SPINNER[self._spin_frame]
         for index, entry in enumerate(entries):
             active = entry.active or index == len(entries) - 1
-            prefix = "▌ " if active else "  "
             if entry.kind == LogKind.ASSISTANT:
-                output.append(prefix, style="#A2D729" if active else "#333333")
-                output.append("Assistant\n", style="bold #E0E0E0")
-                body = (entry.body or "").rstrip()
-                if body:
-                    for line in body.splitlines() or [""]:
-                        output.append(f"  {line}\n", style="#E0E0E0")
-                output.append("\n")
+                output.append_text(self._render_assistant(active, entry.body or ""))
                 continue
 
-            mark = "v " if entry.kind != LogKind.INFO else "· "
+            prefix = "▌ " if active else "  "
             output.append(prefix, style="#A2D729" if active else "#333333")
             if entry.kind == LogKind.INFO:
                 output.append(f"{entry.title}\n", style="#888888")
                 output.append("\n")
                 continue
 
+            if entry.pending:
+                output.append(f"{spin} ", style="#A2D729")
+            else:
+                output.append("v ", style="#A2D729")
+            output.append(f"{entry.kind.value}\n", style="#A2D729")
             target = entry.title.strip() or entry.detail.strip() or "…"
-            output.append(mark, style="#A2D729")
-            output.append(f"{entry.kind.value}  ", style="#A2D729")
-            output.append(f"{target}\n", style="#A2D729")
+            if entry.pending and target in {"…", "..."}:
+                output.append("  carregando…\n", style="#888888")
+            else:
+                output.append(f"  {escape(target)}\n", style="#B0B0B0")
             detail = entry.detail.strip()
             if detail and detail != target:
                 for line in detail.splitlines():
-                    output.append(f"    {line}\n", style="#888888")
+                    output.append(f"    {escape(line)}\n", style="#888888")
             output.append("\n")
         return output

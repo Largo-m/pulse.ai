@@ -248,6 +248,7 @@ def _run_pipeline(
     try:
         runner.initialize()
         runner.authenticate()
+        _sync_stream_phases(runner, state)
 
         start_index = _phase_start_index(state)
         for phase in PHASE_ORDER[start_index:]:
@@ -269,10 +270,12 @@ def _run_pipeline(
                 reason = state.phases[phase].skip_reason or "Fase opcional não necessária para este escopo"
                 state.mark_phase_skipped(phase, reason)
                 state.save(workspace)
+                _sync_stream_phases(runner, state)
                 console.print(f"[dim]⏭  {phase.capitalize()} pulada: {reason}[/dim]")
                 continue
 
             if state.phases[phase].status in {PhaseStatus.APPROVED, PhaseStatus.DONE}:
+                _sync_stream_phases(runner, state)
                 continue
 
             exit_code = _run_approval_phase(
@@ -289,10 +292,12 @@ def _run_pipeline(
                 return exit_code
 
             state = _reload_state(workspace, state)
+            _sync_stream_phases(runner, state)
             if phase in OPTIONAL_PHASES and state.phases[phase].skip:
                 reason = state.phases[phase].skip_reason or "Marcada como skip pelo agente"
                 state.mark_phase_skipped(phase, reason)
                 state.save(workspace)
+                _sync_stream_phases(runner, state)
                 console.print(f"[dim]⏭  {phase.capitalize()} pulada: {reason}[/dim]")
 
         console.print()
@@ -437,7 +442,8 @@ def _run_execute_phase(
     console.print(
         f"[cyan]Execute — {len(state.tasks)} task(s) em {len(waves)} wave(s)[/cyan]"
     )
-    for wave in waves:
+    _notify(runner, f"Execute — {len(state.tasks)} task(s) em {len(waves)} wave(s)")
+    for index, wave in enumerate(waves, start=1):
         exit_code = _run_execute_wave(
             runner=runner,
             console=console,
@@ -450,11 +456,18 @@ def _run_execute_phase(
             wave=wave,
         )
         if exit_code != 0:
+            remaining = len(waves) - index
+            if remaining > 0:
+                _notify(
+                    runner,
+                    f"Execute pausada em {wave.label} — {remaining} wave(s) pendente(s)",
+                )
             return exit_code
 
     state.mark_phase_done("execute")
     state.save(workspace)
     console.print("[green]✓[/green] Execute concluída — todas as waves finalizadas")
+    _notify(runner, "Execute concluída — todas as waves finalizadas")
     return 0
 
 
@@ -487,6 +500,7 @@ def _run_execute_wave(
         return 0
 
     console.print(f"[cyan]{wave.label}[/cyan]")
+    _notify(runner, wave.label)
     task_lines = [f"- **{task.task_id}** — {task.title}" for task in pending]
     pending_ids = [task.task_id for task in pending]
     result = runner.run_isolated_prompt(
@@ -507,6 +521,7 @@ def _run_execute_wave(
     )
     if result.get("stopReason") == "cancelled":
         console.print(f"[yellow]{wave.label} cancelada — pipeline pausado.[/yellow]")
+        _notify(runner, f"{wave.label} cancelada — pipeline pausado")
         state.save(workspace)
         return 1
 
@@ -525,11 +540,13 @@ def _run_execute_wave(
     if failed:
         for item in failed:
             console.print(f"[red]Gate falhou:[/red] `{item.command}` (exit {item.exit_code})")
+            _notify(runner, f"Gate falhou: {item.command} (exit {item.exit_code})")
             if item.output:
                 console.print(f"[dim]{item.output[-2000:]}[/dim]")
         console.print(
             f"[yellow]{wave.label} não marcada como done — corrija o gate e retome.[/yellow]"
         )
+        _notify(runner, f"{wave.label} não marcada como done — corrija o gate e retome")
         state.save(workspace)
         return 1
 
@@ -538,9 +555,38 @@ def _run_execute_wave(
     state.save(workspace)
     if gate_results:
         console.print(f"[green]✓[/green] {wave.label} — gates ok")
+        _notify(runner, f"{wave.label} — gates ok")
     else:
         console.print(f"[green]✓[/green] {wave.label}")
+        _notify(runner, f"{wave.label} concluída")
     return 0
+
+
+def _notify(runner: AcpSessionRunner, message: str) -> None:
+    stream = getattr(runner, "_stream", None)
+    if stream is None:
+        return
+    info = getattr(stream, "info", None)
+    if callable(info):
+        info(message)
+
+
+def _sync_stream_phases(runner: AcpSessionRunner, state: WorkflowState) -> None:
+    stream = getattr(runner, "_stream", None)
+    if stream is None:
+        return
+    apply = getattr(stream, "apply_phase_statuses", None)
+    if not callable(apply):
+        return
+    done_ids: list[str] = []
+    skipped_ids: list[str] = []
+    for phase_name in PHASE_ORDER:
+        phase = state.phases[phase_name]
+        if phase.status == PhaseStatus.SKIPPED or phase.skip:
+            skipped_ids.append(phase_name)
+        elif phase.status in {PhaseStatus.APPROVED, PhaseStatus.DONE}:
+            done_ids.append(phase_name)
+    apply(done_ids=done_ids, skipped_ids=skipped_ids)
 
 
 def _task_status(state: WorkflowState, task_id: str) -> str:

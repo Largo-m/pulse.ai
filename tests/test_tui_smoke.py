@@ -83,7 +83,8 @@ def test_log_stream_and_sidebar_render_text():
             content = str(app.query_one("#stream-content").render())
             phases = str(app.query_one("#phase-content").render())
             assert "Read" in content
-            assert "Plano" in content or "Assistant" in content
+            assert "Plano" in content
+            assert "Assistente" in content
             assert "Planejar" in phases
             assert LogKind.READ in {
                 entry.kind for entry in state_holder["screen"].state.entries

@@ -100,6 +100,13 @@ class StreamRenderer:
         self._console.print(f"[bold cyan]▸ {title}[/bold cyan]")
         self._console.print()
 
+    def info(self, title: str) -> None:
+        text = str(title or "").strip()
+        if not text:
+            return
+        self.finish()
+        self._console.print(f"[dim]{text}[/dim]")
+
     def finish(self) -> None:
         self._finish_message_line()
 

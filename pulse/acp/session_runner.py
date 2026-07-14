@@ -12,7 +12,7 @@ from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
-from pulse.acp.models import resolve_interview_model_id
+from pulse.acp.models import resolve_interview_model_id, resolve_model_display_name
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
@@ -112,7 +112,7 @@ class AcpSessionRunner:
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
                 self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {model_id}")
+                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
 
             self.set_mode(self._session_id, INTERVIEW_MODE)
             self._stream.begin_phase("Fase 1 — Análise do projeto")
@@ -187,7 +187,7 @@ class AcpSessionRunner:
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
                 self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {model_id}")
+                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
 
             self.set_mode(self._session_id, INTERVIEW_MODE)
             self._stream.begin_phase("Fase 1 — Explorando codebase")
@@ -257,7 +257,7 @@ class AcpSessionRunner:
         model_id = resolve_interview_model_id(session, preferred_model)
         if model_id:
             self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {model_id}")
+            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
 
         self.set_mode(self._session_id, INTERVIEW_MODE)
         next_prompt = initial_prompt
@@ -372,7 +372,7 @@ class AcpSessionRunner:
         model_id = resolve_interview_model_id(session, preferred_model)
         if model_id:
             self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {model_id}")
+            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
 
         mode = AGENT_MODE if agent_mode else INTERVIEW_MODE
         self.set_mode(self._session_id, mode)
@@ -419,7 +419,7 @@ class AcpSessionRunner:
             model_id = resolve_interview_model_id(session, preferred_model)
             if model_id:
                 self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {model_id}")
+                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
 
             self.set_mode(self._session_id, INTERVIEW_MODE)
             next_prompt = plan_prompt

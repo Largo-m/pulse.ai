@@ -55,6 +55,7 @@ _GENERIC_TITLES = frozenset(
     }
 )
 _MAX_SEARCH_HITS = 3
+_GENERIC_GLOBS = frozenset({"*", "**", "**/*", "./**/*", "**/**"})
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:
@@ -220,7 +221,7 @@ def extract_search_query(update: dict[str, Any]) -> str:
 
 def extract_search_scope(update: dict[str, Any], *, cwd: str | None = None) -> str:
     raw_input = _raw_input(update)
-    for key in ("path", "filePath", "target", "cwd", "directory", "root"):
+    for key in ("path", "filePath", "target", "target_directory", "cwd", "directory", "root"):
         value = raw_input.get(key)
         if isinstance(value, str) and value.strip():
             return shorten_path(value, cwd=cwd)
@@ -254,17 +255,23 @@ def format_search_labels(update: dict[str, Any], *, cwd: str | None = None) -> t
     if scope:
         hits = [path for path in hits if path != scope]
 
-    if query:
+    detail_lines: list[str] = []
+    meta_parts: list[str] = []
+
+    if query and query in _GENERIC_GLOBS and scope:
+        title = scope
+        meta_parts.append(query)
+    elif query:
         title = f"“{query}”" if not query.startswith(("*", "?")) else query
+        if scope:
+            meta_parts.append(f"in {scope}")
+    elif scope:
+        title = scope
     elif count is not None:
         title = f"{count} file{'s' if count != 1 else ''}"
     else:
         title = "…"
 
-    detail_lines: list[str] = []
-    meta_parts: list[str] = []
-    if scope:
-        meta_parts.append(f"in {scope}")
     if count is not None:
         meta_parts.append(f"{count} file{'s' if count != 1 else ''}")
     if meta_parts:
@@ -395,8 +402,6 @@ def merge_tool_update(base: dict[str, Any], update: dict[str, Any]) -> dict[str,
             if incoming:
                 existing = _as_dict(merged.get("rawInput"))
                 merged["rawInput"] = {**existing, **incoming} if existing else incoming
-            elif isinstance(value, dict):
-                merged["rawInput"] = dict(value)
             continue
         if key == "rawOutput":
             incoming = _as_dict(value)

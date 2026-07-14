@@ -26,6 +26,52 @@ def test_begin_phase_marks_running_and_completes_previous():
     assert state.done_count() == 1
 
 
+def test_begin_phase_marks_prior_pending_when_resuming_mid_flow():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Execute")
+    assert [phase.status for phase in state.phases] == [
+        PhaseStatus.DONE,
+        PhaseStatus.DONE,
+        PhaseStatus.DONE,
+        PhaseStatus.RUNNING,
+    ]
+    assert state.done_count() == 3
+
+
+def test_begin_phase_preserves_timer_across_same_phase_waves():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    specify_started = state.phases[0].started_at
+    assert specify_started is not None
+
+    state.begin_phase("Fase Specify — continuação (2)")
+    assert state.phases[0].status == PhaseStatus.RUNNING
+    assert state.phases[0].started_at == specify_started
+
+    state.begin_phase("Execute — Wave 1 (sequencial): T1")
+    execute_started = state.phases[3].started_at
+    assert execute_started is not None
+    assert execute_started != specify_started
+    assert state.phases[0].status == PhaseStatus.DONE
+
+    state.begin_phase("Execute — Wave 2 (paralela): T2, T3")
+    assert state.phases[3].status == PhaseStatus.RUNNING
+    assert state.phases[3].started_at == execute_started
+
+
+def test_apply_phase_statuses_hydrates_resume_state():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.apply_phase_statuses(done_ids=("specify", "tasks"), skipped_ids=("design",))
+    assert state.phases[0].status == PhaseStatus.DONE
+    assert state.phases[1].status == PhaseStatus.SKIPPED
+    assert state.phases[2].status == PhaseStatus.DONE
+    assert state.phases[3].status == PhaseStatus.PENDING
+    assert state.done_count() == 3
+
+
 def test_assistant_and_tool_entries():
     state = CockpitState()
     state.configure_workflow("setup-project")
@@ -39,7 +85,11 @@ def test_assistant_and_tool_entries():
     state.add_tool_entry(LogKind.READ, "Read pulse/cli.py", "pulse/cli.py")
     assert len(state.entries) == 2
     assert state.entries[1].kind == LogKind.READ
+    assert state.phases[0].files == 0
+    assert state.record_files(["pulse/cli.py"]) is True
     assert state.phases[0].files == 1
+    assert state.record_issue("tool-1") is True
+    assert state.phases[0].issues == 1
     assert state.done_count() == 0
 
 

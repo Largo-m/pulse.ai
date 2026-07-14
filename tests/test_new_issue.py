@@ -289,3 +289,31 @@ def test_run_execute_wave_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
     )
     assert code == 1
     assert state.tasks[0].status == "pending"
+
+
+def test_sync_stream_phases_marks_completed_and_skipped():
+    from pulse.plan import new_issue_flow
+
+    state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
+    state.approve_phase("specify")
+    state.mark_phase_skipped("design", "não necessário")
+    state.approve_phase("tasks")
+    state.current_phase = "execute"
+
+    calls: list[dict[str, object]] = []
+
+    class FakeStream:
+        def apply_phase_statuses(self, **kwargs):
+            calls.append(kwargs)
+
+    class FakeRunner:
+        def __init__(self) -> None:
+            self._stream = FakeStream()
+
+    new_issue_flow._sync_stream_phases(FakeRunner(), state)
+    assert calls == [
+        {
+            "done_ids": ["specify", "tasks"],
+            "skipped_ids": ["design"],
+        }
+    ]

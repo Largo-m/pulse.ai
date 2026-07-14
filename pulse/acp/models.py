@@ -41,6 +41,23 @@ def extract_model_labels(session: dict[str, Any]) -> list[str]:
     return result
 
 
+def resolve_model_display_name(session: dict[str, Any], model_id: str | None) -> str:
+    mid = (model_id or "").strip()
+    if not mid:
+        return ""
+    for item in _available_models(session):
+        item_id, name = _model_fields(item)
+        if item_id == mid:
+            label = str(name or item_id).strip()
+            if label:
+                return label
+    if mid.lower() in {"default[]", "auto", "auto-id"}:
+        return "Auto"
+    if mid.endswith("[]") and mid[:-2]:
+        return mid[:-2]
+    return mid
+
+
 def resolve_interview_model_id(
     session: dict[str, Any],
     preferred_model: str | None,

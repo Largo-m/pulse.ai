@@ -24,7 +24,7 @@ class PhaseSidebar(Widget):
 
     def on_mount(self) -> None:
         self.refresh_phases()
-        self.set_interval(1.0, self.refresh_phases)
+        self.set_interval(0.25, self.refresh_phases)
 
     def refresh_phases(self) -> None:
         content = self.query_one("#phase-content", Static)

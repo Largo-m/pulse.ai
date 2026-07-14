@@ -12,9 +12,14 @@ _GATE_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 _VERIFY_CMD_RE = re.compile(
-    r"^\s*(flutter\s+(?:test|analyze|pub\s+get)|npm\s+test|pytest|cargo\s+test|go\s+test)\b.*$",
+    r"^\s*(flutter\s+(?:test|analyze|pub\s+get)|dart\s+analyze|npm\s+test|pytest|cargo\s+test|go\s+test)\b.*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_CMD_PREFIX_RE = re.compile(
+    r"^(flutter\s+(?:test|analyze|pub\s+get)|dart\s+analyze|npm\s+test|pytest|cargo\s+test|go\s+test)\b",
+    re.IGNORECASE,
+)
+_BACKTICK_RE = re.compile(r"`([^`]+)`")
 _TASK_HEADER_RE = re.compile(
     r"^###\s+(T\d+):\s*(.+)$",
     re.MULTILINE,
@@ -263,21 +268,48 @@ def _parse_gate_commands(body: str) -> tuple[str, ...]:
     commands: list[str] = []
     seen: set[str] = set()
 
+    def add(command: str) -> None:
+        normalized = _normalize_gate_command(command)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        commands.append(normalized)
+
     done_match = _DONE_WHEN_BLOCK_RE.search(body)
     if done_match:
         for match in _GATE_LINE_RE.finditer(done_match.group(1)):
-            command = match.group(1).strip()
-            if command and command not in seen:
-                seen.add(command)
-                commands.append(command)
+            add(match.group(1))
 
     verify_match = _VERIFY_BLOCK_RE.search(body)
     if verify_match:
         block = verify_match.group(1)
+        for match in _BACKTICK_RE.finditer(block):
+            add(match.group(1))
         for line in block.splitlines():
-            stripped = line.strip().strip("`")
-            if _VERIFY_CMD_RE.match(stripped) and stripped not in seen:
-                seen.add(stripped)
-                commands.append(stripped)
+            if "`" in line:
+                continue
+            stripped = line.strip()
+            if _VERIFY_CMD_RE.fullmatch(stripped):
+                add(stripped)
 
     return tuple(commands)
+
+
+def _normalize_gate_command(command: str) -> str:
+    text = command.strip().strip("`").strip()
+    if not text:
+        return ""
+    match = _CMD_PREFIX_RE.match(text)
+    if not match:
+        return ""
+    remainder = text[match.end() :].strip()
+    prefix = match.group(1)
+    if remainder:
+        cut = re.search(r"[;`。]|(\sexit\b)|(\spass\b)|(\s—)|(\s-\s)", remainder, re.IGNORECASE)
+        if cut:
+            remainder = remainder[: cut.start()].strip()
+    if remainder and not re.search(r"\s{2,}|\.\s+[A-ZÀ-Ú]", remainder):
+        return f"{prefix} {remainder}".strip()
+    if re.fullmatch(r"(?i)(?:dart|flutter)\s+analyze", prefix):
+        return ""
+    return prefix

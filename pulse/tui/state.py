@@ -34,6 +34,8 @@ class PhaseItem:
     started_at: float | None = None
     files: int = 0
     issues: int = 0
+    _seen_files: set[str] = field(default_factory=set, repr=False, compare=False)
+    _seen_issues: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def elapsed_label(self, now: float | None = None) -> str:
         if self.started_at is None:
@@ -52,6 +54,7 @@ class LogEntry:
     detail: str = ""
     body: str = ""
     active: bool = False
+    pending: bool = False
     entry_id: int = 0
     tool_id: str = ""
 
@@ -138,16 +141,44 @@ class CockpitState:
     def begin_phase(self, title: str) -> None:
         matched = self._match_phase(title)
         now = time.monotonic()
-        for phase in self.phases:
+        matched_index = self.phases.index(matched) if matched is not None else None
+        for index, phase in enumerate(self.phases):
+            if matched is not None and phase is matched:
+                continue
             if phase.status == PhaseStatus.RUNNING:
                 phase.status = PhaseStatus.DONE
                 phase.started_at = None
+            elif (
+                matched_index is not None
+                and index < matched_index
+                and phase.status == PhaseStatus.PENDING
+            ):
+                phase.status = PhaseStatus.DONE
+                phase.started_at = None
         if matched is not None:
+            if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
+                matched.started_at = now
             matched.status = PhaseStatus.RUNNING
-            matched.started_at = now
-            self.selected_phase_index = self.phases.index(matched)
+            self.selected_phase_index = matched_index if matched_index is not None else 0
         self.surface_title = title.upper()
         self.running = True
+        self.notify()
+
+    def apply_phase_statuses(
+        self,
+        *,
+        done_ids: list[str] | tuple[str, ...] = (),
+        skipped_ids: list[str] | tuple[str, ...] = (),
+    ) -> None:
+        done = set(done_ids)
+        skipped = set(skipped_ids)
+        for phase in self.phases:
+            if phase.id in skipped:
+                phase.status = PhaseStatus.SKIPPED
+                phase.started_at = None
+            elif phase.id in done and phase.status != PhaseStatus.RUNNING:
+                phase.status = PhaseStatus.DONE
+                phase.started_at = None
         self.notify()
 
     def complete_active_phase(self) -> None:
@@ -178,6 +209,7 @@ class CockpitState:
         detail: str = "",
         *,
         tool_id: str = "",
+        pending: bool = False,
     ) -> LogEntry:
         self._clear_active_flags()
         self._active_assistant_id = None
@@ -186,16 +218,44 @@ class CockpitState:
             title=title,
             detail=detail,
             active=True,
+            pending=pending,
             entry_id=self._next_entry_id,
             tool_id=tool_id,
         )
         self._next_entry_id += 1
         self.entries.append(entry)
-        active = self._active_phase()
-        if active is not None:
-            active.files += 1
         self.notify()
         return entry
+
+    def record_files(self, paths: list[str] | tuple[str, ...]) -> bool:
+        active = self._active_phase()
+        if active is None:
+            return False
+        changed = False
+        for path in paths:
+            key = str(path or "").strip()
+            if not key or key in {"…", "..."}:
+                continue
+            if key in active._seen_files:
+                continue
+            active._seen_files.add(key)
+            changed = True
+        if changed:
+            active.files = len(active._seen_files)
+            self.notify()
+        return changed
+
+    def record_issue(self, key: str) -> bool:
+        active = self._active_phase()
+        if active is None:
+            return False
+        token = str(key or "").strip()
+        if not token or token in active._seen_issues:
+            return False
+        active._seen_issues.add(token)
+        active.issues = len(active._seen_issues)
+        self.notify()
+        return True
 
     def update_tool_entry(
         self,
@@ -204,6 +264,7 @@ class CockpitState:
         kind: LogKind | None = None,
         title: str | None = None,
         detail: str | None = None,
+        pending: bool | None = None,
     ) -> LogEntry | None:
         if not tool_id:
             return None
@@ -216,13 +277,14 @@ class CockpitState:
                 entry.title = title.strip()
             if detail is not None:
                 entry.detail = detail.strip()
+            if pending is not None:
+                entry.pending = pending
             self._clear_active_flags()
             entry.active = True
             self._active_assistant_id = None
             self.notify()
             return entry
         return None
-
     def add_info(self, title: str) -> None:
         self._clear_active_flags()
         self._active_assistant_id = None

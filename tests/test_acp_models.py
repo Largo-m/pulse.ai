@@ -1,4 +1,8 @@
-from pulse.acp.models import extract_model_labels, resolve_interview_model_id
+from pulse.acp.models import (
+    extract_model_labels,
+    resolve_interview_model_id,
+    resolve_model_display_name,
+)
 
 
 def test_extract_model_labels_returns_all_available():
@@ -20,6 +24,20 @@ def test_extract_model_labels_returns_all_available():
         "composer-2.5",
         "claude-opus-4.8",
     ]
+
+
+def test_resolve_model_display_name_prefers_human_label():
+    session = {
+        "models": {
+            "availableModels": [
+                {"modelId": "default[]", "name": "Auto"},
+                {"modelId": "gpt-5.5[context=272k]", "name": "gpt-5.5"},
+            ]
+        }
+    }
+    assert resolve_model_display_name(session, "default[]") == "Auto"
+    assert resolve_model_display_name(session, "gpt-5.5[context=272k]") == "gpt-5.5"
+    assert resolve_model_display_name({}, "default[]") == "Auto"
 
 
 def test_resolve_interview_model_id_uses_auto_when_config_is_auto():

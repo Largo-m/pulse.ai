@@ -180,3 +180,107 @@ def test_run_gate_command_failure(tmp_path: Path):
     result = run_gate_command(workspace=tmp_path, command="false")
     assert result.ok is False
     assert result.exit_code != 0
+
+
+def test_verify_prose_does_not_pollute_gate_command():
+    content = """
+### T1: Deps
+
+**Depends on**: None
+
+**Done when**:
+
+- [ ] fl_chart declared
+
+**Verify**:
+`flutter pub get` exit 0; pacote listado em `.dart_tool/package_config.json`.
+
+### T2: Period
+
+**Depends on**: None
+
+**Done when**:
+
+- [ ] Gate check passes: `flutter test test/features/home/domain/entities/dashboard_period_test.dart`
+
+**Verify**:
+Testes cobrem `apiValue` e `fromApi`.
+
+### T3: Widget
+
+**Depends on**: None
+
+**Verify**:
+`dart analyze` no arquivo sem issues.
+"""
+    specs = parse_task_specs(content)
+    by_id = {spec.task_id: spec for spec in specs}
+    assert by_id["T1"].gate_commands == ("flutter pub get",)
+    assert by_id["T2"].gate_commands == (
+        "flutter test test/features/home/domain/entities/dashboard_period_test.dart",
+    )
+    assert by_id["T3"].gate_commands == ()
+
+
+def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
+    from rich.console import Console
+
+    from pulse.plan import new_issue_flow
+    from pulse.plan.specify_state import TaskState, WorkflowState
+    from pulse.plan.task_waves import GateResult
+
+    state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
+    state.tasks = [
+        TaskState(task_id="T1", title="One"),
+        TaskState(task_id="T2", title="Two"),
+        TaskState(task_id="T3", title="Three"),
+    ]
+    state.save(tmp_path)
+
+    feature = tmp_path / state.feature_dir
+    feature.mkdir(parents=True, exist_ok=True)
+    (feature / "tasks.md").write_text(
+        """
+### T1: One
+
+**Depends on**: None
+
+### T2: Two
+
+**Depends on**: None
+
+### T3: Three
+
+**Depends on**: T1
+""",
+        encoding="utf-8",
+    )
+
+    calls: list[str] = []
+
+    class FakeRunner:
+        _stream = None
+
+        def run_isolated_prompt(self, **kwargs):
+            calls.append(str(kwargs.get("phase_label") or ""))
+            return {"stopReason": "end_turn"}
+
+    monkeypatch.setattr(
+        new_issue_flow,
+        "run_wave_gates",
+        lambda **_kwargs: [GateResult(ok=True, command="true", exit_code=0)],
+    )
+
+    code = new_issue_flow._run_execute_phase(
+        runner=FakeRunner(),
+        console=Console(force_terminal=False),
+        workspace=tmp_path,
+        user_prompt="x",
+        skill_dir=tmp_path,
+        state=state,
+        preferred_model=None,
+    )
+    assert code == 0
+    assert len(calls) >= 2
+    assert all(label.startswith("Execute — Wave") for label in calls)
+    assert {task.status for task in state.tasks} == {"done"}

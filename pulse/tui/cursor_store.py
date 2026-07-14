@@ -36,6 +36,8 @@ def normalize_tool_args(args: dict[str, Any]) -> dict[str, Any]:
         out["path"] = out["target_file"]
     if "file_path" in out and "path" not in out:
         out["path"] = out["file_path"]
+    if "target_directory" in out and "path" not in out:
+        out["path"] = out["target_directory"]
     return out
 
 
@@ -55,18 +57,27 @@ class CursorStoreIndex:
         self._db_mtime = None
         self._db_path = None
 
-    def lookup_args(self, tool_call_id: str) -> dict[str, Any] | None:
+    def lookup_args(self, tool_call_id: str, *, force: bool = False) -> dict[str, Any] | None:
         if not tool_call_id or not self._session_id:
             return None
+        if force:
+            self._db_mtime = None
         self._refresh_if_needed()
-        args = self._args_by_id.get(tool_call_id)
+        args = self._resolve(tool_call_id)
         if args is not None:
             return dict(args)
+        self._db_mtime = None
+        self._refresh_if_needed()
+        args = self._resolve(tool_call_id)
+        return dict(args) if args is not None else None
+
+    def _resolve(self, tool_call_id: str) -> dict[str, Any] | None:
+        args = self._args_by_id.get(tool_call_id)
+        if args is not None:
+            return args
         prefix = tool_call_id.split("\n", 1)[0]
         if prefix and prefix != tool_call_id:
-            args = self._args_by_id.get(prefix)
-            if args is not None:
-                return dict(args)
+            return self._args_by_id.get(prefix)
         return None
 
     def _refresh_if_needed(self) -> None:

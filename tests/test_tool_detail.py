@@ -163,16 +163,39 @@ def test_format_search_labels_with_hits():
     assert "(+1)" in detail
 
 
-def test_format_search_ignores_tool_name_query():
+def test_format_search_labels_target_directory_and_generic_glob():
     title, detail = format_search_labels(
         {
-            "title": "grep",
             "kind": "search",
-            "rawOutput": {"totalFiles": 6},
-        }
+            "rawInput": {
+                "glob_pattern": "**/*",
+                "target_directory": "/repo/.pulse/specs/features/demo",
+            },
+            "rawOutput": {"totalFiles": 1},
+        },
+        cwd="/repo",
     )
-    assert title == "6 files"
-    assert "grep" not in title.lower()
+    assert "features/demo" in title or title.endswith("demo")
+    assert "**/*" in detail
+    assert "1 file" in detail
+
+
+def test_format_search_labels_grep_pattern():
+    title, detail = format_search_labels(
+        {
+            "kind": "search",
+            "rawInput": {
+                "pattern": "home|Home|dashboard",
+                "path": "/repo/lib",
+                "glob": "**/*.{dart,md}",
+            },
+            "rawOutput": {"totalFiles": 80},
+        },
+        cwd="/repo",
+    )
+    assert "home|Home|dashboard" in title
+    assert "in lib" in detail
+    assert "80 files" in detail
 
 
 def test_format_search_labels_glob():
