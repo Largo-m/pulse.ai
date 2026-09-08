@@ -118,21 +118,31 @@ HomeScreen {{
     align: center middle;
 }}
 
-HomeScreen .home-brand {{
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
+HomeScreen #home-content {{
+    width: auto;
+    height: auto;
+    max-width: 80%;
+    align: center middle;
 }}
 
-HomeScreen .home-sub {{
-    color: {TEXT_MUTED};
+HomeScreen .home-brand {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
     text-align: center;
     margin-bottom: 1;
 }}
 
+HomeScreen .home-sub {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 2;
+}}
+
 HomeScreen OptionList {{
     width: 60;
-    max-width: 80%;
+    max-width: 100%;
     height: auto;
     max-height: 16;
     background: {BG_PANEL};
@@ -145,9 +155,16 @@ HomeScreen OptionList:focus {{
 }}
 
 HomeScreen .home-hint {{
+    width: 100%;
     color: {TEXT_MUTED};
     margin-top: 1;
     text-align: center;
+}}
+
+HomeScreen #workflow-prompt {{
+    width: 60;
+    max-width: 100%;
+    margin-top: 1;
 }}
 
 PromptModal {{

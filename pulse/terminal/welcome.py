@@ -13,11 +13,11 @@ from pulse.config import global_config_exists, load_global_config
 from pulse.terminal.tty import is_interactive
 
 BANNER = r"""
- ____  _   _ ____  _____ ____
-|  _ \| | | / ___|| ____/ ___|
-| |_) | | | \___ \|  _| \___ \
-|  __/| |_| |___) | |___ ___) |
-|_|    \___/|____/|_____|____/
+ ____  _____ __  __  __     _____ _   _ ____   ___
+| __ )| ____|  \/  | \ \   / /_ _| \ | |  _ \ / _ \
+|  _ \|  _| | |\/| |  \ \ / / | ||  \| | | | | | | |
+| |_) | |___| |  | |   \ V /  | || |\  | |_| | |_| |
+|____/|_____|_|  |_|    \_/  |___|_| \_|____/ \___/
 """
 
 PULSE_LINE = "    ╭──╮      ╭──╮      ╭──╮      ╭──╮"
@@ -47,8 +47,12 @@ def _build_header(version: str, interactive: bool) -> Group:
     subtitle.append("Orquestrador de workflows com agentes de IA", style="italic")
     subtitle.append(f"  ·  v{version}", style="dim")
 
-    return Group(Align.center(logo), Align.center(pulse), Align.center(subtitle), "")
-
+    return Group(
+        Align.center(logo),
+        Align.center(pulse),
+        Align.center(subtitle),
+        "",
+    )
 
 def _build_status(ready: bool, interactive: bool) -> Text:
     status = Text()
@@ -97,11 +101,12 @@ def render_welcome(
         "title": "[bold]pulse[/bold]" if interactive else "pulse",
         "box": box.ROUNDED,
         "padding": (1, 2),
+        "width": min(72, output.width),
     }
     if interactive:
         panel_kwargs["border_style"] = "cyan"
 
     panel = Panel(body, **panel_kwargs)
-    output.print(Group(header, panel))
+    output.print(Group(header, Align.center(panel)))
     output.print()
     return ready

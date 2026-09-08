@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -10,7 +12,18 @@ from textual.widgets.option_list import Option
 from pulse import __version__
 from pulse.config import global_config_exists
 from pulse.plan.spec_types import SPEC_TYPES
-from pulse.terminal.welcome import is_pulse_ready
+from pulse.terminal.welcome import BANNER, PULSE_LINE, PULSE_WAVE, is_pulse_ready
+
+
+def _home_brand() -> str:
+    logo_lines = BANNER.strip("\n").splitlines()
+    wave_lines = (PULSE_LINE, PULSE_WAVE)
+    width = max(len(line) for line in (*logo_lines, *wave_lines))
+    parts = [line.ljust(width) for line in (*logo_lines, *wave_lines)]
+    return "\n".join(parts)
+
+
+_HOME_BRAND = _home_brand()
 
 
 class HomeScreen(Screen[None]):
@@ -19,8 +32,8 @@ class HomeScreen(Screen[None]):
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical():
-            yield Static("PULSE // ACP COCKPIT", classes="home-brand")
+        with Vertical(id="home-content"):
+            yield Static(_HOME_BRAND, classes="home-brand")
             yield Static(
                 f"Orquestrador de workflows · v{__version__}",
                 classes="home-sub",
@@ -67,10 +80,10 @@ class HomeScreen(Screen[None]):
             self.app.exit()
             return
         if action == "init":
-            self.app.run_worker(self._run_init, exclusive=True, thread=True)
+            self._run_init()
             return
         if action == "settings":
-            self.app.run_worker(self._run_settings, exclusive=True, thread=True)
+            self._run_settings()
             return
         if action.startswith("workflow:"):
             workflow_id = action.split(":", 1)[1]
@@ -100,17 +113,31 @@ class HomeScreen(Screen[None]):
     def action_quit_app(self) -> None:
         self.app.exit()
 
+    def _run_external(self, callback: Callable[[], object]) -> None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        from textual.app import SuspendNotSupported
+
+        def _run() -> None:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(callback).result()
+
+        try:
+            with self.app.suspend():
+                _run()
+        except SuspendNotSupported:
+            _run()
+        self._refresh_options()
+
     def _run_init(self) -> None:
         from pulse.onboarding import run_onboarding_wizard
 
-        run_onboarding_wizard()
-        self.app.call_from_thread(self._refresh_options)
+        self._run_external(run_onboarding_wizard)
 
     def _run_settings(self) -> None:
         from pulse.terminal.settings_menu import run_settings_menu
 
-        run_settings_menu()
-        self.app.call_from_thread(self._refresh_options)
+        self._run_external(run_settings_menu)
 
 
 def default_prompt(workflow_id: str) -> str:
