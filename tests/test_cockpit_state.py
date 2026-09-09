@@ -93,6 +93,23 @@ def test_assistant_and_tool_entries():
     assert state.done_count() == 0
 
 
+def test_add_qa_records_question_and_answer():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 1 — Análise do projeto")
+    state.append_assistant("Vou perguntar")
+    state.add_qa("1. O que você está construindo?", "A) Produto / plataforma")
+    kinds = [entry.kind for entry in state.visible_entries()]
+    assert LogKind.QUESTION in kinds
+    assert LogKind.ANSWER in kinds
+    question = next(entry for entry in state.entries if entry.kind == LogKind.QUESTION)
+    answer = next(entry for entry in state.entries if entry.kind == LogKind.ANSWER)
+    assert question.body == "1. O que você está construindo?"
+    assert answer.body == "A) Produto / plataforma"
+    assert question.phase_id == "phase1"
+    assert answer.phase_id == "phase1"
+
+
 def test_mark_finished():
     state = CockpitState()
     state.configure_workflow("analyze-codebase")

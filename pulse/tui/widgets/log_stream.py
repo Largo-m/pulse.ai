@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import re
 import textwrap
+from collections.abc import Callable
 
 from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest, format_prompt_reply
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+from pulse.tui.widgets.prompt_dock import PromptDock
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _INLINE_RE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__")
@@ -74,6 +77,9 @@ class LogStream(Widget):
         yield Static("", id="stream-meta", classes="stream-meta")
         with VerticalScroll(id="stream-body"):
             yield Static("", id="stream-content")
+        slot = Vertical(id="prompt-slot")
+        slot.display = False
+        yield slot
 
     def on_mount(self) -> None:
         self.sync_from_state(self._state, force=True)
@@ -81,6 +87,46 @@ class LogStream(Widget):
 
     def on_resize(self) -> None:
         self.sync_from_state(self._state, force=True)
+
+    def show_prompt(
+        self,
+        request: PromptRequest,
+        on_result: Callable[[object | None], None],
+    ) -> None:
+        slot = self.query_one("#prompt-slot", Vertical)
+
+        def _done(result: object | None) -> None:
+            def _hide() -> None:
+                if slot.is_mounted:
+                    slot.remove_children()
+                    slot.styles.height = None
+                    slot.display = False
+
+            self._state.add_qa(request.prompt, format_prompt_reply(request, result))
+            self.sync_from_state(self._state, force=True)
+            self.call_after_refresh(_hide)
+            on_result(result)
+
+        slot.remove_children()
+        slot.styles.height = self._prompt_slot_height(request)
+        slot.display = True
+        slot.mount(PromptDock(request, _done))
+
+    def _prompt_slot_height(self, request: PromptRequest) -> int:
+        available = self.size.height if self.size.height > 0 else 24
+        cap = max(12, min(available - 3, int(available * 0.8)))
+        title = 1
+        border = 1
+        width = max(24, (self.size.width if self.size.width > 0 else 80) - 8)
+        prompt_lines = min(3, max(1, (len(request.prompt) + width - 1) // width))
+        hint = 1
+        if request.kind in {PromptKind.SELECT, PromptKind.MULTI_SELECT}:
+            rows = max(1, min(len(request.choices), 10))
+            extra = 4 if request.kind == PromptKind.MULTI_SELECT else 0
+            return min(cap, border + title + prompt_lines + hint + rows + extra)
+        if request.kind == PromptKind.CONFIRM:
+            return min(cap, border + title + prompt_lines + 3)
+        return min(cap, border + title + prompt_lines + hint + 3)
 
     def _tick_spinner(self) -> None:
         if not any(entry.pending for entry in self._state.visible_entries()):
@@ -144,11 +190,19 @@ class LogStream(Widget):
             state.selected_phase_index,
         )
 
-    def _render_assistant(self, entry_active: bool, body: str) -> Text:
+    def _render_bubble(
+        self,
+        entry_active: bool,
+        label: str,
+        body: str,
+        *,
+        gutter_style: str = "#4A5F1A",
+        styled: bool = True,
+    ) -> Text:
         output = Text()
         prefix = "▌ " if entry_active else "  "
         output.append(prefix, style="#A2D729" if entry_active else "#333333")
-        output.append("Assistente\n", style="bold #E0E0E0")
+        output.append(f"{label}\n", style="bold #E0E0E0")
         lines = format_assistant_lines(body, width=max(24, self._content_width() - 4))
         if not lines:
             output.append("\n")
@@ -156,13 +210,19 @@ class LogStream(Widget):
         for line in lines:
             output.append(_ASSIST_INDENT)
             if line:
-                output.append(_ASSIST_GUTTER, style="#4A5F1A")
-                output.append_text(_assistant_line(line))
+                output.append(_ASSIST_GUTTER, style=gutter_style)
+                if styled:
+                    output.append_text(_assistant_line(line))
+                else:
+                    output.append(line, style="#A2D729")
             else:
-                output.append(_ASSIST_GUTTER.rstrip(), style="#4A5F1A")
+                output.append(_ASSIST_GUTTER.rstrip(), style=gutter_style)
             output.append("\n")
         output.append("\n")
         return output
+
+    def _render_assistant(self, entry_active: bool, body: str) -> Text:
+        return self._render_bubble(entry_active, "Assistente", body)
 
     def _render_entries(self, state: CockpitState) -> Text:
         output = Text()
@@ -180,6 +240,22 @@ class LogStream(Widget):
             active = entry.active or index == len(entries) - 1
             if entry.kind == LogKind.ASSISTANT:
                 output.append_text(self._render_assistant(active, entry.body or ""))
+                continue
+            if entry.kind == LogKind.QUESTION:
+                output.append_text(
+                    self._render_bubble(active, "Pergunta", entry.body or entry.title)
+                )
+                continue
+            if entry.kind == LogKind.ANSWER:
+                output.append_text(
+                    self._render_bubble(
+                        active,
+                        "Você",
+                        entry.body or entry.title,
+                        gutter_style="#A2D729",
+                        styled=False,
+                    )
+                )
                 continue
 
             prefix = "▌ " if active else "  "

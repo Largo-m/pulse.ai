@@ -13,7 +13,6 @@ from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSelected, PhaseSidebar
-from pulse.tui.widgets.prompt_modal import PromptModal
 
 
 class CockpitScreen(Screen[None]):
@@ -74,6 +73,11 @@ class CockpitScreen(Screen[None]):
         self.query_one(LogStream).sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if self._prompt_open and action in {"toggle_focus", "phase_up", "phase_down"}:
+            return False
+        return True
+
     def _poll_prompts(self) -> None:
         if self._prompt_open:
             return
@@ -86,8 +90,13 @@ class CockpitScreen(Screen[None]):
             self._prompt_open = False
             if request.future is not None and not request.future.done():
                 request.future.set_result(result)
+            if self.is_mounted:
+                try:
+                    self.query_one(LogStream).focus()
+                except Exception:
+                    pass
 
-        self.app.push_screen(PromptModal(request), _finish)
+        self.query_one(LogStream).show_prompt(request, _finish)
 
     def _run_workflow(self) -> None:
         from pulse.plan.runner import run_plan

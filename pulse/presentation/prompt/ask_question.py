@@ -7,6 +7,10 @@ OTHER_OPTION_ID = "__other__"
 DEFAULT_QUESTIONNAIRE_TITLE = "Preciso de algumas informações antes de continuar."
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _DESCRIBE_PATTERN = re.compile(r"\(descreva|descreva abaixo|descreva o|descreva qual", re.IGNORECASE)
+_OTHER_LABEL = re.compile(
+    r"^(?:[a-z0-9]+\)\s*)?(?:outro|other)(?:\s|\(|$)",
+    re.IGNORECASE,
+)
 
 
 def parse_ask_question_params(params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -68,11 +72,9 @@ def format_option_label(index: int, label: str) -> str:
 
 def is_other_option(option_id: str, label: str = "") -> bool:
     normalized_id = option_id.strip().lower()
-    normalized_label = label.strip().lower()
-    return normalized_id in {"outro", "other", "__other__"} or normalized_label in {
-        "outro",
-        "other",
-    }
+    if normalized_id in {"outro", "other", "__other__"}:
+        return True
+    return bool(_OTHER_LABEL.match(label.strip()))
 
 
 def option_requires_description(label: str) -> bool:
@@ -83,6 +85,8 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
     prompt_lower = prompt.lower()
     labels_lower = [label.lower() for label in option_labels]
 
+    if any(is_other_option("", label) for label in option_labels):
+        return False
     if any("cancelar" in label for label in labels_lower):
         return False
     if any("aprovar e implementar" in label for label in labels_lower):

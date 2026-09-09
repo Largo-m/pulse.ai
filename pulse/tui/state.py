@@ -23,6 +23,8 @@ class LogKind(str, Enum):
     SHELL = "Shell"
     INFO = "Info"
     ASSISTANT = "Assistant"
+    QUESTION = "Question"
+    ANSWER = "Answer"
     TOOL = "Tool"
 
 
@@ -346,6 +348,37 @@ class CockpitState:
     def finish_assistant(self) -> None:
         self._active_assistant_id = None
         self._clear_active_flags()
+        self.notify()
+
+    def add_qa(self, prompt: str, answer: str) -> None:
+        question = str(prompt or "").strip()
+        reply = str(answer or "").strip() or "Cancelado"
+        if not question:
+            return
+        self._active_assistant_id = None
+        self._clear_active_flags()
+        self.entries.append(
+            LogEntry(
+                kind=LogKind.QUESTION,
+                title="Pergunta",
+                body=question,
+                active=False,
+                entry_id=self._next_entry_id,
+                phase_id=self._entry_phase_id(),
+            )
+        )
+        self._next_entry_id += 1
+        self.entries.append(
+            LogEntry(
+                kind=LogKind.ANSWER,
+                title="Você",
+                body=reply,
+                active=True,
+                entry_id=self._next_entry_id,
+                phase_id=self._entry_phase_id(),
+            )
+        )
+        self._next_entry_id += 1
         self.notify()
 
     def selected_phase(self) -> PhaseItem | None:

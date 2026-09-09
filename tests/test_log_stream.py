@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pulse.tui.widgets.log_stream import _assistant_line, format_assistant_lines
+from pulse.tui.state import CockpitState, LogKind
+from pulse.tui.widgets.log_stream import LogStream, _assistant_line, format_assistant_lines
 
 
 def test_format_assistant_lines_wraps_and_keeps_paragraphs():
@@ -22,3 +23,16 @@ def test_assistant_line_styles_code_and_bold():
     assert plain == "Use path e large agora"
     spans = list(styled.spans)
     assert spans
+
+
+def test_render_qa_entries_in_stream():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 1 — Análise do projeto")
+    state.add_qa("1. O que você está construindo?", "A) Produto / plataforma")
+    stream = LogStream(state)
+    plain = stream._render_entries(state).plain
+    assert "Pergunta" in plain
+    assert "O que você está construindo?" in plain
+    assert "Você" in plain
+    assert "Produto / plataforma" in plain

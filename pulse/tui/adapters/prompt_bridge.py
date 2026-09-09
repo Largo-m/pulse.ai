@@ -52,6 +52,22 @@ class PromptRequest:
     future: Future[Any] | None = None
 
 
+def format_prompt_reply(request: PromptRequest, result: object | None) -> str:
+    if result is None:
+        return "Cancelado"
+    if request.kind == PromptKind.CONFIRM:
+        return "Sim" if result else "Não"
+    if request.kind == PromptKind.TEXT:
+        text = str(result).strip()
+        return text or "—"
+    lookup = {str(option_id): label for option_id, label in request.choices}
+    if request.kind == PromptKind.MULTI_SELECT:
+        selected = result if isinstance(result, list) else []
+        labels = [lookup.get(str(item), str(item)) for item in selected]
+        return ", ".join(labels) if labels else "—"
+    return lookup.get(str(result), str(result))
+
+
 class PromptBridge:
     def __init__(self) -> None:
         self._queue: Queue[PromptRequest] = Queue()
@@ -397,7 +413,8 @@ class TextualPromptHandler:
             if is_other_option(option_id, label):
                 has_other = True
                 option_id = OTHER_OPTION_ID
-                label = "Outro (descreva)"
+                label = format_option_label(option_index, "Outro (descreva)")
+                option_index += 1
             else:
                 label = format_option_label(option_index, label)
                 option_index += 1

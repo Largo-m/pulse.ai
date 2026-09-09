@@ -285,7 +285,8 @@ class PromptHandler:
             if is_other_option(option_id, label):
                 has_other = True
                 option_id = OTHER_OPTION_ID
-                label = "Outro (descreva)"
+                label = format_option_label(option_index, "Outro (descreva)")
+                option_index += 1
             else:
                 label = format_option_label(option_index, label)
                 option_index += 1

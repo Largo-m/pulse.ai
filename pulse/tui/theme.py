@@ -92,6 +92,12 @@ LogStream #stream-content {{
     height: auto;
 }}
 
+LogStream #prompt-slot {{
+    width: 100%;
+    height: auto;
+    max-height: 70%;
+}}
+
 LogStream .stream-title {{
     color: {LIME};
     text-style: bold;
@@ -167,39 +173,49 @@ HomeScreen #workflow-prompt {{
     margin-top: 1;
 }}
 
-PromptModal {{
-    align: center middle;
-}}
-
-PromptModal > Vertical {{
-    width: 70;
-    max-width: 90%;
-    height: auto;
-    max-height: 80%;
+PromptDock {{
+    width: 100%;
+    height: 100%;
+    layout: vertical;
     background: {BG_PANEL};
-    border: solid {LIME};
-    padding: 1 2;
+    border-top: solid {LIME};
+    padding: 0 1;
 }}
 
-PromptModal .modal-title {{
+PromptDock .prompt-title {{
     color: {LIME};
     text-style: bold;
-    margin-bottom: 1;
+    height: 1;
 }}
 
-PromptModal .modal-prompt {{
+PromptDock .prompt-text {{
     color: {TEXT};
-    margin-bottom: 1;
-}}
-
-PromptModal OptionList {{
     height: auto;
-    max-height: 14;
-    background: {BG};
-    border: solid {BORDER};
 }}
 
-PromptModal Input {{
-    margin-top: 1;
+PromptDock .prompt-hint {{
+    color: {TEXT_MUTED};
+    height: 1;
+}}
+
+PromptDock OptionList {{
+    width: 100%;
+    color: {TEXT};
+    background: {BG_PANEL};
+    border: none;
+    padding: 0 1;
+}}
+
+PromptDock OptionList:focus {{
+    border: none;
+}}
+
+PromptDock Input {{
+    margin: 0;
+}}
+
+PromptDock #prompt-actions {{
+    height: 3;
+    width: 100%;
 }}
 """
