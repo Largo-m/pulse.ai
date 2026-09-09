@@ -11,10 +11,10 @@ class SpecType:
 
 
 SPEC_TYPES: tuple[SpecType, ...] = (
-    SpecType("new-issue", "New issue", "Nova funcionalidade ou melhoria"),
-    SpecType("fix-bug", "Fix / bug", "Quick mode — bug fix, config ou ajuste pontual (≤3 arquivos)"),
-    SpecType("setup-project", "Setup project", "Bootstrap ou configuração inicial"),
-    SpecType("analyze-codebase", "Analyze codebase", "Mapear e entender o código existente"),
+    SpecType("new-issue", "New issue", "Nova feature"),
+    SpecType("fix-bug", "Fix / bug", "Quick fix"),
+    SpecType("setup-project", "Setup project", "Setup inicial"),
+    SpecType("analyze-codebase", "Analyze codebase", "Mapear código"),
 )
 
 SPEC_TYPE_IDS = tuple(spec_type.id for spec_type in SPEC_TYPES)
