@@ -6,6 +6,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from pulse.tui.artifacts import (
+    artifact_key,
+    extract_spec_artifacts_from_text,
+    is_spec_artifact,
+)
+
 
 class PhaseStatus(str, Enum):
     PENDING = "pending"
@@ -73,7 +79,15 @@ class LogEntry:
     phase_id: str = ""
 
 
+@dataclass
+class ArtifactItem:
+    path: str
+    phase_id: str = ""
+    ready: bool = False
+
+
 Listener = Callable[[], None]
+_FOCUS_CYCLE = ("phases", "stream", "artifact")
 
 
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
@@ -114,7 +128,11 @@ class CockpitState:
     model_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
+    artifacts: list[ArtifactItem] = field(default_factory=list)
     selected_phase_index: int = 0
+    selected_artifact_path: str = ""
+    follow_artifact: bool = True
+    artifact_pane_open: bool = False
     focus_target: str = "phases"
     running: bool = False
     exit_code: int | None = None
@@ -141,6 +159,11 @@ class CockpitState:
         self.phases = [PhaseItem(id=pid, label=label) for pid, label in defs]
         self.selected_phase_index = 0
         self.entries = []
+        self.artifacts = []
+        self.selected_artifact_path = ""
+        self.follow_artifact = True
+        self.artifact_pane_open = False
+        self.focus_target = "phases"
         self._next_entry_id = 1
         self._active_assistant_id = None
         self._follow_live = True
@@ -179,6 +202,7 @@ class CockpitState:
             if self._follow_live or self.selected_phase_index == matched_index:
                 self.selected_phase_index = matched_index if matched_index is not None else 0
                 self._follow_live = True
+                self.follow_artifact = True
         self.surface_title = title.upper()
         self.running = True
         self.notify()
@@ -400,13 +424,144 @@ class CockpitState:
         self.selected_phase_index = max(0, min(index, len(self.phases) - 1))
         running = self._running_index()
         self._follow_live = running is None or self.selected_phase_index == running
+        visible = self.visible_artifacts()
+        if self._follow_live:
+            self.follow_artifact = True
+            if visible:
+                self.selected_artifact_path = visible[-1].path
+        elif visible:
+            paths = {item.path for item in visible}
+            if self.selected_artifact_path not in paths:
+                self.selected_artifact_path = visible[-1].path
         self.notify()
 
     def move_phase(self, delta: int) -> None:
         self.select_phase(self.selected_phase_index + delta)
 
+    def upsert_artifact(self, path: str, *, ready: bool) -> ArtifactItem | None:
+        key = artifact_key(path)
+        if not is_spec_artifact(key):
+            return None
+        phase_id = self._entry_phase_id()
+        for item in self.artifacts:
+            if item.path != key:
+                continue
+            item.ready = ready
+            if not item.phase_id:
+                item.phase_id = phase_id
+            if self.follow_artifact:
+                self.selected_artifact_path = item.path
+            self.notify()
+            return item
+        was_empty = not self.artifacts
+        item = ArtifactItem(path=key, phase_id=phase_id, ready=ready)
+        self.artifacts.append(item)
+        if self.follow_artifact or not self.selected_artifact_path:
+            self.selected_artifact_path = item.path
+        if was_empty:
+            self.artifact_pane_open = True
+        self.notify()
+        return item
+
+    def visible_artifacts(self) -> list[ArtifactItem]:
+        phase = self.selected_phase()
+        if phase is None:
+            return list(self.artifacts)
+        pid = phase.id
+        return [item for item in self.artifacts if item.phase_id == pid]
+
+    def phase_has_artifacts(self) -> bool:
+        return bool(self.visible_artifacts())
+
+    def selected_artifact(self) -> ArtifactItem | None:
+        visible = self.visible_artifacts()
+        if not visible:
+            return None
+        for item in visible:
+            if item.path == self.selected_artifact_path:
+                return item
+        return visible[-1]
+
+    def select_artifact(self, path: str) -> None:
+        key = artifact_key(path)
+        for item in self.artifacts:
+            if item.path != key:
+                continue
+            self.selected_artifact_path = item.path
+            self.follow_artifact = False
+            self.notify()
+            return
+
+    def move_artifact(self, delta: int) -> None:
+        visible = self.visible_artifacts()
+        if not visible:
+            return
+        paths = [item.path for item in visible]
+        selected = self.selected_artifact()
+        current = selected.path if selected is not None else paths[0]
+        try:
+            index = paths.index(current)
+        except ValueError:
+            index = 0
+        index = max(0, min(index + delta, len(paths) - 1))
+        self.selected_artifact_path = paths[index]
+        self.follow_artifact = False
+        self.notify()
+
+    def toggle_artifact_pane(self) -> None:
+        self.artifact_pane_open = not self.artifact_pane_open
+        if not self.artifact_pane_open and self.focus_target == "artifact":
+            self.focus_target = "stream"
+        self.notify()
+
+    def close_artifact_pane(self) -> None:
+        if not self.artifact_pane_open:
+            return
+        self.artifact_pane_open = False
+        if self.focus_target == "artifact":
+            self.focus_target = "stream"
+        self.notify()
+
+    def open_artifact_pane(self) -> None:
+        if self.artifact_pane_open:
+            return
+        self.artifact_pane_open = True
+        self.notify()
+
+    def reveal_artifact_from_prompt(self, text: str) -> bool:
+        keys = extract_spec_artifacts_from_text(text)
+        matched: ArtifactItem | None = None
+        for key in keys:
+            for item in self.artifacts:
+                if item.path == key or item.path.endswith(key) or key.endswith(item.path):
+                    matched = item
+                    break
+            if matched is not None:
+                break
+        if matched is None and self.artifacts:
+            visible = self.visible_artifacts()
+            matched = visible[-1] if visible else self.artifacts[-1]
+        if matched is None:
+            return False
+        self.selected_artifact_path = matched.path
+        self.follow_artifact = False
+        self.artifact_pane_open = True
+        self.notify()
+        return True
+
     def toggle_focus(self) -> None:
-        self.focus_target = "stream" if self.focus_target == "phases" else "phases"
+        if not self.artifact_pane_open:
+            if self.focus_target == "artifact":
+                self.focus_target = "stream"
+            else:
+                self.focus_target = "stream" if self.focus_target == "phases" else "phases"
+            self.notify()
+            return
+        try:
+            index = _FOCUS_CYCLE.index(self.focus_target)
+        except ValueError:
+            index = 0
+        self.focus_target = _FOCUS_CYCLE[(index + 1) % len(_FOCUS_CYCLE)]
         self.notify()
 
     def snapshot(self) -> dict[str, Any]:

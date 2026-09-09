@@ -107,6 +107,106 @@ LogStream .stream-meta {{
     color: {TEXT_MUTED};
 }}
 
+ArtifactPane {{
+    width: 42%;
+    min-width: 36;
+    height: 100%;
+    background: {BG};
+    border-left: solid {BORDER};
+    padding: 1 0 0 0;
+    layout: vertical;
+}}
+
+ArtifactPane.-collapsed {{
+    width: 8;
+    min-width: 8;
+    padding: 1 0;
+}}
+
+#cockpit-body.artifacts-open PhaseSidebar {{
+    width: 22%;
+    min-width: 20;
+}}
+
+ArtifactPane:focus {{
+    border-left: solid {LIME};
+}}
+
+ArtifactPane #artifact-open {{
+    display: none;
+    width: 100%;
+    height: 1fr;
+    color: {LIME};
+    text-align: center;
+    content-align: center top;
+    padding: 1 0;
+}}
+
+ArtifactPane.-collapsed #artifact-open {{
+    display: block;
+}}
+
+ArtifactPane #artifact-title-row {{
+    height: 1;
+    width: 100%;
+    padding: 0 1;
+}}
+
+ArtifactPane #artifact-header {{
+    width: 1fr;
+    height: 1;
+    color: {LIME};
+    text-style: bold;
+}}
+
+ArtifactPane #artifact-close {{
+    width: 3;
+    height: 1;
+    content-align: right middle;
+    color: {TEXT_MUTED};
+}}
+
+ArtifactPane #artifact-close:hover {{
+    color: {LIME};
+}}
+
+ArtifactPane #artifact-meta {{
+    height: 1;
+    padding: 0 1;
+    color: {TEXT_MUTED};
+    margin-bottom: 1;
+}}
+
+ArtifactPane #artifact-tabs {{
+    height: 1;
+    width: 100%;
+    padding: 0 1;
+    overflow-x: auto;
+}}
+
+ArtifactPane .artifact-tab {{
+    width: auto;
+    height: 1;
+    color: {TEXT_MUTED};
+}}
+
+ArtifactPane .artifact-tab.-active {{
+    color: {LIME};
+    text-style: bold;
+}}
+
+ArtifactPane #artifact-body {{
+    height: 1fr;
+    scrollbar-color: {LIME_MUTED};
+}}
+
+ArtifactPane Markdown {{
+    height: auto;
+    margin: 0;
+    padding: 0 1 1 1;
+    background: {BG};
+}}
+
 AppFooter {{
     dock: bottom;
     height: 1;

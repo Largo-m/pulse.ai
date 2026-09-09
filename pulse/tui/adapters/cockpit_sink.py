@@ -224,7 +224,7 @@ class CockpitSink:
                 detail=detail,
                 pending=not done,
             )
-            self._record_tool_metrics(enriched, log_kind, target)
+            self._record_tool_metrics(enriched, log_kind, target, ready=done)
             changed = True
         return changed
 
@@ -273,7 +273,7 @@ class CockpitSink:
                 tool_id=tool_id,
                 pending=True,
             )
-            self._record_tool_metrics(merged, log_kind, target)
+            self._record_tool_metrics(merged, log_kind, target, ready=False)
             changed = True
         elif kind in {"tool_call_update", "tool_result"}:
             if tool_id and tool_id in self._visible_tool_ids:
@@ -291,7 +291,12 @@ class CockpitSink:
                     pending=pending,
                 )
                 if updated is not None:
-                    self._record_tool_metrics(merged, existing_kind or log_kind, target)
+                    self._record_tool_metrics(
+                        merged,
+                        existing_kind or log_kind,
+                        target,
+                        ready=not pending,
+                    )
                     changed = True
             elif not placeholder or done:
                 if tool_id:
@@ -304,7 +309,12 @@ class CockpitSink:
                     tool_id=tool_id,
                     pending=pending,
                 )
-                self._record_tool_metrics(merged, log_kind, target)
+                self._record_tool_metrics(
+                    merged,
+                    log_kind,
+                    target,
+                    ready=not pending,
+                )
                 changed = True
 
         if self._backfill_vague_entries():
@@ -317,6 +327,8 @@ class CockpitSink:
         update: dict[str, Any],
         log_kind: LogKind,
         target: str,
+        *,
+        ready: bool,
     ) -> None:
         if _tool_failed(update):
             issue_key = str(update.get("toolCallId") or target or "").strip()
@@ -335,6 +347,9 @@ class CockpitSink:
                 paths = [text]
         if paths:
             self._state.record_files(paths)
+            if log_kind in {LogKind.WRITE, LogKind.EDIT}:
+                for path in paths:
+                    self._state.upsert_artifact(path, ready=ready)
 
     def _maybe_enter_questionnaire_mode(self) -> None:
         if self._questionnaire_mode:

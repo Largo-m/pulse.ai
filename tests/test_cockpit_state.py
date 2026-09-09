@@ -170,3 +170,147 @@ def test_following_live_stays_on_running_step():
     state.select_phase(1)
     state.append_assistant("implementando")
     assert state.visible_entries()[-1].phase_id == "implement"
+
+
+def test_upsert_artifact_keeps_collection_and_follow_live():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 2 — Gerando specs")
+    first = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=False)
+    second = state.upsert_artifact("/repo/.pulse/specs/project/ROADMAP.md", ready=True)
+    third = state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True)
+    assert first is not None and second is not None and third is not None
+    assert [item.path for item in state.artifacts] == [
+        ".pulse/specs/project/PROJECT.md",
+        ".pulse/specs/project/ROADMAP.md",
+        ".pulse/specs/project/STATE.md",
+    ]
+    assert state.selected_artifact_path == ".pulse/specs/project/STATE.md"
+    assert state.follow_artifact is True
+    assert state.artifact_pane_open is True
+
+    again = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    assert again is first
+    assert len(state.artifacts) == 3
+    assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
+
+
+def test_manual_artifact_select_disables_follow():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 2 — Gerando specs")
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True)
+    state.select_artifact(".pulse/specs/project/PROJECT.md")
+    assert state.follow_artifact is False
+    assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
+    state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True)
+    assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
+    state.move_artifact(1)
+    assert state.selected_artifact_path == ".pulse/specs/project/ROADMAP.md"
+
+
+def test_visible_artifacts_are_scoped_to_selected_phase():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+    state.begin_phase("Fase Design")
+    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True)
+    assert [item.path for item in state.visible_artifacts()] == [
+        ".pulse/specs/features/demo/design.md"
+    ]
+    state.select_phase(0)
+    assert [item.path for item in state.visible_artifacts()] == [
+        ".pulse/specs/features/demo/spec.md"
+    ]
+
+
+def test_upsert_ignores_non_spec_paths():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Specify")
+    assert state.upsert_artifact("pulse/cli.py", ready=True) is None
+    assert state.upsert_artifact(".pulse/skills/tlc-spec-driven/SKILL.md", ready=True) is None
+    assert state.artifacts == []
+    assert state.artifact_pane_open is False
+
+
+def test_reveal_artifact_from_prompt_opens_matching_file():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Specify")
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+    state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True)
+    state.toggle_artifact_pane()
+    assert state.artifact_pane_open is False
+    opened = state.reveal_artifact_from_prompt(
+        "Aprovar Specify (.pulse/specs/features/demo/spec.md) e avançar?"
+    )
+    assert opened is True
+    assert state.artifact_pane_open is True
+    assert state.selected_artifact_path == ".pulse/specs/features/demo/spec.md"
+    assert state.follow_artifact is False
+
+
+def test_toggle_focus_cycles_artifact_when_pane_open():
+    state = CockpitState()
+    state.configure_workflow("fix-bug")
+    assert state.focus_target == "phases"
+    state.toggle_focus()
+    assert state.focus_target == "stream"
+    state.toggle_focus()
+    assert state.focus_target == "phases"
+    state.begin_phase("Planejar")
+    state.upsert_artifact(".pulse/specs/quick/001-x/TASK.md", ready=True)
+    state.focus_target = "phases"
+    state.toggle_focus()
+    assert state.focus_target == "stream"
+    state.toggle_focus()
+    assert state.focus_target == "artifact"
+    state.toggle_focus()
+    assert state.focus_target == "phases"
+    state.toggle_artifact_pane()
+    assert state.artifact_pane_open is False
+    state.focus_target = "artifact"
+    state.toggle_focus()
+    assert state.focus_target == "stream"
+
+
+def test_close_artifact_pane_hides_and_moves_focus():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 2 — Gerando specs")
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    state.focus_target = "artifact"
+    assert state.artifact_pane_open is True
+    state.close_artifact_pane()
+    assert state.artifact_pane_open is False
+    assert state.focus_target == "stream"
+    state.close_artifact_pane()
+    assert state.artifact_pane_open is False
+
+
+def test_open_artifact_pane_shows_again():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    state.begin_phase("Fase 2 — Gerando specs")
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    state.close_artifact_pane()
+    assert state.artifact_pane_open is False
+    state.open_artifact_pane()
+    assert state.artifact_pane_open is True
+    state.open_artifact_pane()
+    assert state.artifact_pane_open is True
+
+
+def test_phase_has_artifacts_follows_selected_phase():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+    assert state.phase_has_artifacts() is True
+    state.begin_phase("Fase Design")
+    assert state.phase_has_artifacts() is False
+    state.select_phase(0)
+    assert state.phase_has_artifacts() is True

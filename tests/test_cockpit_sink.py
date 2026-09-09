@@ -685,3 +685,100 @@ def test_model_info_sets_header_without_duplicate_entry():
         }
     )
     assert any(entry.title == "Questionário interativo" for entry in state.entries)
+
+
+def test_write_and_edit_register_spec_artifacts():
+    state = CockpitState()
+    state.configure_workflow("setup-project")
+    sink = CockpitSink(state, cwd="/repo")
+    sink.begin_phase("Fase 2 — Gerando specs")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "w1",
+                "title": "Write File",
+                "kind": "write",
+                "rawInput": {"path": "/repo/.pulse/specs/project/PROJECT.md"},
+            }
+        }
+    )
+    assert [item.path for item in state.artifacts] == [".pulse/specs/project/PROJECT.md"]
+    assert state.artifacts[0].ready is False
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "w1",
+                "status": "completed",
+            }
+        }
+    )
+    assert state.artifacts[0].ready is True
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "w2",
+                "title": "Write File",
+                "kind": "write",
+                "status": "completed",
+                "rawInput": {"path": "/repo/.pulse/specs/project/ROADMAP.md"},
+            }
+        }
+    )
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "edit-spec",
+                "status": "completed",
+                "content": [
+                    {
+                        "type": "diff",
+                        "path": "/repo/.pulse/specs/project/PROJECT.md",
+                    }
+                ],
+            }
+        }
+    )
+    assert [item.path for item in state.artifacts] == [
+        ".pulse/specs/project/PROJECT.md",
+        ".pulse/specs/project/ROADMAP.md",
+    ]
+
+
+def test_read_and_search_do_not_register_artifacts():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state, cwd="/repo")
+    sink.begin_phase("Specify")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "read-1",
+                "title": "Read File",
+                "kind": "read",
+                "status": "completed",
+                "rawInput": {"path": "/repo/.pulse/specs/project/STATE.md"},
+            }
+        }
+    )
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "find-1",
+                "title": "Find",
+                "kind": "search",
+                "status": "completed",
+                "locations": [
+                    "/repo/.pulse/specs/features/a/spec.md",
+                    "/repo/.pulse/specs/project/STATE.md",
+                ],
+            }
+        }
+    )
+    assert state.artifacts == []
+    assert state.artifact_pane_open is False
