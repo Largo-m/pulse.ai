@@ -4,11 +4,19 @@ import time
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.events import Click
+from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
 from pulse.tui.state import CockpitState, PhaseStatus
+
+
+class PhaseSelected(Message):
+    def __init__(self, index: int) -> None:
+        super().__init__()
+        self.index = index
 
 
 class PhaseSidebar(Widget):
@@ -35,6 +43,21 @@ class PhaseSidebar(Widget):
         self.selected_index = state.selected_phase_index
         self.refresh_phases()
 
+    def on_click(self, event: Click) -> None:
+        if not self._state.phases:
+            return
+        try:
+            content = self.query_one("#phase-content", Static)
+        except Exception:
+            return
+        y = event.screen_y - content.region.y
+        if y < 0:
+            return
+        index = y // 3
+        if 0 <= index < len(self._state.phases):
+            event.stop()
+            self.post_message(PhaseSelected(index))
+
     def _render_phases(self, state: CockpitState) -> Text:
         output = Text()
         now = time.monotonic()
@@ -44,11 +67,16 @@ class PhaseSidebar(Widget):
 
         for index, phase in enumerate(state.phases):
             running = phase.status == PhaseStatus.RUNNING
-            selected = index == state.selected_phase_index and state.focus_target == "phases"
+            selected = index == state.selected_phase_index
+            focused = selected and state.focus_target == "phases"
             accent = running or selected
 
             if running:
                 output.append("▌ ", style="#D4AF37")
+            elif focused:
+                output.append("▌ ", style="#A2D729")
+            elif selected:
+                output.append("│ ", style="#A2D729")
             else:
                 output.append("  ", style="#333333")
 
@@ -64,13 +92,11 @@ class PhaseSidebar(Widget):
             name_style = "#A2D729" if running else ("#E0E0E0" if accent else "#888888")
             label = f"{prefix}{phase.label}"
             output.append(label, style=name_style)
-            timer = phase.elapsed_label(now)
-            if timer:
-                output.append(f"  {timer}", style="#888888")
             output.append("\n")
 
             status = phase.status.value.upper()
-            meta = f"   {status} · FILES {phase.files} · ISSUES {phase.issues}\n"
+            timer = phase.elapsed_label(now) or "--:--"
+            meta = f"   {status} · {timer}\n"
             output.append(meta, style="#888888")
             output.append("\n")
         return output

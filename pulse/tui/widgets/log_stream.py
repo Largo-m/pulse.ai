@@ -10,7 +10,7 @@ from textual.containers import VerticalScroll
 from textual.widget import Widget
 from textual.widgets import Static
 
-from pulse.tui.state import CockpitState, LogKind
+from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _INLINE_RE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__")
@@ -83,7 +83,7 @@ class LogStream(Widget):
         self.sync_from_state(self._state, force=True)
 
     def _tick_spinner(self) -> None:
-        if not any(entry.pending for entry in self._state.entries):
+        if not any(entry.pending for entry in self._state.visible_entries()):
             return
         self._spin_frame = (self._spin_frame + 1) % len(_SPINNER)
         self.sync_from_state(self._state, force=True)
@@ -96,12 +96,19 @@ class LogStream(Widget):
         content = self.query_one("#stream-content", Static)
         body = self.query_one("#stream-body", VerticalScroll)
 
-        surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
+        phase = state.selected_phase()
+        if phase is not None:
+            surface = phase.label.upper()
+        else:
+            surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
         header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
         right = state.model_label or state.agent_label or "Agent"
-        count = len(state.entries)
+        visible = state.visible_entries()
+        count = len(visible)
+        total = state.total_count()
+        step = (state.selected_phase_index + 1) if state.phases else 0
         meta.update(
-            Text(f"{count} entries · selected {count}/{count}          {right}", style="#888888")
+            Text(f"{count} entries · step {step}/{total}          {right}", style="#888888")
         )
 
         if not force and fingerprint == self._fingerprint:
@@ -116,12 +123,15 @@ class LogStream(Widget):
 
     @staticmethod
     def _state_fingerprint(state: CockpitState) -> tuple[object, ...]:
-        if not state.entries:
-            return (0, "", 0, False)
-        last = state.entries[-1]
-        pending = any(entry.pending for entry in state.entries)
+        entries = state.visible_entries()
+        phase = state.selected_phase()
+        phase_id = phase.id if phase is not None else ""
+        if not entries:
+            return (0, "", 0, False, phase_id, state.selected_phase_index, state.model_label)
+        last = entries[-1]
+        pending = any(entry.pending for entry in entries)
         return (
-            len(state.entries),
+            len(entries),
             last.entry_id,
             len(last.body),
             last.title,
@@ -130,6 +140,8 @@ class LogStream(Widget):
             last.pending,
             pending,
             state.model_label,
+            phase_id,
+            state.selected_phase_index,
         )
 
     def _render_assistant(self, entry_active: bool, body: str) -> Text:
@@ -154,9 +166,13 @@ class LogStream(Widget):
 
     def _render_entries(self, state: CockpitState) -> Text:
         output = Text()
-        entries = state.entries[-120:]
+        entries = state.visible_entries()[-120:]
         if not entries:
-            output.append("Aguardando atividade do agente…\n", style="#888888")
+            phase = state.selected_phase()
+            if phase is not None and phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}:
+                output.append("Nenhuma atividade neste step.\n", style="#888888")
+            else:
+                output.append("Aguardando atividade do agente…\n", style="#888888")
             return output
 
         spin = _SPINNER[self._spin_frame]

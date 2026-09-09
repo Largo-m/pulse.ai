@@ -376,6 +376,7 @@ def test_textual_render_smoke_all_workflows(workflow_id: str):
             assert "v Read" in content or "Read" in content
             assert "\n  " in content or "  pulse/" in content or "cli.py" in content
             assert any(phase.label in phases for phase in holder["state"].phases)
+            assert "RUNNING" in phases or "PENDING" in phases
 
     asyncio.run(run())
 
@@ -423,3 +424,40 @@ def test_search_detail_gray_block_layout():
     assert lines[0].endswith("Search")
     assert lines[1].startswith("  ")
     assert lines[2].startswith("    ")
+
+
+def test_log_stream_renders_only_selected_step():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state, cwd="/repo")
+    sink.begin_phase("Fase Specify")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "Escrevendo spec"},
+            }
+        }
+    )
+    sink.begin_phase("Fase Design")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "Escrevendo design"},
+            }
+        }
+    )
+    design_plain = _render_plain(state)
+    assert "Escrevendo design" in design_plain
+    assert "Escrevendo spec" not in design_plain
+
+    state.select_phase(0)
+    spec_plain = _render_plain(state)
+    assert "Escrevendo spec" in spec_plain
+    assert "Escrevendo design" not in spec_plain
+    assert "Nenhuma atividade neste step." not in spec_plain
+
+    state.select_phase(3)
+    empty_plain = _render_plain(state)
+    assert "Aguardando atividade do agente…" in empty_plain

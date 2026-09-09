@@ -658,6 +658,17 @@ def test_model_info_sets_header_without_duplicate_entry():
     assert len(state.entries) == before
     assert not any(entry.title.startswith("Modelo:") for entry in state.entries)
 
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "session_info_update",
+                "title": "Project Setup Request",
+            }
+        }
+    )
+    assert len(state.entries) == before
+    assert not any(entry.title == "Project Setup Request" for entry in state.entries)
+
     state = CockpitState()
     state.configure_workflow("setup-project")
     sink = CockpitSink(state)

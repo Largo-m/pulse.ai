@@ -101,3 +101,55 @@ def test_mark_finished():
     assert state.running is False
     assert state.exit_code == 0
     assert state.phases[0].status == PhaseStatus.DONE
+    assert state.phases[0].ended_at is not None
+    assert state.phases[0].elapsed_label() != ""
+
+
+def test_entries_are_scoped_to_selected_step():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.append_assistant("spec draft")
+    state.add_tool_entry(LogKind.WRITE, "spec.md", "spec.md")
+    assert {entry.phase_id for entry in state.entries} == {"specify"}
+    assert [entry.title for entry in state.visible_entries()] == ["Assistant", "spec.md"]
+
+    state.begin_phase("Fase Design")
+    state.append_assistant("design draft")
+    assert state.selected_phase_index == 1
+    assert [entry.body for entry in state.visible_entries() if entry.kind == LogKind.ASSISTANT] == [
+        "design draft"
+    ]
+    assert "spec draft" not in [entry.body for entry in state.visible_entries()]
+
+    state.select_phase(0)
+    visible = state.visible_entries()
+    assert [entry.phase_id for entry in visible] == ["specify", "specify"]
+    assert visible[0].body == "spec draft"
+    assert "design draft" not in [entry.body for entry in visible]
+
+
+def test_browsing_a_past_step_does_not_follow_new_phase():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.append_assistant("spec")
+    state.begin_phase("Fase Design")
+    state.select_phase(0)
+    assert state.selected_phase_index == 0
+
+    state.begin_phase("Fase Tasks")
+    assert state.selected_phase_index == 0
+    assert state.phases[2].status == PhaseStatus.RUNNING
+    assert [entry.phase_id for entry in state.visible_entries()] == ["specify"]
+
+
+def test_following_live_stays_on_running_step():
+    state = CockpitState()
+    state.configure_workflow("fix-bug")
+    state.begin_phase("Fase 1 — Planejando quick task")
+    state.begin_phase("Fase 2 — Implementando quick task")
+    assert state.selected_phase_index == 1
+    state.select_phase(1)
+    state.append_assistant("implementando")
+    assert state.visible_entries()[-1].phase_id == "implement"

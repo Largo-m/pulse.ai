@@ -32,6 +32,7 @@ class PhaseItem:
     label: str
     status: PhaseStatus = PhaseStatus.PENDING
     started_at: float | None = None
+    ended_at: float | None = None
     files: int = 0
     issues: int = 0
     _seen_files: set[str] = field(default_factory=set, repr=False, compare=False)
@@ -40,11 +41,21 @@ class PhaseItem:
     def elapsed_label(self, now: float | None = None) -> str:
         if self.started_at is None:
             return ""
-        if self.status != PhaseStatus.RUNNING:
+        if self.status == PhaseStatus.RUNNING:
+            end = now or time.monotonic()
+        elif self.ended_at is not None:
+            end = self.ended_at
+        else:
             return ""
-        elapsed = int((now or time.monotonic()) - self.started_at)
+        elapsed = int(end - self.started_at)
         minutes, seconds = divmod(max(0, elapsed), 60)
         return f"{minutes:02d}:{seconds:02d}"
+
+    def finish(self, ended_at: float | None = None) -> None:
+        if self.status == PhaseStatus.RUNNING and self.started_at is not None:
+            self.ended_at = ended_at if ended_at is not None else time.monotonic()
+        if self.status == PhaseStatus.RUNNING:
+            self.status = PhaseStatus.DONE
 
 
 @dataclass
@@ -57,6 +68,7 @@ class LogEntry:
     pending: bool = False
     entry_id: int = 0
     tool_id: str = ""
+    phase_id: str = ""
 
 
 Listener = Callable[[], None]
@@ -107,6 +119,7 @@ class CockpitState:
     _listeners: list[Listener] = field(default_factory=list, repr=False)
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
+    _follow_live: bool = True
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -128,6 +141,7 @@ class CockpitState:
         self.entries = []
         self._next_entry_id = 1
         self._active_assistant_id = None
+        self._follow_live = True
         self.running = False
         self.exit_code = None
         self.notify()
@@ -139,6 +153,7 @@ class CockpitState:
         return len(self.phases)
 
     def begin_phase(self, title: str) -> None:
+        self.finish_assistant()
         matched = self._match_phase(title)
         now = time.monotonic()
         matched_index = self.phases.index(matched) if matched is not None else None
@@ -146,20 +161,22 @@ class CockpitState:
             if matched is not None and phase is matched:
                 continue
             if phase.status == PhaseStatus.RUNNING:
-                phase.status = PhaseStatus.DONE
-                phase.started_at = None
+                phase.finish(now)
             elif (
                 matched_index is not None
                 and index < matched_index
                 and phase.status == PhaseStatus.PENDING
             ):
                 phase.status = PhaseStatus.DONE
-                phase.started_at = None
+                phase.ended_at = now
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
                 matched.started_at = now
+                matched.ended_at = None
             matched.status = PhaseStatus.RUNNING
-            self.selected_phase_index = matched_index if matched_index is not None else 0
+            if self._follow_live or self.selected_phase_index == matched_index:
+                self.selected_phase_index = matched_index if matched_index is not None else 0
+                self._follow_live = True
         self.surface_title = title.upper()
         self.running = True
         self.notify()
@@ -172,20 +189,21 @@ class CockpitState:
     ) -> None:
         done = set(done_ids)
         skipped = set(skipped_ids)
+        now = time.monotonic()
         for phase in self.phases:
             if phase.id in skipped:
+                if phase.status == PhaseStatus.RUNNING:
+                    phase.ended_at = now if phase.started_at is not None else phase.ended_at
                 phase.status = PhaseStatus.SKIPPED
-                phase.started_at = None
             elif phase.id in done and phase.status != PhaseStatus.RUNNING:
                 phase.status = PhaseStatus.DONE
-                phase.started_at = None
         self.notify()
 
     def complete_active_phase(self) -> None:
+        now = time.monotonic()
         for phase in self.phases:
             if phase.status == PhaseStatus.RUNNING:
-                phase.status = PhaseStatus.DONE
-                phase.started_at = None
+                phase.finish(now)
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:
@@ -221,6 +239,7 @@ class CockpitState:
             pending=pending,
             entry_id=self._next_entry_id,
             tool_id=tool_id,
+            phase_id=self._entry_phase_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -294,6 +313,7 @@ class CockpitState:
             detail=title,
             active=True,
             entry_id=self._next_entry_id,
+            phase_id=self._entry_phase_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -316,6 +336,7 @@ class CockpitState:
             body=text,
             active=True,
             entry_id=self._next_entry_id,
+            phase_id=self._entry_phase_id(),
         )
         self._next_entry_id += 1
         self._active_assistant_id = entry.entry_id
@@ -327,10 +348,25 @@ class CockpitState:
         self._clear_active_flags()
         self.notify()
 
+    def selected_phase(self) -> PhaseItem | None:
+        if not self.phases:
+            return None
+        index = max(0, min(self.selected_phase_index, len(self.phases) - 1))
+        return self.phases[index]
+
+    def visible_entries(self) -> list[LogEntry]:
+        phase = self.selected_phase()
+        if phase is None:
+            return list(self.entries)
+        pid = phase.id
+        return [entry for entry in self.entries if entry.phase_id == pid]
+
     def select_phase(self, index: int) -> None:
         if not self.phases:
             return
         self.selected_phase_index = max(0, min(index, len(self.phases) - 1))
+        running = self._running_index()
+        self._follow_live = running is None or self.selected_phase_index == running
         self.notify()
 
     def move_phase(self, delta: int) -> None:
@@ -349,11 +385,29 @@ class CockpitState:
             "running": self.running,
         }
 
-    def _active_phase(self) -> PhaseItem | None:
-        for phase in self.phases:
+    def _running_index(self) -> int | None:
+        for index, phase in enumerate(self.phases):
             if phase.status == PhaseStatus.RUNNING:
-                return phase
+                return index
         return None
+
+    def _active_phase(self) -> PhaseItem | None:
+        index = self._running_index()
+        if index is None:
+            return None
+        return self.phases[index]
+
+    def _entry_phase_id(self) -> str:
+        active = self._active_phase()
+        if active is not None:
+            return active.id
+        started = [phase for phase in self.phases if phase.started_at is not None]
+        if started:
+            return started[-1].id
+        selected = self.selected_phase()
+        if selected is not None:
+            return selected.id
+        return ""
 
     def _clear_active_flags(self) -> None:
         for entry in self.entries:

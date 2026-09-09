@@ -10,7 +10,6 @@ from pulse.tui.state import CockpitState, LogKind
 from pulse.tui.tool_detail import (
     build_tool_labels,
     extract_paths,
-    is_generic_title,
     merge_tool_update,
 )
 
@@ -138,11 +137,7 @@ class CockpitSink:
                     self._state.set_model(match.group(1).strip())
                     self._backfill_vague_entries()
                     self._emit()
-                    return
-                if not is_generic_title(title_text):
-                    self._state.add_info(title_text)
-                    self._backfill_vague_entries()
-                    self._emit()
+            return
 
     def begin_phase(self, title: str) -> None:
         self.finish()

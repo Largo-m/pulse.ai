@@ -27,6 +27,7 @@ def test_cockpit_screen_initial_state():
     assert all(phase.status == PhaseStatus.PENDING for phase in screen.state.phases)
     assert screen.workflow_id == "new-issue"
     assert screen.sink.cockpit is True
+    assert screen.state.entries == []
 
 
 def test_home_run_external_avoids_nested_asyncio(monkeypatch):
