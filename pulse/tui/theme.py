@@ -273,6 +273,58 @@ HomeScreen #workflow-prompt {{
     margin-top: 1;
 }}
 
+HistoryListScreen {{
+    background: {BG};
+    align: center middle;
+}}
+
+HistoryListScreen #history-content {{
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    align: center middle;
+}}
+
+HistoryListScreen .history-title {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+HistoryListScreen .history-hint {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+HistoryListScreen #history-search {{
+    width: 100%;
+    margin-bottom: 1;
+}}
+
+HistoryListScreen OptionList {{
+    width: 100%;
+    height: 16;
+    max-height: 18;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+}}
+
+HistoryListScreen OptionList:focus {{
+    border: solid {LIME};
+}}
+
+HistoryListScreen .history-empty {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-top: 1;
+}}
+
 PromptDock {{
     width: 100%;
     height: 100%;

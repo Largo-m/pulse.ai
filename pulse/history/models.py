@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class HistoryKind(str, Enum):
+    ISSUE = "issue"
+    FIX = "fix"
+
+
+class HistoryStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    AWAITING_APPROVAL = "awaiting_approval"
+    BLOCKED = "blocked"
+    DONE = "done"
+
+
+class RunStatus(str, Enum):
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+@dataclass
+class HistoryStep:
+    id: str
+    label: str
+    status: str
+    artifact: str = ""
+
+
+@dataclass
+class HistoryItem:
+    kind: HistoryKind
+    slug: str
+    title: str
+    prompt: str
+    status: HistoryStatus
+    updated_at: str
+    spec_dir: str
+    steps: list[HistoryStep] = field(default_factory=list)
+    run_id: str | None = None
+
+    @property
+    def item_id(self) -> str:
+        return f"{self.kind.value}:{self.slug}"
+
+    @property
+    def kind_label(self) -> str:
+        if self.kind == HistoryKind.ISSUE:
+            return "ISSUE"
+        return "FIX"
+
+    @property
+    def status_label(self) -> str:
+        labels = {
+            HistoryStatus.PENDING: "pending",
+            HistoryStatus.IN_PROGRESS: "in progress",
+            HistoryStatus.AWAITING_APPROVAL: "aguardando",
+            HistoryStatus.BLOCKED: "blocked",
+            HistoryStatus.DONE: "done",
+        }
+        return labels.get(self.status, self.status.value)
+
+
+@dataclass
+class RunPhaseSnapshot:
+    id: str
+    label: str
+    status: str
+    files: int = 0
+    issues: int = 0
+
+
+@dataclass
+class RunRecord:
+    id: str
+    workflow_id: str
+    prompt: str
+    status: RunStatus = RunStatus.RUNNING
+    kind: HistoryKind | None = None
+    slug: str = ""
+    spec_dir: str = ""
+    started_at: str = ""
+    ended_at: str = ""
+    exit_code: int | None = None
+    phases: list[RunPhaseSnapshot] = field(default_factory=list)
