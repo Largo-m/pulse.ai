@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
@@ -22,19 +23,19 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 class HistoryDetailScreen(Screen[None]):
     BINDINGS = [
-        ("q", "back_list", "Voltar"),
-        ("b", "back_list", "Voltar"),
-        ("tab", "toggle_focus", "Focus"),
-        ("a", "toggle_artifact_pane", "Artifacts"),
-        ("escape", "escape_back", "Back"),
-        ("left_square_bracket", "artifact_prev", "Prev file"),
-        ("right_square_bracket", "artifact_next", "Next file"),
-        ("left", "artifact_left", "Prev file"),
-        ("right", "artifact_right", "Next file"),
-        ("up", "nav_up", "Up"),
-        ("down", "nav_down", "Down"),
-        ("k", "nav_up", "Up"),
-        ("j", "nav_down", "Down"),
+        Binding("q", "back_list", "Voltar"),
+        Binding("b", "back_list", "Voltar"),
+        Binding("tab", "toggle_focus", "Focus"),
+        Binding("a", "toggle_artifact_pane", "Artifacts"),
+        Binding("escape", "escape_back", "Back"),
+        Binding("left_square_bracket", "artifact_prev", "Prev file"),
+        Binding("right_square_bracket", "artifact_next", "Next file"),
+        Binding("left", "artifact_left", "Prev file"),
+        Binding("right", "artifact_right", "Next file"),
+        Binding("up", "nav_up", "Up", priority=True),
+        Binding("down", "nav_down", "Down", priority=True),
+        Binding("k", "nav_up", "Up", priority=True),
+        Binding("j", "nav_down", "Down", priority=True),
     ]
 
     def __init__(self, item: HistoryItem, workspace: Path | None = None) -> None:
@@ -146,8 +147,7 @@ class HistoryDetailScreen(Screen[None]):
         if self.state.focus_target == "artifact":
             self.query_one(ArtifactPane).scroll_by(-1)
             return
-        if self.state.focus_target != "phases":
-            return
+        self.state.focus_target = "phases"
         self.state.move_nav(-1)
         self._sync_ui(force=True)
 
@@ -155,8 +155,7 @@ class HistoryDetailScreen(Screen[None]):
         if self.state.focus_target == "artifact":
             self.query_one(ArtifactPane).scroll_by(1)
             return
-        if self.state.focus_target != "phases":
-            return
+        self.state.focus_target = "phases"
         self.state.move_nav(1)
         self._sync_ui(force=True)
 

@@ -322,7 +322,7 @@ def test_tasks_are_navigable_and_scope_logs():
     state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
     assert state.task_total_count() == 2
     assert state.task_done_count() == 0
-    assert progress_bar(0, 2, width=4) == "░░░░"
+    assert progress_bar(0, 2, width=4) == "...."
 
     state.begin_phase("Execute — Task T1: One")
     state.begin_task("T1", "One")
@@ -357,6 +357,36 @@ def test_tasks_are_navigable_and_scope_logs():
     state.move_nav(-1)
     assert state.selected_nav_kind == "phase"
     assert state.selected_phase().id == "execute"
+
+
+def test_live_task_does_not_steal_browsed_step():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    state.begin_phase("Execute — Task T1: One")
+    state.begin_task("T1", "One")
+    state.select_phase(0)
+    assert state.selected_phase().id == "specify"
+    state.append_assistant("ainda no t1")
+    state.begin_phase("Execute — Task T2: Two")
+    state.begin_task("T2", "Two")
+    assert state.selected_nav_kind == "phase"
+    assert state.selected_phase().id == "specify"
+    assert state.tasks[1].status == PhaseStatus.RUNNING
+
+
+def test_nav_items_nest_tasks_under_execute():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    assert state.nav_items() == [
+        ("phase", 0),
+        ("phase", 1),
+        ("phase", 2),
+        ("phase", 3),
+        ("task", 0),
+        ("task", 1),
+    ]
 
 
 def test_sink_begin_phase_binds_task_from_label():

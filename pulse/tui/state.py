@@ -97,7 +97,7 @@ def progress_bar(done: int, total: int, width: int = 10) -> str:
     if total <= 0:
         return ""
     filled = max(0, min(width, int(round(width * done / total))))
-    return "█" * filled + "░" * (width - filled)
+    return "#" * filled + "." * (width - filled)
 
 
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
@@ -215,10 +215,10 @@ class CockpitState:
                 matched.started_at = now
                 matched.ended_at = None
             matched.status = PhaseStatus.RUNNING
-            if matched_index is not None and self._should_follow(NAV_PHASE, matched_index):
+            skip_select = matched.id == "execute" and bool(self.tasks)
+            if matched_index is not None and self._follow_live and not skip_select:
                 self.selected_nav_kind = NAV_PHASE
                 self.selected_phase_index = matched_index
-                self._follow_live = True
                 self.follow_artifact = True
         self.surface_title = title.upper()
         self.running = True
@@ -513,10 +513,9 @@ class CockpitState:
             found.ended_at = None
         found.status = PhaseStatus.RUNNING
         index = self.tasks.index(found)
-        if self._should_follow(NAV_TASK, index):
+        if self._follow_live:
             self.selected_nav_kind = NAV_TASK
             self.selected_task_index = index
-            self._follow_live = True
             self.follow_artifact = True
         self.notify()
 
@@ -550,8 +549,7 @@ class CockpitState:
         self.move_nav(delta)
 
     def move_nav(self, delta: int) -> None:
-        items = [(NAV_PHASE, index) for index in range(len(self.phases))]
-        items.extend((NAV_TASK, index) for index in range(len(self.tasks)))
+        items = self.nav_items()
         if not items:
             return
         current = (self.selected_nav_kind, self._selected_nav_index())
@@ -565,6 +563,18 @@ class CockpitState:
             self.select_task(index)
             return
         self.select_phase(index)
+
+    def nav_items(self) -> list[tuple[str, int]]:
+        items: list[tuple[str, int]] = []
+        has_execute = False
+        for index, phase in enumerate(self.phases):
+            items.append((NAV_PHASE, index))
+            if phase.id == "execute":
+                has_execute = True
+                items.extend((NAV_TASK, task_index) for task_index in range(len(self.tasks)))
+        if self.tasks and not has_execute:
+            items.extend((NAV_TASK, task_index) for task_index in range(len(self.tasks)))
+        return items
 
     def _sync_follow_and_artifact(self) -> None:
         live = self._live_target()
@@ -745,11 +755,6 @@ class CockpitState:
         if self.selected_nav_kind == NAV_TASK:
             return self.selected_task_index
         return self.selected_phase_index
-
-    def _should_follow(self, kind: str, index: int) -> bool:
-        return self._follow_live or (
-            self.selected_nav_kind == kind and self._selected_nav_index() == index
-        )
 
     def _active_phase(self) -> PhaseItem | None:
         index = self._running_index()
