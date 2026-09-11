@@ -134,9 +134,11 @@ def test_build_execute_task_prompt_single_task():
     assert "**T1**" in prompt
     assert "somente" in prompt
     assert "T1" in prompt
+    assert "desta wave" not in prompt
+    assert "outras tasks" in prompt
 
 
-def test_build_execute_wave_prompt_lists_wave_tasks():
+def test_build_execute_wave_prompt_lists_task():
     from pulse.plan.new_issue_prompt import build_execute_wave_prompt
 
     skill_dir = resolve_new_issue_skill()
@@ -146,15 +148,15 @@ def test_build_execute_wave_prompt_lists_wave_tasks():
         user_prompt="Login",
         skill_dir=skill_dir,
         state=state,
-        wave_label="Wave 1 (sequencial): T1, T2",
-        task_lines=["- **T1** — A", "- **T2** — B"],
-        task_ids=["T1", "T2"],
+        wave_label="Task T1",
+        task_lines=["- **T1** — A"],
+        task_ids=["T1"],
         parallel=False,
         tasks_skipped=False,
     )
-    assert "Wave 1" in prompt
-    assert "T1, T2" in prompt
-    assert "Não implemente tasks fora desta wave." in prompt
+    assert "Task T1" in prompt
+    assert "T1" in prompt
+    assert "Não implemente outras tasks." in prompt
     assert "status: done" in prompt
     assert "valida os gates" in prompt
 
@@ -203,9 +205,9 @@ def test_mark_task_done():
     assert state.current_task_id == "T1"
 
 
-def test_run_execute_wave_marks_done_when_gates_pass(monkeypatch, tmp_path: Path):
+def test_run_execute_task_marks_done_when_gates_pass(monkeypatch, tmp_path: Path):
     from pulse.plan import new_issue_flow
-    from pulse.plan.task_waves import GateResult, TaskSpec, Wave
+    from pulse.plan.task_waves import GateResult, TaskSpec
 
     state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
     state.tasks = [TaskState(task_id="T1", title="A"), TaskState(task_id="T2", title="B")]
@@ -215,27 +217,17 @@ def test_run_execute_wave_marks_done_when_gates_pass(monkeypatch, tmp_path: Path
         def run_isolated_prompt(self, **_kwargs):
             return {"stopReason": "end_turn"}
 
-    wave = Wave(
-        wave_id=1,
-        tasks=(
-            TaskSpec(task_id="T1", title="A", gate_commands=("true",)),
-            TaskSpec(task_id="T2", title="B", gate_commands=("true",)),
-        ),
-        parallel=False,
-    )
-
     monkeypatch.setattr(
         new_issue_flow,
         "run_wave_gates",
         lambda **_kwargs: [
-            GateResult(ok=True, command="true", exit_code=0),
             GateResult(ok=True, command="true", exit_code=0),
         ],
     )
 
     from rich.console import Console
 
-    code = new_issue_flow._run_execute_wave(
+    code = new_issue_flow._run_execute_task(
         runner=FakeRunner(),
         console=Console(force_terminal=False),
         workspace=tmp_path,
@@ -244,16 +236,16 @@ def test_run_execute_wave_marks_done_when_gates_pass(monkeypatch, tmp_path: Path
         state=state,
         preferred_model=None,
         tasks_skipped=False,
-        wave=wave,
+        spec=TaskSpec(task_id="T1", title="A", gate_commands=("true",)),
     )
     assert code == 0
     assert state.tasks[0].status == "done"
-    assert state.tasks[1].status == "done"
+    assert state.tasks[1].status == "pending"
 
 
-def test_run_execute_wave_keeps_pending_when_gate_fails(monkeypatch, tmp_path: Path):
+def test_run_execute_task_keeps_pending_when_gate_fails(monkeypatch, tmp_path: Path):
     from pulse.plan import new_issue_flow
-    from pulse.plan.task_waves import GateResult, TaskSpec, Wave
+    from pulse.plan.task_waves import GateResult, TaskSpec
 
     state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
     state.tasks = [TaskState(task_id="T1", title="A")]
@@ -263,11 +255,6 @@ def test_run_execute_wave_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
         def run_isolated_prompt(self, **_kwargs):
             return {"stopReason": "end_turn"}
 
-    wave = Wave(
-        wave_id=1,
-        tasks=(TaskSpec(task_id="T1", title="A", gate_commands=("false",)),),
-    )
-
     monkeypatch.setattr(
         new_issue_flow,
         "run_wave_gates",
@@ -276,7 +263,7 @@ def test_run_execute_wave_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
 
     from rich.console import Console
 
-    code = new_issue_flow._run_execute_wave(
+    code = new_issue_flow._run_execute_task(
         runner=FakeRunner(),
         console=Console(force_terminal=False),
         workspace=tmp_path,
@@ -285,7 +272,7 @@ def test_run_execute_wave_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
         state=state,
         preferred_model=None,
         tasks_skipped=False,
-        wave=wave,
+        spec=TaskSpec(task_id="T1", title="A", gate_commands=("false",)),
     )
     assert code == 1
     assert state.tasks[0].status == "pending"

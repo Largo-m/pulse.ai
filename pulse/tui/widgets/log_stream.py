@@ -112,6 +112,14 @@ class LogStream(Widget):
         slot.display = True
         slot.mount(PromptDock(request, _done))
 
+    def focus_prompt(self) -> bool:
+        try:
+            dock = self.query_one(PromptDock)
+        except Exception:
+            return False
+        dock.focus_inner()
+        return True
+
     def _prompt_slot_height(self, request: PromptRequest) -> int:
         available = self.size.height if self.size.height > 0 else 24
         cap = max(12, min(available - 3, int(available * 0.8)))
@@ -142,19 +150,25 @@ class LogStream(Widget):
         content = self.query_one("#stream-content", Static)
         body = self.query_one("#stream-body", VerticalScroll)
 
-        phase = state.selected_phase()
-        if phase is not None:
-            surface = phase.label.upper()
+        current = state.selected_nav_item()
+        if current is not None:
+            surface = current.label.upper()
         else:
             surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
         header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
         right = state.model_label or state.agent_label or "Agent"
         visible = state.visible_entries()
         count = len(visible)
-        total = state.total_count()
-        step = (state.selected_phase_index + 1) if state.phases else 0
+        if state.selected_nav_kind == "task" and state.tasks:
+            position = state.selected_task_index + 1
+            total = state.task_total_count()
+            kind = "task"
+        else:
+            position = (state.selected_phase_index + 1) if state.phases else 0
+            total = state.total_count()
+            kind = "step"
         meta.update(
-            Text(f"{count} entries · step {step}/{total}          {right}", style="#888888")
+            Text(f"{count} entries · {kind} {position}/{total}          {right}", style="#888888")
         )
 
         if not force and fingerprint == self._fingerprint:
@@ -170,10 +184,20 @@ class LogStream(Widget):
     @staticmethod
     def _state_fingerprint(state: CockpitState) -> tuple[object, ...]:
         entries = state.visible_entries()
-        phase = state.selected_phase()
-        phase_id = phase.id if phase is not None else ""
+        current = state.selected_nav_item()
+        nav_id = current.id if current is not None else ""
         if not entries:
-            return (0, "", 0, False, phase_id, state.selected_phase_index, state.model_label)
+            return (
+                0,
+                "",
+                0,
+                False,
+                nav_id,
+                state.selected_nav_kind,
+                state.selected_phase_index,
+                state.selected_task_index,
+                state.model_label,
+            )
         last = entries[-1]
         pending = any(entry.pending for entry in entries)
         return (
@@ -186,8 +210,10 @@ class LogStream(Widget):
             last.pending,
             pending,
             state.model_label,
-            phase_id,
+            nav_id,
+            state.selected_nav_kind,
             state.selected_phase_index,
+            state.selected_task_index,
         )
 
     def _render_bubble(
@@ -228,9 +254,9 @@ class LogStream(Widget):
         output = Text()
         entries = state.visible_entries()[-120:]
         if not entries:
-            phase = state.selected_phase()
-            if phase is not None and phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}:
-                output.append("Nenhuma atividade neste step.\n", style="#888888")
+            current = state.selected_nav_item()
+            if current is not None and current.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}:
+                output.append("Nenhuma atividade neste item.\n", style="#888888")
             else:
                 output.append("Aguardando atividade do agente…\n", style="#888888")
             return output

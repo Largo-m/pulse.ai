@@ -77,6 +77,7 @@ class LogEntry:
     entry_id: int = 0
     tool_id: str = ""
     phase_id: str = ""
+    task_id: str = ""
 
 
 @dataclass
@@ -88,6 +89,15 @@ class ArtifactItem:
 
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
+NAV_PHASE = "phase"
+NAV_TASK = "task"
+
+
+def progress_bar(done: int, total: int, width: int = 10) -> str:
+    if total <= 0:
+        return ""
+    filled = max(0, min(width, int(round(width * done / total))))
+    return "█" * filled + "░" * (width - filled)
 
 
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
@@ -127,9 +137,12 @@ class CockpitState:
     agent_label: str = "Agent"
     model_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
+    tasks: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
     artifacts: list[ArtifactItem] = field(default_factory=list)
     selected_phase_index: int = 0
+    selected_task_index: int = 0
+    selected_nav_kind: str = NAV_PHASE
     selected_artifact_path: str = ""
     follow_artifact: bool = True
     artifact_pane_open: bool = False
@@ -157,7 +170,10 @@ class CockpitState:
         self.workflow_label = WORKFLOW_LABELS.get(workflow_id, workflow_id.upper())
         defs = WORKFLOW_PHASES.get(workflow_id, (("phase1", "Phase 1"),))
         self.phases = [PhaseItem(id=pid, label=label) for pid, label in defs]
+        self.tasks = []
         self.selected_phase_index = 0
+        self.selected_task_index = 0
+        self.selected_nav_kind = NAV_PHASE
         self.entries = []
         self.artifacts = []
         self.selected_artifact_path = ""
@@ -199,8 +215,9 @@ class CockpitState:
                 matched.started_at = now
                 matched.ended_at = None
             matched.status = PhaseStatus.RUNNING
-            if self._follow_live or self.selected_phase_index == matched_index:
-                self.selected_phase_index = matched_index if matched_index is not None else 0
+            if matched_index is not None and self._should_follow(NAV_PHASE, matched_index):
+                self.selected_nav_kind = NAV_PHASE
+                self.selected_phase_index = matched_index
                 self._follow_live = True
                 self.follow_artifact = True
         self.surface_title = title.upper()
@@ -230,6 +247,9 @@ class CockpitState:
         for phase in self.phases:
             if phase.status == PhaseStatus.RUNNING:
                 phase.finish(now)
+        for task in self.tasks:
+            if task.status == PhaseStatus.RUNNING:
+                task.finish(now)
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:
@@ -266,6 +286,7 @@ class CockpitState:
             entry_id=self._next_entry_id,
             tool_id=tool_id,
             phase_id=self._entry_phase_id(),
+            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -273,33 +294,40 @@ class CockpitState:
         return entry
 
     def record_files(self, paths: list[str] | tuple[str, ...]) -> bool:
-        active = self._active_phase()
-        if active is None:
+        targets = [item for item in (self._active_phase(), self._active_task()) if item is not None]
+        if not targets:
             return False
         changed = False
         for path in paths:
             key = str(path or "").strip()
             if not key or key in {"…", "..."}:
                 continue
-            if key in active._seen_files:
-                continue
-            active._seen_files.add(key)
-            changed = True
+            for active in targets:
+                if key in active._seen_files:
+                    continue
+                active._seen_files.add(key)
+                active.files = len(active._seen_files)
+                changed = True
         if changed:
-            active.files = len(active._seen_files)
             self.notify()
         return changed
 
     def record_issue(self, key: str) -> bool:
-        active = self._active_phase()
-        if active is None:
+        targets = [item for item in (self._active_phase(), self._active_task()) if item is not None]
+        if not targets:
             return False
         token = str(key or "").strip()
-        if not token or token in active._seen_issues:
+        if not token:
             return False
-        active._seen_issues.add(token)
-        active.issues = len(active._seen_issues)
-        self.notify()
+        changed = False
+        for active in targets:
+            if token in active._seen_issues:
+                continue
+            active._seen_issues.add(token)
+            active.issues = len(active._seen_issues)
+            changed = True
+        if changed:
+            self.notify()
         return True
 
     def update_tool_entry(
@@ -330,6 +358,7 @@ class CockpitState:
             self.notify()
             return entry
         return None
+
     def add_info(self, title: str) -> None:
         self._clear_active_flags()
         self._active_assistant_id = None
@@ -340,6 +369,7 @@ class CockpitState:
             active=True,
             entry_id=self._next_entry_id,
             phase_id=self._entry_phase_id(),
+            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -363,6 +393,7 @@ class CockpitState:
             active=True,
             entry_id=self._next_entry_id,
             phase_id=self._entry_phase_id(),
+            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self._active_assistant_id = entry.entry_id
@@ -389,6 +420,7 @@ class CockpitState:
                 active=False,
                 entry_id=self._next_entry_id,
                 phase_id=self._entry_phase_id(),
+                task_id=self._entry_task_id(),
             )
         )
         self._next_entry_id += 1
@@ -400,6 +432,7 @@ class CockpitState:
                 active=True,
                 entry_id=self._next_entry_id,
                 phase_id=self._entry_phase_id(),
+                task_id=self._entry_task_id(),
             )
         )
         self._next_entry_id += 1
@@ -411,7 +444,88 @@ class CockpitState:
         index = max(0, min(self.selected_phase_index, len(self.phases) - 1))
         return self.phases[index]
 
+    def selected_task(self) -> PhaseItem | None:
+        if not self.tasks:
+            return None
+        index = max(0, min(self.selected_task_index, len(self.tasks) - 1))
+        return self.tasks[index]
+
+    def selected_nav_item(self) -> PhaseItem | None:
+        if self.selected_nav_kind == NAV_TASK:
+            return self.selected_task()
+        return self.selected_phase()
+
+    def task_done_count(self) -> int:
+        return sum(1 for task in self.tasks if task.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
+
+    def task_total_count(self) -> int:
+        return len(self.tasks)
+
+    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
+        existing = {task.id: task for task in self.tasks}
+        merged: list[PhaseItem] = []
+        now = time.monotonic()
+        for task_id, title, status in items:
+            key = str(task_id or "").strip()
+            if not key:
+                continue
+            label = str(title or "").strip() or key
+            prior = existing.get(key)
+            if prior is None:
+                item = PhaseItem(id=key, label=label)
+            else:
+                item = prior
+                item.label = label
+            mapped = _task_status_from_name(status)
+            if item.status == PhaseStatus.RUNNING and mapped == PhaseStatus.DONE:
+                item.finish(now)
+            elif item.status != PhaseStatus.RUNNING:
+                item.status = mapped
+            merged.append(item)
+        self.tasks = merged
+        if self.selected_task_index >= len(self.tasks):
+            self.selected_task_index = max(0, len(self.tasks) - 1)
+        if not self.tasks and self.selected_nav_kind == NAV_TASK:
+            self.selected_nav_kind = NAV_PHASE
+        self.notify()
+
+    def begin_task(self, task_id: str, title: str = "") -> None:
+        key = str(task_id or "").strip()
+        if not key:
+            return
+        self.finish_assistant()
+        now = time.monotonic()
+        found: PhaseItem | None = None
+        for task in self.tasks:
+            if task.id == key:
+                found = task
+                continue
+            if task.status == PhaseStatus.RUNNING:
+                task.finish(now)
+        label = str(title or "").strip() or key
+        if found is None:
+            found = PhaseItem(id=key, label=label)
+            self.tasks.append(found)
+        elif title.strip():
+            found.label = label
+        if found.status != PhaseStatus.RUNNING or found.started_at is None:
+            found.started_at = now
+            found.ended_at = None
+        found.status = PhaseStatus.RUNNING
+        index = self.tasks.index(found)
+        if self._should_follow(NAV_TASK, index):
+            self.selected_nav_kind = NAV_TASK
+            self.selected_task_index = index
+            self._follow_live = True
+            self.follow_artifact = True
+        self.notify()
+
     def visible_entries(self) -> list[LogEntry]:
+        if self.selected_nav_kind == NAV_TASK:
+            task = self.selected_task()
+            if task is None:
+                return []
+            return [entry for entry in self.entries if entry.task_id == task.id]
         phase = self.selected_phase()
         if phase is None:
             return list(self.entries)
@@ -421,9 +535,43 @@ class CockpitState:
     def select_phase(self, index: int) -> None:
         if not self.phases:
             return
+        self.selected_nav_kind = NAV_PHASE
         self.selected_phase_index = max(0, min(index, len(self.phases) - 1))
-        running = self._running_index()
-        self._follow_live = running is None or self.selected_phase_index == running
+        self._sync_follow_and_artifact()
+
+    def select_task(self, index: int) -> None:
+        if not self.tasks:
+            return
+        self.selected_nav_kind = NAV_TASK
+        self.selected_task_index = max(0, min(index, len(self.tasks) - 1))
+        self._sync_follow_and_artifact()
+
+    def move_phase(self, delta: int) -> None:
+        self.move_nav(delta)
+
+    def move_nav(self, delta: int) -> None:
+        items = [(NAV_PHASE, index) for index in range(len(self.phases))]
+        items.extend((NAV_TASK, index) for index in range(len(self.tasks)))
+        if not items:
+            return
+        current = (self.selected_nav_kind, self._selected_nav_index())
+        try:
+            position = items.index(current)
+        except ValueError:
+            position = 0
+        position = max(0, min(position + delta, len(items) - 1))
+        kind, index = items[position]
+        if kind == NAV_TASK:
+            self.select_task(index)
+            return
+        self.select_phase(index)
+
+    def _sync_follow_and_artifact(self) -> None:
+        live = self._live_target()
+        self._follow_live = live is None or live == (
+            self.selected_nav_kind,
+            self._selected_nav_index(),
+        )
         visible = self.visible_artifacts()
         if self._follow_live:
             self.follow_artifact = True
@@ -434,9 +582,6 @@ class CockpitState:
             if self.selected_artifact_path not in paths:
                 self.selected_artifact_path = visible[-1].path
         self.notify()
-
-    def move_phase(self, delta: int) -> None:
-        self.select_phase(self.selected_phase_index + delta)
 
     def upsert_artifact(self, path: str, *, ready: bool) -> ArtifactItem | None:
         key = artifact_key(path)
@@ -464,6 +609,8 @@ class CockpitState:
         return item
 
     def visible_artifacts(self) -> list[ArtifactItem]:
+        if self.selected_nav_kind == NAV_TASK:
+            return [item for item in self.artifacts if item.phase_id == "execute"]
         phase = self.selected_phase()
         if phase is None:
             return list(self.artifacts)
@@ -579,11 +726,42 @@ class CockpitState:
                 return index
         return None
 
+    def _running_task_index(self) -> int | None:
+        for index, task in enumerate(self.tasks):
+            if task.status == PhaseStatus.RUNNING:
+                return index
+        return None
+
+    def _live_target(self) -> tuple[str, int] | None:
+        task_index = self._running_task_index()
+        if task_index is not None:
+            return (NAV_TASK, task_index)
+        phase_index = self._running_index()
+        if phase_index is not None:
+            return (NAV_PHASE, phase_index)
+        return None
+
+    def _selected_nav_index(self) -> int:
+        if self.selected_nav_kind == NAV_TASK:
+            return self.selected_task_index
+        return self.selected_phase_index
+
+    def _should_follow(self, kind: str, index: int) -> bool:
+        return self._follow_live or (
+            self.selected_nav_kind == kind and self._selected_nav_index() == index
+        )
+
     def _active_phase(self) -> PhaseItem | None:
         index = self._running_index()
         if index is None:
             return None
         return self.phases[index]
+
+    def _active_task(self) -> PhaseItem | None:
+        index = self._running_task_index()
+        if index is None:
+            return None
+        return self.tasks[index]
 
     def _entry_phase_id(self) -> str:
         active = self._active_phase()
@@ -595,6 +773,12 @@ class CockpitState:
         selected = self.selected_phase()
         if selected is not None:
             return selected.id
+        return ""
+
+    def _entry_task_id(self) -> str:
+        active = self._active_task()
+        if active is not None:
+            return active.id
         return ""
 
     def _clear_active_flags(self) -> None:
@@ -610,3 +794,14 @@ class CockpitState:
         if pending:
             return pending[0]
         return None
+
+
+def _task_status_from_name(status: str) -> PhaseStatus:
+    raw = str(status or "").strip().lower()
+    if raw in {"done", "completed"}:
+        return PhaseStatus.DONE
+    if raw in {"skipped", "skip"}:
+        return PhaseStatus.SKIPPED
+    if raw in {"running", "in_progress", "in-progress"}:
+        return PhaseStatus.RUNNING
+    return PhaseStatus.PENDING

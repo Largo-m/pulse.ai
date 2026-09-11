@@ -6,7 +6,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from pulse.tui.state import CockpitState
+from pulse.tui.state import CockpitState, progress_bar
 
 
 class AppHeader(Widget):
@@ -34,5 +34,12 @@ class AppHeader(Widget):
             pass
 
     def sync_from_state(self, state: CockpitState) -> None:
-        self.run_label = f"RUN {state.done_count()}/{state.total_count()}"
+        steps = f"STEPS {state.done_count()}/{state.total_count()}"
+        if state.tasks:
+            done = state.task_done_count()
+            total = state.task_total_count()
+            bar = progress_bar(done, total, width=8)
+            self.run_label = f"{steps}  TASKS {done}/{total} {bar}"
+        else:
+            self.run_label = f"RUN {state.done_count()}/{state.total_count()}"
         self.workflow_label = state.workflow_label

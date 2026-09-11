@@ -17,7 +17,7 @@ from pulse.tui.widgets.artifact_pane import (
     ArtifactTabSelected,
 )
 from pulse.tui.widgets.log_stream import LogStream
-from pulse.tui.widgets.phase_sidebar import PhaseSelected, PhaseSidebar
+from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 
 class HistoryDetailScreen(Screen[None]):
@@ -148,7 +148,7 @@ class HistoryDetailScreen(Screen[None]):
             return
         if self.state.focus_target != "phases":
             return
-        self.state.move_phase(-1)
+        self.state.move_nav(-1)
         self._sync_ui(force=True)
 
     def action_nav_down(self) -> None:
@@ -157,11 +157,14 @@ class HistoryDetailScreen(Screen[None]):
             return
         if self.state.focus_target != "phases":
             return
-        self.state.move_phase(1)
+        self.state.move_nav(1)
         self._sync_ui(force=True)
 
-    def on_phase_selected(self, event: PhaseSelected) -> None:
-        self.state.select_phase(event.index)
+    def on_nav_selected(self, event: NavSelected) -> None:
+        if event.kind == "task":
+            self.state.select_task(event.index)
+        else:
+            self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 

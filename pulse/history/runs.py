@@ -180,6 +180,7 @@ def log_entry_to_dict(entry: LogEntry) -> dict[str, Any]:
         "entry_id": entry.entry_id,
         "tool_id": entry.tool_id,
         "phase_id": entry.phase_id,
+        "task_id": entry.task_id,
     }
 
 
@@ -199,4 +200,5 @@ def log_entry_from_dict(data: dict[str, Any]) -> LogEntry:
         entry_id=int(data.get("entry_id", 0) or 0),
         tool_id=str(data.get("tool_id", "")),
         phase_id=str(data.get("phase_id", "")),
+        task_id=str(data.get("task_id", "")),
     )

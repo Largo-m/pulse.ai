@@ -19,16 +19,13 @@ from pulse.tui.widgets.artifact_pane import (
     ArtifactTabSelected,
 )
 from pulse.tui.widgets.log_stream import LogStream
-from pulse.tui.widgets.phase_sidebar import PhaseSelected, PhaseSidebar
+from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 _PROMPT_BLOCKED = {
-    "toggle_focus",
     "toggle_artifact_pane",
     "close_artifact_pane",
     "escape_back",
     "back_to_menu",
-    "nav_up",
-    "nav_down",
     "artifact_left",
     "artifact_right",
     "artifact_prev",
@@ -127,6 +124,9 @@ class CockpitScreen(Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if self._prompt_open and action in _PROMPT_BLOCKED:
             return False
+        if self._prompt_open and action in {"nav_up", "nav_down"}:
+            if self.state.focus_target != "phases":
+                return False
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":
@@ -206,6 +206,8 @@ class CockpitScreen(Screen[None]):
             self.query_one(PhaseSidebar).focus()
         elif self.state.focus_target == "artifact" and self.state.artifact_pane_open:
             self.query_one(ArtifactPane).focus()
+        elif self._prompt_open and self.query_one(LogStream).focus_prompt():
+            return
         else:
             self.query_one(LogStream).focus()
 
@@ -268,7 +270,7 @@ class CockpitScreen(Screen[None]):
             return
         if self.state.focus_target != "phases":
             return
-        self.state.move_phase(-1)
+        self.state.move_nav(-1)
         self._sync_ui(force=True)
 
     def action_nav_down(self) -> None:
@@ -277,11 +279,14 @@ class CockpitScreen(Screen[None]):
             return
         if self.state.focus_target != "phases":
             return
-        self.state.move_phase(1)
+        self.state.move_nav(1)
         self._sync_ui(force=True)
 
-    def on_phase_selected(self, event: PhaseSelected) -> None:
-        self.state.select_phase(event.index)
+    def on_nav_selected(self, event: NavSelected) -> None:
+        if event.kind == "task":
+            self.state.select_task(event.index)
+        else:
+            self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 
