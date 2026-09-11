@@ -67,6 +67,7 @@ class HomeScreen(Screen[None]):
                 )
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
+        options.add_option(Option("Histórico — Issues e fixes", id="history"))
         options.add_option(Option("Configurações", id="settings"))
         options.add_option(Option("Sair", id="exit"))
 
@@ -84,6 +85,9 @@ class HomeScreen(Screen[None]):
             return
         if action == "settings":
             self._run_settings()
+            return
+        if action == "history":
+            self.app.open_history()
             return
         if action.startswith("workflow:"):
             workflow_id = action.split(":", 1)[1]

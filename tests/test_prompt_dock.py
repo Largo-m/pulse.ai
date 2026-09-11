@@ -166,7 +166,7 @@ def test_select_options_are_visible_in_compact_terminal():
     asyncio.run(run())
 
 
-def test_cockpit_poll_opens_prompt_dock_not_modal(monkeypatch):
+def test_cockpit_poll_opens_prompt_dock_not_modal(monkeypatch, tmp_path):
     async def run() -> None:
         from textual.app import App
         from textual.screen import ModalScreen
@@ -177,7 +177,7 @@ def test_cockpit_poll_opens_prompt_dock_not_modal(monkeypatch):
             CSS = COCKPIT_CSS
 
             def on_mount(self) -> None:
-                self.push_screen(CockpitScreen("fix-bug", "demo"))
+                self.push_screen(CockpitScreen("fix-bug", "demo", workspace=tmp_path))
 
         app = Harness()
         async with app.run_test(size=(120, 40)) as pilot:

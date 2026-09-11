@@ -290,7 +290,7 @@ def parse_tasks_from_markdown(content: str) -> list[ParsedTask]:
     return tasks
 
 
-def find_resumable_workflows(workspace: Path) -> list[WorkflowState]:
+def list_feature_workflows(workspace: Path) -> list[WorkflowState]:
     features_root = workspace / ".pulse/specs/features"
     if not features_root.is_dir():
         return []
@@ -301,9 +301,16 @@ def find_resumable_workflows(workspace: Path) -> list[WorkflowState]:
             state = WorkflowState.load(workflow_path)
         except (OSError, ValueError, yaml.YAMLError):
             continue
-        if _is_workflow_incomplete(state):
-            workflows.append(state)
+        workflows.append(state)
     return workflows
+
+
+def find_resumable_workflows(workspace: Path) -> list[WorkflowState]:
+    return [
+        state
+        for state in list_feature_workflows(workspace)
+        if _is_workflow_incomplete(state)
+    ]
 
 
 def _is_workflow_incomplete(state: WorkflowState) -> bool:

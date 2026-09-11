@@ -9,6 +9,10 @@ from pulse.tui.state import CockpitState
 
 
 class AppFooter(Widget):
+    def __init__(self, back_label: str = "MENU", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._back_label = back_label
+
     def compose(self) -> ComposeResult:
         yield Static(id="footer-text")
 
@@ -37,5 +41,5 @@ class AppFooter(Widget):
         text.append("[TAB]", style="#A2D729")
         text.append(" FOCUS  ", style="#888888")
         text.append("[Q/B]", style="#A2D729")
-        text.append(" MENU", style="#888888")
+        text.append(f" {self._back_label}", style="#888888")
         self.query_one("#footer-text", Static).update(text)
