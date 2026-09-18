@@ -2,6 +2,8 @@
 
 Orquestrador terminal-first de workflows com agentes de IA via Cursor.
 
+Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
 ## Arquitetura
 
 ```
