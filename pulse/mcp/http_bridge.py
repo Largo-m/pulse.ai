@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 from pulse.mcp.ask_protocol import dispatch_message
-from pulse.presentation.prompt.handler import PromptHandler
+from pulse.ports import NullPromptPort
 
 ENDPOINT_PATH = "/mcp"
 
@@ -17,11 +17,11 @@ class AskQuestionHttpServer:
     def __init__(
         self,
         *,
-        prompt_handler: PromptHandler | None = None,
+        prompt_handler=None,
         on_question: Callable[[], None] | None = None,
         host: str = "127.0.0.1",
     ) -> None:
-        self._prompt_handler = prompt_handler or PromptHandler()
+        self._prompt_handler = prompt_handler or NullPromptPort()
         self._on_question = on_question
         self._host = host
         self._httpd: ThreadingHTTPServer | None = None

@@ -1,8 +1,7 @@
-from pulse.presentation.prompt.text_questionnaire import (
+from pulse.prompts.text_questionnaire import (
     extract_questionnaire_block,
     parse_text_questionnaire,
 )
-from pulse.presentation.stream_renderer import StreamRenderer
 
 SAMPLE = """
 Apresentando todas as perguntas agora:
@@ -60,37 +59,7 @@ def test_parse_text_questionnaire_extracts_four_questions():
     assert len(parsed.questions) == 4
     assert parsed.questions[0].prompt.startswith("1.")
     assert len(parsed.questions[0].options) == 5
-    assert parsed.questions[0].options[0] == ("A", "Plataforma de paper trading — simular operações de bolsa sem dinheiro real")
-
-
-def test_stream_renderer_detects_questionnaire_and_suppresses_output():
-    stream = StreamRenderer()
-    stream.handle_update(
-        {
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": "Análise concluída.\n"},
-            }
-        }
+    assert parsed.questions[0].options[0] == (
+        "A",
+        "Plataforma de paper trading — simular operações de bolsa sem dinheiro real",
     )
-    stream.handle_update(
-        {
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": "```text\nPreciso de algumas informações"},
-            }
-        }
-    )
-    assert stream.has_text_questionnaire() is False
-    stream.handle_update(
-        {
-            "update": {
-                "sessionUpdate": "agent_message_chunk",
-                "content": {
-                    "type": "text",
-                    "text": " antes de continuar.\n\n1. O que?\n\nA) Sim\nB) Não\n\nResposta:\n```",
-                },
-            }
-        }
-    )
-    assert stream.has_text_questionnaire() is True

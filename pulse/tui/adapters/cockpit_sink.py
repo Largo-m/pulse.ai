@@ -4,7 +4,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from pulse.presentation.prompt.text_questionnaire import extract_questionnaire_block
+from pulse.prompts.text_questionnaire import extract_questionnaire_block
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
 from pulse.tui.tool_detail import (

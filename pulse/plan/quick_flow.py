@@ -4,21 +4,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
-from rich.panel import Panel
-
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
+from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.quick_prompt import (
     TLC_SPEC_SKILL,
     build_quick_plan_prompt,
     resolve_quick_skill,
 )
-from pulse.presentation.prompt.handler import PromptHandler
-from pulse.presentation.stream_renderer import StreamRenderer
-from pulse.terminal.tty import is_cockpit_stream, is_interactive
+from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.runtime.tty import is_interactive
 
 
 def run_quick(
@@ -29,18 +26,15 @@ def run_quick(
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
-    if not is_cockpit_stream(stream) and not is_interactive():
-        print("[pulse] Quick mode requer terminal interativo.", file=sys.stderr)
+    cockpit_early = stream is not None and getattr(stream, "cockpit", False)
+    if not cockpit_early and not is_interactive():
+        print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
 
-    cockpit = is_cockpit_stream(stream)
     agent_check = check_agent_in_path()
     auth_check = check_auth()
     if agent_check.status != "ok" or auth_check.status != "ok":
-        message = "Corrija agent e autenticação antes de iniciar."
-        if cockpit:
-            raise RuntimeError(message)
-        print(f"[pulse] {message}", file=sys.stderr)
+        print("[pulse] Corrija agent e autenticação antes de iniciar.", file=sys.stderr)
         return 1
 
     resolved = resolve_config(workspace=workspace, workflow="fix-bug")
@@ -63,20 +57,19 @@ def run_quick(
         skill_dir=skill_dir,
     )
 
-    console = Console(highlight=False, soft_wrap=True)
+    cockpit = stream is not None and getattr(stream, "cockpit", False)
     if render_header and not cockpit:
-        console.print()
-        console.print(
-            Panel(
-                f"Skill: tlc-spec-driven\nWorkspace: {workspace_root}\nTarefa: {user_prompt.strip() or '—'}",
-                title="[bold cyan]Quick mode[/bold cyan]",
-                border_style="cyan",
-            )
+        print_workflow_banner(
+            title="Quick mode",
+            lines=[
+                "Skill: tlc-spec-driven",
+                f"Workspace: {workspace_root}",
+                f"Tarefa: {user_prompt.strip() or '—'}",
+            ],
         )
-        console.print()
 
-    active_stream = stream or StreamRenderer(console)
-    active_handler = prompt_handler or PromptHandler(console=console)
+    active_stream = stream or NullStreamSink()
+    active_handler = prompt_handler or NullPromptPort()
     runner = AcpSessionRunner(
         acp_command,
         cwd=str(workspace_root),
@@ -96,7 +89,7 @@ def run_quick(
     except (RuntimeError, TimeoutError, OSError) as error:
         if cockpit:
             raise
-        console.print(f"[red]Falha na sessão ACP:[/red] {error}")
+        print_workflow_error(f"Falha na sessão ACP: {error}")
         return 1
 
     stop_reason = result.get("stopReason", "end_turn")
@@ -108,29 +101,29 @@ def run_quick(
             return 1
         return 0
 
-    console.print()
+    print()
     if stop_reason == "cancelled" or outcome == "cancelled":
-        console.print("[yellow]Quick task cancelada.[/yellow]")
+        print_workflow_result("Quick task cancelada.")
         return 1
 
     if outcome == "cancel":
-        console.print("[yellow]Operação cancelada pelo usuário.[/yellow]")
+        print_workflow_result("Operação cancelada pelo usuário.")
         return 0
 
     if not approved:
         if outcome == "migrate":
-            console.print("[cyan]Migração para pipeline completo registrada.[/cyan]")
-            console.print("[dim]Siga as orientações do agente acima para iniciar Specify.[/dim]")
+            print_workflow_result("Migração para pipeline completo registrada.")
+            print_workflow_result("Siga as orientações do agente acima para iniciar Specify.")
         elif outcome in {"reduce_scope", "adjust", "continue"}:
-            console.print("[yellow]Escolha registrada — aguardando próximo passo do agente.[/yellow]")
-            console.print("[dim]Se o plano exigir nova aprovação, responda no terminal.[/dim]")
+            print_workflow_result("Escolha registrada — aguardando próximo passo do agente.")
+            print_workflow_result("Se o plano exigir nova aprovação, responda no terminal.")
         else:
-            console.print("[yellow]Quick task não aprovada — nenhuma alteração de código aplicada.[/yellow]")
-            console.print("[dim]Revise o plano em .pulse/specs/quick/ ou rode novamente com escopo menor.[/dim]")
+            print_workflow_result("Quick task não aprovada — nenhuma alteração de código aplicada.")
+            print_workflow_result("Revise o plano em .pulse/specs/quick/ ou rode novamente com escopo menor.")
         return 0
 
-    console.print(f"[green]✓[/green] Quick task concluída ({stop_reason})")
+    print_workflow_result(f"Quick task concluída ({stop_reason})")
     if ask_count:
-        console.print(f"[dim]{ask_count} pergunta(s) respondida(s) no terminal[/dim]")
-    console.print("[dim]Artefatos esperados em .pulse/specs/quick/[/dim]")
+        print_workflow_result(f"{ask_count} pergunta(s) respondida(s) no terminal")
+    print_workflow_result("Artefatos esperados em .pulse/specs/quick/")
     return 0

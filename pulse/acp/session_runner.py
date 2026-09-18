@@ -26,9 +26,9 @@ from pulse.plan.quick_prompt import (
     classify_quick_questionnaire_outcome,
 )
 from pulse.plan.setup_project_prompt import build_setup_project_artifact_prompt
-from pulse.presentation.prompt.handler import PermissionPolicy, PromptHandler
-from pulse.presentation.prompt.text_questionnaire import parse_text_questionnaire
-from pulse.presentation.stream_renderer import StreamRenderer
+from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.prompts.permission import PermissionPolicy
+from pulse.prompts.text_questionnaire import parse_text_questionnaire
 
 INTERVIEW_MODE = "agent"
 AGENT_MODE = "agent"
@@ -52,8 +52,8 @@ class AcpSessionRunner:
         self._cwd = cwd
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
-        self._stream = stream or StreamRenderer()
-        self._prompt_handler = prompt_handler or PromptHandler()
+        self._stream = stream or NullStreamSink()
+        self._prompt_handler = prompt_handler or NullPromptPort()
         self._enable_mcp_ask = enable_mcp_ask
         self._ask_bridge: AskQuestionHttpServer | None = None
         self._process: subprocess.Popen[str] | None = None

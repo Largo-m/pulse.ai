@@ -43,19 +43,41 @@ def test_session_runner_handles_ask_question_request():
     ]
     stdout_text = "\n".join(stdout_lines) + "\n"
 
+    class FakePrompt:
+        def respond_to_ask_question(self, params):
+            return {
+                "outcome": {
+                    "outcome": "answered",
+                    "answers": [{"questionId": "q1", "selectedOptionIds": ["py"]}],
+                }
+            }
+
+        def respond_to_create_plan(self, params):
+            return {"outcome": {"outcome": "cancelled"}}
+
+        def respond_to_permission(self, params, *, policy, allow_terminal=False):
+            return {"outcome": {"outcome": "cancelled"}}
+
+        def run_parsed_questionnaire(self, questionnaire):
+            return None
+
+        def run_text_questionnaire(self, text):
+            return None
+
     with patch("pulse.acp.session_runner.subprocess.Popen", return_value=_make_process(stdout_text)):
-        with patch(
-            "pulse.presentation.prompt.handler.questionary.select",
-            return_value=type("Answer", (), {"ask": lambda self: "py"})(),
-        ):
-            runner = AcpSessionRunner(["agent", "acp"], cwd="/tmp", timeout_seconds=5)
-            runner.start()
-            time.sleep(0.05)
-            runner.initialize()
-            runner.new_session("/tmp")
-            result = runner.prompt("sess-1", "setup")
-            sent = runner._process.stdin.getvalue()
-            runner.close()
+        runner = AcpSessionRunner(
+            ["agent", "acp"],
+            cwd="/tmp",
+            timeout_seconds=5,
+            prompt_handler=FakePrompt(),
+        )
+        runner.start()
+        time.sleep(0.05)
+        runner.initialize()
+        runner.new_session("/tmp")
+        result = runner.prompt("sess-1", "setup")
+        sent = runner._process.stdin.getvalue()
+        runner.close()
 
     assert result["stopReason"] == "end_turn"
     assert '"answers"' in sent

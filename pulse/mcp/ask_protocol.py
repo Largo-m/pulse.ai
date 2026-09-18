@@ -4,7 +4,6 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-from pulse.presentation.prompt.handler import PromptHandler
 
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 TOOL_NAME = "AskQuestion"
@@ -65,7 +64,7 @@ def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
 def _handle_tools_call(
     request_id: Any,
     params: dict[str, Any],
-    prompt_handler: PromptHandler,
+    prompt_handler,
     on_question: Callable[[], None] | None,
 ) -> dict[str, Any]:
     arguments = params.get("arguments", {})
@@ -88,7 +87,7 @@ def _handle_tools_call(
 def dispatch_message(
     message: dict[str, Any],
     *,
-    prompt_handler: PromptHandler,
+    prompt_handler,
     on_question: Callable[[], None] | None = None,
     protocol_version: str = DEFAULT_PROTOCOL_VERSION,
 ) -> dict[str, Any] | None:

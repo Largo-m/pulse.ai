@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from pulse.presentation.prompt.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
+from pulse.prompts.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
 
 _HEADER_PATTERN = re.compile(
     r"(?:^|\n)(Preciso de algumas informações[^\n]*|I need some information[^\n]*)",

@@ -3,15 +3,17 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from pulse.mcp.ask_bridge import AskQuestionBridgeServer, request_ask_question_via_socket
-from pulse.presentation.prompt.handler import PromptHandler
 
 
 def test_ask_bridge_socket_roundtrip():
     socket_path = Path(f"/tmp/pulse-ask-test-{threading.get_ident()}.sock")
-    handler = PromptHandler()
-    handler._ask_single_question = MagicMock(  # type: ignore[method-assign]
-        return_value={"questionId": "q1", "selectedOptionIds": ["a"]}
-    )
+    handler = MagicMock()
+    handler.respond_to_ask_question.return_value = {
+        "outcome": {
+            "outcome": "answered",
+            "answers": [{"questionId": "q1", "selectedOptionIds": ["a"]}],
+        }
+    }
     server = AskQuestionBridgeServer(socket_path=socket_path, prompt_handler=handler)
     server.start()
 
@@ -32,15 +34,15 @@ def test_ask_bridge_socket_roundtrip():
         server.close()
 
     assert result["outcome"]["outcome"] == "answered"
-    handler._ask_single_question.assert_called_once()
+    handler.respond_to_ask_question.assert_called_once()
 
 
 def test_ask_bridge_handles_concurrent_connections():
     socket_path = Path(f"/tmp/pulse-ask-conc-{threading.get_ident()}.sock")
-    handler = PromptHandler()
-    handler._ask_single_question = MagicMock(  # type: ignore[method-assign]
-        return_value={"questionId": "q1", "selectedOptionIds": ["a"]}
-    )
+    handler = MagicMock()
+    handler.respond_to_ask_question.return_value = {
+        "outcome": {"outcome": "answered", "answers": []}
+    }
     server = AskQuestionBridgeServer(socket_path=socket_path, prompt_handler=handler)
     server.start()
 
