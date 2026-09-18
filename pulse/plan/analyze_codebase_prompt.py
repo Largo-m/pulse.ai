@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
@@ -65,7 +64,6 @@ def build_analyze_codebase_prompt(
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
             "## Fase 1 — Exploração do codebase",
@@ -145,7 +143,6 @@ def build_analyze_codebase_artifact_prompt(
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
             "## Análise desta execução (fase 1)",

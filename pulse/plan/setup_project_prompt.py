@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
@@ -50,7 +49,6 @@ def build_setup_project_prompt(
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
             "## Fase 1 — Análise e questionário",
@@ -96,7 +94,7 @@ def build_setup_project_prompt(
             "- Criar ou editar arquivos.",
             "- Se for perguntar, enviar qualquer texto fora do bloco ```text.",
             "- Executar shell/python para simular perguntas.",
-            "- Ler `.pulse/skills/` legado (entrevistas) — use as skills do projeto listadas acima sob demanda.",
+            "- Ler `.pulse/skills/` legado (entrevistas).",
             "- Responder `SETUP_READY` se ainda faltarem campos obrigatórios não documentados.",
             "",
             "Quando tudo estiver claro (sem perguntas), responda **somente** a palavra `SETUP_READY` — "
@@ -136,7 +134,6 @@ def build_setup_project_artifact_prompt(
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace)
     sections.extend(
         [
             "## Análise desta execução (fase 1)",

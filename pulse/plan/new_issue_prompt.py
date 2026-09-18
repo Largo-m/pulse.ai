@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.plan.specify_state import WorkflowState
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
@@ -35,9 +34,6 @@ PHASE_REFERENCES: dict[str, tuple[str, ...]] = {
         "state-management.md",
     ),
 }
-
-_PLANNING_PHASES = frozenset({"specify", "design", "tasks"})
-
 
 def resolve_new_issue_skill() -> Path:
     return resolve_bundled_skill(TLC_SPEC_SKILL)
@@ -160,14 +156,13 @@ def build_specify_prompt(
         workflow="Specify",
         references=PHASE_REFERENCES["specify"],
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="index")
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
         [
             "## Fase Specify — capturar O QUÊ construir (SEM implementar)",
             "",
             "Siga `specify.md` e `SKILL.md` (auto-sizing por complexidade).",
-            "Não releia rules/skills do projeto por rotina — só se impactarem requisitos.",
+            "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
             "",
             "1. Garanta que `.pulse/specs/project/STATE.md` exista.",
             f"2. Crie `{feature_dir}/spec.md` com requirements rastreáveis.",
@@ -211,7 +206,6 @@ def build_design_prompt(
         workflow="Design",
         references=PHASE_REFERENCES["design"],
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="index")
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
         [
@@ -256,7 +250,6 @@ def build_tasks_prompt(
         workflow="Tasks",
         references=PHASE_REFERENCES["tasks"],
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="index")
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
         [
@@ -265,7 +258,7 @@ def build_tasks_prompt(
             f"Leia `{feature_dir}/spec.md`",
             f"Leia `{feature_dir}/design.md` se existir",
             f"Crie `{feature_dir}/tasks.md` conforme `tasks.md` (T1, T2, … com Depends on).",
-            "Não releia todas as rules/skills — use o índice e abra só o necessário para granularidade/testes.",
+            "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
             f"Atualize `{state.workflow_path.as_posix()}`:",
             "   - `phases.tasks.status: awaiting_approval`",
             "   - `current_phase: tasks`",
@@ -335,7 +328,6 @@ def build_execute_wave_prompt(
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="full")
     sections.extend(
         [
             "## Fase Execute — implementar task",
@@ -402,7 +394,6 @@ def build_execute_inline_prompt(
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="full")
     sections.extend(
         [
             "## Fase Execute — implementação (tasks implícitas)",
@@ -460,8 +451,6 @@ def build_phase_continuation_prompt(
         workflow=phase.capitalize(),
         references=PHASE_REFERENCES.get(phase, ()),
     )
-    context_mode = "index" if phase in _PLANNING_PHASES else "full"
-    extend_prompt_with_workspace_context(sections, workspace, mode=context_mode)
 
     if outcome == "adjust":
         sections.extend(

@@ -12,7 +12,7 @@ Home TUI / menu terminal
     → run_new_issue | run_quick | run_setup_project | run_analyze_codebase
       → resolve_config(workflow=id)     # agent + model + cwd
       → resolve_bundled_skill(...)      # tlc-spec-driven
-      → build_*_prompt(...)             # skill + rules + tarefa
+      → build_*_prompt(...)             # skill bundled + tarefa
       → AcpSessionRunner                # processo ACP
         → eventos → CockpitSink / StreamRenderer
 ```
@@ -64,49 +64,21 @@ Cada fase manda um **subconjunto** de referências:
 
 Não há skill global do Pulse em `~/.pulse/skills/`. “Global” no produto é só config (`~/.pulse/config.toml`).
 
-### 2. Skills do projeto (workspace) — o Pulse lista, o agente lê sob demanda
+### 2. Skills e rules do workspace — o ACP carrega
 
-`discover_workspace_skills` faz `rglob("SKILL.md")` no workspace.
+O Pulse **não** varre nem injeta no prompt:
 
-Inclui, por exemplo:
+- skills do repo (`.cursor/skills/**/SKILL.md`, qualquer `SKILL.md`)
+- rules (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/**`)
+- agents do workspace (`AGENTS.md`)
 
-- `.cursor/skills/<nome>/SKILL.md`
-- qualquer pasta do repo com `SKILL.md` (`custom/lint/SKILL.md`)
-
-Pula diretórios: `.git`, `.pulse`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `__pycache__`.
-
-Por isso **`.pulse/skills/` legado não entra no índice**.
-
-Metadados: frontmatter YAML (`name`, `description`) ou o nome da pasta.
-
-No prompt vira um índice:
-
-```
-### Skills do projeto (sob demanda)
-- **deploy** — `.cursor/skills/deploy/SKILL.md`
-  Deploy para produção com checklist.
-```
-
-O Pulse **não abre** essas skills. O texto manda o agente ler só a `SKILL.md` relevante.
+O binário `agent acp` recebe o `cwd` em `session/new` e carrega esse contexto sozinho.
 
 ### 3. Skills globais do Cursor — o Pulse não carrega
 
 `~/.cursor/skills/`, `~/.agents/skills/` e skills do usuário **fora do workspace** não são varridas.
 
 Se o binário `agent acp` carregar skills globais do Cursor por conta própria, isso é comportamento do Cursor, não do Pulse. O Pulse não lista, não versiona e não injeta essas skills.
-
-Rules do projeto (`AGENTS.md`, `CLAUDE.md`, `.cursor/rules/**`) também não são skills. Entram no mesmo bloco de contexto, em outro modo.
-
-## Modo do contexto: index vs full
-
-`extend_prompt_with_workspace_context(workspace, mode=...)`
-
-| Modo | Quando | Rules | Skills do projeto |
-| --- | --- | --- | --- |
-| `index` | Specify, Design, Tasks, plano Quick | só caminhos | só índice |
-| `full` | Execute, implement Quick, setup, analyze | caminhos + conteúdo até 16k chars | só índice |
-
-Mesmo em `full`, skills do projeto **nunca são inlined**. Só rules.
 
 ## Fluxo de cada workflow
 
@@ -123,10 +95,10 @@ Retomar: `find_resumable_workflows` lê os `workflow.yaml` e pergunta se continu
 
 ### fix-bug (Quick)
 
-1. Plano (index) → agente cria `.pulse/specs/quick/NNN-slug/TASK.md` com `Awaiting Approval`.
+1. Plano → agente cria `.pulse/specs/quick/NNN-slug/TASK.md` com `Awaiting Approval`.
 2. Usuário aprova no terminal. Sem aprovação, **não** altera código de aplicação.
 3. Fora de escopo: o agente pode oferecer migrar para `new-issue`.
-4. Implement (full) → `SUMMARY.md` + `STATE.md`.
+4. Implement → `SUMMARY.md` + `STATE.md`.
 
 Não há `workflow.yaml` no quick. O status mora no `TASK.md`.
 
@@ -152,10 +124,10 @@ Mesmo desenho em duas fases: exploração → sete docs em `.pulse/specs/codebas
 
 ## Design da escolha
 
-**O que:** orquestrador + filesystem, skill única empacotada, skills do repo só como índice.
+**O que:** orquestrador + filesystem, skill única empacotada. Rules/skills/agents do workspace ficam com o ACP.
 
-**Por quê:** o agente já sabe ler `SKILL.md`. Duplicar o conteúdo no prompt estoura contexto. Skills do projeto mudam por repo; a skill de planejamento do Pulse precisa ser a mesma em todo `pipx install`.
+**Por quê:** o LLM ACP já carrega o contexto do `cwd`. Duplicar no prompt do Pulse estoura contexto e compete com o carregamento nativo. A skill de planejamento do Pulse precisa ser a mesma em todo `pipx install`.
 
 **Alternativas:** banco de workflows, skills globais em `~/.pulse/skills`, inline da skill no prompt.
 
-**Trade-off:** não dá para plugar um quinto workflow sem código. Skills globais do Cursor ficam invisíveis para o Pulse.
+**Trade-off:** não dá para plugar um quinto workflow sem código. O Pulse não controla o que o ACP injeta do workspace.

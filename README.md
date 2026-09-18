@@ -77,19 +77,18 @@ estender os agents do `~/.pulse/config.toml` (binary, models, acp_command).
 Workflows disponíveis: `new-issue`, `fix-bug`, `setup-project`, `analyze-codebase`.
 
 O workflow `new-issue` executa o pipeline Specify → Design → Tasks → Execute.
-Nas fases de planejamento (Specify/Design/Tasks) o Pulse envia só o **índice** de
-rules/skills do projeto (sem inline). No Execute, rules são inlined e
-`coding-principles.md` entra no prompt. As tasks do `tasks.md` são agrupadas em
-**waves** (até 5 tasks prontas por sessão): sequenciais quando compartilham
-dependências resolvidas, e em batch quando marcadas `[P]`. O Pulse só marca a
-wave como `done` depois de rodar os comandos de gate extraídos do `Done when` /
-`Verify`.
+O Pulse aponta a skill empacotada `tlc-spec-driven` (paths, sem inline). Rules,
+skills e `AGENTS.md` do workspace são carregados pelo ACP a partir do `cwd`.
+No Execute, `coding-principles.md` entra nas referências da skill. As tasks do
+`tasks.md` são agrupadas em **waves** (até 5 tasks prontas por sessão):
+sequenciais quando compartilham dependências resolvidas, e em batch quando
+marcadas `[P]`. O Pulse só marca a wave como `done` depois de rodar os
+comandos de gate extraídos do `Done when` / `Verify`.
 
 O workflow `fix-bug` executa o Quick Mode do `tlc-spec-driven`: descreve →
 plano + `.pulse/specs/quick/NNN-slug/TASK.md` → aprovação no terminal → implementa →
 verifica → `SUMMARY.md`. Nada de código de aplicação é alterado sem aprovação
-explícita. A fase de plano também usa contexto em índice; a implementação usa
-contexto completo.
+explícita.
 
 A resolução por workflow segue: `projeto.workflows[id]` → `global.workflows[id]` →
 `projeto.defaults` → `global.defaults` → padrões do código.

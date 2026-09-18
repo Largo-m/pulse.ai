@@ -125,7 +125,7 @@ Ordem fixa: `specify` → `design` → `tasks` → `execute` (`PHASE_ORDER`).
 Por fase de planejamento:
 
 1. Marca `in_progress`, grava YAML.
-2. Monta prompt (`build_specify_prompt`, …) com skill + contexto `index`.
+2. Monta prompt (`build_specify_prompt`, …) com a skill empacotada + tarefa.
 3. `run_isolated_phase` — sessão ACP isolada + questionário de aprovação.
 4. Classifica outcome (`approve` / `adjust` / `cancel` / `skip`) — ver [questions.md](questions.md).
 5. Se aprovou: `approve_phase` + `save`. Em Tasks: `sync_tasks_from_markdown`.
@@ -136,7 +136,7 @@ No Execute:
 1. Lê tasks do YAML / `tasks.md`.
 2. Sem tasks → um `run_isolated_prompt` inline (`implement.md`).
 3. Com tasks → `parse_task_specs` + `build_waves` (até 5, `[P]` em batch).
-4. Cada wave: prompt `full` + gates (`Done when` / `Verify` / `Gate check passes`).
+4. Cada wave: prompt da skill + gates (`Done when` / `Verify` / `Gate check passes`).
 5. Só depois do gate o Pulse marca a task `done` no YAML.
 
 O agente **escreve** `spec.md`, `design.md`, `tasks.md` e atualiza o YAML. O Pulse **lê** o YAML para decidir o próximo passo.
@@ -146,7 +146,7 @@ O agente **escreve** `spec.md`, `design.md`, `tasks.md` e atualiza o YAML. O Pul
 **Carrega**
 
 - Não lê `workflow.yaml`.
-- Prompt de plano (`build_quick_plan_prompt`, contexto `index`).
+- Prompt de plano (`build_quick_plan_prompt`).
 - Skill refs: `quick-mode.md`, …
 
 **Interpreta**
@@ -154,7 +154,7 @@ O agente **escreve** `spec.md`, `design.md`, `tasks.md` e atualiza o YAML. O Pul
 1. Até 4 turns de plano + questionário.
 2. Outcomes: `approve`, `cancel`, `migrate`, `adjust`, `reduce_scope`.
 3. Sem `approve` → **não** entra na implementação.
-4. Com `approve` → `build_quick_implement_prompt` (contexto `full`) na mesma sessão ACP (muda para AGENT_MODE).
+4. Com `approve` → `build_quick_implement_prompt` na mesma sessão ACP (muda para AGENT_MODE).
 
 O “estado” que o histórico vê depois vem de `.pulse/specs/quick/NNN-slug/TASK.md` (`**Status:** …`), parseado por `list_quick_tasks` — o Pulse não orquestra fases a partir desse arquivo durante o run; só o agente o mantém.
 

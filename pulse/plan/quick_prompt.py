@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.context.workspace_context import extend_prompt_with_workspace_context
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
@@ -92,7 +91,6 @@ def build_quick_plan_prompt(
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="index")
     sections.extend(
         [
             "## Fase 1 — Verificar escopo e planejar (SEM implementar)",
@@ -100,7 +98,7 @@ def build_quick_plan_prompt(
             "Você está conectado ao cliente **Pulse**.",
             "Pesquise e leia arquivos para localizar onde a mudança vive.",
             "**Não edite código de aplicação nesta fase** — apenas planeje e crie arquivos em `.pulse/specs/`.",
-            "Não releia todas as rules/skills do projeto — use o índice e abra só o necessário para o escopo.",
+            "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
             "",
             "### 1. Elegibilidade de escopo (verifique PRIMEIRO)",
             "",
@@ -158,7 +156,7 @@ def build_quick_plan_prompt(
             "- Editar código de aplicação (apenas arquivos `.pulse/specs/` são permitidos).",
             "- Enviar qualquer texto fora do bloco ```text quando for perguntar/aprovar.",
             "- Implementar antes da aprovação explícita.",
-            "- Ler `.pulse/skills/` legado (entrevistas) — use as skills do projeto listadas acima sob demanda.",
+            "- Ler `.pulse/skills/` legado (entrevistas).",
             "",
             "Responda em português.",
             "",
@@ -196,7 +194,6 @@ def build_quick_implement_prompt(
         workflow="Quick mode",
         references=QUICK_IMPLEMENT_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="full")
     sections.extend(
         [
             "## Plano desta execução (fase 1)",
@@ -272,7 +269,6 @@ def build_quick_continuation_prompt(
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
     )
-    extend_prompt_with_workspace_context(sections, workspace, mode="index")
 
     if outcome == "migrate":
         sections.extend(
