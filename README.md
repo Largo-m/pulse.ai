@@ -101,6 +101,16 @@ pulse config show
 pulse config show --workflow setup-project
 ```
 
+## Documentação interna
+
+Como o Pulse funciona hoje (código atual, sem banco):
+
+- [Armazenamento](docs/armazenamento.md) — o que é persistido e onde
+- [Workflows — carga e interpretação](docs/workflows.md) — como cada workflow é carregado e interpretado
+- [Workflows e skills](docs/workflows-e-skills.md) — skills empacotadas vs do projeto no prompt
+- [Logs](docs/logs.md) — ACP bruto vs stream do cockpit
+- [Questions](docs/questions.md) — questionário ` ```text `, `ask_question` e MCP
+
 ## Comandos
 
 Todos os workflows são iniciados pelo menu interativo do `pulse` — não há subcomando `plan`.

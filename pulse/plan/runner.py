@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
 from pulse.plan.analyze_codebase_flow import run_analyze_codebase
@@ -14,12 +15,14 @@ def run_plan(
     *,
     spec_type_id: str,
     user_prompt: str,
+    workspace: Path | None = None,
     stream: Any | None = None,
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
     kwargs: dict[str, Any] = {
         "user_prompt": user_prompt,
+        "workspace": workspace,
         "stream": stream,
         "prompt_handler": prompt_handler,
         "render_header": render_header,

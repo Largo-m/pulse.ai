@@ -18,7 +18,7 @@ from pulse.plan.setup_project_prompt import (
 )
 from pulse.presentation.prompt.handler import PromptHandler
 from pulse.presentation.stream_renderer import StreamRenderer
-from pulse.terminal.tty import is_interactive
+from pulse.terminal.tty import is_cockpit_stream, is_interactive
 
 
 def run_setup_project(
@@ -29,14 +29,18 @@ def run_setup_project(
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
-    if not is_interactive():
+    if not is_cockpit_stream(stream) and not is_interactive():
         print("[pulse] Setup project requer terminal interativo.", file=sys.stderr)
         return 1
 
+    cockpit = is_cockpit_stream(stream)
     agent_check = check_agent_in_path()
     auth_check = check_auth()
     if agent_check.status != "ok" or auth_check.status != "ok":
-        print("[pulse] Corrija agent e autenticação antes de iniciar.", file=sys.stderr)
+        message = "Corrija agent e autenticação antes de iniciar."
+        if cockpit:
+            raise RuntimeError(message)
+        print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
     resolved = resolve_config(workspace=workspace, workflow="setup-project")
@@ -60,7 +64,6 @@ def run_setup_project(
     )
 
     console = Console(highlight=False, soft_wrap=True)
-    cockpit = stream is not None and getattr(stream, "cockpit", False)
     if render_header and not cockpit:
         console.print()
         console.print(

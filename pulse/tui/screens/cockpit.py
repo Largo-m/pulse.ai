@@ -174,6 +174,7 @@ class CockpitScreen(Screen[None]):
             code = run_plan(
                 spec_type_id=self.workflow_id,
                 user_prompt=self.user_prompt,
+                workspace=Path(self._cwd),
                 stream=self.sink,
                 prompt_handler=self.prompt_handler,
                 render_header=False,
