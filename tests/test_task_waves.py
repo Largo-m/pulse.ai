@@ -282,5 +282,5 @@ def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
     )
     assert code == 0
     assert len(calls) >= 2
-    assert all(label.startswith("Execute — Wave") for label in calls)
+    assert all(label.startswith("Execute — Task") for label in calls)
     assert {task.status for task in state.tasks} == {"done"}

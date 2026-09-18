@@ -121,7 +121,7 @@ def test_build_execute_wave_prompt_uses_full_context(tmp_path: Path):
         user_prompt="Login",
         skill_dir=skill_dir,
         state=state,
-        wave_label="Wave 1",
+        wave_label="Task T1",
         task_lines=["- **T1** — A"],
         task_ids=["T1"],
         parallel=False,

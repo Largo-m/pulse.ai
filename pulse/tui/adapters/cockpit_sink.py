@@ -21,6 +21,7 @@ _QUESTIONNAIRE_START = re.compile(
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
+_TASK_LABEL_RE = re.compile(r"Task\s+(T\d+)(?:\s*[:—-]\s*(.*))?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
 
@@ -144,6 +145,11 @@ class CockpitSink:
         self._visible_tool_ids.clear()
         self._tool_payloads.clear()
         self._state.begin_phase(title)
+        match = _TASK_LABEL_RE.search(str(title or ""))
+        if match is not None:
+            task_id = match.group(1)
+            rest = str(match.group(2) or "").strip()
+            self._state.begin_task(task_id, rest or task_id)
         self._state.add_info(title)
         self._emit()
 
@@ -154,6 +160,10 @@ class CockpitSink:
         skipped_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         self._state.apply_phase_statuses(done_ids=done_ids, skipped_ids=skipped_ids)
+        self._emit()
+
+    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
+        self._state.set_tasks(items)
         self._emit()
 
     def info(self, title: str) -> None:

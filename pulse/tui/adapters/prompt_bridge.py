@@ -42,6 +42,55 @@ class PromptKind(str, Enum):
     CONFIRM = "confirm"
 
 
+_PERMISSION_KIND_LABELS = {
+    "allow_once": "Permitir esta vez",
+    "allow_always": "Sempre permitir",
+    "reject_once": "Recusar",
+    "reject_always": "Sempre recusar",
+}
+
+
+def _permission_choice_label(option: dict[str, Any]) -> str:
+    name = str(option.get("name") or option.get("label") or "").strip()
+    if name:
+        return name
+    kind = str(option.get("kind", "")).lower().replace("-", "_")
+    return _PERMISSION_KIND_LABELS.get(kind, kind.replace("_", " ").strip() or "Opção")
+
+
+def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
+    choices: list[tuple[str, str]] = []
+    index = 0
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        option_id = str(option.get("optionId") or option.get("id") or "")
+        if not option_id:
+            continue
+        label = format_option_label(index, _permission_choice_label(option))
+        choices.append((option_id, label))
+        index += 1
+    if not choices:
+        return [
+            ("allow-once", format_option_label(0, "Permitir esta vez")),
+            ("reject-once", format_option_label(1, "Recusar")),
+        ]
+    return choices
+
+
+def _permission_prompt_text(permission: dict[str, Any], tool_call: dict[str, Any]) -> str:
+    title = str(permission.get("title") or "").strip()
+    description = str(permission.get("description") or "").strip()
+    tool_title = str(tool_call.get("title") or "").strip()
+    parts: list[str] = []
+    for part in (title, description, tool_title):
+        if part and part not in parts:
+            parts.append(part)
+    if not parts:
+        return "O agente pede permissão para continuar."
+    return "\n".join(parts)
+
+
 @dataclass
 class PromptRequest:
     kind: PromptKind
@@ -264,11 +313,11 @@ class TextualPromptHandler:
         if not isinstance(options, list):
             options = []
 
-        title = str(permission.get("title") or permission.get("description") or "Permissão solicitada")
         kind = str(permission.get("kind", "")).lower()
         tool_call = params.get("toolCall", {})
-        if isinstance(tool_call, dict):
-            kind = kind or str(tool_call.get("kind", "")).lower()
+        if not isinstance(tool_call, dict):
+            tool_call = {}
+        kind = kind or str(tool_call.get("kind", "")).lower()
 
         if not allow_terminal and (
             "terminal" in kind or "shell" in kind or "bash" in kind or "command" in kind
@@ -287,14 +336,15 @@ class TextualPromptHandler:
             option_id = _pick_permission_option(options, prefer="allow") or "allow-once"
             return _permission_selected(option_id)
 
-        approved = self._bridge.confirm(f"{title}\nPermitir?", title="Permissão", default=True)
-        if approved is None:
+        choices = build_permission_choices(options)
+        selected = self._bridge.select(
+            _permission_prompt_text(permission, tool_call),
+            choices,
+            title="Permissão",
+        )
+        if selected is None:
             return _permission_cancelled()
-        prefer = "allow" if approved else "reject"
-        option_id = _pick_permission_option(options, prefer=prefer)
-        if option_id:
-            return _permission_selected(option_id)
-        return _permission_selected("allow-once" if approved else "reject-once")
+        return _permission_selected(str(selected))
 
     def select_choice(
         self,

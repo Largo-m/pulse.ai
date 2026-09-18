@@ -16,7 +16,7 @@ from pulse.plan.new_issue_prompt import (
     TLC_SPEC_SKILL,
     build_design_prompt,
     build_execute_inline_prompt,
-    build_execute_wave_prompt,
+    build_execute_task_prompt,
     build_phase_continuation_prompt,
     build_specify_prompt,
     build_tasks_prompt,
@@ -31,6 +31,7 @@ from pulse.plan.specify_state import (
     slugify_feature,
 )
 from pulse.plan.task_waves import (
+    TaskSpec,
     Wave,
     build_waves,
     parse_task_specs,
@@ -249,6 +250,7 @@ def _run_pipeline(
         runner.initialize()
         runner.authenticate()
         _sync_stream_phases(runner, state)
+        _sync_stream_tasks(runner, state)
 
         start_index = _phase_start_index(state)
         for phase in PHASE_ORDER[start_index:]:
@@ -293,6 +295,7 @@ def _run_pipeline(
 
             state = _reload_state(workspace, state)
             _sync_stream_phases(runner, state)
+            _sync_stream_tasks(runner, state)
             if phase in OPTIONAL_PHASES and state.phases[phase].skip:
                 reason = state.phases[phase].skip_reason or "Marcada como skip pelo agente"
                 state.mark_phase_skipped(phase, reason)
@@ -390,6 +393,7 @@ def _run_approval_phase(
         tasks_path = workspace / state.feature_dir / "tasks.md"
         state.sync_tasks_from_markdown(tasks_path)
         state.save(workspace)
+        _sync_stream_tasks(runner, state)
 
     return 0
 
@@ -437,14 +441,17 @@ def _run_execute_phase(
     tasks_path = workspace / state.feature_dir / "tasks.md"
     specs = _load_task_specs(tasks_path, state)
     done_ids = {task.task_id for task in state.tasks if task.status == "done"}
-    waves = build_waves(specs, done_ids=done_ids)
+    ordered = [
+        spec
+        for wave in build_waves(specs, done_ids=done_ids)
+        for spec in wave.tasks
+    ]
+    _sync_stream_tasks(runner, state)
 
-    console.print(
-        f"[cyan]Execute — {len(state.tasks)} task(s) em {len(waves)} wave(s)[/cyan]"
-    )
-    _notify(runner, f"Execute — {len(state.tasks)} task(s) em {len(waves)} wave(s)")
-    for index, wave in enumerate(waves, start=1):
-        exit_code = _run_execute_wave(
+    console.print(f"[cyan]Execute — {len(state.tasks)} task(s)[/cyan]")
+    _notify(runner, f"Execute — {len(state.tasks)} task(s)")
+    for index, spec in enumerate(ordered, start=1):
+        exit_code = _run_execute_task(
             runner=runner,
             console=console,
             workspace=workspace,
@@ -453,36 +460,34 @@ def _run_execute_phase(
             state=state,
             preferred_model=preferred_model,
             tasks_skipped=tasks_skipped,
-            wave=wave,
+            spec=spec,
         )
         if exit_code != 0:
-            remaining = len(waves) - index
+            remaining = len(ordered) - index
             if remaining > 0:
                 _notify(
                     runner,
-                    f"Execute pausada em {wave.label} — {remaining} wave(s) pendente(s)",
+                    f"Execute pausada em Task {spec.task_id} — {remaining} task(s) pendente(s)",
                 )
             return exit_code
 
     state.mark_phase_done("execute")
     state.save(workspace)
-    console.print("[green]✓[/green] Execute concluída — todas as waves finalizadas")
-    _notify(runner, "Execute concluída — todas as waves finalizadas")
+    console.print("[green]✓[/green] Execute concluída — todas as tasks finalizadas")
+    _notify(runner, "Execute concluída — todas as tasks finalizadas")
     return 0
 
 
 def _load_task_specs(tasks_path: Path, state: WorkflowState):
     if tasks_path.is_file():
         return parse_task_specs(tasks_path.read_text(encoding="utf-8"))
-    from pulse.plan.task_waves import TaskSpec
-
     return [
         TaskSpec(task_id=task.task_id, title=task.title)
         for task in state.tasks
     ]
 
 
-def _run_execute_wave(
+def _run_execute_task(
     *,
     runner: AcpSessionRunner,
     console: Console,
@@ -492,49 +497,41 @@ def _run_execute_wave(
     state: WorkflowState,
     preferred_model: str | None,
     tasks_skipped: bool,
-    wave: Wave,
+    spec: TaskSpec,
 ) -> int:
-    pending = [task for task in wave.tasks if _task_status(state, task.task_id) != "done"]
-    if not pending:
-        console.print(f"[dim]  {wave.label} — já concluída[/dim]")
+    task = spec
+    if _task_status(state, task.task_id) == "done":
+        console.print(f"[dim]  Task {task.task_id} — já concluída[/dim]")
         return 0
 
-    console.print(f"[cyan]{wave.label}[/cyan]")
-    _notify(runner, wave.label)
-    task_lines = [f"- **{task.task_id}** — {task.title}" for task in pending]
-    pending_ids = [task.task_id for task in pending]
+    label = f"Task {task.task_id}: {task.title}".strip()
+    console.print(f"[cyan]{label}[/cyan]")
+    _notify(runner, label)
     result = runner.run_isolated_prompt(
         workflow="new-issue",
-        phase_label=f"Execute — {wave.label}",
-        prompt_text=build_execute_wave_prompt(
+        phase_label=f"Execute — {label}",
+        prompt_text=build_execute_task_prompt(
             workspace=workspace,
             user_prompt=user_prompt,
             skill_dir=skill_dir,
             state=state,
-            wave_label=wave.label,
-            task_lines=task_lines,
-            task_ids=pending_ids,
-            parallel=wave.parallel and len(pending) > 1,
+            task_id=task.task_id,
+            task_title=task.title,
             tasks_skipped=tasks_skipped,
         ),
         preferred_model=preferred_model,
     )
     if result.get("stopReason") == "cancelled":
-        console.print(f"[yellow]{wave.label} cancelada — pipeline pausado.[/yellow]")
-        _notify(runner, f"{wave.label} cancelada — pipeline pausado")
+        console.print(f"[yellow]{label} cancelada — pipeline pausado.[/yellow]")
+        _notify(runner, f"{label} cancelada — pipeline pausado")
         state.save(workspace)
         return 1
 
     reloaded = _reload_state(workspace, state)
     _sync_workflow_tasks(state, reloaded)
-    for task in pending:
-        _force_task_pending(state, task.task_id)
+    _force_task_pending(state, task.task_id)
 
-    gate_wave = Wave(
-        wave_id=wave.wave_id,
-        tasks=tuple(pending),
-        parallel=wave.parallel and len(pending) > 1,
-    )
+    gate_wave = Wave(wave_id=1, tasks=(task,), parallel=False)
     gate_results = run_wave_gates(workspace=workspace, wave=gate_wave)
     failed = [item for item in gate_results if not item.ok]
     if failed:
@@ -544,21 +541,21 @@ def _run_execute_wave(
             if item.output:
                 console.print(f"[dim]{item.output[-2000:]}[/dim]")
         console.print(
-            f"[yellow]{wave.label} não marcada como done — corrija o gate e retome.[/yellow]"
+            f"[yellow]{label} não marcada como done — corrija o gate e retome.[/yellow]"
         )
-        _notify(runner, f"{wave.label} não marcada como done — corrija o gate e retome")
+        _notify(runner, f"{label} não marcada como done — corrija o gate e retome")
         state.save(workspace)
         return 1
 
-    for task in pending:
-        state.mark_task_done(task.task_id)
+    state.mark_task_done(task.task_id)
     state.save(workspace)
+    _sync_stream_tasks(runner, state)
     if gate_results:
-        console.print(f"[green]✓[/green] {wave.label} — gates ok")
-        _notify(runner, f"{wave.label} — gates ok")
+        console.print(f"[green]✓[/green] {label} — gates ok")
+        _notify(runner, f"{label} — gates ok")
     else:
-        console.print(f"[green]✓[/green] {wave.label}")
-        _notify(runner, f"{wave.label} concluída")
+        console.print(f"[green]✓[/green] {label}")
+        _notify(runner, f"{label} concluída")
     return 0
 
 
@@ -587,6 +584,16 @@ def _sync_stream_phases(runner: AcpSessionRunner, state: WorkflowState) -> None:
         elif phase.status in {PhaseStatus.APPROVED, PhaseStatus.DONE}:
             done_ids.append(phase_name)
     apply(done_ids=done_ids, skipped_ids=skipped_ids)
+
+
+def _sync_stream_tasks(runner: AcpSessionRunner, state: WorkflowState) -> None:
+    stream = getattr(runner, "_stream", None)
+    if stream is None:
+        return
+    apply = getattr(stream, "set_tasks", None)
+    if not callable(apply):
+        return
+    apply([(task.task_id, task.title, task.status) for task in state.tasks])
 
 
 def _task_status(state: WorkflowState, task_id: str) -> str:

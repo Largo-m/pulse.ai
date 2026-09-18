@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
@@ -19,16 +20,13 @@ from pulse.tui.widgets.artifact_pane import (
     ArtifactTabSelected,
 )
 from pulse.tui.widgets.log_stream import LogStream
-from pulse.tui.widgets.phase_sidebar import PhaseSelected, PhaseSidebar
+from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 _PROMPT_BLOCKED = {
-    "toggle_focus",
     "toggle_artifact_pane",
     "close_artifact_pane",
     "escape_back",
     "back_to_menu",
-    "nav_up",
-    "nav_down",
     "artifact_left",
     "artifact_right",
     "artifact_prev",
@@ -38,19 +36,19 @@ _PROMPT_BLOCKED = {
 
 class CockpitScreen(Screen[None]):
     BINDINGS = [
-        ("q", "back_to_menu", "Menu"),
-        ("b", "back_to_menu", "Menu"),
-        ("tab", "toggle_focus", "Focus"),
-        ("a", "toggle_artifact_pane", "Artifacts"),
-        ("escape", "escape_back", "Back"),
-        ("left_square_bracket", "artifact_prev", "Prev file"),
-        ("right_square_bracket", "artifact_next", "Next file"),
-        ("left", "artifact_left", "Prev file"),
-        ("right", "artifact_right", "Next file"),
-        ("up", "nav_up", "Up"),
-        ("down", "nav_down", "Down"),
-        ("k", "nav_up", "Up"),
-        ("j", "nav_down", "Down"),
+        Binding("q", "back_to_menu", "Menu"),
+        Binding("b", "back_to_menu", "Menu"),
+        Binding("tab", "toggle_focus", "Focus"),
+        Binding("a", "toggle_artifact_pane", "Artifacts"),
+        Binding("escape", "escape_back", "Back"),
+        Binding("left_square_bracket", "artifact_prev", "Prev file"),
+        Binding("right_square_bracket", "artifact_next", "Next file"),
+        Binding("left", "artifact_left", "Prev file"),
+        Binding("right", "artifact_right", "Next file"),
+        Binding("up", "nav_up", "Up", priority=True),
+        Binding("down", "nav_down", "Down", priority=True),
+        Binding("k", "nav_up", "Up", priority=True),
+        Binding("j", "nav_down", "Down", priority=True),
     ]
 
     def __init__(
@@ -90,6 +88,7 @@ class CockpitScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self._sync_ui(force=True)
+        self._apply_focus()
         self.set_interval(0.08, self._flush_ui)
         self.set_interval(0.1, self._poll_prompts)
         self._worker = self.run_worker(self._run_workflow, exclusive=True, thread=True)
@@ -127,6 +126,9 @@ class CockpitScreen(Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if self._prompt_open and action in _PROMPT_BLOCKED:
             return False
+        if self._prompt_open and action in {"nav_up", "nav_down"}:
+            if self.state.focus_target != "phases":
+                return False
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":
@@ -206,6 +208,8 @@ class CockpitScreen(Screen[None]):
             self.query_one(PhaseSidebar).focus()
         elif self.state.focus_target == "artifact" and self.state.artifact_pane_open:
             self.query_one(ArtifactPane).focus()
+        elif self._prompt_open and self.query_one(LogStream).focus_prompt():
+            return
         else:
             self.query_one(LogStream).focus()
 
@@ -266,22 +270,23 @@ class CockpitScreen(Screen[None]):
         if self.state.focus_target == "artifact":
             self.query_one(ArtifactPane).scroll_by(-1)
             return
-        if self.state.focus_target != "phases":
-            return
-        self.state.move_phase(-1)
+        self.state.focus_target = "phases"
+        self.state.move_nav(-1)
         self._sync_ui(force=True)
 
     def action_nav_down(self) -> None:
         if self.state.focus_target == "artifact":
             self.query_one(ArtifactPane).scroll_by(1)
             return
-        if self.state.focus_target != "phases":
-            return
-        self.state.move_phase(1)
+        self.state.focus_target = "phases"
+        self.state.move_nav(1)
         self._sync_ui(force=True)
 
-    def on_phase_selected(self, event: PhaseSelected) -> None:
-        self.state.select_phase(event.index)
+    def on_nav_selected(self, event: NavSelected) -> None:
+        if event.kind == "task":
+            self.state.select_task(event.index)
+        else:
+            self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 

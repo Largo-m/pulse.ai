@@ -18,6 +18,7 @@ Screen {{
 AppHeader {{
     dock: top;
     height: 3;
+    layout: vertical;
     background: {BG};
     color: {TEXT_MUTED};
     padding: 0 1;
@@ -26,16 +27,25 @@ AppHeader {{
 #cockpit-body {{
     height: 1fr;
     width: 100%;
+    layout: horizontal;
+}}
+
+AppHeader #header-top,
+AppHeader #header-sub {{
+    width: 100%;
+    height: 1;
 }}
 
 AppHeader .brand {{
     color: {TEXT_MUTED};
+    width: auto;
 }}
 
 AppHeader .run-status {{
     color: {LIME};
     text-align: right;
     width: 1fr;
+    overflow: hidden;
 }}
 
 AppHeader .pipeline-badge {{
@@ -48,6 +58,7 @@ AppHeader .pipeline-badge {{
 AppHeader .workflow-label {{
     color: {TEXT_MUTED};
     padding: 0 1;
+    width: 1fr;
 }}
 
 PhaseSidebar {{

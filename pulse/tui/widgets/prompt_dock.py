@@ -57,6 +57,9 @@ class PromptDock(Widget):
                 yield Button("Não", variant="error", id="no")
 
     def on_mount(self) -> None:
+        self.focus_inner()
+
+    def focus_inner(self) -> None:
         kind = self._request.kind
         if kind in {PromptKind.SELECT, PromptKind.MULTI_SELECT}:
             options = self.query_one("#prompt-options", OptionList)

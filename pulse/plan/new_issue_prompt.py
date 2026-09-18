@@ -314,22 +314,17 @@ def build_execute_wave_prompt(
     wave_label: str,
     task_lines: list[str],
     task_ids: list[str],
-    parallel: bool,
+    parallel: bool = False,
     tasks_skipped: bool,
 ) -> str:
     feature_dir = (workspace / state.feature_dir).as_posix()
     ids_joined = ", ".join(task_ids)
-    mode = (
-        "Tasks marcadas [P] — implemente todas nesta sessão, mantendo isolamento entre elas."
-        if parallel
-        else "Implemente as tasks na ordem listada, uma após a outra nesta sessão."
-    )
     sections = [
         f"Workspace: `{workspace}`",
         f"Feature: `{state.feature_slug}`",
         f"Tarefa original: {user_prompt.strip()}",
-        f"Wave atual: **{wave_label}**",
-        f"Tasks desta wave: {ids_joined}",
+        f"Task atual: **{wave_label}**",
+        f"Task: {ids_joined}",
         "",
     ]
     sections.extend(_isolation_block(workspace))
@@ -343,7 +338,7 @@ def build_execute_wave_prompt(
     extend_prompt_with_workspace_context(sections, workspace, mode="full")
     sections.extend(
         [
-            "## Fase Execute — implementar wave de tasks",
+            "## Fase Execute — implementar task",
             "",
             f"Leia `{feature_dir}/spec.md`",
         ]
@@ -353,14 +348,12 @@ def build_execute_wave_prompt(
     if not tasks_skipped:
         sections.extend(
             [
-                f"Leia `{feature_dir}/tasks.md` — implemente **somente** as tasks desta wave:",
+                f"Leia `{feature_dir}/tasks.md` — implemente **somente** esta task:",
                 "",
                 *task_lines,
                 "",
-                mode,
-                "",
-                "Para cada task: plano → implementar → verificar o Done when da task.",
-                "Marque cada task concluída em `tasks.md` após a verificação da própria task.",
+                "Plano → implementar → verificar o Done when da task.",
+                "Marque a task concluída em `tasks.md` após a verificação.",
                 "",
             ]
         )
@@ -374,11 +367,11 @@ def build_execute_wave_prompt(
     sections.extend(
         [
             f"Atualize `{state.workflow_path.as_posix()}`:",
-            "   - `current_task_id`: última task implementada desta wave",
+            "   - `current_task_id`: esta task",
             "   - **Não** marque `status: done` nas tasks — o Pulse valida os gates e marca done depois",
             "",
-            "Siga `implement.md` para cada task da wave.",
-            "Não implemente tasks fora desta wave.",
+            "Siga `implement.md` para esta task.",
+            "Não implemente outras tasks.",
             "Não execute operações de git.",
             "Responda em português.",
             "",

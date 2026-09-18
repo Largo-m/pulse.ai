@@ -157,7 +157,7 @@ def test_phase_metrics_count_files_and_failed_tools():
     assert state.phases[3].files == 2
     assert state.phases[3].issues == 1
 
-    sink.begin_phase("Execute — Wave 2 (sequencial): T2")
+    sink.begin_phase("Execute — Task T2: Next")
     assert state.phases[3].files == 2
     assert state.phases[3].issues == 1
 

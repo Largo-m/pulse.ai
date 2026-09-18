@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+from pulse.tui.state import CockpitState, LogKind, PhaseStatus, progress_bar
 
 
 def test_configure_workflow_sets_phases():
@@ -39,7 +39,7 @@ def test_begin_phase_marks_prior_pending_when_resuming_mid_flow():
     assert state.done_count() == 3
 
 
-def test_begin_phase_preserves_timer_across_same_phase_waves():
+def test_begin_phase_preserves_timer_across_same_phase_tasks():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Specify")
@@ -50,13 +50,13 @@ def test_begin_phase_preserves_timer_across_same_phase_waves():
     assert state.phases[0].status == PhaseStatus.RUNNING
     assert state.phases[0].started_at == specify_started
 
-    state.begin_phase("Execute — Wave 1 (sequencial): T1")
+    state.begin_phase("Execute — Task T1: One")
     execute_started = state.phases[3].started_at
     assert execute_started is not None
     assert execute_started != specify_started
     assert state.phases[0].status == PhaseStatus.DONE
 
-    state.begin_phase("Execute — Wave 2 (paralela): T2, T3")
+    state.begin_phase("Execute — Task T2: Two")
     assert state.phases[3].status == PhaseStatus.RUNNING
     assert state.phases[3].started_at == execute_started
 
@@ -314,3 +314,92 @@ def test_phase_has_artifacts_follows_selected_phase():
     assert state.phase_has_artifacts() is False
     state.select_phase(0)
     assert state.phase_has_artifacts() is True
+
+
+def test_tasks_are_navigable_and_scope_logs():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    assert state.task_total_count() == 2
+    assert state.task_done_count() == 0
+    assert progress_bar(0, 2, width=4) == "...."
+
+    state.begin_phase("Execute — Task T1: One")
+    state.begin_task("T1", "One")
+    state.append_assistant("trabalho t1")
+    assert state.selected_nav_kind == "task"
+    assert state.selected_task().id == "T1"
+    assert [entry.body for entry in state.visible_entries() if entry.kind == LogKind.ASSISTANT] == [
+        "trabalho t1"
+    ]
+
+    state.begin_phase("Execute — Task T2: Two")
+    state.begin_task("T2", "Two")
+    state.append_assistant("trabalho t2")
+    assert state.selected_task().id == "T2"
+    assert "trabalho t1" not in [entry.body for entry in state.visible_entries()]
+
+    state.select_task(0)
+    assert state.selected_nav_kind == "task"
+    visible = state.visible_entries()
+    assert {entry.task_id for entry in visible} == {"T1"}
+    assert visible[-1].body == "trabalho t1"
+
+    state.begin_phase("Execute — Task T2: Two")
+    state.begin_task("T2", "Two")
+    assert state.selected_task_index == 0
+    assert state.tasks[1].status == PhaseStatus.RUNNING
+
+    state.select_task(1)
+    state.move_nav(-1)
+    assert state.selected_nav_kind == "task"
+    assert state.selected_task_index == 0
+    state.move_nav(-1)
+    assert state.selected_nav_kind == "phase"
+    assert state.selected_phase().id == "execute"
+
+
+def test_live_task_does_not_steal_browsed_step():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    state.begin_phase("Execute — Task T1: One")
+    state.begin_task("T1", "One")
+    state.select_phase(0)
+    assert state.selected_phase().id == "specify"
+    state.append_assistant("ainda no t1")
+    state.begin_phase("Execute — Task T2: Two")
+    state.begin_task("T2", "Two")
+    assert state.selected_nav_kind == "phase"
+    assert state.selected_phase().id == "specify"
+    assert state.tasks[1].status == PhaseStatus.RUNNING
+
+
+def test_nav_items_nest_tasks_under_execute():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    assert state.nav_items() == [
+        ("phase", 0),
+        ("phase", 1),
+        ("phase", 2),
+        ("phase", 3),
+        ("task", 0),
+        ("task", 1),
+    ]
+
+
+def test_sink_begin_phase_binds_task_from_label():
+    from pulse.tui.adapters.cockpit_sink import CockpitSink
+
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state)
+    sink.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+    sink.begin_phase("Execute — Task T1: One")
+    assert state.tasks[0].status == PhaseStatus.RUNNING
+    assert state.entries[-1].task_id == "T1"
+    sink.begin_phase("Execute — Task T2: Two")
+    assert state.tasks[0].status == PhaseStatus.DONE
+    assert state.tasks[1].status == PhaseStatus.RUNNING
+    assert state.entries[-1].task_id == "T2"

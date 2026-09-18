@@ -8,6 +8,7 @@ from pulse.tui.adapters.prompt_bridge import (
     PromptKind,
     PromptRequest,
     TextualPromptHandler,
+    build_permission_choices,
     format_prompt_reply,
 )
 
@@ -36,6 +37,58 @@ def test_prompt_bridge_request_roundtrip():
         assert request.future is not None
         request.future.set_result("b")
         assert future.result(timeout=2) == "b"
+
+
+def test_build_permission_choices_uses_questionnaire_letters():
+    choices = build_permission_choices(
+        [
+            {"optionId": "allow-once", "kind": "allow_once"},
+            {"optionId": "allow-always", "kind": "allow_always"},
+            {"optionId": "reject-once", "kind": "reject_once"},
+        ]
+    )
+    assert choices == [
+        ("allow-once", "A) Permitir esta vez"),
+        ("allow-always", "B) Sempre permitir"),
+        ("reject-once", "C) Recusar"),
+    ]
+
+
+def test_textual_prompt_handler_permission_ask_uses_select():
+    bridge = PromptBridge()
+    handler = TextualPromptHandler(bridge)
+
+    def worker():
+        return handler.respond_to_permission(
+            {
+                "permission": {"title": "Editar app.py", "kind": "edit"},
+                "options": [
+                    {"optionId": "allow-once", "kind": "allow_once"},
+                    {"optionId": "reject-once", "kind": "reject_once"},
+                ],
+            },
+            policy="ask",
+        )
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(worker)
+        deadline = time.time() + 2
+        request = None
+        while time.time() < deadline:
+            request = bridge.poll()
+            if request is not None:
+                break
+            time.sleep(0.01)
+        assert request is not None
+        assert request.kind == PromptKind.SELECT
+        assert request.title == "Permissão"
+        assert request.prompt == "Editar app.py"
+        assert request.choices[0] == ("allow-once", "A) Permitir esta vez")
+        assert request.future is not None
+        request.future.set_result("allow-once")
+        result = future.result(timeout=2)
+    assert result["outcome"]["outcome"] == "selected"
+    assert result["outcome"]["optionId"] == "allow-once"
 
 
 def test_textual_prompt_handler_permission_auto_approve():

@@ -119,3 +119,53 @@ def test_log_stream_and_sidebar_render_text():
             }
 
     asyncio.run(run())
+
+
+def test_cockpit_layout_keeps_header_and_body_sizes():
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.containers import Horizontal
+
+        from pulse.tui.state import CockpitState
+        from pulse.tui.widgets.app_footer import AppFooter
+        from pulse.tui.widgets.app_header import AppHeader
+
+        state = CockpitState()
+        state.configure_workflow("new-issue")
+        state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield AppHeader()
+                with Horizontal(id="cockpit-body"):
+                    yield PhaseSidebar(state, id="phase-sidebar")
+                    yield LogStream(state, id="log-stream")
+                yield AppFooter()
+
+            def on_mount(self) -> None:
+                self.query_one(AppHeader).sync_from_state(state)
+                self.query_one(PhaseSidebar).sync_from_state(state)
+                self.query_one(LogStream).sync_from_state(state, force=True)
+                self.query_one(AppFooter).sync_from_state(state)
+
+        app = Harness()
+        async with app.run_test(size=(120, 32)) as pilot:
+            await pilot.pause()
+            header = app.query_one(AppHeader)
+            body = app.query_one("#cockpit-body")
+            footer = app.query_one(AppFooter)
+            sidebar = app.query_one(PhaseSidebar)
+            stream = app.query_one(LogStream)
+            assert header.size.height == 3
+            assert footer.size.height == 1
+            assert body.size.height == 28
+            assert body.size.width == 120
+            assert sidebar.size.height >= 24
+            assert stream.size.height >= 24
+            assert sidebar.size.width >= 20
+            assert stream.size.width > sidebar.size.width
+            assert "[............] 0/2" in str(app.query_one("#run-status").render())
+
+    asyncio.run(run())
