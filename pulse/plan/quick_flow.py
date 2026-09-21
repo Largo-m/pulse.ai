@@ -15,7 +15,7 @@ from pulse.plan.quick_prompt import (
     resolve_quick_skill,
 )
 from pulse.ports import NullPromptPort, NullStreamSink
-from pulse.runtime.tty import is_interactive
+from pulse.runtime.tty import is_cockpit_stream, is_interactive
 
 
 def run_quick(
@@ -26,15 +26,18 @@ def run_quick(
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
-    cockpit_early = stream is not None and getattr(stream, "cockpit", False)
-    if not cockpit_early and not is_interactive():
+    cockpit = is_cockpit_stream(stream)
+    if not cockpit and not is_interactive():
         print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
 
     agent_check = check_agent_in_path()
     auth_check = check_auth()
     if agent_check.status != "ok" or auth_check.status != "ok":
-        print("[pulse] Corrija agent e autenticação antes de iniciar.", file=sys.stderr)
+        message = "Corrija agent e autenticação antes de iniciar."
+        if cockpit:
+            raise RuntimeError(message)
+        print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
     resolved = resolve_config(workspace=workspace, workflow="fix-bug")
@@ -57,7 +60,6 @@ def run_quick(
         skill_dir=skill_dir,
     )
 
-    cockpit = stream is not None and getattr(stream, "cockpit", False)
     if render_header and not cockpit:
         print_workflow_banner(
             title="Quick mode",
