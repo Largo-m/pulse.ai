@@ -19,8 +19,9 @@ def test_status_and_workflows():
     workflows = client.get("/api/workflows")
     assert workflows.status_code == 200
     ids = {item["id"] for item in workflows.json()["workflows"]}
-    assert "new-issue" in ids
-    assert "fix-bug" in ids
+    assert "spec" in ids
+    assert "new-issue" not in ids
+    assert "fix-bug" not in ids
 
 
 def test_doctor_endpoint():

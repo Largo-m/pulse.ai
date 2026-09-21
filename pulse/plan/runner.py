@@ -8,6 +8,7 @@ from pulse.plan.analyze_codebase_flow import run_analyze_codebase
 from pulse.plan.new_issue_flow import run_new_issue
 from pulse.plan.quick_flow import run_quick
 from pulse.plan.setup_project_flow import run_setup_project
+from pulse.plan.spec_flow import run_spec
 from pulse.plan.spec_types import get_spec_type
 
 
@@ -33,6 +34,9 @@ def run_plan(
 
     if spec_type_id == "analyze-codebase":
         return run_analyze_codebase(**kwargs)
+
+    if spec_type_id == "spec":
+        return run_spec(**kwargs)
 
     if spec_type_id == "fix-bug":
         return run_quick(**kwargs)

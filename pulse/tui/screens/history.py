@@ -10,14 +10,8 @@ from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.models import HistoryItem, HistoryKind
+from pulse.history.models import HistoryItem
 from pulse.tui.screens.history_detail import HistoryDetailScreen
-
-_KIND_HINT = {
-    None: "todos",
-    HistoryKind.ISSUE: "issues",
-    HistoryKind.FIX: "fixes",
-}
 
 
 class HistoryListScreen(Screen[None]):
@@ -25,9 +19,6 @@ class HistoryListScreen(Screen[None]):
         ("q", "back_home", "Voltar"),
         ("b", "back_home", "Voltar"),
         ("escape", "back_home", "Voltar"),
-        ("a", "filter_all", "Todos"),
-        ("i", "filter_issues", "Issues"),
-        ("f", "filter_fixes", "Fixes"),
         ("slash", "focus_search", "Buscar"),
         ("/", "focus_search", "Buscar"),
     ]
@@ -37,14 +28,13 @@ class HistoryListScreen(Screen[None]):
         self._workspace = workspace or Path.cwd()
         self._catalog = HistoryCatalog(self._workspace)
         self._query = ""
-        self._kind: HistoryKind | None = None
         self._items: dict[str, HistoryItem] = {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-content"):
-            yield Static("HISTÓRICO", classes="history-title")
+            yield Static("HISTÓRICO — SPECS", classes="history-title")
             yield Static(self._hint_text(), id="history-hint", classes="history-hint")
-            yield Input(placeholder="Buscar issues e fixes…", id="history-search")
+            yield Input(placeholder="Buscar specs…", id="history-search")
             yield OptionList(id="history-options")
             yield Static("", id="history-empty", classes="history-empty")
         yield Footer()
@@ -54,10 +44,10 @@ class HistoryListScreen(Screen[None]):
         self.query_one("#history-search", Input).focus()
 
     def _hint_text(self) -> str:
-        return f"Filtro: {_KIND_HINT[self._kind]}  ·  / busca  ·  A todos  ·  I issues  ·  F fixes  ·  Enter abre"
+        return "/ busca  ·  Enter abre"
 
     def _refresh(self) -> None:
-        items = self._catalog.search(self._query, kind=self._kind)
+        items = self._catalog.search(self._query)
         self._items = {item.item_id: item for item in items}
         options = self.query_one("#history-options", OptionList)
         options.clear_options()
@@ -65,7 +55,7 @@ class HistoryListScreen(Screen[None]):
         hint = self.query_one("#history-hint", Static)
         hint.update(self._hint_text())
         if not items:
-            empty.update("Nenhum item encontrado")
+            empty.update("Nenhuma spec encontrada")
             empty.display = True
             return
         empty.update("")
@@ -95,18 +85,6 @@ class HistoryListScreen(Screen[None]):
     def action_back_home(self) -> None:
         self.app.pop_screen()
 
-    def action_filter_all(self) -> None:
-        self._kind = None
-        self._refresh()
-
-    def action_filter_issues(self) -> None:
-        self._kind = HistoryKind.ISSUE
-        self._refresh()
-
-    def action_filter_fixes(self) -> None:
-        self._kind = HistoryKind.FIX
-        self._refresh()
-
     def action_focus_search(self) -> None:
         self.query_one("#history-search", Input).focus()
 
@@ -115,4 +93,4 @@ def _format_item(item: HistoryItem) -> str:
     title = item.title.replace("\n", " ").strip() or item.slug
     if len(title) > 48:
         title = title[:47] + "…"
-    return f"{item.kind_label:<5}  {item.status_label:<12}  {title}"
+    return f"{item.kind_label:<5}  {item.flow_label:<5}  {item.status_label:<12}  {title}"

@@ -9,7 +9,7 @@ Workflows são **pipelines fixos no código**. Skills são **instruções para o
 ```
 Home TUI / menu terminal
   → run_plan(spec_type_id)
-    → run_new_issue | run_quick | run_setup_project | run_analyze_codebase
+    → run_spec | run_new_issue | run_quick | run_setup_project | run_analyze_codebase
       → resolve_config(workflow=id)     # agent + model + cwd
       → resolve_bundled_skill(...)      # pulse-spec-driven
       → build_*_prompt(...)             # skill bundled + tarefa
@@ -17,14 +17,15 @@ Home TUI / menu terminal
         → eventos → CockpitSink / StreamRenderer
 ```
 
-Os quatro IDs estão hardcoded em `pulse/plan/spec_types.py`:
+O catálogo público em `pulse/plan/spec_types.py`:
 
 | ID | Label | Flow | Skill empacotada |
 | --- | --- | --- | --- |
-| `new-issue` | New issue | Specify → Design → Tasks → Execute | `pulse-spec-driven` |
-| `fix-bug` | Fix / bug | Planejar → aprovar → Implementar | `pulse-spec-driven` |
+| `spec` | Nova spec | Classifica → full (`new-issue`) ou quick (`fix-bug`) | `pulse-spec-driven` |
 | `setup-project` | Setup project | Análise → `.pulse/specs/project/` | `pulse-spec-driven` |
 | `analyze-codebase` | Analyze codebase | Exploração → `.pulse/specs/codebase/` | `pulse-spec-driven` |
+
+IDs internos `new-issue` e `fix-bug` continuam aceitos na API.
 
 Não existe workflow plugin. ID desconhecido retorna exit `2`.
 
@@ -81,6 +82,12 @@ O binário `agent acp` recebe o `cwd` em `session/new` e carrega esse contexto s
 Se o binário `agent acp` carregar skills globais do Cursor por conta própria, isso é comportamento do Cursor, não do Pulse. O Pulse não lista, não versiona e não injeta essas skills.
 
 ## Fluxo de cada workflow
+
+### spec
+
+1. Classifica o pedido (auto-sizing + Scope Eligibility).
+2. Agente grava `.pulse/specs/.route.yaml` (`flow: full|quick`).
+3. Pulse despacha `new-issue` ou `fix-bug`. Se o arquivo faltar, pergunta no terminal.
 
 ### new-issue
 

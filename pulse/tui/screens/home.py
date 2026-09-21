@@ -40,7 +40,7 @@ class HomeScreen(Screen[None]):
             yield OptionList(id="home-options")
             yield Static("Enter seleciona · Q sai", classes="home-hint")
             yield Input(
-                placeholder="Descreva a tarefa…",
+                placeholder="Descreva a spec…",
                 id="workflow-prompt",
                 classes="-hidden",
             )
@@ -66,7 +66,7 @@ class HomeScreen(Screen[None]):
                 )
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
-        options.add_option(Option("Histórico — Issues e fixes", id="history"))
+        options.add_option(Option("Histórico — Specs", id="history"))
         options.add_option(Option("Configurações", id="settings"))
         options.add_option(Option("Sair", id="exit"))
 
@@ -97,10 +97,7 @@ class HomeScreen(Screen[None]):
             prompt_input = self.query_one("#workflow-prompt", Input)
             prompt_input.display = True
             prompt_input.focus()
-            if workflow_id == "fix-bug":
-                prompt_input.placeholder = "Descreva a quick task…"
-            else:
-                prompt_input.placeholder = "Descreva o que deseja construir…"
+            prompt_input.placeholder = "Descreva a spec…"
 
     @on(Input.Submitted, "#workflow-prompt")
     def on_prompt_submitted(self, event: Input.Submitted) -> None:

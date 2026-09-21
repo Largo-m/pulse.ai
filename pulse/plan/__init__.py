@@ -1,6 +1,13 @@
-from pulse.plan.spec_types import SPEC_TYPE_IDS, SPEC_TYPES, SpecType, get_spec_type
+from pulse.plan.spec_types import (
+    ALL_SPEC_TYPE_IDS,
+    SPEC_TYPE_IDS,
+    SPEC_TYPES,
+    SpecType,
+    get_spec_type,
+)
 
 __all__ = [
+    "ALL_SPEC_TYPE_IDS",
     "SPEC_TYPE_IDS",
     "SPEC_TYPES",
     "SpecType",

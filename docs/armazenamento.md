@@ -57,14 +57,15 @@ A config efetiva por workflow é: `projeto.workflows[id]` → `global.workflows[
 ├── codebase/         STACK, ARCHITECTURE, CONVENTIONS, STRUCTURE, TESTING, INTEGRATIONS, CONCERNS
 ├── features/<slug>/  spec.md, context.md, design.md, tasks.md, workflow.yaml
 ├── quick/NNN-slug/   TASK.md, SUMMARY.md
+├── .route.yaml       última classificação de Nova spec (full | quick)
 └── HANDOFF.md        checkpoint de sessão (escrito pelo agente)
 ```
 
 O Pulse **não gera** os Markdowns. O agente os cria porque o prompt aponta os arquivos. O Pulse só:
 
+- classifica Nova spec lendo `.pulse/specs/.route.yaml`
 - cria e atualiza `workflow.yaml` no `new-issue` (`WorkflowState.save`)
-- lista features em `.pulse/specs/features/*/workflow.yaml`
-- lista quick tasks em `.pulse/specs/quick/*/TASK.md` (status no próprio Markdown)
+- lista specs em `.pulse/specs/features/*/workflow.yaml` e `.pulse/specs/quick/*/TASK.md`
 - mostra `.md` da pasta da spec no painel de artefatos
 
 `STATE.md` é a memória persistente do projeto (decisões, blockers, quick tasks). Não é um banco: é um Markdown que o agente mantém.

@@ -162,6 +162,10 @@ class CockpitSink:
         self._state.apply_phase_statuses(done_ids=done_ids, skipped_ids=skipped_ids)
         self._emit()
 
+    def apply_routed_flow(self, flow: str) -> None:
+        self._state.apply_routed_flow(flow)
+        self._emit()
+
     def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
         self._state.set_tasks(items)
         self._emit()

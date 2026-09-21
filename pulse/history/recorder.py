@@ -137,16 +137,14 @@ def _phase_snapshot(phase: PhaseItem) -> RunPhaseSnapshot:
 
 
 def _kind_for_workflow(workflow_id: str) -> HistoryKind | None:
-    if workflow_id == "new-issue":
-        return HistoryKind.ISSUE
-    if workflow_id == "fix-bug":
-        return HistoryKind.FIX
+    if workflow_id in {"spec", "new-issue", "fix-bug"}:
+        return HistoryKind.SPEC
     return None
 
 
 def _binding_from_state(state: RunSnapshot, workflow_id: str) -> tuple[HistoryKind, str, str] | None:
     preferred = None
-    if workflow_id == "new-issue":
+    if workflow_id in {"new-issue"}:
         preferred = "features"
     elif workflow_id == "fix-bug":
         preferred = "quick"
@@ -159,7 +157,7 @@ def _binding_from_state(state: RunSnapshot, workflow_id: str) -> tuple[HistoryKi
         return None
     if preferred is not None:
         for kind, slug, spec_dir in matches:
-            folder = "features" if kind == HistoryKind.ISSUE else "quick"
+            folder = "features" if "/features/" in spec_dir else "quick"
             if folder == preferred:
                 return kind, slug, spec_dir
     return matches[-1]
@@ -171,8 +169,8 @@ def _parse_spec_path(path: str) -> tuple[HistoryKind, str, str] | None:
         return None
     folder, slug = match.group(1), match.group(2)
     if folder == "features":
-        return HistoryKind.ISSUE, slug, f".pulse/specs/features/{slug}"
-    return HistoryKind.FIX, slug, f".pulse/specs/quick/{slug}"
+        return HistoryKind.SPEC, slug, f".pulse/specs/features/{slug}"
+    return HistoryKind.SPEC, slug, f".pulse/specs/quick/{slug}"
 
 
 def _utc_now() -> str:

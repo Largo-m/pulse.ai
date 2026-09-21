@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
+from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig, workflow_lookup_ids
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
 
@@ -62,14 +62,16 @@ def _resolve_agent_name(
     project_cfg: ProjectConfig | None,
     workflow: str | None,
 ) -> tuple[str, str]:
-    if project_cfg and workflow and workflow in project_cfg.workflows:
-        agent = project_cfg.workflows[workflow].agent
-        if agent:
-            return agent, "project.workflow"
-    if global_cfg and workflow and workflow in global_cfg.workflows:
-        agent = global_cfg.workflows[workflow].agent
-        if agent:
-            return agent, "global.workflow"
+    for workflow_id in workflow_lookup_ids(workflow):
+        if project_cfg and workflow_id in project_cfg.workflows:
+            agent = project_cfg.workflows[workflow_id].agent
+            if agent:
+                return agent, "project.workflow"
+    for workflow_id in workflow_lookup_ids(workflow):
+        if global_cfg and workflow_id in global_cfg.workflows:
+            agent = global_cfg.workflows[workflow_id].agent
+            if agent:
+                return agent, "global.workflow"
     if project_cfg and project_cfg.default_agent:
         return project_cfg.default_agent, "project.default"
     if global_cfg:
@@ -82,14 +84,16 @@ def _resolve_model(
     project_cfg: ProjectConfig | None,
     workflow: str | None,
 ) -> tuple[str, str]:
-    if project_cfg and workflow and workflow in project_cfg.workflows:
-        model = project_cfg.workflows[workflow].model
-        if model:
-            return model, "project.workflow"
-    if global_cfg and workflow and workflow in global_cfg.workflows:
-        model = global_cfg.workflows[workflow].model
-        if model:
-            return model, "global.workflow"
+    for workflow_id in workflow_lookup_ids(workflow):
+        if project_cfg and workflow_id in project_cfg.workflows:
+            model = project_cfg.workflows[workflow_id].model
+            if model:
+                return model, "project.workflow"
+    for workflow_id in workflow_lookup_ids(workflow):
+        if global_cfg and workflow_id in global_cfg.workflows:
+            model = global_cfg.workflows[workflow_id].model
+            if model:
+                return model, "global.workflow"
     if project_cfg and project_cfg.model:
         return project_cfg.model, "project.default"
     if global_cfg:

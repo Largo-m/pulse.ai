@@ -139,10 +139,10 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert config.workflows["setup-project"].model == "claude-opus-4.8"
     assert config.workflows["analyze-codebase"].agent == "cursor"
     assert config.workflows["analyze-codebase"].model == "gpt-5.5"
-    assert config.workflows["new-issue"].agent == "cursor"
-    assert config.workflows["new-issue"].model == "Auto"
-    assert config.workflows["fix-bug"].agent == "cursor"
-    assert config.workflows["fix-bug"].model == "Auto"
+    assert config.workflows["spec"].agent == "cursor"
+    assert config.workflows["spec"].model == "Auto"
+    assert "new-issue" not in config.workflows
+    assert "fix-bug" not in config.workflows
 
     content = path.read_text(encoding="utf-8")
     assert "agents:" not in content
@@ -176,10 +176,8 @@ def test_ensure_project_workflows_adds_missing_entries(tmp_path: Path):
     assert loaded.workflows["setup-project"].model == "Auto"
     assert loaded.workflows["analyze-codebase"].agent == "cursor"
     assert loaded.workflows["analyze-codebase"].model == "Auto"
-    assert loaded.workflows["new-issue"].agent == "cursor"
-    assert loaded.workflows["new-issue"].model == "Auto"
-    assert loaded.workflows["fix-bug"].agent == "cursor"
-    assert loaded.workflows["fix-bug"].model == "Auto"
+    assert loaded.workflows["spec"].agent == "cursor"
+    assert loaded.workflows["spec"].model == "Auto"
 
 
 def test_update_project_defaults_agent(tmp_path: Path):

@@ -231,3 +231,45 @@ def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
 
     assert resolved.workspace_dir == explicit.resolve()
     assert resolved.sources["workspace_dir"] == "argument"
+
+
+def test_spec_workflow_falls_back_to_legacy_new_issue(monkeypatch, tmp_path: Path):
+    cfg = _global(
+        agents={
+            "cursor": AgentConfig(
+                name="cursor",
+                binary="agent",
+                acp_command=["agent", "acp"],
+                models=["Auto"],
+            ),
+        },
+        workflows={"new-issue": WorkflowConfig(agent="cursor", model="legacy-spec")},
+        default_agent="cursor",
+    )
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+
+    resolved = resolve_config(tmp_path, workflow="spec")
+
+    assert resolved.model == "legacy-spec"
+    assert resolved.sources["model"] == "global.workflow"
+
+
+def test_new_issue_falls_back_to_spec_config(monkeypatch, tmp_path: Path):
+    cfg = _global(
+        agents={
+            "cursor": AgentConfig(
+                name="cursor",
+                binary="agent",
+                acp_command=["agent", "acp"],
+                models=["Auto"],
+            ),
+        },
+        workflows={"spec": WorkflowConfig(agent="cursor", model="unified")},
+        default_agent="cursor",
+    )
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+
+    resolved = resolve_config(tmp_path, workflow="new-issue")
+
+    assert resolved.model == "unified"
+    assert resolved.sources["model"] == "global.workflow"

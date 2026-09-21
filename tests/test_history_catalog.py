@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.models import HistoryKind, HistoryStatus
+from pulse.history.models import HistoryKind, HistoryStatus, SpecFlow
 from pulse.plan.specify_state import WorkflowState
 
 
@@ -31,7 +31,7 @@ def _write_quick(workspace: Path, slug: str, title: str, status: str) -> None:
     )
 
 
-def test_catalog_indexes_issues_and_fixes(tmp_path: Path):
+def test_catalog_indexes_specs(tmp_path: Path):
     _write_issue(tmp_path, "login-flow", "Adicionar login social", complete=True)
     _write_issue(tmp_path, "billing", "Cobrança recorrente", complete=False)
     _write_quick(tmp_path, "001-token-refresh", "Corrigir refresh token", "Done")
@@ -46,7 +46,9 @@ def test_catalog_indexes_issues_and_fixes(tmp_path: Path):
         "002-button",
     }
     by_slug = {item.slug: item for item in items}
-    assert by_slug["login-flow"].kind == HistoryKind.ISSUE
+    assert by_slug["login-flow"].kind == HistoryKind.SPEC
+    assert by_slug["login-flow"].flow == SpecFlow.FULL
+    assert by_slug["login-flow"].item_id == "spec:features/login-flow"
     assert by_slug["login-flow"].status == HistoryStatus.DONE
     assert by_slug["login-flow"].run_id is None
     assert [step.id for step in by_slug["login-flow"].steps] == [
@@ -56,14 +58,16 @@ def test_catalog_indexes_issues_and_fixes(tmp_path: Path):
         "execute",
     ]
     assert by_slug["billing"].status == HistoryStatus.AWAITING_APPROVAL
-    assert by_slug["001-token-refresh"].kind == HistoryKind.FIX
+    assert by_slug["001-token-refresh"].kind == HistoryKind.SPEC
+    assert by_slug["001-token-refresh"].flow == SpecFlow.QUICK
+    assert by_slug["001-token-refresh"].item_id == "spec:quick/001-token-refresh"
     assert by_slug["001-token-refresh"].status == HistoryStatus.DONE
     assert by_slug["001-token-refresh"].title == "Corrigir refresh token"
     assert by_slug["002-button"].status == HistoryStatus.AWAITING_APPROVAL
     assert [step.status for step in by_slug["001-token-refresh"].steps] == ["done", "done"]
 
 
-def test_catalog_search_filters_by_text_kind_and_status(tmp_path: Path):
+def test_catalog_search_filters_by_text_flow_and_status(tmp_path: Path):
     _write_issue(tmp_path, "login-flow", "Adicionar login social", complete=True)
     _write_quick(tmp_path, "001-token-refresh", "Corrigir refresh token", "Done")
     _write_quick(tmp_path, "002-button", "Ajustar botão", "In Progress")
@@ -72,12 +76,12 @@ def test_catalog_search_filters_by_text_kind_and_status(tmp_path: Path):
     token = catalog.search("token")
     assert [item.slug for item in token] == ["001-token-refresh"]
 
-    issues = catalog.search("", kind=HistoryKind.ISSUE)
-    assert [item.slug for item in issues] == ["login-flow"]
+    full = catalog.search("", flow=SpecFlow.FULL)
+    assert [item.slug for item in full] == ["login-flow"]
 
     done = catalog.search("done")
     assert {item.slug for item in done} == {"login-flow", "001-token-refresh"}
 
-    fixes = catalog.search("botão", kind=HistoryKind.FIX)
-    assert [item.slug for item in fixes] == ["002-button"]
-    assert fixes[0].status == HistoryStatus.IN_PROGRESS
+    quick = catalog.search("botão", flow=SpecFlow.QUICK)
+    assert [item.slug for item in quick] == ["002-button"]
+    assert quick[0].status == HistoryStatus.IN_PROGRESS

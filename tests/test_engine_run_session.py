@@ -63,3 +63,21 @@ def test_engine_run_session_maps_events():
     stream.handle_update.assert_called()
     prompt_handler.respond_to_ask_question.assert_called_once()
     assert client.answers == [("p1", {"outcome": {"outcome": "selected", "optionId": "y"}})]
+
+
+def test_engine_run_session_maps_workflow_route():
+    stream = MagicMock()
+    prompt_handler = MagicMock()
+    events = [
+        {"type": "phase.begin", "title": "Classificar spec"},
+        {"type": "workflow.route", "flow": "quick"},
+        {"type": "run.finished", "exit_code": 0},
+    ]
+    session = EngineRunSession(
+        stream=stream,
+        prompt_handler=prompt_handler,
+        client=_FakeClient(events),
+    )
+    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
+    assert code == 0
+    stream.apply_routed_flow.assert_called_with("quick")
