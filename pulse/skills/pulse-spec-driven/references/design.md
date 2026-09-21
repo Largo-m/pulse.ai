@@ -10,6 +10,12 @@
 
 Read `.pulse/specs/features/[feature]/spec.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
 
+Read STATE.md active AD-NNN entries and **confirmed** lessons. Conform or supersede (new AD-NNN). Silently ignoring an active decision is not allowed.
+
+If `surface.md` exists, Design serves that frozen surface — do not invent a different public API.
+
+If a [threat-model.md](threat-model.md) trigger is present, write `threat-model.md` in this phase and map each TM-ID to a spec SHALL or an explicit deferral.
+
 ### 1.5. Research (Optional but Recommended)
 
 If the feature involves unfamiliar technology, patterns, or integrations, research before designing. Document findings briefly in the design doc or as inline notes. This prevents incorrect assumptions from propagating into tasks.
@@ -151,6 +157,16 @@ interface AnotherModel {
 | Decision          | Choice          | Rationale     |
 | ----------------- | --------------- | ------------- |
 | [What we decided] | [What we chose] | [Why - brief] |
+
+Record a STATE.md AD-NNN only when the choice is hard to reverse, surprising without context, and the product of a real trade-off. Feature-local obvious choices stay in this table.
+
+## File References
+
+Copy the spec index subset this design depends on (`path:line` + why). Tasks copy their slice from here.
+
+## Threat Model
+
+If no trigger: `N/A because [reason]`. If trigger: link `threat-model.md`.
 
 ---
 

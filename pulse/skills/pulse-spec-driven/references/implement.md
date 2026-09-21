@@ -76,6 +76,8 @@ If the task includes tests (per the Tests field in tasks.md or TESTING.md covera
 3. Run the test command — confirm tests FAIL (RED state)
 4. If tests pass before implementation exists, the tests are too weak — rewrite them
 
+Tests MUST be derived from spec ACs / assigned test IDs — **not** from reading the implementation. Each assertion's value matches the spec-defined expected outcome. Where the spec is imprecise, flag a spec-precision gap instead of passing a vague assertion.
+
 **Constraints:**
 
 - Tests define correct behavior independently of implementation
@@ -140,6 +142,10 @@ After the gate check passes:
    - Yes → Simplify, re-run gate
    - No → Proceed to update task status
 
+4. **Task-layer evidence (cheap, author does this):** for each assigned AC / test ID, cite `file:line` of the assertion. A criterion with no citation is not covered. Full adequacy and mutation belong to the Verifier after the last task — do not run the four-table review on every task.
+
+Contract conflicts: follow [invariants.md](invariants.md) precedence. Spec changes: [spec-change.md](spec-change.md).
+
 ### 7. Scope Guardrail
 
 During implementation, you will notice things that could be improved, refactored, or added. **Do not act on them.** Instead:
@@ -150,9 +156,15 @@ During implementation, you will notice things that could be improved, refactored
 
 **The heuristic:** "Is this in my task definition?" If no, don't touch it.
 
+**Blast radius:** Approving Execute authorizes local edits only. Push, deploy, and production changes need an explicit go-ahead.
+
 ### 8. Update Task Status
 
 Mark task complete in tasks.md. Update requirement traceability in spec.md if requirement IDs are used.
+
+### 9. Feature-level validation (after the LAST task)
+
+When every task is complete, Execute is not done. Dispatch a **fresh Verifier** (author ≠ verifier) per [validate.md](validate.md). Do not ask the user whether to run it. Then update [metrics.md](metrics.md) and distill [lessons.md](lessons.md) if there was signal. If the artifact matrix requires review, run [review.md](review.md) after a PASS.
 
 ---
 

@@ -1,7 +1,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Skill-Pulse%20Spec--Driven-blue?style=for-the-badge" alt="skill badge" />
   <img src="https://img.shields.io/badge/Stack-Agnostic-green?style=for-the-badge" alt="stack agnostic" />
-  <img src="https://img.shields.io/badge/Version-2.0.0-purple?style=for-the-badge" alt="version" />
+  <img src="https://img.shields.io/badge/Version-2.1.0-purple?style=for-the-badge" alt="version" />
 </p>
 
 <h1 align="center">Pulse Spec-Driven</h1>
@@ -57,7 +57,8 @@ The skill creates a `.pulse/specs/` directory to organize all project documentat
 ├── project/
 │   ├── PROJECT.md      # Vision, goals, tech stack, constraints
 │   ├── ROADMAP.md      # Milestones, features, status tracking
-│   └── STATE.md        # Persistent memory: decisions, blockers, learnings, todos, deferred ideas
+│   ├── STATE.md        # Persistent memory: decisions, blockers, learnings, todos, deferred ideas
+│   └── METRICS.md      # SDD signals (first feature completion)
 │
 ├── codebase/           # Brownfield analysis (existing projects only)
 │   ├── STACK.md        # Technology stack and dependencies
@@ -70,10 +71,15 @@ The skill creates a `.pulse/specs/` directory to organize all project documentat
 │
 ├── features/           # Feature specifications
 │   └── [feature-name]/
-│       ├── spec.md     # Requirements with traceable IDs (FEAT-01, AUTH-02...)
-│       ├── context.md  # User decisions for gray areas (only when needed)
-│       ├── design.md   # Architecture and components (only for large/complex)
-│       └── tasks.md    # Atomic tasks with dependencies (only for large/complex)
+│       ├── spec.md         # EARS ACs, ledger, motivating problem, traceability
+│       ├── context.md      # User decisions for gray areas (only when needed)
+│       ├── surface.md      # Public CLI/API/UI contract (only if public surface)
+│       ├── tests.md        # Test catalog with stable IDs (Large/Complex)
+│       ├── design.md       # Architecture and components (only for large/complex)
+│       ├── threat-model.md # Only when a security trigger fires
+│       ├── tasks.md        # Outcomes + parseable graph
+│       ├── validation.md   # Independent Verifier report
+│       └── reviews-NNN/    # Code review issues (Merge layer)
 │
 └── quick/              # Ad-hoc tasks (quick mode)
     └── NNN-slug/
@@ -147,7 +153,7 @@ Plan → Implement → Verify → Next
 - **Verify before marking done** — Check all "Done when" criteria
 - **No git operations** — Do not commit or suggest commit messages unless the user explicitly asks
 
-**Feature-level validation** happens after all tasks complete — including acceptance criteria checks, code quality review, and optionally interactive UAT for complex user-facing features.
+**Feature-level validation** happens after all tasks complete — an independent **Verifier** (author ≠ implementer) writes `validation.md` with evidence-or-zero and a discrimination sensor. A code **review round** follows when the artifact matrix requires it. Interactive UAT is optional for complex user-facing features.
 
 ## Quick Mode
 
@@ -373,12 +379,23 @@ The skill includes detailed reference documentation loaded on-demand:
 | `roadmap.md`            | Roadmap creation and milestone tracking                                |
 | `brownfield-mapping.md` | Comprehensive codebase analysis (7 docs)                               |
 | `concerns.md`           | Tech debt, risks, and fragile area documentation                       |
-| `specify.md`            | Requirements gathering with traceable IDs                              |
+| `invariants.md`         | Precedence, Definition of Done, artifact matrix                        |
+| `specify.md`            | EARS requirements, motivating problem, ledger                          |
+| `ambiguity.md`          | Ambiguity ledger and implicit-requirement sweep                        |
+| `spec-change.md`        | Change protocol after a spec is approved                               |
 | `discuss.md`            | Gray area discussion and context capture                               |
+| `surface.md`            | Conditional public-surface contract                                    |
+| `tests-catalog.md`      | Stable test IDs and coverage matrix                                    |
 | `design.md`             | Architecture, research, and component design                           |
-| `tasks.md`              | Granular task breakdown methodology                                    |
-| `implement.md`          | Execute: implementation + verification                                   |
-| `validate.md`           | Feature validation and interactive UAT                                 |
+| `threat-model.md`       | Threat model when a security trigger fires                             |
+| `tasks.md`              | Outcome tasks and parseable graph                                      |
+| `implement.md`          | Execute: implementation + task-layer verification                      |
+| `validate.md`           | Verifier, evidence-or-zero, discrimination sensor                      |
+| `review.md`             | Code review round after Feature PASS                                   |
+| `lessons.md`            | Grounded lessons promotion                                             |
+| `metrics.md`            | SDD metrics                                                            |
+| `gates.md`              | Deterministic Python validators                                        |
+| `architecture.md`       | Skill architecture diagrams                                            |
 | `quick-mode.md`         | Express lane for ad-hoc tasks                                          |
 | `session-handoff.md`    | Pause/resume work process                                              |
 | `state-management.md`   | Persistent memory: decisions, blockers, lessons, todos, deferred ideas |
@@ -437,6 +454,9 @@ A: Yes! The skill auto-sizes. Design and Tasks are skipped for simple features. 
 
 **Q: What if my project already has code?**
 A: Use `"Map codebase"` first. This creates 7 documents analyzing your existing architecture, conventions, stack, and concerns before you start adding features.
+
+**Q: When is a feature actually done?**
+A: Three layers. **Task** — gate + assigned tests with `file:line` evidence. **Feature** — independent Verifier PASS in `validation.md`. **Merge** — review has no open critical/high issues (when review is required). A checkbox in `tasks.md` is not Feature Done.
 
 **Q: How does requirement traceability work?**
 A: Each requirement gets a unique ID (e.g., `AUTH-01`) in spec.md. Tasks reference these IDs, and validation checks which requirements are verified. You get a clear trail from spec → design → task → verification.

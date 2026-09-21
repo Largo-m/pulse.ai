@@ -7,7 +7,8 @@ Behavioral bias, not checklist. Read before every implementation.
 ## Before Coding
 
 - State assumptions explicitly. If uncertain, stop and collect input via [user-input.md](user-input.md).
-- Multiple interpretations exist? Present all—don't pick silently.
+- Multiple interpretations exist? Present all—don't pick silently. Follow [invariants.md](invariants.md) precedence; never let code silently beat an approved spec.
+- Spec must change? [spec-change.md](spec-change.md). Do not rewrite the spec to match the implementation.
 - Simpler approach exists? Say so. Push back when warranted.
 - Something unclear? Stop. Name what's confusing. Collect input via [user-input.md](user-input.md).
 - User's approach seems wrong? Disagree honestly. Don't be sycophantic.

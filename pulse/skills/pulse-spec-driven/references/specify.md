@@ -2,151 +2,149 @@
 
 **Goal**: Capture WHAT to build with testable, traceable requirements.
 
-If the feature has ambiguous gray areas (multiple valid approaches for user-facing behavior), the agent will automatically trigger the [discuss gray areas](discuss.md) process within this phase. For clear, well-defined features, it goes straight to the next phase.
+Read [invariants.md](invariants.md) first. If the feature has ambiguous gray areas, trigger [discuss.md](discuss.md) inside this phase. Write every unresolved item to the [Ambiguity Ledger](ambiguity.md).
 
 ## Process
 
-### 1. Clarify Requirements
+### 1. Load confirmed lessons
 
-You are a thinking partner, not an interviewer. Start by reading existing project context (`.pulse/specs/`, codebase, user message). Draft requirements from what is already known.
+Read STATE.md Lessons Learned with `Status: confirmed` that match this feature's area. Skip `candidate` and `quarantined`. See [lessons.md](lessons.md).
 
-When mandatory information is missing or vague, follow [user-input.md](user-input.md) — batch all pending questions at the end of the response in CLI format. Challenge vagueness in the question options themselves (make abstract choices concrete).
+### 2. Clarify Requirements
 
-**Topics to resolve before writing spec.md:**
+Thinking partner, not interviewer. Read `.pulse/specs/`, codebase, user message. Draft from what is known.
 
-- What problem are you solving?
-- Who is the user and what's their pain?
-- What does success look like?
-- Constraints (time, tech, resources)?
-- What is explicitly out of scope?
+Facts you look up (Knowledge Verification Chain). Decisions you ask via [user-input.md](user-input.md).
 
-**Know when to stop asking.** When you understand what they're building, why, who it's for, and what done looks like — write spec.md or ask for the remaining gaps in one CLI batch.
+**Must resolve before writing spec.md:**
 
-### 2. Capture User Stories with Priorities
+- **Motivating Problem** — concrete pain and the simplest end-to-end observable outcome that solves it. Slice 1 of Tasks delivers this outcome.
+- Who it is for
+- What success looks like
+- Constraints
+- Explicit out of scope
 
-**P1 = MVP** (must ship), **P2** (should have), **P3** (nice to have)
+Do not park a wanted capability in Out of Scope to fit a slice budget — that needs a follow-up spec or a recorded user decision.
 
-Each story MUST be **independently testable** - you can implement and demo just that story.
+### 3. User Stories (P1 = MVP)
 
-### 3. Write Acceptance Criteria
+P1 is a **vertical slice**: demo-able, not backend-only. Each story independently testable.
 
-Use **WHEN/THEN/SHALL** format - it's precise and testable:
+### 4. Acceptance Criteria (EARS)
 
-- WHEN [event/action] THEN [system] SHALL [response/behavior]
+Every AC uses **EARS** and contains SHALL. One behavior per criterion. Concrete values, not "gracefully".
+
+| Pattern | Template |
+| ------- | -------- |
+| Ubiquitous | The [system] SHALL [response] |
+| Event-driven | WHEN [trigger] THEN the [system] SHALL [response] |
+| State-driven | WHILE [state] the [system] SHALL [response] |
+| Optional-feature | WHERE [feature is present] the [system] SHALL [response] |
+| Unwanted-behavior | IF [undesired condition] THEN the [system] SHALL [response] |
+| Complex | WHILE [state], WHEN [trigger] the [system] SHALL [response] |
+
+If you cannot write it as a test, rewrite it.
+
+### 5. Implicit-requirement sweep + ledger
+
+Follow [ambiguity.md](ambiguity.md). Large/Complex: every dimension. Medium: obvious dimensions only.
+
+### 6. Surface and tests (conditional)
+
+If there is a public surface, write [surface.md](surface.md) before internal design. Write [tests.md](tests-catalog.md) for Large/Complex (and Medium with a public surface).
+
+If a [threat-model.md](threat-model.md) trigger is present, note it here; the model itself is written in Design.
+
+### 7. Closure gate
+
+Before presenting the spec:
+
+1. Every AC has one interpretation and a precise expected outcome
+2. Ledger has no `open` rows
+3. Motivating Problem is stated; P1 delivers it
+4. `python3 <skill-dir>/scripts/validate_spec.py <feature>` exits 0 ([gates.md](gates.md))
+
+Then confirm with the user via CLI. Do not start implementation because the spec file exists.
+
+Changing an approved spec later uses [spec-change.md](spec-change.md).
 
 ---
 
-## Template: `.pulse/specs/[feature]/spec.md`
+## Template: `.pulse/specs/features/[feature]/spec.md`
 
 ```markdown
 # [Feature Name] Specification
 
+## Motivating Problem
+
+[Pain in 1-2 sentences.] **Slice 1 outcome:** [observable end-to-end behavior a user can see.]
+
 ## Problem Statement
 
-[Describe the problem in 2-3 sentences. What pain point are we solving? Why now?]
+[Why now. Who it is for.]
 
 ## Goals
 
-- [ ] [Primary goal with measurable outcome]
-- [ ] [Secondary goal with measurable outcome]
+- [ ] [Observable outcome]
+- [ ] [Observable outcome]
 
 ## Out of Scope
-
-Explicitly excluded. Documented to prevent scope creep.
 
 | Feature     | Reason         |
 | ----------- | -------------- |
 | [Feature X] | [Why excluded] |
-| [Feature Y] | [Why excluded] |
 
----
+## Ambiguity Ledger
+
+| ID | Topic | Status | Resolution | Rationale |
+| -- | ----- | ------ | ---------- | --------- |
+| AL-01 | [gray area] | decided | [what] | [why] |
+
+Open questions: none — all resolved or assumed.
 
 ## User Stories
 
-### P1: [Story Title] ⭐ MVP
+### P1: [Story Title] — MVP (delivers Motivating Problem)
 
 **User Story**: As a [role], I want [capability] so that [benefit].
 
-**Why P1**: [Why this is critical for MVP]
+**Why P1**: Slice 1 — [how this is the end-to-end outcome]
 
 **Acceptance Criteria**:
 
-1. WHEN [user action/event] THEN system SHALL [expected behavior]
-2. WHEN [user action/event] THEN system SHALL [expected behavior]
-3. WHEN [edge case] THEN system SHALL [graceful handling]
+1. WHEN [trigger] THEN the system SHALL [precise outcome]
+2. IF [invalid input] THEN the system SHALL [precise error]
+3. The system SHALL [invariant]
 
-**Independent Test**: [How to verify this story works alone - e.g., "Can demo by doing X and seeing Y"]
-
----
-
-### P2: [Story Title]
-
-**User Story**: As a [role], I want [capability] so that [benefit].
-
-**Why P2**: [Why this isn't MVP but important]
-
-**Acceptance Criteria**:
-
-1. WHEN [event] THEN system SHALL [behavior]
-2. WHEN [event] THEN system SHALL [behavior]
-
-**Independent Test**: [How to verify]
-
----
-
-### P3: [Story Title]
-
-**User Story**: As a [role], I want [capability] so that [benefit].
-
-**Why P3**: [Why this is nice-to-have]
-
-**Acceptance Criteria**:
-
-1. WHEN [event] THEN system SHALL [behavior]
-
----
+**Independent Test**: [How to demo this story alone]
 
 ## Edge Cases
 
-- WHEN [boundary condition] THEN system SHALL [behavior]
-- WHEN [error scenario] THEN system SHALL [graceful handling]
-- WHEN [unexpected input] THEN system SHALL [validation response]
-
----
+- IF [error] THEN the system SHALL [handling]
+- WHEN [boundary] THEN the system SHALL [behavior]
 
 ## Requirement Traceability
 
-Each requirement gets a unique ID for tracking across design, tasks, and validation.
+| Requirement ID | Story | Phase | Status |
+| -------------- | ----- | ----- | ------ |
+| [FEAT]-01      | P1    | Design | Pending |
 
-| Requirement ID | Story       | Phase  | Status  |
-| -------------- | ----------- | ------ | ------- |
-| [FEAT]-01      | P1: [Story] | Design | Pending |
-| [FEAT]-02      | P1: [Story] | Design | Pending |
-| [FEAT]-03      | P2: [Story] | -      | Pending |
+**ID format:** `[CATEGORY]-[NUMBER]`
+**Status:** Pending → In Design → In Tasks → Implementing → Verified
 
-**ID format:** `[CATEGORY]-[NUMBER]` (e.g., `AUTH-01`, `CART-03`, `NOTIF-02`)
+## Spec Changes
 
-**Status values:** Pending → In Design → In Tasks → Implementing → Verified
+[Append SC-NNN records here. Empty until the first change.]
 
-**Coverage:** X total, Y mapped to tasks, Z unmapped ⚠️
+## File References
 
----
+Read-first index for implementers (path + why). Copy a subset into each task.
+
+### Repo Files
+
+- `path/to/file:start-end` — [why]
 
 ## Success Criteria
 
-How we know the feature is successful:
-
-- [ ] [Measurable outcome - e.g., "User can complete X in < 2 minutes"]
-- [ ] [Measurable outcome - e.g., "Zero errors in Y scenario"]
+- [ ] [Measurable outcome]
 ```
-
----
-
-## Tips
-
-- **P1 = Vertical Slice** — A complete, demo-able feature, not just backend or frontend
-- **WHEN/THEN is code** — If you can't write it as a test, rewrite it
-- **Requirement IDs are mandatory** — Every story maps to trackable IDs
-- **Edge cases matter** — What breaks? What's empty? What's huge?
-- **Out of Scope prevents creep** — If it's not here, it doesn't get built
-- **Confirm before Discuss** — User must approve spec before moving to discuss phase
