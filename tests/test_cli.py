@@ -41,7 +41,7 @@ def test_main_dispatches_init(monkeypatch):
         captured["force"] = force
         return 0
 
-    monkeypatch.setattr("pulse.cli.run_onboarding_wizard", fake_init)
+    monkeypatch.setattr("pulse.tui.app.run_onboarding_app", fake_init)
     assert main(["init", "--force"]) == 0
     assert captured["force"] is True
 
@@ -54,8 +54,14 @@ def test_main_dispatches_doctor(monkeypatch):
         return 0
 
     monkeypatch.setattr("pulse.cli.run_doctor", fake_doctor)
-    assert main(["doctor", "--test-acp"]) == 0
+    assert main(["doctor", "--test-acp", "--local"]) == 0
     assert captured["test_acp"] is True
+
+
+def test_parser_accepts_daemon_status():
+    args = _build_parser().parse_args(["daemon", "status"])
+    assert args.command == "daemon"
+    assert args.daemon_action == "status"
 
 
 def test_main_dispatches_config_init(monkeypatch):

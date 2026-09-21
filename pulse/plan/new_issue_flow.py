@@ -5,9 +5,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
-from rich.panel import Panel
-
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
@@ -37,9 +34,9 @@ from pulse.plan.task_waves import (
     parse_task_specs,
     run_wave_gates,
 )
-from pulse.presentation.prompt.handler import PromptHandler
-from pulse.presentation.stream_renderer import StreamRenderer
-from pulse.terminal.tty import is_cockpit_stream, is_interactive
+from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
+from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.runtime.tty import is_cockpit_stream, is_interactive
 
 
 def run_new_issue(
@@ -50,11 +47,11 @@ def run_new_issue(
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
-    if not is_cockpit_stream(stream) and not is_interactive():
-        print("[pulse] New issue requer terminal interativo.", file=sys.stderr)
+    cockpit = is_cockpit_stream(stream)
+    if not cockpit and not is_interactive():
+        print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
 
-    cockpit = is_cockpit_stream(stream)
     agent_check = check_agent_in_path()
     auth_check = check_auth()
     if agent_check.status != "ok" or auth_check.status != "ok":
@@ -78,34 +75,27 @@ def run_new_issue(
         print(f"[pulse] {error}", file=sys.stderr)
         return 1
 
-    active_handler = prompt_handler or PromptHandler()
+    active_handler = prompt_handler or NullPromptPort()
     state = _resolve_workflow_state(workspace_root, user_prompt, prompt_handler=active_handler)
     if state is None:
         return 0
 
-    from io import StringIO
-
-    console = (
-        Console(file=StringIO(), highlight=False, soft_wrap=True)
-        if cockpit
-        else Console(highlight=False, soft_wrap=True)
-    )
     if render_header and not cockpit:
-        _print_header(console, workspace_root, state, user_prompt)
+        _print_header(workspace_root, state, user_prompt)
 
-    active_stream = stream or StreamRenderer(console)
+    active_stream = stream or NullStreamSink()
     runner = AcpSessionRunner(
         acp_command,
         cwd=str(workspace_root),
         permission_policy=permission_policy,
         stream=active_stream,
-        prompt_handler=active_handler if prompt_handler else PromptHandler(console=console),
+        prompt_handler=active_handler,
     )
 
     try:
         return _run_pipeline(
             runner=runner,
-            console=console,
+            cockpit=cockpit,
             workspace=workspace_root,
             user_prompt=state.user_prompt,
             skill_dir=skill_dir,
@@ -115,7 +105,7 @@ def run_new_issue(
     except (RuntimeError, TimeoutError, OSError) as error:
         if cockpit:
             raise
-        console.print(f"[red]Falha na sessão ACP:[/red] {error}")
+        print_workflow_error(f"Falha na sessão ACP: {error}")
         return 1
 
 
@@ -123,7 +113,7 @@ def _resolve_workflow_state(
     workspace: Path,
     user_prompt: str,
     *,
-    prompt_handler: PromptHandler | None = None,
+    prompt_handler: Any | None = None,
 ) -> WorkflowState | None:
     resumable = find_resumable_workflows(workspace)
     if resumable:
@@ -144,7 +134,7 @@ def _pick_resumable(
     workflows: list[WorkflowState],
     user_prompt: str,
     *,
-    prompt_handler: PromptHandler | None = None,
+    prompt_handler: Any | None = None,
 ) -> WorkflowState | None:
     select_choice = getattr(prompt_handler, "select_choice", None) if prompt_handler else None
 
@@ -155,22 +145,13 @@ def _pick_resumable(
             ("Iniciar novo workflow", "new"),
             ("Cancelar", "cancel"),
         ]
-        if select_choice is not None:
-            choice = select_choice(
-                f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
-                choices,
-                title="Resume",
-            )
-        else:
-            import questionary
-
-            from pulse.terminal.styles import MENU_STYLE
-
-            choice = questionary.select(
-                f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
-                choices=[questionary.Choice(label, value=value) for label, value in choices],
-                style=MENU_STYLE,
-            ).ask()
+        if select_choice is None:
+            return None
+        choice = select_choice(
+            f"Workflow em andamento encontrado: {only.feature_slug}. O que deseja?",
+            choices,
+            title="Resume",
+        )
         if choice is None or choice == "cancel":
             return None
         if choice == "resume":
@@ -187,22 +168,13 @@ def _pick_resumable(
     choices.append(("Iniciar novo workflow", "new"))
     choices.append(("Cancelar", "cancel"))
 
-    if select_choice is not None:
-        picked = select_choice(
-            "Workflows em andamento encontrados. O que deseja?",
-            choices,
-            title="Resume",
-        )
-    else:
-        import questionary
-
-        from pulse.terminal.styles import MENU_STYLE
-
-        picked = questionary.select(
-            "Workflows em andamento encontrados. O que deseja?",
-            choices=[questionary.Choice(label, value=value) for label, value in choices],
-            style=MENU_STYLE,
-        ).ask()
+    if select_choice is None:
+        return None
+    picked = select_choice(
+        "Workflows em andamento encontrados. O que deseja?",
+        choices,
+        title="Resume",
+    )
     if picked is None or picked == "cancel":
         return None
     if picked == "new":
@@ -214,34 +186,26 @@ def _pick_resumable(
 
 
 def _print_header(
-    console: Console,
     workspace: Path,
     state: WorkflowState,
     user_prompt: str,
 ) -> None:
-    console.print()
-    console.print(
-        Panel(
-            "\n".join(
-                [
-                    "Skill: tlc-spec-driven",
-                    f"Workspace: {workspace}",
-                    f"Feature: {state.feature_slug}",
-                    f"Fase atual: {state.current_phase}",
-                    f"Tarefa: {user_prompt.strip() or '—'}",
-                ]
-            ),
-            title="[bold cyan]New issue — Specify pipeline[/bold cyan]",
-            border_style="cyan",
-        )
+    print_workflow_banner(
+        title="New issue — Specify pipeline",
+        lines=[
+            "Skill: tlc-spec-driven",
+            f"Workspace: {workspace}",
+            f"Feature: {state.feature_slug}",
+            f"Fase atual: {state.current_phase}",
+            f"Tarefa: {user_prompt.strip() or '—'}",
+        ],
     )
-    console.print()
 
 
 def _run_pipeline(
     *,
     runner: AcpSessionRunner,
-    console: Console,
+    cockpit: bool,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
@@ -260,7 +224,7 @@ def _run_pipeline(
             if phase == "execute":
                 exit_code = _run_execute_phase(
                     runner=runner,
-                    console=console,
+                    cockpit=cockpit,
                     workspace=workspace,
                     user_prompt=user_prompt,
                     skill_dir=skill_dir,
@@ -276,7 +240,8 @@ def _run_pipeline(
                 state.mark_phase_skipped(phase, reason)
                 state.save(workspace)
                 _sync_stream_phases(runner, state)
-                console.print(f"[dim]⏭  {phase.capitalize()} pulada: {reason}[/dim]")
+                if not cockpit:
+                    print_workflow_result(f"⏭  {phase.capitalize()} pulada: {reason}")
                 continue
 
             if state.phases[phase].status in {PhaseStatus.APPROVED, PhaseStatus.DONE}:
@@ -285,7 +250,7 @@ def _run_pipeline(
 
             exit_code = _run_approval_phase(
                 runner=runner,
-                console=console,
+                cockpit=cockpit,
                 workspace=workspace,
                 user_prompt=user_prompt,
                 skill_dir=skill_dir,
@@ -304,11 +269,15 @@ def _run_pipeline(
                 state.mark_phase_skipped(phase, reason)
                 state.save(workspace)
                 _sync_stream_phases(runner, state)
-                console.print(f"[dim]⏭  {phase.capitalize()} pulada: {reason}[/dim]")
+                if not cockpit:
+                    print_workflow_result(f"⏭  {phase.capitalize()} pulada: {reason}")
 
-        console.print()
-        console.print("[green]✓[/green] Pipeline Specify concluído")
-        console.print(f"[dim]Estado em {state.workflow_path.as_posix()}[/dim]")
+        if not cockpit:
+            print()
+        if not cockpit:
+            print_workflow_result("✓ Pipeline Specify concluído")
+        if not cockpit:
+            print_workflow_result(f"Estado em {state.workflow_path.as_posix()}")
         return 0
     finally:
         runner.close()
@@ -328,7 +297,7 @@ def _phase_start_index(state: WorkflowState) -> int:
 def _run_approval_phase(
     *,
     runner: AcpSessionRunner,
-    console: Console,
+    cockpit: bool,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
@@ -377,19 +346,22 @@ def _run_approval_phase(
 
     outcome = str(result.get("outcome", ""))
     if outcome in {"cancel", "cancelled"}:
-        console.print(f"[yellow]{phase.capitalize()} cancelada.[/yellow]")
+        if not cockpit:
+            print_workflow_result(f"{phase.capitalize()} cancelada.")
         state.save(workspace)
         return 1
 
     if not bool(result.get("approved")):
-        console.print(f"[yellow]{phase.capitalize()} não aprovada — pipeline pausado.[/yellow]")
+        if not cockpit:
+            print_workflow_result(f"{phase.capitalize()} não aprovada — pipeline pausado.")
         state.mark_phase_awaiting_approval(phase)
         state.save(workspace)
         return 0
 
     state.approve_phase(phase)
     state.save(workspace)
-    console.print(f"[green]✓[/green] {phase.capitalize()} aprovada")
+    if not cockpit:
+        print_workflow_result(f"✓ {phase.capitalize()} aprovada")
 
     state = _reload_state(workspace, state)
     if phase == "tasks":
@@ -404,7 +376,7 @@ def _run_approval_phase(
 def _run_execute_phase(
     *,
     runner: AcpSessionRunner,
-    console: Console,
+    cockpit: bool,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
@@ -421,7 +393,8 @@ def _run_execute_phase(
         state.save(workspace)
 
     if not state.tasks:
-        console.print("[cyan]Execute — implementação inline (Tasks pulada)[/cyan]")
+        if not cockpit:
+            print_workflow_result("Execute — implementação inline (Tasks pulada)")
         result = runner.run_isolated_prompt(
             workflow="new-issue",
             phase_label="Fase Execute — implementação",
@@ -434,11 +407,13 @@ def _run_execute_phase(
             preferred_model=preferred_model,
         )
         if result.get("stopReason") == "cancelled":
-            console.print("[yellow]Execute cancelada.[/yellow]")
+            if not cockpit:
+                print_workflow_result("Execute cancelada.")
             return 1
         state.mark_phase_done("execute")
         state.save(workspace)
-        console.print("[green]✓[/green] Execute concluída")
+        if not cockpit:
+            print_workflow_result("✓ Execute concluída")
         return 0
 
     tasks_path = workspace / state.feature_dir / "tasks.md"
@@ -451,12 +426,13 @@ def _run_execute_phase(
     ]
     _sync_stream_tasks(runner, state)
 
-    console.print(f"[cyan]Execute — {len(state.tasks)} task(s)[/cyan]")
+    if not cockpit:
+        print_workflow_result(f"Execute — {len(state.tasks)} task(s)")
     _notify(runner, f"Execute — {len(state.tasks)} task(s)")
     for index, spec in enumerate(ordered, start=1):
         exit_code = _run_execute_task(
             runner=runner,
-            console=console,
+            cockpit=cockpit,
             workspace=workspace,
             user_prompt=user_prompt,
             skill_dir=skill_dir,
@@ -476,7 +452,8 @@ def _run_execute_phase(
 
     state.mark_phase_done("execute")
     state.save(workspace)
-    console.print("[green]✓[/green] Execute concluída — todas as tasks finalizadas")
+    if not cockpit:
+        print_workflow_result("✓ Execute concluída — todas as tasks finalizadas")
     _notify(runner, "Execute concluída — todas as tasks finalizadas")
     return 0
 
@@ -493,7 +470,7 @@ def _load_task_specs(tasks_path: Path, state: WorkflowState):
 def _run_execute_task(
     *,
     runner: AcpSessionRunner,
-    console: Console,
+    cockpit: bool,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
@@ -504,11 +481,13 @@ def _run_execute_task(
 ) -> int:
     task = spec
     if _task_status(state, task.task_id) == "done":
-        console.print(f"[dim]  Task {task.task_id} — já concluída[/dim]")
+        if not cockpit:
+            print_workflow_result(f"  Task {task.task_id} — já concluída")
         return 0
 
     label = f"Task {task.task_id}: {task.title}".strip()
-    console.print(f"[cyan]{label}[/cyan]")
+    if not cockpit:
+        print_workflow_result(f"{label}")
     _notify(runner, label)
     result = runner.run_isolated_prompt(
         workflow="new-issue",
@@ -525,7 +504,8 @@ def _run_execute_task(
         preferred_model=preferred_model,
     )
     if result.get("stopReason") == "cancelled":
-        console.print(f"[yellow]{label} cancelada — pipeline pausado.[/yellow]")
+        if not cockpit:
+            print_workflow_result(f"{label} cancelada — pipeline pausado.")
         _notify(runner, f"{label} cancelada — pipeline pausado")
         state.save(workspace)
         return 1
@@ -539,13 +519,14 @@ def _run_execute_task(
     failed = [item for item in gate_results if not item.ok]
     if failed:
         for item in failed:
-            console.print(f"[red]Gate falhou:[/red] `{item.command}` (exit {item.exit_code})")
+            if not cockpit:
+                print_workflow_result(f"Gate falhou: `{item.command}` (exit {item.exit_code})")
             _notify(runner, f"Gate falhou: {item.command} (exit {item.exit_code})")
             if item.output:
-                console.print(f"[dim]{item.output[-2000:]}[/dim]")
-        console.print(
-            f"[yellow]{label} não marcada como done — corrija o gate e retome.[/yellow]"
-        )
+                if not cockpit:
+                    print_workflow_result(f"{item.output[-2000:]}")
+        if not cockpit:
+            print_workflow_result(f"{label} não marcada como done — corrija o gate e retome.")
         _notify(runner, f"{label} não marcada como done — corrija o gate e retome")
         state.save(workspace)
         return 1
@@ -554,10 +535,12 @@ def _run_execute_task(
     state.save(workspace)
     _sync_stream_tasks(runner, state)
     if gate_results:
-        console.print(f"[green]✓[/green] {label} — gates ok")
+        if not cockpit:
+            print_workflow_result(f"✓ {label} — gates ok")
         _notify(runner, f"{label} — gates ok")
     else:
-        console.print(f"[green]✓[/green] {label}")
+        if not cockpit:
+            print_workflow_result(f"✓ {label}")
         _notify(runner, f"{label} concluída")
     return 0
 

@@ -1,0 +1,83 @@
+openapi: 3.0.3
+info:
+  title: Pulse Engine API
+  version: 0.1.0
+paths:
+  /api/status:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /api/doctor:
+    get:
+      summary: Environment checks
+      responses:
+        "200":
+          description: Check results
+  /api/workflows:
+    get:
+      summary: List workflows
+      responses:
+        "200":
+          description: Workflow catalog
+  /api/workflows/{workflow_id}/runs:
+    post:
+      summary: Start a workflow run
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run created
+  /api/runs/{run_id}:
+    get:
+      summary: Get run status
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Run state
+  /api/runs/{run_id}/events:
+    get:
+      summary: SSE event stream for a run
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: text/event-stream
+  /api/prompts/{prompt_id}/answer:
+    post:
+      summary: Answer a pending prompt
+      parameters:
+        - name: prompt_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Accepted
+  /api/history:
+    get:
+      summary: List history items
+      responses:
+        "200":
+          description: History list
+  /api/config:
+    get:
+      summary: Global and project config
+      responses:
+        "200":
+          description: Config payload

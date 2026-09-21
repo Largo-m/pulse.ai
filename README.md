@@ -2,6 +2,23 @@
 
 Orquestrador terminal-first de workflows com agentes de IA via Cursor.
 
+Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## Arquitetura
+
+```
+CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  Cursor Agent
+```
+
+- **Engine** (`pulse-engine`): composition root; dono do estado e dos workflows
+- **CLI** (`pulse`): cliente fino + TUI; fala com o daemon em `~/.pulse/daemon.sock`
+- Contrato: [`contracts/openapi.yaml`](contracts/openapi.yaml)
+
+```bash
+pulse daemon start|status|stop
+pulse-engine   # foreground
+```
+
 ## Instalação
 
 ```bash

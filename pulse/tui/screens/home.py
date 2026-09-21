@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -10,9 +8,10 @@ from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from pulse import __version__
+from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.config import global_config_exists
 from pulse.plan.spec_types import SPEC_TYPES
-from pulse.terminal.welcome import BANNER, PULSE_LINE, PULSE_WAVE, is_pulse_ready
+from pulse.runtime.ready import is_pulse_ready
 
 
 def _home_brand() -> str:
@@ -81,10 +80,10 @@ class HomeScreen(Screen[None]):
             self.app.exit()
             return
         if action == "init":
-            self._run_init()
+            self.app.open_onboarding()
             return
         if action == "settings":
-            self._run_settings()
+            self.app.open_settings()
             return
         if action == "history":
             self.app.open_history()
@@ -117,31 +116,8 @@ class HomeScreen(Screen[None]):
     def action_quit_app(self) -> None:
         self.app.exit()
 
-    def _run_external(self, callback: Callable[[], object]) -> None:
-        from concurrent.futures import ThreadPoolExecutor
-
-        from textual.app import SuspendNotSupported
-
-        def _run() -> None:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                pool.submit(callback).result()
-
-        try:
-            with self.app.suspend():
-                _run()
-        except SuspendNotSupported:
-            _run()
+    def on_screen_resume(self) -> None:
         self._refresh_options()
-
-    def _run_init(self) -> None:
-        from pulse.onboarding import run_onboarding_wizard
-
-        self._run_external(run_onboarding_wizard)
-
-    def _run_settings(self) -> None:
-        from pulse.terminal.settings_menu import run_settings_menu
-
-        self._run_external(run_settings_menu)
 
 
 def default_prompt(workflow_id: str) -> str:

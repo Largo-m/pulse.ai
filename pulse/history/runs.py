@@ -6,8 +6,8 @@ from typing import Any
 
 import yaml
 
+from pulse.history.events import LogEntry, LogKind
 from pulse.history.models import HistoryKind, RunPhaseSnapshot, RunRecord, RunStatus
-from pulse.tui.state import LogEntry, LogKind
 
 RUNS_ROOT = Path(".pulse/runs")
 

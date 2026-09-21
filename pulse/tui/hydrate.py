@@ -7,7 +7,8 @@ from pulse.history.models import HistoryItem, HistoryKind, HistoryStep
 from pulse.history.runs import load_run_logs
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.artifacts import is_spec_artifact
-from pulse.tui.state import ArtifactItem, CockpitState, LogEntry, LogKind, PhaseStatus
+from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseStatus
+from pulse.tui.state import CockpitState
 
 _NO_LOGS = "Nenhum log persistido para esta sessão."
 _TASK_INFO_RE = re.compile(r"Task\s+(T\d+)", re.IGNORECASE)

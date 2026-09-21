@@ -7,7 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.history.hydrate import hydrate_history_item
+from pulse.tui.hydrate import hydrate_history_item
 from pulse.history.models import HistoryItem
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader

@@ -225,11 +225,10 @@ def test_run_execute_task_marks_done_when_gates_pass(monkeypatch, tmp_path: Path
         ],
     )
 
-    from rich.console import Console
 
     code = new_issue_flow._run_execute_task(
         runner=FakeRunner(),
-        console=Console(force_terminal=False),
+        cockpit=False,
         workspace=tmp_path,
         user_prompt="x",
         skill_dir=resolve_new_issue_skill(),
@@ -261,11 +260,10 @@ def test_run_execute_task_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
         lambda **_kwargs: [GateResult(ok=False, command="false", exit_code=1, output="boom")],
     )
 
-    from rich.console import Console
 
     code = new_issue_flow._run_execute_task(
         runner=FakeRunner(),
-        console=Console(force_terminal=False),
+        cockpit=False,
         workspace=tmp_path,
         user_prompt="x",
         skill_dir=resolve_new_issue_skill(),

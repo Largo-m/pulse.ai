@@ -6,9 +6,7 @@ from enum import Enum
 from queue import Empty, Queue
 from typing import Any
 
-from rich.console import Console
-
-from pulse.presentation.prompt.ask_question import (
+from pulse.prompts.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     OTHER_OPTION_ID,
     build_ask_question_answers,
@@ -21,13 +19,13 @@ from pulse.presentation.prompt.ask_question import (
     resolve_question_progress,
     should_add_other_option,
 )
-from pulse.presentation.prompt.handler import (
+from pulse.prompts.permission import (
     PermissionPolicy,
-    _permission_cancelled,
-    _permission_selected,
-    _pick_permission_option,
+    permission_cancelled,
+    permission_selected,
+    pick_permission_option,
 )
-from pulse.presentation.prompt.text_questionnaire import (
+from pulse.prompts.text_questionnaire import (
     TextQuestion,
     TextQuestionnaire,
     format_questionnaire_answers,
@@ -208,9 +206,8 @@ class PromptBridge:
 
 
 class TextualPromptHandler:
-    def __init__(self, bridge: PromptBridge, *, console: Console | None = None) -> None:
+    def __init__(self, bridge: PromptBridge) -> None:
         self._bridge = bridge
-        self._console = console or Console(highlight=False, soft_wrap=True)
 
     def respond_to_ask_question(self, params: dict[str, Any]) -> dict[str, Any]:
         questions = parse_ask_question_params(params)
@@ -322,19 +319,19 @@ class TextualPromptHandler:
         if not allow_terminal and (
             "terminal" in kind or "shell" in kind or "bash" in kind or "command" in kind
         ):
-            option_id = _pick_permission_option(options, prefer="reject") or "reject-once"
-            return _permission_selected(option_id)
+            option_id = pick_permission_option(options, prefer="reject") or "reject-once"
+            return permission_selected(option_id)
 
         if policy == "auto_approve":
-            option_id = _pick_permission_option(options, prefer="allow") or "allow-once"
-            return _permission_selected(option_id)
+            option_id = pick_permission_option(options, prefer="allow") or "allow-once"
+            return permission_selected(option_id)
 
         if policy == "deny_writes":
             if "write" in kind or "edit" in kind:
-                option_id = _pick_permission_option(options, prefer="reject") or "reject-once"
-                return _permission_selected(option_id)
-            option_id = _pick_permission_option(options, prefer="allow") or "allow-once"
-            return _permission_selected(option_id)
+                option_id = pick_permission_option(options, prefer="reject") or "reject-once"
+                return permission_selected(option_id)
+            option_id = pick_permission_option(options, prefer="allow") or "allow-once"
+            return permission_selected(option_id)
 
         choices = build_permission_choices(options)
         selected = self._bridge.select(
@@ -343,8 +340,8 @@ class TextualPromptHandler:
             title="Permissão",
         )
         if selected is None:
-            return _permission_cancelled()
-        return _permission_selected(str(selected))
+            return permission_cancelled()
+        return permission_selected(str(selected))
 
     def select_choice(
         self,

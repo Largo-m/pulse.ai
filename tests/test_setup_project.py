@@ -8,7 +8,7 @@ from pulse.plan.setup_project_prompt import (
     build_setup_project_prompt,
     resolve_tlc_spec_skill,
 )
-from pulse.presentation.prompt.ask_question import (
+from pulse.prompts.ask_question import (
     format_option_label,
     parse_questionnaire_meta,
     resolve_question_progress,

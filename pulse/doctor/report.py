@@ -4,9 +4,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
-
 from pulse.acp.client import probe_acp_connection
 from pulse.config import (
     GLOBAL_CONFIG_FILE,
@@ -15,14 +12,6 @@ from pulse.config import (
     load_project_config,
 )
 from pulse.doctor.checks import CheckResult, run_environment_checks
-
-
-def _status_style(status: str) -> str:
-    if status == "ok":
-        return "green"
-    if status == "warn":
-        return "yellow"
-    return "red"
 
 
 def _status_icon(status: str) -> str:
@@ -36,30 +25,16 @@ def _status_icon(status: str) -> str:
 def print_doctor_report(
     checks: list[CheckResult],
     *,
-    console: Console | None = None,
     acp_probe_message: str | None = None,
 ) -> None:
-    output = console or Console()
-    table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
-    table.add_column("Status", width=6)
-    table.add_column("Verificação")
-    table.add_column("Detalhe", style="dim")
-
     for check in checks:
-        table.add_row(
-            f"[{_status_style(check.status)}]{_status_icon(check.status)}[/]",
-            check.message,
-            check.detail or "",
-        )
-
+        detail = f" — {check.detail}" if check.detail else ""
+        print(f"{_status_icon(check.status)} {check.message}{detail}")
     if acp_probe_message:
-        table.add_row("", "Teste ACP", acp_probe_message)
-
-    output.print(table)
+        print(f"  Teste ACP: {acp_probe_message}")
 
 
-def run_doctor(*, test_acp: bool = False, console: Console | None = None) -> int:
-    output = console or Console()
+def run_doctor(*, test_acp: bool = False) -> int:
     checks = run_environment_checks()
     acp_message: str | None = None
 
@@ -106,9 +81,8 @@ def run_doctor(*, test_acp: bool = False, console: Console | None = None) -> int
         agent_ok = any(check.name == "Agent CLI" and check.status == "ok" for check in checks)
         auth_ok = any(check.name == "Autenticação" and check.status == "ok" for check in checks)
         if agent_ok and auth_ok:
-            output.print("[dim]Testando conexão ACP…[/dim]")
-            cwd = str(Path.cwd())
-            probe = probe_acp_connection(cwd=cwd)
+            print("Testando conexão ACP…")
+            probe = probe_acp_connection(cwd=str(Path.cwd()))
             acp_message = probe.message if probe.success else probe.error or probe.message
             checks.append(
                 CheckResult(
@@ -128,7 +102,7 @@ def run_doctor(*, test_acp: bool = False, console: Console | None = None) -> int
                 )
             )
 
-    print_doctor_report(checks, console=output, acp_probe_message=acp_message)
+    print_doctor_report(checks, acp_probe_message=acp_message)
     failed = any(check.status == "fail" for check in checks)
     return 1 if failed else 0
 

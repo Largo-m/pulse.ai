@@ -4,9 +4,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from rich.console import Console
-from rich.panel import Panel
-
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
@@ -15,10 +12,10 @@ from pulse.plan.analyze_codebase_prompt import (
     build_analyze_codebase_prompt,
     resolve_analyze_codebase_skill,
 )
+from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
-from pulse.presentation.prompt.handler import PromptHandler
-from pulse.presentation.stream_renderer import StreamRenderer
-from pulse.terminal.tty import is_cockpit_stream, is_interactive
+from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.runtime.tty import is_cockpit_stream, is_interactive
 
 
 def run_analyze_codebase(
@@ -29,11 +26,11 @@ def run_analyze_codebase(
     prompt_handler: Any | None = None,
     render_header: bool = True,
 ) -> int:
-    if not is_cockpit_stream(stream) and not is_interactive():
-        print("[pulse] Analyze codebase requer terminal interativo.", file=sys.stderr)
+    cockpit = is_cockpit_stream(stream)
+    if not cockpit and not is_interactive():
+        print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
 
-    cockpit = is_cockpit_stream(stream)
     agent_check = check_agent_in_path()
     auth_check = check_auth()
     if agent_check.status != "ok" or auth_check.status != "ok":
@@ -63,20 +60,14 @@ def run_analyze_codebase(
         skill_dir=skill_dir,
     )
 
-    console = Console(highlight=False, soft_wrap=True)
     if render_header and not cockpit:
-        console.print()
-        console.print(
-            Panel(
-                f"Skill: tlc-spec-driven\nWorkspace: {workspace_root}",
-                title="[bold cyan]Analyze codebase[/bold cyan]",
-                border_style="cyan",
-            )
+        print_workflow_banner(
+            title="Analyze codebase",
+            lines=[f"Skill: tlc-spec-driven", f"Workspace: {workspace_root}"],
         )
-        console.print()
 
-    active_stream = stream or StreamRenderer(console)
-    active_handler = prompt_handler or PromptHandler(console=console)
+    active_stream = stream or NullStreamSink()
+    active_handler = prompt_handler or NullPromptPort()
     runner = AcpSessionRunner(
         acp_command,
         cwd=str(workspace_root),
@@ -96,7 +87,7 @@ def run_analyze_codebase(
     except (RuntimeError, TimeoutError, OSError) as error:
         if cockpit:
             raise
-        console.print(f"[red]Falha na sessão ACP:[/red] {error}")
+        print_workflow_error(f"Falha na sessão ACP: {error}")
         return 1
 
     stop_reason = result.get("stopReason", "end_turn")
@@ -104,13 +95,13 @@ def run_analyze_codebase(
     if cockpit:
         return 1 if stop_reason == "cancelled" else 0
 
-    console.print()
+    print()
     if stop_reason == "cancelled":
-        console.print("[yellow]Análise cancelada.[/yellow]")
+        print_workflow_result("Análise cancelada.")
         return 1
 
-    console.print(f"[green]✓[/green] Sessão concluída ({stop_reason})")
+    print_workflow_result(f"Sessão concluída ({stop_reason})")
     if ask_count:
-        console.print(f"[dim]{ask_count} pergunta(s) respondida(s) no terminal[/dim]")
-    console.print("[dim]Artefatos esperados em .pulse/specs/codebase/[/dim]")
+        print_workflow_result(f"{ask_count} pergunta(s) respondida(s) no terminal")
+    print_workflow_result("Artefatos esperados em .pulse/specs/codebase/")
     return 0

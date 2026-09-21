@@ -2,12 +2,13 @@ from pulse.plan.quick_prompt import (
     classify_quick_questionnaire_outcome,
     first_questionnaire_answer,
 )
-from pulse.presentation.prompt.ask_question import (
-    option_requires_description,
+from pulse.prompts.ask_question import (
     is_other_option,
+    option_requires_description,
     should_add_other_option,
 )
-from pulse.presentation.prompt.handler import PromptHandler
+from pulse.prompts.text_questionnaire import TextQuestion
+from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
 
 
 def test_option_requires_description():
@@ -77,9 +78,7 @@ def test_first_questionnaire_answer():
 
 
 def test_handler_format_answer_with_follow_up_detail():
-    from pulse.presentation.prompt.text_questionnaire import TextQuestion
-
-    handler = PromptHandler()
+    handler = TextualPromptHandler(PromptBridge())
     question = TextQuestion(
         id="q1",
         prompt="1. Ajustes?",
@@ -93,7 +92,7 @@ def test_handler_format_answer_with_follow_up_detail():
 
 
 def test_build_choices_suppresses_other_for_migration():
-    handler = PromptHandler()
+    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Migrar para o pipeline completo"},
         {"id": "B", "label": "Quick fix: reutilizar adapter"},
@@ -104,7 +103,7 @@ def test_build_choices_suppresses_other_for_migration():
         prompt="1. Este pedido excede o escopo do Quick mode. Como deseja prosseguir?",
     )
     assert len(choices) == 3
-    assert all(str(choice.value) != "__other__" for choice in choices)
+    assert all(choice[0] != "__other__" for choice in choices)
 
 
 def test_is_other_option_detects_describe_variants():
@@ -129,7 +128,7 @@ def test_should_not_add_other_when_label_already_exists():
 
 
 def test_build_choices_does_not_duplicate_existing_other():
-    handler = PromptHandler()
+    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Produto / plataforma com usuários"},
         {"id": "B", "label": "API / serviço backend"},
@@ -141,14 +140,12 @@ def test_build_choices_does_not_duplicate_existing_other():
         options,
         prompt="1. O que você está construindo?",
     )
-    other_choices = [choice for choice in choices if str(choice.value) == "__other__"]
+    other_choices = [choice for choice in choices if choice[0] == "__other__"]
     assert len(other_choices) == 1
-    assert sum("Outro" in str(choice.title) for choice in choices) == 1
+    assert sum("Outro" in label for _, label in choices) == 1
 
 
 def test_textual_build_choices_does_not_duplicate_existing_other():
-    from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
-
     handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Produto / plataforma com usuários"},
@@ -164,10 +161,10 @@ def test_textual_build_choices_does_not_duplicate_existing_other():
 
 
 def test_build_choices_adds_other_for_open_questions():
-    handler = PromptHandler()
+    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Paper trading"},
         {"id": "B", "label": "Gestão de portfólio"},
     ]
     choices = handler._build_choices(options, prompt="1. O que você está construindo?")
-    assert any(str(choice.value) == "__other__" for choice in choices)
+    assert any(choice[0] == "__other__" for choice in choices)

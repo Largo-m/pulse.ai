@@ -7,9 +7,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pulse.history.events import PhaseItem
 from pulse.history.models import HistoryKind, RunPhaseSnapshot, RunRecord, RunStatus
 from pulse.history.runs import save_run
-from pulse.tui.state import CockpitState, PhaseItem
+from pulse.history.snapshot import RunSnapshot
 
 _SPEC_RE = re.compile(r"\.pulse/specs/(features|quick)/([^/]+)")
 
@@ -45,14 +46,14 @@ class RunRecorder:
             self._last_flush = 0.0
         return record
 
-    def observe(self, state: CockpitState) -> None:
+    def observe(self, state: RunSnapshot) -> None:
         with self._lock:
             if self._record is None:
                 return
             self._sync_record(state)
             self._dirty = True
 
-    def maybe_flush(self, state: CockpitState) -> None:
+    def maybe_flush(self, state: RunSnapshot) -> None:
         with self._lock:
             if self._record is None or not self._dirty or self._finalized:
                 return
@@ -64,7 +65,7 @@ class RunRecorder:
             self._last_flush = now
         save_run(self._workspace, record, list(state.entries))
 
-    def flush(self, state: CockpitState) -> None:
+    def flush(self, state: RunSnapshot) -> None:
         with self._lock:
             if self._record is None:
                 return
@@ -73,7 +74,7 @@ class RunRecorder:
             self._last_flush = time.monotonic()
         save_run(self._workspace, record, list(state.entries))
 
-    def finalize(self, state: CockpitState, exit_code: int | None = None) -> None:
+    def finalize(self, state: RunSnapshot, exit_code: int | None = None) -> None:
         with self._lock:
             if self._record is None:
                 return
@@ -93,7 +94,7 @@ class RunRecorder:
             self._last_flush = time.monotonic()
         save_run(self._workspace, record, list(state.entries))
 
-    def _sync_record(self, state: CockpitState) -> None:
+    def _sync_record(self, state: RunSnapshot) -> None:
         record = self._record
         if record is None:
             return
@@ -106,7 +107,7 @@ class RunRecorder:
         record.slug = slug
         record.spec_dir = spec_dir
 
-    def _snapshot_locked(self, state: CockpitState) -> RunRecord:
+    def _snapshot_locked(self, state: RunSnapshot) -> RunRecord:
         self._sync_record(state)
         record = self._record
         assert record is not None
@@ -143,7 +144,7 @@ def _kind_for_workflow(workflow_id: str) -> HistoryKind | None:
     return None
 
 
-def _binding_from_state(state: CockpitState, workflow_id: str) -> tuple[HistoryKind, str, str] | None:
+def _binding_from_state(state: RunSnapshot, workflow_id: str) -> tuple[HistoryKind, str, str] | None:
     preferred = None
     if workflow_id == "new-issue":
         preferred = "features"

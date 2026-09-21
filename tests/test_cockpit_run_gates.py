@@ -7,7 +7,7 @@ import pytest
 
 from pulse.plan import analyze_codebase_flow, new_issue_flow, quick_flow, setup_project_flow
 from pulse.plan.runner import run_plan
-from pulse.terminal.tty import is_cockpit_stream
+from pulse.runtime.tty import is_cockpit_stream
 
 
 @dataclass

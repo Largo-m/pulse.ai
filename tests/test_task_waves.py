@@ -223,7 +223,6 @@ Testes cobrem `apiValue` e `fromApi`.
 
 
 def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
-    from rich.console import Console
 
     from pulse.plan import new_issue_flow
     from pulse.plan.specify_state import TaskState, WorkflowState
@@ -273,7 +272,7 @@ def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
 
     code = new_issue_flow._run_execute_phase(
         runner=FakeRunner(),
-        console=Console(force_terminal=False),
+        cockpit=False,
         workspace=tmp_path,
         user_prompt="x",
         skill_dir=tmp_path,

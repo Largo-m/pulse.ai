@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import sys
 from typing import Any
 
 
 def is_interactive() -> bool:
-    return sys.stdout.isatty() and sys.stderr.isatty()
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def is_cockpit_stream(stream: Any | None) -> bool:

@@ -8,7 +8,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
-from pulse.presentation.prompt.handler import PromptHandler
+from pulse.ports import NullPromptPort
 
 SOCKET_ENV = "PULSE_ASK_SOCKET"
 DEFAULT_SOCKET_TIMEOUT = 600.0
@@ -23,11 +23,11 @@ class AskQuestionBridgeServer:
         self,
         *,
         socket_path: Path | None = None,
-        prompt_handler: PromptHandler | None = None,
+        prompt_handler=None,
         on_question: Callable[[], None] | None = None,
     ) -> None:
         self._socket_path = socket_path or default_socket_path()
-        self._prompt_handler = prompt_handler or PromptHandler()
+        self._prompt_handler = prompt_handler or NullPromptPort()
         self._on_question = on_question
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None

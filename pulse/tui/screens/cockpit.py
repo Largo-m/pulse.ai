@@ -168,16 +168,17 @@ class CockpitScreen(Screen[None]):
         self.query_one(LogStream).show_prompt(request, _finish)
 
     def _run_workflow(self) -> None:
-        from pulse.plan.runner import run_plan
+        from pulse.client.run_session import EngineRunSession
 
         try:
-            code = run_plan(
-                spec_type_id=self.workflow_id,
-                user_prompt=self.user_prompt,
-                workspace=Path(self._cwd),
+            session = EngineRunSession(
                 stream=self.sink,
                 prompt_handler=self.prompt_handler,
-                render_header=False,
+            )
+            code = session.run(
+                workflow_id=self.workflow_id,
+                user_prompt=self.user_prompt,
+                workspace=self._cwd,
             )
         except Exception as error:
             self.state.add_info(f"Erro: {error}")

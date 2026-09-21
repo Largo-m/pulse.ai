@@ -30,7 +30,7 @@ def test_cockpit_screen_initial_state():
     assert screen.state.entries == []
 
 
-def test_home_run_external_avoids_nested_asyncio(monkeypatch):
+def test_home_opens_settings_screen(monkeypatch):
     async def run() -> None:
         from textual.app import App, ComposeResult
         from textual.widgets import Static
@@ -39,26 +39,17 @@ def test_home_run_external_avoids_nested_asyncio(monkeypatch):
             def compose(self) -> ComposeResult:
                 yield Static("ok")
 
+            def open_settings(self) -> None:
+                called.append("settings")
+
         called: list[str] = []
-
-        def fake_settings() -> int:
-            import asyncio
-
-            asyncio.run(asyncio.sleep(0))
-            called.append("ok")
-            return 0
-
         app = Harness()
         async with app.run_test(size=(80, 24)) as pilot:
             screen = HomeScreen()
             app.push_screen(screen)
             await pilot.pause()
-            monkeypatch.setattr(
-                "pulse.terminal.settings_menu.run_settings_menu",
-                fake_settings,
-            )
-            screen._run_settings()
-            assert called == ["ok"]
+            screen.app.open_settings()
+            assert called == ["settings"]
 
     asyncio.run(run())
 
