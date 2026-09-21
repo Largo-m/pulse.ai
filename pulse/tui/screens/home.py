@@ -61,9 +61,8 @@ class HomeScreen(Screen[None]):
             return
         if ready:
             for spec in SPEC_TYPES:
-                options.add_option(
-                    Option(f"{spec.label} — {spec.description}", id=f"workflow:{spec.id}")
-                )
+                label = spec.label if not spec.description else f"{spec.label} — {spec.description}"
+                options.add_option(Option(label, id=f"workflow:{spec.id}"))
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
         options.add_option(Option("Histórico — Specs", id="history"))

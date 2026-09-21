@@ -8,7 +8,7 @@ Arquivo: `pulse/plan/spec_types.py`
 
 ```python
 SPEC_TYPES = (
-    SpecType("spec", "Nova spec", "O Pulse escolhe o flow"),
+    SpecType("spec", "Nova spec", ""),
     SpecType("setup-project", "Setup project", "Setup inicial"),
     SpecType("analyze-codebase", "Analyze codebase", "Mapear código"),
 )
