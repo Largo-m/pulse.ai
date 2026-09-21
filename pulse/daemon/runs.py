@@ -9,7 +9,7 @@ from typing import Any
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.plan.runner import run_plan
-from pulse.plan.spec_types import SPEC_TYPES, is_runnable_spec_type
+from pulse.plan.spec_types import SPEC_TYPES, get_spec_type
 
 
 @dataclass
@@ -43,7 +43,7 @@ class RunManager:
         prompt: str,
         workspace: str | None = None,
     ) -> RunState:
-        if not is_runnable_spec_type(workflow_id):
+        if get_spec_type(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
         run_id = str(uuid.uuid4())
         bus = EventBus()

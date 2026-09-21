@@ -165,7 +165,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/plan/runner.py`](pulse/plan/runner.py) | Fachada: “roda este workflow” |
-| [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `spec`, `setup-project`, `analyze-codebase` (`new-issue`/`fix-bug` internos) |
+| [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `spec`, `setup-project`, `analyze-codebase` |
 | [`pulse/plan/*_flow.py`](pulse/plan/) | Passo a passo de cada workflow |
 | [`pulse/plan/*_prompt.py`](pulse/plan/) | Textos enviados ao agente |
 | [`pulse/plan/specify_state.py`](pulse/plan/specify_state.py) | Estado Specify → Design → Tasks → Execute |
@@ -267,7 +267,7 @@ pytest
 | **Port** | Interface (contrato) que o domínio espera |
 | **Adapter** | Implementação da port (TUI, API, Null…) |
 | **Composition root** | Único lugar que “liga” todas as peças |
-| **Workflow** | Pipeline tipado (`new-issue`, `fix-bug`, …) |
+| **Workflow** | Pipeline tipado (`spec`, `setup-project`, …) |
 | **Run** | Uma execução concreta de um workflow |
 
 ---

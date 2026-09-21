@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from pulse.plan.spec_prompt import ROUTE_RELATIVE_PATH, build_classify_prompt, route_file
-from pulse.plan.spec_route import load_route, parse_route_text, routed_workflow_id
+from pulse.plan.spec_route import load_route, parse_route_text
 
 
 def test_parse_route_text_accepts_aliases_and_fences():
@@ -19,11 +19,6 @@ def test_load_route_reads_workspace_file(tmp_path: Path):
     path.write_text("flow: quick\nreason: <=3 files\n", encoding="utf-8")
     assert load_route(tmp_path) == ("quick", "<=3 files")
     assert ROUTE_RELATIVE_PATH in str(path)
-
-
-def test_routed_workflow_id():
-    assert routed_workflow_id("quick") == "fix-bug"
-    assert routed_workflow_id("full") == "new-issue"
 
 
 def test_classify_prompt_asks_for_route_file(tmp_path: Path):

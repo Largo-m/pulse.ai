@@ -14,9 +14,7 @@ SPEC_TYPES = (
 )
 ```
 
-IDs internos `new-issue` e `fix-bug` continuam despacháveis (API e config antiga).
-
-Isso alimenta:
+O catálogo público alimenta o menu, a API e o settings.
 
 | Consumidor | Uso |
 | --- | --- |
@@ -27,7 +25,7 @@ Isso alimenta:
 
 Não existe plugin, discovery em disco, nem `workflows/*.yaml` de pipeline. ID desconhecido → exit `2`.
 
-A config TOML/YAML (`workflows.spec.agent`, etc.) **não define o pipeline** — só agent e model. Ver [armazenamento.md](armazenamento.md). `spec` cai em `new-issue` / `fix-bug` se a chave nova não existir.
+A config TOML/YAML (`workflows.spec.agent`, etc.) **não define o pipeline** — só agent e model. Ver [armazenamento.md](armazenamento.md).
 
 ## 2. Pipeline de carregamento (tudo workflow)
 

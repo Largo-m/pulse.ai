@@ -66,7 +66,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
     monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
 
     created = client.post(
-        "/api/workflows/fix-bug/runs",
+        "/api/workflows/spec/runs",
         json={"prompt": "x", "workspace": "/tmp"},
     )
     assert created.status_code == 200
@@ -108,3 +108,6 @@ def test_unknown_workflow_returns_404():
     client = TestClient(app)
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
+    for workflow_id in ("new-issue", "fix-bug"):
+        rejected = client.post(f"/api/workflows/{workflow_id}/runs", json={"prompt": "x"})
+        assert rejected.status_code == 404

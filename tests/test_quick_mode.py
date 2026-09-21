@@ -70,13 +70,6 @@ def test_load_bundled_skill_missing_raises():
         load_bundled_skill("nonexistent-skill", references=())
 
 
-def test_run_plan_fix_bug_delegates(monkeypatch):
-    calls: list[str] = []
-
-    def fake_run(*, user_prompt: str, **_kwargs) -> int:
-        calls.append(user_prompt)
-        return 0
-
-    monkeypatch.setattr("pulse.plan.runner.run_quick", fake_run)
-    assert run_plan(spec_type_id="fix-bug", user_prompt="Corrigir bug") == 0
-    assert calls == ["Corrigir bug"]
+def test_run_plan_rejects_fix_bug(monkeypatch):
+    monkeypatch.setattr("pulse.plan.runner.run_spec", lambda **_k: 0)
+    assert run_plan(spec_type_id="fix-bug", user_prompt="Corrigir bug") == 2

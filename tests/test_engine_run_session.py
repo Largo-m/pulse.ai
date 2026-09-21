@@ -57,7 +57,7 @@ def test_engine_run_session_maps_events():
     ]
     client = _FakeClient(events)
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
-    code = session.run(workflow_id="fix-bug", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
     assert code == 0
     stream.begin_phase.assert_called_with("Plan")
     stream.handle_update.assert_called()

@@ -11,7 +11,7 @@ from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.new_issue_flow import run_new_issue
 from pulse.plan.quick_flow import run_quick
 from pulse.plan.spec_prompt import PULSE_SPEC_SKILL, build_classify_prompt, resolve_spec_skill
-from pulse.plan.spec_route import load_route, routed_workflow_id
+from pulse.plan.spec_route import load_route
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
@@ -122,7 +122,7 @@ def run_spec(
         "prompt_handler": active_handler,
         "render_header": False,
     }
-    if routed_workflow_id(flow) == "fix-bug":
+    if flow == "quick":
         return run_quick(**kwargs)
     return run_new_issue(**kwargs)
 

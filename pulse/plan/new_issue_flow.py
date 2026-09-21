@@ -61,7 +61,7 @@ def run_new_issue(
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
-    resolved = resolve_config(workspace=workspace, workflow="new-issue")
+    resolved = resolve_config(workspace=workspace, workflow="spec")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command
@@ -336,7 +336,7 @@ def _run_approval_phase(
     )
 
     result = runner.run_isolated_phase(
-        workflow="new-issue",
+        workflow="spec",
         phase_label=f"Fase {phase.capitalize()}",
         initial_prompt=initial_prompt,
         preferred_model=preferred_model,
@@ -396,7 +396,7 @@ def _run_execute_phase(
         if not cockpit:
             print_workflow_result("Execute — implementação inline (Tasks pulada)")
         result = runner.run_isolated_prompt(
-            workflow="new-issue",
+            workflow="spec",
             phase_label="Fase Execute — implementação",
             prompt_text=build_execute_inline_prompt(
                 workspace=workspace,
@@ -490,7 +490,7 @@ def _run_execute_task(
         print_workflow_result(f"{label}")
     _notify(runner, label)
     result = runner.run_isolated_prompt(
-        workflow="new-issue",
+        workflow="spec",
         phase_label=f"Execute — {label}",
         prompt_text=build_execute_task_prompt(
             workspace=workspace,

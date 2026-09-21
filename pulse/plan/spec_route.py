@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 
 from pulse.plan.spec_prompt import route_file
+
 _FULL_ALIASES = frozenset({"full", "feature", "new-issue", "pipeline", "specify"})
 _QUICK_ALIASES = frozenset({"quick", "fix", "fix-bug", "small", "quick-mode"})
 
@@ -49,9 +50,3 @@ def load_route(workspace: Path) -> tuple[str, str] | None:
     except OSError:
         return None
     return parse_route_text(text)
-
-
-def routed_workflow_id(flow: str) -> str:
-    if flow == "quick":
-        return "fix-bug"
-    return "new-issue"

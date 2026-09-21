@@ -82,19 +82,4 @@ def default_global_workflows() -> dict[str, WorkflowConfig]:
         "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
         "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
         "spec": WorkflowConfig(agent="cursor", model="gpt-5.5"),
-        "fix-bug": WorkflowConfig(agent="cursor", model="gpt-5.5"),
-        "new-issue": WorkflowConfig(agent="cursor", model="gpt-5.5"),
     }
-
-
-WORKFLOW_CONFIG_ALIASES: dict[str, tuple[str, ...]] = {
-    "spec": ("spec", "new-issue", "fix-bug"),
-    "new-issue": ("new-issue", "spec"),
-    "fix-bug": ("fix-bug", "spec"),
-}
-
-
-def workflow_lookup_ids(workflow: str | None) -> tuple[str, ...]:
-    if not workflow:
-        return ()
-    return WORKFLOW_CONFIG_ALIASES.get(workflow, (workflow,))

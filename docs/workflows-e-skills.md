@@ -9,7 +9,7 @@ Workflows são **pipelines fixos no código**. Skills são **instruções para o
 ```
 Home TUI / menu terminal
   → run_plan(spec_type_id)
-    → run_spec | run_new_issue | run_quick | run_setup_project | run_analyze_codebase
+    → run_spec | run_setup_project | run_analyze_codebase
       → resolve_config(workflow=id)     # agent + model + cwd
       → resolve_bundled_skill(...)      # pulse-spec-driven
       → build_*_prompt(...)             # skill bundled + tarefa
@@ -21,11 +21,9 @@ O catálogo público em `pulse/plan/spec_types.py`:
 
 | ID | Label | Flow | Skill empacotada |
 | --- | --- | --- | --- |
-| `spec` | Nova spec | Classifica → full (`new-issue`) ou quick (`fix-bug`) | `pulse-spec-driven` |
+| `spec` | Nova spec | Classifica → pipeline completo ou quick | `pulse-spec-driven` |
 | `setup-project` | Setup project | Análise → `.pulse/specs/project/` | `pulse-spec-driven` |
 | `analyze-codebase` | Analyze codebase | Exploração → `.pulse/specs/codebase/` | `pulse-spec-driven` |
-
-IDs internos `new-issue` e `fix-bug` continuam aceitos na API.
 
 Não existe workflow plugin. ID desconhecido retorna exit `2`.
 
@@ -87,7 +85,7 @@ Se o binário `agent acp` carregar skills globais do Cursor por conta própria, 
 
 1. Classifica o pedido (auto-sizing + Scope Eligibility).
 2. Agente grava `.pulse/specs/.route.yaml` (`flow: full|quick`).
-3. Pulse despacha `new-issue` ou `fix-bug`. Se o arquivo faltar, pergunta no terminal.
+3. Pulse despacha o pipeline completo ou o quick. Se o arquivo faltar, pergunta no terminal.
 
 ### new-issue
 
