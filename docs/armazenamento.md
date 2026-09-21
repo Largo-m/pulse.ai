@@ -49,7 +49,7 @@ A config efetiva por workflow é: `projeto.workflows[id]` → `global.workflows[
 
 ## 3. Specs — `.pulse/specs/`
 
-Árvore esperada pela skill `tlc-spec-driven`:
+Árvore esperada pela skill `pulse-spec-driven`:
 
 ```
 .pulse/specs/
@@ -110,4 +110,4 @@ O código **apaga** no start de workflow:
 
 O `.gitignore` ainda cita `.pulse/worktrees/` e `.pulse/artifacts/*/acp-events.jsonl`. **Nenhum código Python atual escreve nesses caminhos.**
 
-Skills empacotadas (`pulse/skills/tlc-spec-driven/`) são arquivos do pacote, não armazenamento de workspace. Ver [workflows-e-skills.md](workflows-e-skills.md).
+Skills empacotadas (`pulse/skills/pulse-spec-driven/`) são arquivos do pacote, não armazenamento de workspace. Ver [workflows-e-skills.md](workflows-e-skills.md).

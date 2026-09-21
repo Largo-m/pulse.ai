@@ -15,7 +15,7 @@ from pulse.skills.loader import load_bundled_skill
 
 def test_resolve_quick_skill_returns_skill_dir():
     skill_dir = resolve_quick_skill()
-    assert skill_dir.name == "tlc-spec-driven"
+    assert skill_dir.name == "pulse-spec-driven"
     assert (skill_dir / "SKILL.md").is_file()
     for reference in QUICK_REFERENCES:
         assert (skill_dir / "references" / reference).is_file()
@@ -29,7 +29,7 @@ def test_build_quick_plan_prompt_enforces_scope_and_approval():
         user_prompt="Corrigir botão de login que retorna 401",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `tlc-spec-driven`" in prompt
+    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
     assert "Siga o workflow **Quick mode**." in prompt
     assert "Corrigir botão de login" in prompt
     assert str(workspace) in prompt

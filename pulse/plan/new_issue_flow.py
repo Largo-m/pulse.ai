@@ -10,7 +10,7 @@ from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.new_issue_prompt import (
-    TLC_SPEC_SKILL,
+    PULSE_SPEC_SKILL,
     build_design_prompt,
     build_execute_inline_prompt,
     build_execute_task_prompt,
@@ -67,7 +67,7 @@ def run_new_issue(
     acp_command = resolved.acp_command
     preferred_model = resolved.model
 
-    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
+    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=PULSE_SPEC_SKILL)
 
     try:
         skill_dir = resolve_new_issue_skill()
@@ -193,7 +193,7 @@ def _print_header(
     print_workflow_banner(
         title="New issue — Specify pipeline",
         lines=[
-            "Skill: tlc-spec-driven",
+            "Skill: pulse-spec-driven",
             f"Workspace: {workspace}",
             f"Feature: {state.feature_slug}",
             f"Fase atual: {state.current_phase}",

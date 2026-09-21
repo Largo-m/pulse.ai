@@ -20,7 +20,7 @@ from pulse.plan.specify_state import (
 
 def test_resolve_new_issue_skill_returns_skill_dir():
     skill_dir = resolve_new_issue_skill()
-    assert skill_dir.name == "tlc-spec-driven"
+    assert skill_dir.name == "pulse-spec-driven"
     assert (skill_dir / "SKILL.md").is_file()
 
 

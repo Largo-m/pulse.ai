@@ -1,13 +1,13 @@
 ---
-name: tlc-spec-driven
+name: pulse-spec-driven
 description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. Creates atomic tasks with verification criteria, requirement traceability, and persistent memory across sessions. Stack-agnostic. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
 license: CC-BY-4.0
 metadata:
-  author: Felipe Rodrigues - github.com/felipfr
+  author: Pulse
   version: 2.0.0
 ---
 
-# Tech Lead's Club - Spec-Driven Development
+# Pulse Spec-Driven Development
 
 Plan and implement projects with precision. Granular tasks. Clear dependencies. Right tools. Zero ceremony.
 

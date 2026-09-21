@@ -1,27 +1,18 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Skill-TLC%20Spec--Driven-blue?style=for-the-badge" alt="skill badge" />
+  <img src="https://img.shields.io/badge/Skill-Pulse%20Spec--Driven-blue?style=for-the-badge" alt="skill badge" />
   <img src="https://img.shields.io/badge/Stack-Agnostic-green?style=for-the-badge" alt="stack agnostic" />
   <img src="https://img.shields.io/badge/Version-2.0.0-purple?style=for-the-badge" alt="version" />
 </p>
 
-<h1 align="center">🎯 TLC Spec-Driven</h1>
+<h1 align="center">Pulse Spec-Driven</h1>
 
 <p align="center">
   <strong>Plan and implement projects with precision. Granular tasks. Clear dependencies. Right tools. Zero ceremony.</strong>
 </p>
 
-<p align="center">
-  <em>From the <a href="https://github.com/tech-leads-club">Tech Lead's Club</a> community</em>
-</p>
+## What Is This Skill?
 
-<p align="center">
-  <strong>Author:</strong> <a href="https://github.com/felipfr">Felipe Rodrigues</a> · 
-  <a href="https://linkedin.com/in/felipfr">LinkedIn</a>
-</p>
-
-## ✨ What Is This Skill?
-
-**TLC Spec-Driven** transforms how AI agents approach software projects. Instead of a rigid, bureaucratic pipeline, it uses **4 adaptive phases** that auto-size based on complexity — applying full rigor for complex features and skipping ceremony for simple ones:
+**Pulse Spec-Driven** transforms how AI agents approach software projects. Instead of a rigid, bureaucratic pipeline, it uses **4 adaptive phases** that auto-size based on complexity — applying full rigor for complex features and skipping ceremony for simple ones:
 
 ```
 ┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐
@@ -41,13 +32,7 @@
 | **Large** (multi-component)         | Full pipeline with formal design and task breakdown               |
 | **Complex** (ambiguity, new domain) | Full pipeline + gray area discussion + research + interactive UAT |
 
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-npx @tech-leads-club/agent-skills install -s tlc-spec-driven
-```
+## Quick Start
 
 ### First Commands
 
@@ -59,11 +44,11 @@ npx @tech-leads-club/agent-skills install -s tlc-spec-driven
 | Quick bug fix           | `"Quick fix: [description]"`                  |
 | Resume previous work    | `"Resume work"` or `"Continue"`               |
 
-> 💬 **Natural Conversation, Not Commands**
+> **Natural Conversation, Not Commands**
 >
 > These are trigger phrases, not strict commands. The skill works through **natural conversation** — talk to your agent like you would to a colleague. Say things like _"I want to build an authentication system"_ or _"Fix the login button, it returns 401"_. The agent understands context and intent, not just keywords.
 
-## 📁 Project Structure
+## Project Structure
 
 The skill creates a `.pulse/specs/` directory to organize all project documentation:
 
@@ -96,7 +81,7 @@ The skill creates a `.pulse/specs/` directory to organize all project documentat
         └── SUMMARY.md  # What was done
 ```
 
-## 🔄 The Four Adaptive Phases
+## The Four Adaptive Phases
 
 ### Specify (always)
 
@@ -136,12 +121,12 @@ The agent acts as a thinking partner. When user input is required, it follows [u
 
 **Safety valve:** If listing inline steps reveals >5 steps or complex dependencies, the agent STOPS and creates a formal `tasks.md` — acknowledging that the Tasks phase was wrongly skipped.
 
-| ❌ Vague Task | ✅ Atomic Tasks                   |
-| ------------- | --------------------------------- |
+| Vague Task | Atomic Tasks                      |
+| ---------- | --------------------------------- |
 | "Create form" | T1: Create email input component  |
-|               | T2: Add email validation function |
-|               | T3: Create submit button          |
-|               | T4: Add form state management     |
+|            | T2: Add email validation function |
+|            | T3: Create submit button          |
+|            | T4: Add form state management     |
 
 Each task includes: What (deliverable), Where (file path), Depends on (prerequisites), Reuses (existing code), Requirement (traceable ID), Done when (verifiable criteria).
 
@@ -164,7 +149,7 @@ Plan → Implement → Verify → Next
 
 **Feature-level validation** happens after all tasks complete — including acceptance criteria checks, code quality review, and optionally interactive UAT for complex user-facing features.
 
-## ⚡ Quick Mode
+## Quick Mode
 
 For small tasks (bug fixes, config changes, tweaks ≤3 files) that don't need the full pipeline:
 
@@ -194,12 +179,12 @@ You: A
 
 Agent: [Implements...]
 
-       ✅ Done. Verification passed. SUMMARY.md updated.
+       Done. Verification passed. SUMMARY.md updated.
 ```
 
 **Guardrails:** Scope check first — out of scope asks pipeline migration; spec files before plan reply when eligible; CLI approval before application code; max 3 files, max 1 hour, no design decisions, no new dependencies.
 
-## 📋 Complete Command Reference
+## Complete Command Reference
 
 These trigger patterns help the agent recognize your intent, but you don't need to use them verbatim. Speak naturally — the agent understands variations and context.
 
@@ -224,10 +209,10 @@ These trigger patterns help the agent recognize your intent, but you don't need 
 | `Design feature`, `Architecture`          | Create design.md with architecture      |
 | `Break into tasks`, `Create tasks`        | Create tasks.md with atomic breakdown   |
 | `Implement task`, `Build`, `Execute`      | Execute specific task with verification |
-| `Validate`, `Verify work`, `UAT`          | Feature-level validation and testing    |
+| `Validate`, `Verify work`, `UAT`          | Feature validation and testing          |
 | `Quick fix`, `Quick task`, `Bug fix`      | Express lane for small changes          |
 
-## 🔁 Workflow Examples
+## Workflow Examples
 
 ### Starting a New Project
 
@@ -260,7 +245,7 @@ Resposta:
 
 You: D, C
 
-Agent: ✅ Created .pulse/specs/project/PROJECT.md
+Agent: Created .pulse/specs/project/PROJECT.md
        Next: Would you like to create a roadmap? Say "Create roadmap"
 ```
 
@@ -276,7 +261,7 @@ Agent: I'll analyze your existing codebase and document:
 
        [Analyzes codebase...]
 
-       ✅ Created 7 brownfield docs in .pulse/specs/codebase/
+       Created 7 brownfield docs in .pulse/specs/codebase/
        Next: Initialize project to define goals and roadmap
 ```
 
@@ -305,7 +290,7 @@ Agent: Implementing T1: Create auth service interface
 
        [Implements...]
 
-       ✅ Done. Verification passed.
+       Done. Verification passed.
        Next available: T2, T3 [P] (parallel)
 ```
 
@@ -326,7 +311,7 @@ Agent: [Creates .pulse/specs/quick/002-dark-mode/TASK.md + updates STATE.md]
 
        [Implements...]
 
-       ✅ Done. Verification passed.
+       Done. Verification passed.
 ```
 
 ### Session Continuity
@@ -334,7 +319,7 @@ Agent: [Creates .pulse/specs/quick/002-dark-mode/TASK.md + updates STATE.md]
 ```
 You: Pause work
 
-Agent: ✅ Created .pulse/specs/HANDOFF.md
+Agent: Created .pulse/specs/HANDOFF.md
        - Feature: user-authentication
        - Completed: T1, T2 (verified, uncommitted)
        - In progress: T3 (70%)
@@ -352,7 +337,7 @@ Agent: Resuming user-authentication at T3
        Continue with T3?
 ```
 
-## 🧠 Context Management
+## Context Management
 
 The skill is designed to work within context limits:
 
@@ -367,9 +352,9 @@ The skill is designed to work within context limits:
 
 When context exceeds 40k tokens, the skill displays a status indicator and suggests optimizations.
 
-## 🔗 Skill Integrations
+## Skill Integrations
 
-TLC Spec-Driven works even better when combined with complementary skills:
+Pulse Spec-Driven works even better when combined with complementary skills:
 
 | Skill              | Integration                                                                       |
 | ------------------ | --------------------------------------------------------------------------------- |
@@ -378,7 +363,7 @@ TLC Spec-Driven works even better when combined with complementary skills:
 
 The skill automatically detects if these are installed and delegates specialized tasks to them. If not installed, it falls back gracefully and recommends them once per session.
 
-## 📚 Reference Files
+## Reference Files
 
 The skill includes detailed reference documentation loaded on-demand:
 
@@ -401,9 +386,9 @@ The skill includes detailed reference documentation loaded on-demand:
 | `context-limits.md`     | Token budget and monitoring                                            |
 | `code-analysis.md`      | Available tools and fallbacks                                          |
 
-## ⚡ Tips for Best Results
+## Tips for Best Results
 
-### Do's ✅
+### Do's
 
 - **Start with project initialization** — Even for existing codebases
 - **Be specific about scope** — Clear boundaries prevent creep
@@ -412,14 +397,14 @@ The skill includes detailed reference documentation loaded on-demand:
 - **Say "pause work" before ending** — Enables seamless resumption
 - **Challenge the agent** — If something looks wrong, say so
 
-### Don'ts ❌
+### Don'ts
 
 - **Don't force all phases** — Let the agent skip what's unnecessary
 - **Don't work on multiple features at once** — One feature per cycle
 - **Don't ignore verification** — Even quick tasks need a verify step
 - **Don't accept vague answers** — If the agent says something fuzzy, ask for specifics
 
-## 💡 Model Recommendation
+## Model Recommendation
 
 > **Best results with modern, reasoning-capable models:**
 >
@@ -429,7 +414,7 @@ The skill includes detailed reference documentation loaded on-demand:
 >
 > For cost optimization, the skill will suggest when lighter models are sufficient for simple tasks like validation or session handoff.
 
-## 🤖 Compatibility
+## Compatibility
 
 This skill works with **any AI coding agent** that supports skills or custom instructions.
 
@@ -437,15 +422,15 @@ This skill works with **any AI coding agent** that supports skills or custom ins
 
 | Agent                | Status    |
 | -------------------- | --------- |
-| Antigravity (Gemini) | ✅ Tested |
-| Claude Code          | ✅ Tested |
-| GitHub Copilot       | ✅ Tested |
-| Cursor               | ✅ Tested |
-| Opencode             | ✅ Tested |
+| Antigravity (Gemini) | Tested |
+| Claude Code          | Tested |
+| GitHub Copilot       | Tested |
+| Cursor               | Tested |
+| Opencode             | Tested |
 
 > **Note:** If your agent supports loading custom instructions or skills, this skill should work. The agents above are simply where it has been actively tested.
 
-## ❓ FAQ
+## FAQ
 
 **Q: Can I skip phases?**
 A: Yes! The skill auto-sizes. Design and Tasks are skipped for simple features. Quick mode skips the entire pipeline for small changes. You only get ceremony when scope demands it.
@@ -477,10 +462,6 @@ A: Yes! The skill is completely stack-agnostic. It works with any language, fram
 **Q: What if the agent invents an API or pattern that doesn't exist?**
 A: The skill enforces a strict **Knowledge Verification Chain**: codebase → project docs → Context7 MCP → web search → flag as uncertain. It NEVER fabricates information. If the agent can't find documentation, it will say "I don't know" instead of guessing.
 
-## 📄 License
+## License
 
-CC-BY-4.0 © [Tech Lead's Club](https://github.com/tech-leads-club)
-
-<p align="center">
-  <sub>Built with ❤️ by the Tech Lead's Club community</sub>
-</p>
+CC-BY-4.0 © Pulse

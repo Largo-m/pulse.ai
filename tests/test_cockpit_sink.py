@@ -286,7 +286,7 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
                 "type": "tool-call",
                 "toolCallId": "call-read\nfc_1",
                 "toolName": "Read",
-                "args": {"path": "/repo/.pulse/skills/tlc-spec-driven/SKILL.md"},
+                "args": {"path": "/repo/.pulse/skills/pulse-spec-driven/SKILL.md"},
             },
             {
                 "type": "tool-call",

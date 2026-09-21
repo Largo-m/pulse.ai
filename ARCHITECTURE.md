@@ -189,7 +189,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 | [`pulse/prompts/`](pulse/prompts/) | Parse de ask-question / questionnaires (sem UI) |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de agent/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
-| [`pulse/skills/`](pulse/skills/) | Skill `tlc-spec-driven` |
+| [`pulse/skills/`](pulse/skills/) | Skill `pulse-spec-driven` |
 | [`pulse/context/`](pulse/context/) | Descobre rules/skills do workspace |
 | [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` |
 
@@ -285,4 +285,4 @@ pytest
 - OpenAPI: [`contracts/openapi.yaml`](contracts/openapi.yaml)
 - Engine: [`engine/README.md`](engine/README.md)
 - CLI: [`cli/README.md`](cli/README.md)
-- Skill de processo: [`pulse/skills/tlc-spec-driven/`](pulse/skills/tlc-spec-driven/)
+- Skill de processo: [`pulse/skills/pulse-spec-driven/`](pulse/skills/pulse-spec-driven/)

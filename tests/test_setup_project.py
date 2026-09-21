@@ -17,14 +17,14 @@ from pulse.skills.loader import bundled_skill_dir, load_bundled_skill, resolve_b
 
 
 def test_bundled_skill_dir():
-    skill_dir = bundled_skill_dir("tlc-spec-driven")
-    assert skill_dir.name == "tlc-spec-driven"
+    skill_dir = bundled_skill_dir("pulse-spec-driven")
+    assert skill_dir.name == "pulse-spec-driven"
     assert (skill_dir / "SKILL.md").is_file()
 
 
 def test_resolve_tlc_spec_skill_returns_skill_dir():
     skill_dir = resolve_tlc_spec_skill()
-    assert skill_dir.name == "tlc-spec-driven"
+    assert skill_dir.name == "pulse-spec-driven"
     assert (skill_dir / "SKILL.md").is_file()
     for reference in SETUP_PROJECT_REFERENCES:
         assert (skill_dir / "references" / reference).is_file()
@@ -48,7 +48,7 @@ def test_build_setup_project_prompt_uses_skill_reference_not_inline_content():
         user_prompt="App de trading",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `tlc-spec-driven`" in prompt
+    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
     assert "Siga o workflow **Setup project**." in prompt
     assert f"`{skill_dir / 'SKILL.md'}`" in prompt
     assert "App de trading" in prompt

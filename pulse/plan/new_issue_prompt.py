@@ -7,7 +7,7 @@ from pulse.plan.specify_state import WorkflowState
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
-TLC_SPEC_SKILL = "tlc-spec-driven"
+PULSE_SPEC_SKILL = "pulse-spec-driven"
 _SUMMARY_MAX_CHARS = 8_000
 
 PHASE_REFERENCES: dict[str, tuple[str, ...]] = {
@@ -36,7 +36,7 @@ PHASE_REFERENCES: dict[str, tuple[str, ...]] = {
 }
 
 def resolve_new_issue_skill() -> Path:
-    return resolve_bundled_skill(TLC_SPEC_SKILL)
+    return resolve_bundled_skill(PULSE_SPEC_SKILL)
 
 
 def format_phase_summary(text: str) -> str:
@@ -152,7 +152,7 @@ def build_specify_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Specify",
         references=PHASE_REFERENCES["specify"],
     )
@@ -202,7 +202,7 @@ def build_design_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Design",
         references=PHASE_REFERENCES["design"],
     )
@@ -246,7 +246,7 @@ def build_tasks_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Tasks",
         references=PHASE_REFERENCES["tasks"],
     )
@@ -324,7 +324,7 @@ def build_execute_wave_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
     )
@@ -390,7 +390,7 @@ def build_execute_inline_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
     )
@@ -447,7 +447,7 @@ def build_phase_continuation_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow=phase.capitalize(),
         references=PHASE_REFERENCES.get(phase, ()),
     )

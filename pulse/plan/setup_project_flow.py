@@ -10,7 +10,7 @@ from pulse.doctor.checks import check_agent_in_path, check_auth
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.setup_project_prompt import (
-    TLC_SPEC_SKILL,
+    PULSE_SPEC_SKILL,
     build_setup_project_prompt,
     resolve_tlc_spec_skill,
 )
@@ -46,7 +46,7 @@ def run_setup_project(
     acp_command = resolved.acp_command
     preferred_model = resolved.model
 
-    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
+    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=PULSE_SPEC_SKILL)
 
     try:
         skill_dir = resolve_tlc_spec_skill()
@@ -63,7 +63,7 @@ def run_setup_project(
     if render_header and not cockpit:
         print_workflow_banner(
             title="Setup project",
-            lines=[f"Skill: tlc-spec-driven", f"Workspace: {workspace_root}"],
+            lines=[f"Skill: pulse-spec-driven", f"Workspace: {workspace_root}"],
         )
 
     active_stream = stream or NullStreamSink()

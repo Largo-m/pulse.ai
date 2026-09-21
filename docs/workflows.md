@@ -48,7 +48,7 @@ resolve_config(workflow="new-issue")
         ▼
 run_new_issue(...)          ← interpretador do workflow
         │
-        ├─ resolve skill empacotada (tlc-spec-driven)
+        ├─ resolve skill empacotada (pulse-spec-driven)
         ├─ carrega ou cria estado em disco
         ├─ AcpSessionRunner (processo agent acp)
         └─ loop de fases / prompts / aprovação
@@ -106,7 +106,7 @@ Só muda **quem** roda o agente (binário ACP + model). O **quê** (fases, promp
 | --- | --- |
 | `find_resumable_workflows(workspace)` | `.pulse/specs/features/*/workflow.yaml` incompletos |
 | ou `WorkflowState.create_new` + `save` | novo slug a partir do prompt |
-| skill `tlc-spec-driven` | referências por fase |
+| skill `pulse-spec-driven` | referências por fase |
 | depois do Tasks | `tasks.md` → lista `T1`, `T2`, … |
 
 **Interpreta**

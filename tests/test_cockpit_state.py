@@ -231,7 +231,7 @@ def test_upsert_ignores_non_spec_paths():
     state.configure_workflow("new-issue")
     state.begin_phase("Specify")
     assert state.upsert_artifact("pulse/cli.py", ready=True) is None
-    assert state.upsert_artifact(".pulse/skills/tlc-spec-driven/SKILL.md", ready=True) is None
+    assert state.upsert_artifact(".pulse/skills/pulse-spec-driven/SKILL.md", ready=True) is None
     assert state.artifacts == []
     assert state.artifact_pane_open is False
 

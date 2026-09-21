@@ -6,7 +6,7 @@ from pathlib import Path
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
-TLC_SPEC_SKILL = "tlc-spec-driven"
+PULSE_SPEC_SKILL = "pulse-spec-driven"
 ANALYZE_CODEBASE_REFERENCES = (
     "brownfield-mapping.md",
     "concerns.md",
@@ -28,7 +28,7 @@ CODEBASE_ARTIFACTS = (
 
 
 def resolve_analyze_codebase_skill() -> Path:
-    return resolve_bundled_skill(TLC_SPEC_SKILL)
+    return resolve_bundled_skill(PULSE_SPEC_SKILL)
 
 
 def format_analysis_summary(text: str) -> str:
@@ -60,7 +60,7 @@ def build_analyze_codebase_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
     )
@@ -139,7 +139,7 @@ def build_analyze_codebase_artifact_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
     )
