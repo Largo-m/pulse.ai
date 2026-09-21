@@ -63,9 +63,10 @@ class HomeScreen(Screen[None]):
             for spec in SPEC_TYPES:
                 label = spec.label if not spec.description else f"{spec.label} — {spec.description}"
                 options.add_option(Option(label, id=f"workflow:{spec.id}"))
+                if spec.id == "spec":
+                    options.add_option(Option("Minhas specs", id="history"))
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
-        options.add_option(Option("Histórico — Specs", id="history"))
         options.add_option(Option("Configurações", id="settings"))
         options.add_option(Option("Sair", id="exit"))
 

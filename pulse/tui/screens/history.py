@@ -32,7 +32,7 @@ class HistoryListScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-content"):
-            yield Static("HISTÓRICO — SPECS", classes="history-title")
+            yield Static("MINHAS SPECS", classes="history-title")
             yield Static(self._hint_text(), id="history-hint", classes="history-hint")
             yield Input(placeholder="Buscar specs…", id="history-search")
             yield OptionList(id="history-options")
