@@ -63,6 +63,11 @@ class EngineRunSession:
                 payload = {key: value for key, value in event.items() if key != "type"}
                 apply(**payload)
             return
+        if kind == "workflow.route":
+            apply = getattr(self._stream, "apply_routed_flow", None)
+            if callable(apply):
+                apply(str(event.get("flow", "")))
+            return
         if kind == "tasks.sync":
             setter = getattr(self._stream, "set_tasks", None)
             if callable(setter):

@@ -165,7 +165,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/plan/runner.py`](pulse/plan/runner.py) | Fachada: “roda este workflow” |
-| [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `new-issue`, `fix-bug`, `setup-project`, `analyze-codebase` |
+| [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `spec`, `setup-project`, `analyze-codebase` |
 | [`pulse/plan/*_flow.py`](pulse/plan/) | Passo a passo de cada workflow |
 | [`pulse/plan/*_prompt.py`](pulse/plan/) | Textos enviados ao agente |
 | [`pulse/plan/specify_state.py`](pulse/plan/specify_state.py) | Estado Specify → Design → Tasks → Execute |
@@ -195,20 +195,21 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 
 ---
 
-## Fluxo completo (ex.: New Issue na TUI)
+## Fluxo completo (ex.: Nova spec na TUI)
 
 ```
 1. Usuário: pulse
 2. cli.py garante Engine up → abre PulseApp (HomeScreen)
-3. Usuário escolhe "New issue" e descreve a tarefa
+3. Usuário escolhe "Nova spec" e descreve a spec
 4. CockpitScreen → EngineRunSession
-5. client: POST /api/workflows/new-issue/runs
-6. daemon/runs.py → plan/runner.py → new_issue_flow.py
-7. flow → acp/session_runner.py → processo `agent acp`
-8. Agent responde → eventos SSE → CockpitSink → tela atualiza
-9. Agent pergunta → prompt.request → TUI responde
+5. client: POST /api/workflows/spec/runs
+6. daemon/runs.py → plan/runner.py → spec_flow.py
+7. Classificar → `.pulse/specs/.route.yaml` → despacha new-issue ou quick
+8. flow → acp/session_runner.py → processo `agent acp`
+9. Agent responde → eventos SSE → CockpitSink → tela atualiza
+10. Agent pergunta → prompt.request → TUI responde
    → POST /prompts/{id}/answer
-10. run.finished → history em .pulse/runs/
+11. run.finished → history em .pulse/runs/
 ```
 
 ---
@@ -266,7 +267,7 @@ pytest
 | **Port** | Interface (contrato) que o domínio espera |
 | **Adapter** | Implementação da port (TUI, API, Null…) |
 | **Composition root** | Único lugar que “liga” todas as peças |
-| **Workflow** | Pipeline tipado (`new-issue`, `fix-bug`, …) |
+| **Workflow** | Pipeline tipado (`spec`, `setup-project`, …) |
 | **Run** | Uma execução concreta de um workflow |
 
 ---

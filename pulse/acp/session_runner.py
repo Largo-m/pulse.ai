@@ -410,7 +410,7 @@ class AcpSessionRunner:
         try:
             self.initialize()
             self.authenticate()
-            session = self.new_session(self._cwd, workflow="fix-bug")
+            session = self.new_session(self._cwd, workflow="spec")
             session_id = session.get("sessionId")
             if not session_id:
                 raise RuntimeError("Sessão ACP não retornou sessionId")

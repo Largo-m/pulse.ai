@@ -171,16 +171,10 @@ def test_approval_is_positive():
     assert not approval_is_positive("→ Não, preciso de ajustes")
 
 
-def test_run_plan_new_issue_delegates(monkeypatch):
-    calls: list[str] = []
-
-    def fake_run(*, user_prompt: str, **_kwargs) -> int:
-        calls.append(user_prompt)
-        return 0
-
-    monkeypatch.setattr("pulse.plan.runner.run_new_issue", fake_run)
-    assert run_plan(spec_type_id="new-issue", user_prompt="Nova feature") == 0
-    assert calls == ["Nova feature"]
+def test_run_plan_rejects_legacy_ids(monkeypatch):
+    monkeypatch.setattr("pulse.plan.runner.run_spec", lambda **_k: 0)
+    assert run_plan(spec_type_id="new-issue", user_prompt="Nova feature") == 2
+    assert run_plan(spec_type_id="fix-bug", user_prompt="Corrigir bug") == 2
 
 
 def test_should_run_phase_respects_skip():

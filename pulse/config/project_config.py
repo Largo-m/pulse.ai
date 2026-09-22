@@ -79,8 +79,7 @@ def project_config_exists(start: Path | None = None) -> bool:
 
 
 DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {
-    "new-issue": WorkflowConfig(agent="cursor", model="Auto"),
-    "fix-bug": WorkflowConfig(agent="cursor", model="Auto"),
+    "spec": WorkflowConfig(agent="cursor", model="Auto"),
     "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
     "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
 }
@@ -97,10 +96,7 @@ workspace:
   root: .
 
 workflows:
-  new-issue:
-    agent: cursor
-    model: Auto
-  fix-bug:
+  spec:
     agent: cursor
     model: Auto
   setup-project:

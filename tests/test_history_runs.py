@@ -26,7 +26,7 @@ def test_save_and_load_run_roundtrip(tmp_path: Path):
     assert loaded is not None
     saved, entries = loaded
     assert saved.slug == "login"
-    assert saved.kind == HistoryKind.ISSUE
+    assert saved.kind == HistoryKind.SPEC
     assert saved.spec_dir == ".pulse/specs/features/login"
     assert saved.status == RunStatus.COMPLETED
     assert saved.exit_code == 0
@@ -44,7 +44,7 @@ def test_recorder_binds_quick_fix_from_artifact(tmp_path: Path):
     recorder.observe(state)
     recorder.finalize(state, 0)
     assert recorder.record is not None
-    assert recorder.record.kind == HistoryKind.FIX
+    assert recorder.record.kind == HistoryKind.SPEC
     assert recorder.record.slug == "001-token"
     assert recorder.record.spec_dir == ".pulse/specs/quick/001-token"
 

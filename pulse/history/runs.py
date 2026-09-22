@@ -98,9 +98,18 @@ def latest_run_for(
         if spec_dir and record.spec_dir == spec_dir:
             return record
     for record in records:
-        if record.slug == slug and record.kind == kind:
+        if record.slug == slug and _kinds_match(record.kind, kind):
             return record
     return None
+
+
+def _kinds_match(record_kind: HistoryKind | None, wanted: HistoryKind) -> bool:
+    if record_kind is None:
+        return False
+    if record_kind == wanted:
+        return True
+    spec_kinds = {HistoryKind.SPEC, HistoryKind.ISSUE, HistoryKind.FIX}
+    return record_kind in spec_kinds and wanted in spec_kinds
 
 
 def run_to_dict(record: RunRecord) -> dict[str, Any]:
@@ -131,7 +140,7 @@ def run_to_dict(record: RunRecord) -> dict[str, Any]:
 def run_from_dict(data: dict[str, Any]) -> RunRecord:
     kind_raw = str(data.get("kind", "")).strip()
     kind: HistoryKind | None = None
-    if kind_raw in {HistoryKind.ISSUE.value, HistoryKind.FIX.value}:
+    if kind_raw in {HistoryKind.SPEC.value, HistoryKind.ISSUE.value, HistoryKind.FIX.value}:
         kind = HistoryKind(kind_raw)
     status_raw = str(data.get("status", RunStatus.RUNNING.value))
     try:

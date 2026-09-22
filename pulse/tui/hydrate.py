@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pulse.history.models import HistoryItem, HistoryKind, HistoryStep
+from pulse.history.models import HistoryItem, HistoryStep, SpecFlow
 from pulse.history.runs import load_run_logs
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.artifacts import is_spec_artifact
@@ -30,7 +30,7 @@ _ARTIFACT_PHASE = {
 
 def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     state = CockpitState()
-    workflow_id = "new-issue" if item.kind == HistoryKind.ISSUE else "fix-bug"
+    workflow_id = "new-issue" if item.flow == SpecFlow.FULL else "fix-bug"
     state.configure_workflow(workflow_id)
     state.surface_title = item.title.upper()
     state.running = False

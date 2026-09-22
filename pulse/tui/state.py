@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pulse.history.events import (
+    ROUTED_FLOW_WORKFLOWS,
     WORKFLOW_LABELS,
     WORKFLOW_PHASES,
     ArtifactItem,
@@ -144,6 +145,25 @@ class CockpitState:
                 phase.status = PhaseStatus.SKIPPED
             elif phase.id in done and phase.status != PhaseStatus.RUNNING:
                 phase.status = PhaseStatus.DONE
+        self.notify()
+
+    def apply_routed_flow(self, flow: str) -> None:
+        routed_id = ROUTED_FLOW_WORKFLOWS.get(str(flow).strip().lower())
+        if routed_id is None:
+            return
+        now = time.monotonic()
+        for phase in self.phases:
+            if phase.id == "classify":
+                if phase.status == PhaseStatus.RUNNING:
+                    phase.finish(now)
+                else:
+                    phase.status = PhaseStatus.DONE
+                    if phase.ended_at is None:
+                        phase.ended_at = now
+        existing_ids = {phase.id for phase in self.phases}
+        for pid, label in WORKFLOW_PHASES.get(routed_id, ()):
+            if pid not in existing_ids:
+                self.phases.append(PhaseItem(id=pid, label=label))
         self.notify()
 
     def complete_active_phase(self) -> None:

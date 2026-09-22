@@ -15,6 +15,7 @@ from pulse.tui.widgets.log_stream import LogStream
 WORKFLOWS = tuple(WORKFLOW_PHASES.keys())
 
 PHASE_TITLES: dict[str, tuple[str, ...]] = {
+    "spec": ("Classificar spec",),
     "new-issue": ("Fase Specify", "Fase Design", "Fase Tasks", "Fase Execute"),
     "fix-bug": ("Fase 1 — Planejando quick task", "Fase 2 — Implementando quick task"),
     "setup-project": (
