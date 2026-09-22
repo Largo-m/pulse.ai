@@ -5,7 +5,7 @@ from pathlib import Path
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
-TLC_SPEC_SKILL = "tlc-spec-driven"
+PULSE_SPEC_SKILL = "pulse-spec-driven"
 QUICK_PLAN_REFERENCES = (
     "quick-mode.md",
     "state-management.md",
@@ -22,7 +22,7 @@ _PLAN_MAX_CHARS = 8_000
 
 
 def resolve_quick_skill() -> Path:
-    return resolve_bundled_skill(TLC_SPEC_SKILL)
+    return resolve_bundled_skill(PULSE_SPEC_SKILL)
 
 
 def format_plan_summary(text: str) -> str:
@@ -87,7 +87,7 @@ def build_quick_plan_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
     )
@@ -190,7 +190,7 @@ def build_quick_implement_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_IMPLEMENT_REFERENCES,
     )
@@ -265,7 +265,7 @@ def build_quick_continuation_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
     )

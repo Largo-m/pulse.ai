@@ -64,10 +64,7 @@ workspace:
   root: .
 
 workflows:
-  new-issue:
-    agent: cursor
-    model: Auto
-  fix-bug:
+  spec:
     agent: cursor
     model: Auto
   setup-project:
@@ -91,10 +88,12 @@ estender os agents do `~/.pulse/config.toml` (binary, models, acp_command).
 - `defaults.agent` / `defaults.model` definem o agente e modelo padrão.
 - `workflows.<id>` permite que cada workflow use um agente e modelo próprios.
 
-Workflows disponíveis: `new-issue`, `fix-bug`, `setup-project`, `analyze-codebase`.
+Workflows disponíveis: `spec`, `setup-project`, `analyze-codebase`.
 
-O workflow `new-issue` executa o pipeline Specify → Design → Tasks → Execute.
-O Pulse aponta a skill empacotada `tlc-spec-driven` (paths, sem inline). Rules,
+O workflow `spec` classifica o pedido (auto-sizing da skill) e dispara o pipeline
+Specify → Design → Tasks → Execute **ou** o Quick Mode. O usuário não escolhe feat vs fix.
+
+O pipeline completo aponta a skill empacotada `pulse-spec-driven` (paths, sem inline). Rules,
 skills e `AGENTS.md` do workspace são carregados pelo ACP a partir do `cwd`.
 No Execute, `coding-principles.md` entra nas referências da skill. As tasks do
 `tasks.md` são agrupadas em **waves** (até 5 tasks prontas por sessão):
@@ -102,7 +101,7 @@ sequenciais quando compartilham dependências resolvidas, e em batch quando
 marcadas `[P]`. O Pulse só marca a wave como `done` depois de rodar os
 comandos de gate extraídos do `Done when` / `Verify`.
 
-O workflow `fix-bug` executa o Quick Mode do `tlc-spec-driven`: descreve →
+O Quick Mode (quando o `spec` classifica o pedido como Small) descreve →
 plano + `.pulse/specs/quick/NNN-slug/TASK.md` → aprovação no terminal → implementa →
 verifica → `SUMMARY.md`. Nada de código de aplicação é alterado sem aprovação
 explícita.

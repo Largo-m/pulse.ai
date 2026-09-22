@@ -11,8 +11,7 @@ class SpecType:
 
 
 SPEC_TYPES: tuple[SpecType, ...] = (
-    SpecType("new-issue", "New issue", "Nova feature"),
-    SpecType("fix-bug", "Fix / bug", "Quick fix"),
+    SpecType("spec", "Nova spec", ""),
     SpecType("setup-project", "Setup project", "Setup inicial"),
     SpecType("analyze-codebase", "Analyze codebase", "Mapear código"),
 )

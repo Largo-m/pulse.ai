@@ -231,7 +231,7 @@ def test_upsert_ignores_non_spec_paths():
     state.configure_workflow("new-issue")
     state.begin_phase("Specify")
     assert state.upsert_artifact("pulse/cli.py", ready=True) is None
-    assert state.upsert_artifact(".pulse/skills/tlc-spec-driven/SKILL.md", ready=True) is None
+    assert state.upsert_artifact(".pulse/skills/pulse-spec-driven/SKILL.md", ready=True) is None
     assert state.artifacts == []
     assert state.artifact_pane_open is False
 
@@ -403,3 +403,38 @@ def test_sink_begin_phase_binds_task_from_label():
     assert state.tasks[0].status == PhaseStatus.DONE
     assert state.tasks[1].status == PhaseStatus.RUNNING
     assert state.entries[-1].task_id == "T2"
+
+
+def test_configure_spec_starts_with_classify():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    assert [phase.id for phase in state.phases] == ["classify"]
+    assert state.workflow_label == "SPEC"
+
+
+def test_apply_routed_flow_keeps_logs_and_appends_phases():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    state.begin_phase("Classificar spec")
+    state.append_assistant("Escopo pequeno")
+    state.apply_routed_flow("quick")
+    assert [phase.id for phase in state.phases] == ["classify", "plan", "implement"]
+    assert state.phases[0].status == PhaseStatus.DONE
+    assert state.phases[1].status == PhaseStatus.PENDING
+    assert any(entry.body == "Escopo pequeno" for entry in state.entries)
+    state.begin_phase("Fase 1 — Planejando quick task")
+    assert state.phases[1].status == PhaseStatus.RUNNING
+
+
+def test_apply_routed_flow_full_appends_pipeline():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    state.apply_routed_flow("full")
+    assert [phase.id for phase in state.phases] == [
+        "classify",
+        "specify",
+        "design",
+        "tasks",
+        "execute",
+    ]
+    assert state.phases[0].status == PhaseStatus.DONE

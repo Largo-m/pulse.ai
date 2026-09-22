@@ -8,7 +8,7 @@ from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
 from pulse.plan.analyze_codebase_prompt import (
-    TLC_SPEC_SKILL,
+    PULSE_SPEC_SKILL,
     build_analyze_codebase_prompt,
     resolve_analyze_codebase_skill,
 )
@@ -46,7 +46,7 @@ def run_analyze_codebase(
     acp_command = resolved.acp_command
     preferred_model = resolved.model
 
-    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
+    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=PULSE_SPEC_SKILL)
 
     try:
         skill_dir = resolve_analyze_codebase_skill()
@@ -63,7 +63,7 @@ def run_analyze_codebase(
     if render_header and not cockpit:
         print_workflow_banner(
             title="Analyze codebase",
-            lines=[f"Skill: tlc-spec-driven", f"Workspace: {workspace_root}"],
+            lines=[f"Skill: pulse-spec-driven", f"Workspace: {workspace_root}"],
         )
 
     active_stream = stream or NullStreamSink()

@@ -1,23 +1,25 @@
 ---
-name: tlc-spec-driven
-description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. Creates atomic tasks with verification criteria, requirement traceability, and persistent memory across sessions. Stack-agnostic. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
+name: pulse-spec-driven
+description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. EARS requirements, ambiguity ledger, spec-change protocol, independent Verifier (author != verifier), evidence-or-zero, discrimination sensor, review rounds, grounded lessons, and deterministic Python gates. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
 license: CC-BY-4.0
 metadata:
-  author: Felipe Rodrigues - github.com/felipfr
-  version: 2.0.0
+  author: Pulse
+  version: 2.1.0
 ---
 
-# Tech Lead's Club - Spec-Driven Development
+# Pulse Spec-Driven Development
 
 Plan and implement projects with precision. Granular tasks. Clear dependencies. Right tools. Zero ceremony.
 
-```
-┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐
-│ SPECIFY  │ → │  DESIGN  │ → │  TASKS  │ → │ EXECUTE │
-└──────────┘   └──────────┘   └─────────┘   └─────────┘
-   required      optional*      optional*     required
+Read [invariants.md](references/invariants.md) before acting: spec-first, contract precedence, three-layer Definition of Done, blast radius, no fabrication.
 
-* Agent auto-skips when scope doesn't need it
+```
+┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐   ┌──────────┐
+│ SPECIFY  │ → │  DESIGN  │ → │  TASKS  │ → │ EXECUTE │ → │ VERIFY / │
+└──────────┘   └──────────┘   └─────────┘   └─────────┘   │ REVIEW*  │
+   required      optional*      optional*     required     └──────────┘
+
+* Agent auto-skips when scope doesn't need it. Verifier always runs after the last task (Medium+).
 ```
 
 ## Auto-Sizing: The Core Principle
@@ -39,6 +41,9 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 - **Discuss is triggered within Specify** only when the agent detects ambiguous gray areas that need user input
 - **Interactive UAT is triggered within Execute** only for user-facing features with complex behavior
 - **Quick mode** is the express lane — for bug fixes, config changes, and small tweaks
+- **Threat model** is written only when a trigger fires (auth, payments, PII, trust boundaries) — see [threat-model.md](references/threat-model.md)
+- **Public surface** (`surface.md`) is written only when users or agents type/see a CLI, API, SDK, or UI
+- **Verifier** always runs after the last Medium+ task (author ≠ verifier). Review follows when the artifact matrix requires it
 
 **Safety valve:** Even when Tasks is skipped, Execute ALWAYS starts by listing atomic steps inline (see [implement.md](references/implement.md)). If that listing reveals >5 steps or complex dependencies, STOP and create a formal `tasks.md` — the Tasks phase was wrongly skipped.
 
@@ -49,7 +54,8 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 ├── project/
 │   ├── PROJECT.md      # Vision & goals
 │   ├── ROADMAP.md      # Features & milestones
-│   └── STATE.md        # Memory: decisions, blockers, lessons, todos, deferred ideas
+│   ├── STATE.md        # Memory: decisions, blockers, lessons, todos, deferred ideas
+│   └── METRICS.md      # SDD signals (created on first feature completion)
 ├── codebase/           # Brownfield analysis (existing projects)
 │   ├── STACK.md
 │   ├── ARCHITECTURE.md
@@ -60,10 +66,15 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 │   └── CONCERNS.md
 ├── features/           # Feature specifications
 │   └── [feature]/
-│       ├── spec.md     # Requirements with traceable IDs
-│       ├── context.md  # User decisions for gray areas (only when discuss is triggered)
-│       ├── design.md   # Architecture & components (only for Large/Complex)
-│       └── tasks.md    # Atomic tasks with verification (only for Large/Complex)
+│       ├── spec.md         # Requirements, EARS ACs, ledger, traceability
+│       ├── context.md      # User decisions for gray areas (only when discuss is triggered)
+│       ├── surface.md      # Public CLI/API/UI contract (only if public surface)
+│       ├── tests.md        # Test catalog with stable IDs (Large/Complex)
+│       ├── design.md       # Architecture & components (only for Large/Complex)
+│       ├── threat-model.md # Only when a security trigger fires
+│       ├── tasks.md        # Outcomes + parseable graph (only for Large/Complex)
+│       ├── validation.md   # Verifier report (Feature Done)
+│       └── reviews-NNN/    # Code review issues (Merge layer, when required)
 └── quick/              # Ad-hoc tasks (quick mode)
     └── NNN-slug/
         ├── TASK.md
@@ -75,7 +86,7 @@ Plan and implement projects with precision. Granular tasks. Clear dependencies. 
 **New project:**
 
 1. Initialize project → PROJECT.md + ROADMAP.md
-2. For each feature → Specify → (Design) → (Tasks) → Execute (depth auto-sized)
+2. For each feature → Specify → (Design) → (Tasks) → Execute → Verifier → (Review)
 
 **Existing codebase:**
 
@@ -110,6 +121,18 @@ See [quick-mode.md](references/quick-mode.md) for the full process and approval 
 - Do not suggest commit messages, Conventional Commits formats, or "ready to commit" prompts after tasks
 - After verification, mark the task done and update tracking docs — leave git entirely to the user
 - Session handoff may note uncommitted files; that is informational only
+- Approving a spec authorizes **local** edits only. Push, deploy, and production DB changes need an explicit go-ahead
+
+## Deterministic Gates
+
+Scripts live under this skill's `scripts/` directory. Resolve `<skill-dir>` from this `SKILL.md`. See [gates.md](references/gates.md).
+
+- Before confirming a spec: `python3 <skill-dir>/scripts/validate_spec.py <feature>`
+- Before presenting tasks: `python3 <skill-dir>/scripts/validate_tasks.py <feature>`
+- Before Feature Done: `python3 <skill-dir>/scripts/validate_validation.py <feature>`
+- After Feature Done / spec change: `python3 <skill-dir>/scripts/validate_metrics.py <feature>`
+
+Non-zero exit = STOP. Skip only when no code-execution tool exists; then read the artifact and apply the same checks.
 
 ## User Input (CLI)
 
@@ -194,8 +217,11 @@ All phase references (project-init, specify, discuss, tasks, validate, quick-mod
 - TESTING.md (when creating tasks or executing — drives test type assignment and gate checks)
 - spec.md (when working on specific feature)
 - context.md (when designing or implementing from user decisions)
+- surface.md / tests.md / threat-model.md (when those files exist)
 - design.md (when implementing from design)
 - tasks.md (when executing tasks)
+- validation.md (when resuming after Execute)
+- confirmed lessons in STATE.md (Specify and Design)
 
 **Never load simultaneously:**
 
@@ -220,7 +246,9 @@ parallel execution. The orchestrating agent plans and coordinates; sub-agents do
 | Implementing a task | Yes | File reads, edits, test output consume context; only the result matters |
 | Parallel `[P]` tasks | Yes (one per task) | The only way to actually run tasks in parallel |
 | Sequential tasks with no `[P]` | Yes | Keeps implementation artifacts out of the main context |
-| Planning, task creation, validation reports | No | These require the full accumulated context to be coherent |
+| Planning, task creation | No | These require the full accumulated context to be coherent |
+| Feature-level Verifier | Yes — **fresh** agent | Author ≠ verifier; do not reuse the implementer's session |
+| Review round | Yes — **fresh** agent | Separate from implementer and Verifier |
 | Quick mode tasks | No | Too small to justify the overhead; **never auto-implement** — create spec files, present plan, wait for user approval via CLI |
 
 **Context each sub-agent receives:**
@@ -265,11 +293,15 @@ The orchestrating agent uses this to update tasks.md status, traceability, and d
 |----------------|-----------|
 | Specify feature, define requirements | [specify.md](references/specify.md) |
 | Discuss feature, capture context, how should this work | [discuss.md](references/discuss.md) |
+| Change the spec, invalidate tasks | [spec-change.md](references/spec-change.md) |
 | Design feature, architecture | [design.md](references/design.md) |
 | Break into tasks, create tasks | [tasks.md](references/tasks.md) |
 | Implement task, build, execute | [implement.md](references/implement.md) |
 | Validate, verify, test, UAT, walk me through it | [validate.md](references/validate.md) |
+| Review code, review round | [review.md](references/review.md) |
 | Quick fix, quick task, small change, bug fix | [quick-mode.md](references/quick-mode.md) |
+
+**Always-on contracts:** [invariants.md](references/invariants.md) · [ambiguity.md](references/ambiguity.md) · [gates.md](references/gates.md) · [lessons.md](references/lessons.md) · [metrics.md](references/metrics.md) · [architecture.md](references/architecture.md)
 
 ## Skill Integrations
 

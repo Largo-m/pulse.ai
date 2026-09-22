@@ -44,6 +44,10 @@
 
 ### L-[NNN]: [Learning description]
 
+**Signal:** ac_gap | surviving_mutant | spec_precision_gap | spec_deviation | gate_fail | review_valid
+**Source:** [file:line or AC id]
+**Feature:** [slug]
+**Status:** candidate | confirmed | quarantined
 **Context:** [Situation that occurred]
 **Problem:** [What went wrong]
 **Solution:** [How it was resolved]
@@ -83,7 +87,7 @@ Capture in-progress thoughts and action items that don't fit in active tasks.
 | -------------------------------- | -------------------------------------- |
 | Significant architectural choice | Add AD-[NNN]                           |
 | Implementation blocked           | Add B-[NNN]                            |
-| Important discovery/learning     | Add L-[NNN]                            |
+| Important discovery/learning     | Add L-[NNN] with **Signal** + **Source** ([lessons.md](lessons.md)) |
 | Quick task started (plan ready)  | Create `.pulse/specs/quick/NNN-slug/TASK.md`, update Current Work, add Quick Tasks row ⏳ |
 | Quick task completed             | Update TASK.md, create SUMMARY.md, set Quick Tasks row ✅ Done          |
 | Scope creep captured             | Add to Deferred Ideas                  |

@@ -32,7 +32,7 @@ where = ["."]
 include = ["pulse*"]
 
 [tool.setuptools.package-data]
-pulse = ["skills/tlc-spec-driven/**/*"]
+pulse = ["skills/pulse-spec-driven/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

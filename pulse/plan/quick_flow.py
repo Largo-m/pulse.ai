@@ -10,7 +10,7 @@ from pulse.doctor.checks import check_agent_in_path, check_auth
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.quick_prompt import (
-    TLC_SPEC_SKILL,
+    PULSE_SPEC_SKILL,
     build_quick_plan_prompt,
     resolve_quick_skill,
 )
@@ -40,13 +40,13 @@ def run_quick(
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
-    resolved = resolve_config(workspace=workspace, workflow="fix-bug")
+    resolved = resolve_config(workspace=workspace, workflow="spec")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command
     preferred_model = resolved.model
 
-    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=TLC_SPEC_SKILL)
+    cleanup_legacy_pulse_questions(workspace=workspace_root, skill_id=PULSE_SPEC_SKILL)
 
     try:
         skill_dir = resolve_quick_skill()
@@ -64,7 +64,7 @@ def run_quick(
         print_workflow_banner(
             title="Quick mode",
             lines=[
-                "Skill: tlc-spec-driven",
+                "Skill: pulse-spec-driven",
                 f"Workspace: {workspace_root}",
                 f"Tarefa: {user_prompt.strip() or '—'}",
             ],

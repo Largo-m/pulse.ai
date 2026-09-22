@@ -56,21 +56,15 @@ def test_history_list_filters_items(tmp_path: Path):
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, HistoryListScreen)
-            assert set(screen._items) == {"issue:login-flow", "fix:001-token-refresh"}
+            assert set(screen._items) == {
+                "spec:features/login-flow",
+                "spec:quick/001-token-refresh",
+            }
 
-            screen.action_filter_issues()
-            await pilot.pause()
-            assert set(screen._items) == {"issue:login-flow"}
-
-            screen.action_filter_fixes()
-            await pilot.pause()
-            assert set(screen._items) == {"fix:001-token-refresh"}
-
-            screen.action_filter_all()
             screen._query = "token"
             screen._refresh()
             await pilot.pause()
-            assert set(screen._items) == {"fix:001-token-refresh"}
+            assert set(screen._items) == {"spec:quick/001-token-refresh"}
 
     asyncio.run(run())
 
@@ -84,7 +78,7 @@ def test_history_detail_renders_steps_and_logs(tmp_path: Path):
             workflow_id="new-issue",
             prompt="Adicionar login social",
             status=RunStatus.COMPLETED,
-            kind=HistoryKind.ISSUE,
+            kind=HistoryKind.SPEC,
             slug="login-flow",
             spec_dir=".pulse/specs/features/login-flow",
             started_at="2026-01-02T00:00:00+00:00",
@@ -108,7 +102,7 @@ def test_history_detail_renders_steps_and_logs(tmp_path: Path):
             ),
         ],
     )
-    item = HistoryCatalog(tmp_path).get("issue:login-flow")
+    item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
     assert item is not None
     assert item.run_id == "run-login"
 

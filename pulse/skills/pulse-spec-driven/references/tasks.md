@@ -26,12 +26,17 @@
 - **Parallelizable** - Independent tasks run simultaneously
 - **Errors isolated** - One failure doesn't block everything
 
-**Rule**: One task = ONE of these:
+**Unit of work:** a task is one **shippable outcome** with a verify path. File count does not decide the cut.
 
-- One component
-- One function
-- One API endpoint
-- One file change
+**Substeps** (inline under the task) are allowed when a single outcome still needs more than one file. Split into another task only when:
+
+- A different test ID owner appears
+- A different actor/surface appears
+- Context would blow the worker budget
+
+Do **not** split "one function / one file" as a law — that explodes ceremony. Do **not** hide an unverified mountain in one task.
+
+Slice 1 is the task (or consecutive tasks) that delivers the spec's Motivating Problem.
 
 ---
 
@@ -62,15 +67,18 @@ MUST include writing/updating those tests in the same task. Tests are NOT separa
 - If a task's required test type is marked "Parallel-Safe: Yes" → `[P]` is allowed
 - If a task has no tests → `[P]` depends only on code dependencies
 
+Co-locate tests with the code task. Tests are not a separate task. Assign every live `tests.md` ID to exactly one task.
+
 If TESTING.md does not exist (greenfield project), ask the user what test types and commands
-the project will use before creating tasks.
+the project will use before creating tasks. Infer commands from the repo when they exist — do not invent ecosystems.
 
 ### 2. Break Into Atomic Tasks
 
-**Task = ONE deliverable**. Examples:
+**Task = ONE verifiable outcome**. Examples:
 
-- ✅ "Create UserService interface" (one file, one concept)
-- ❌ "Implement user management" (too vague, multiple files)
+- ✅ "User can log in with email and get a session cookie" (demo-able; may touch a few files)
+- ✅ "Create UserService interface" when that *is* the outcome (foundation named with its consumer)
+- ❌ "Implement user management" (multiple outcomes, no single verify path)
 
 ### 3. Define Dependencies
 
@@ -86,20 +94,19 @@ Before showing tasks to the user, run ALL three pre-approval checks. These are N
 
 **Check 1: Task Granularity** — verify each task is atomic (see Granularity Check section).
 
-**Check 2: Diagram-Definition Cross-Check** — verify the execution diagram matches every task's `Depends on` field (see Diagram-Definition Cross-Check section). Build the cross-check table and include it in the output.
+**Check 2: Diagram-Definition Cross-Check** — verify the execution diagram **and** the Task Graph YAML match every task's `Depends on` field.
 
 **Check 3: Test Co-location Validation** — verify every task's `Tests` field matches the TESTING.md coverage matrix (see Test Co-location Validation section). Build the validation table and include it in the output.
 
 **Output both tables with the tasks** so the user can see the validation results. Any ❌ means you MUST restructure before presenting — do not show failing tasks to the user and ask them to approve.
 
-### 6. ASK About MCPs and Skills
+### 6. Tools
 
-**CRITICAL**: Before execution, ask the user:
+Assign MCPs/skills yourself from the repo and the task's File References. Ask the user only when two tools would produce different public behavior. Do not run a per-task tools questionnaire.
 
-> "For each task, which tools should I use?"
->
-> **Available MCPs**: [list from project or user]
-> **Available Skills**: [list from project or user]
+### 7. Closure gate
+
+Run `python3 <skill-dir>/scripts/validate_tasks.py <feature>` before presenting tasks ([gates.md](gates.md)). Non-zero exit → restructure, do not ask the user to approve a failing graph.
 
 ---
 
@@ -112,6 +119,28 @@ Before showing tasks to the user, run ALL three pre-approval checks. These are N
 **Status**: Draft | Approved | In Progress | Done
 
 ---
+
+## Task Graph
+
+Parseable dependency data. `from` must finish before `to`. Must match every task's `Depends on`.
+
+```yaml
+nodes:
+  - id: T1
+  - id: T2
+  - id: T3
+edges:
+  - { from: T1, to: T2 }
+  - { from: T1, to: T3 }
+```
+
+## Test Coverage Matrix
+
+[From TESTING.md / repo sampling — see tests-catalog.md]
+
+## Gate Check Commands
+
+[From the repo]
 
 ## Execution Plan
 
@@ -155,11 +184,11 @@ T8 → T9
 **Depends on**: None
 **Reuses**: `src/existing/BaseInterface.ts`
 **Requirement**: [FEAT]-01
+**Slice**: 1 (Motivating Problem) | later
 
-**Tools**:
+**File References**:
 
-- MCP: `filesystem` (or NONE)
-- Skill: NONE
+- `path/to/file:start-end` — [why]
 
 **Done when**:
 
@@ -167,7 +196,7 @@ T8 → T9
 - [ ] Types exported correctly
 - [ ] No TypeScript errors
 
-**Tests**: [unit/e2e/integration/none — from coverage matrix]
+**Tests**: UT-001, UT-002
 **Gate**: [quick/full/build — from gate check commands]
 
 ---
@@ -306,9 +335,9 @@ Before approving tasks, verify they are granular enough:
 
 **Granularity check**:
 
-- ✅ 1 component / 1 function / 1 endpoint = Good
-- ⚠️ 2-3 related things in same file = OK if cohesive
-- ❌ Multiple components or files = MUST split
+- ✅ One verifiable outcome; files listed; tests assigned
+- ⚠️ Several files OK if one outcome and one test owner
+- ❌ Multiple unrelated outcomes or unassigned test IDs = split
 
 ---
 

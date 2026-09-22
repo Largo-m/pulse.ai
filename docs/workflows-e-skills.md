@@ -9,22 +9,21 @@ Workflows são **pipelines fixos no código**. Skills são **instruções para o
 ```
 Home TUI / menu terminal
   → run_plan(spec_type_id)
-    → run_new_issue | run_quick | run_setup_project | run_analyze_codebase
+    → run_spec | run_setup_project | run_analyze_codebase
       → resolve_config(workflow=id)     # agent + model + cwd
-      → resolve_bundled_skill(...)      # tlc-spec-driven
+      → resolve_bundled_skill(...)      # pulse-spec-driven
       → build_*_prompt(...)             # skill bundled + tarefa
       → AcpSessionRunner                # processo ACP
         → eventos → CockpitSink / StreamRenderer
 ```
 
-Os quatro IDs estão hardcoded em `pulse/plan/spec_types.py`:
+O catálogo público em `pulse/plan/spec_types.py`:
 
 | ID | Label | Flow | Skill empacotada |
 | --- | --- | --- | --- |
-| `new-issue` | New issue | Specify → Design → Tasks → Execute | `tlc-spec-driven` |
-| `fix-bug` | Fix / bug | Planejar → aprovar → Implementar | `tlc-spec-driven` |
-| `setup-project` | Setup project | Análise → `.pulse/specs/project/` | `tlc-spec-driven` |
-| `analyze-codebase` | Analyze codebase | Exploração → `.pulse/specs/codebase/` | `tlc-spec-driven` |
+| `spec` | Nova spec | Classifica → pipeline completo ou quick | `pulse-spec-driven` |
+| `setup-project` | Setup project | Análise → `.pulse/specs/project/` | `pulse-spec-driven` |
+| `analyze-codebase` | Analyze codebase | Exploração → `.pulse/specs/codebase/` | `pulse-spec-driven` |
 
 Não existe workflow plugin. ID desconhecido retorna exit `2`.
 
@@ -34,18 +33,18 @@ Cada workflow resolve **agent e model próprios** via config (ver [armazenamento
 
 ### 1. Skill empacotada (bundled) — o Pulse injeta
 
-Única skill que o Pulse conhece pelo nome: `tlc-spec-driven`.
+Única skill que o Pulse conhece pelo nome: `pulse-spec-driven`.
 
-- Disco: `pulse/skills/tlc-spec-driven/` (dentro do pacote Python)
-- Loader: `resolve_bundled_skill("tlc-spec-driven")` exige `SKILL.md`
+- Disco: `pulse/skills/pulse-spec-driven/` (dentro do pacote Python)
+- Loader: `resolve_bundled_skill("pulse-spec-driven")` exige `SKILL.md`
 - No prompt: **só caminhos**, nunca o conteúdo (`extend_prompt_with_bundled_skill`)
 
 O agente é instruído a ler no filesystem:
 
 ```
-Use a skill instalada: `tlc-spec-driven`
+Use a skill instalada: `pulse-spec-driven`
 Siga o workflow **Specify**.
-- `<site-packages>/pulse/skills/tlc-spec-driven/SKILL.md`
+- `<site-packages>/pulse/skills/pulse-spec-driven/SKILL.md`
 - `.../references/specify.md`
 ```
 
@@ -81,6 +80,12 @@ O binário `agent acp` recebe o `cwd` em `session/new` e carrega esse contexto s
 Se o binário `agent acp` carregar skills globais do Cursor por conta própria, isso é comportamento do Cursor, não do Pulse. O Pulse não lista, não versiona e não injeta essas skills.
 
 ## Fluxo de cada workflow
+
+### spec
+
+1. Classifica o pedido (auto-sizing + Scope Eligibility).
+2. Agente grava `.pulse/specs/.route.yaml` (`flow: full|quick`).
+3. Pulse despacha o pipeline completo ou o quick. Se o arquivo faltar, pergunta no terminal.
 
 ### new-issue
 

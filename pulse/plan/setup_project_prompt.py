@@ -6,14 +6,14 @@ from pathlib import Path
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
-TLC_SPEC_SKILL = "tlc-spec-driven"
+PULSE_SPEC_SKILL = "pulse-spec-driven"
 SETUP_PROJECT_REFERENCES = ("project-init.md", "roadmap.md", "state-management.md", "user-input.md")
 _ANALYSIS_MAX_CHARS = 12_000
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 
 
 def resolve_tlc_spec_skill() -> Path:
-    return resolve_bundled_skill(TLC_SPEC_SKILL)
+    return resolve_bundled_skill(PULSE_SPEC_SKILL)
 
 
 def format_analysis_summary(text: str) -> str:
@@ -45,7 +45,7 @@ def build_setup_project_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
     )
@@ -130,7 +130,7 @@ def build_setup_project_artifact_prompt(
     extend_prompt_with_bundled_skill(
         sections,
         skill_dir=skill_dir,
-        skill_name=TLC_SPEC_SKILL,
+        skill_name=PULSE_SPEC_SKILL,
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
     )

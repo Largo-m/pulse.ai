@@ -80,6 +80,7 @@ class ArtifactItem:
 
 
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
+    "spec": (("classify", "Classificar"),),
     "new-issue": (
         ("specify", "Specify"),
         ("design", "Design"),
@@ -101,8 +102,14 @@ WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
 }
 
 WORKFLOW_LABELS: dict[str, str] = {
+    "spec": "SPEC",
     "new-issue": "NEW ISSUE",
     "fix-bug": "QUICK",
     "setup-project": "SETUP PROJECT",
     "analyze-codebase": "ANALYZE CODEBASE",
+}
+
+ROUTED_FLOW_WORKFLOWS = {
+    "full": "new-issue",
+    "quick": "fix-bug",
 }

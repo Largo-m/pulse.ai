@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, HistoryStep
+from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, HistoryStep, SpecFlow
 from pulse.history.quick_index import list_quick_tasks
 from pulse.history.runs import latest_run_for, list_runs
 from pulse.plan.specify_state import (
@@ -45,9 +45,12 @@ class HistoryCatalog:
         query: str = "",
         *,
         kind: HistoryKind | None = None,
+        flow: SpecFlow | None = None,
     ) -> list[HistoryItem]:
         items = self.list_items()
-        if kind is not None:
+        if flow is not None:
+            items = [item for item in items if item.flow == flow]
+        elif kind is not None:
             items = [item for item in items if item.kind == kind]
         needle = query.strip().lower()
         if not needle:
@@ -66,22 +69,24 @@ def search_history(
     query: str = "",
     *,
     kind: HistoryKind | None = None,
+    flow: SpecFlow | None = None,
 ) -> list[HistoryItem]:
-    return HistoryCatalog(workspace).search(query, kind=kind)
+    return HistoryCatalog(workspace).search(query, kind=kind, flow=flow)
 
 
 def _item_from_workflow(state: WorkflowState, runs: list) -> HistoryItem:
     spec_dir = state.feature_dir.as_posix()
-    run = latest_run_for(runs, spec_dir=spec_dir, slug=state.feature_slug, kind=HistoryKind.ISSUE)
+    run = latest_run_for(runs, spec_dir=spec_dir, slug=state.feature_slug, kind=HistoryKind.SPEC)
     title = state.user_prompt.strip() or state.feature_slug
     return HistoryItem(
-        kind=HistoryKind.ISSUE,
+        kind=HistoryKind.SPEC,
         slug=state.feature_slug,
         title=title,
         prompt=state.user_prompt,
         status=_issue_status(state),
         updated_at=state.updated_at or state.created_at,
         spec_dir=spec_dir,
+        flow=SpecFlow.FULL,
         steps=_issue_steps(state),
         run_id=run.id if run is not None else None,
     )
@@ -92,16 +97,17 @@ def _item_from_quick(task, runs: list) -> HistoryItem:
         runs,
         spec_dir=task.spec_dir,
         slug=task.slug,
-        kind=HistoryKind.FIX,
+        kind=HistoryKind.SPEC,
     )
     return HistoryItem(
-        kind=HistoryKind.FIX,
+        kind=HistoryKind.SPEC,
         slug=task.slug,
         title=task.title,
         prompt=task.title,
         status=task.status,
         updated_at=task.updated_at,
         spec_dir=task.spec_dir,
+        flow=SpecFlow.QUICK,
         steps=_fix_steps(task.status),
         run_id=run.id if run is not None else None,
     )
@@ -155,6 +161,8 @@ def _matches(item: HistoryItem, needle: str) -> bool:
             item.status_label,
             item.kind.value,
             item.kind_label,
+            item.flow.value,
+            item.flow_label,
             item.spec_dir,
         ]
     ).lower()

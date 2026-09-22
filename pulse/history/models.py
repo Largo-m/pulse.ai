@@ -5,8 +5,14 @@ from enum import Enum
 
 
 class HistoryKind(str, Enum):
+    SPEC = "spec"
     ISSUE = "issue"
     FIX = "fix"
+
+
+class SpecFlow(str, Enum):
+    FULL = "full"
+    QUICK = "quick"
 
 
 class HistoryStatus(str, Enum):
@@ -40,18 +46,24 @@ class HistoryItem:
     status: HistoryStatus
     updated_at: str
     spec_dir: str
+    flow: SpecFlow = SpecFlow.FULL
     steps: list[HistoryStep] = field(default_factory=list)
     run_id: str | None = None
 
     @property
     def item_id(self) -> str:
-        return f"{self.kind.value}:{self.slug}"
+        folder = "features" if self.flow == SpecFlow.FULL else "quick"
+        return f"spec:{folder}/{self.slug}"
 
     @property
     def kind_label(self) -> str:
-        if self.kind == HistoryKind.ISSUE:
-            return "ISSUE"
-        return "FIX"
+        return "SPEC"
+
+    @property
+    def flow_label(self) -> str:
+        if self.flow == SpecFlow.QUICK:
+            return "quick"
+        return "full"
 
     @property
     def status_label(self) -> str:

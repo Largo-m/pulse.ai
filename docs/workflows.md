@@ -1,6 +1,6 @@
 # Como o Pulse carrega e interpreta workflows
 
-Workflows **não são lidos de um YAML de definição**. O Pulse só conhece quatro IDs hardcoded. “Carregar” significa: escolher o ID → resolver config → montar estado/UI → despachar o flow Python → interpretar artefatos e respostas do agente.
+Workflows **não são lidos de um YAML de definição**. O Pulse conhece um catálogo hardcoded. “Carregar” significa: escolher o ID → resolver config → montar estado/UI → despachar o flow Python → interpretar artefatos e respostas do agente.
 
 ## 1. O catálogo (único lugar que “define” workflows)
 
@@ -8,50 +8,49 @@ Arquivo: `pulse/plan/spec_types.py`
 
 ```python
 SPEC_TYPES = (
-    SpecType("new-issue", "New issue", "Nova feature"),
-    SpecType("fix-bug", "Fix / bug", "Quick fix"),
+    SpecType("spec", "Nova spec", ""),
     SpecType("setup-project", "Setup project", "Setup inicial"),
     SpecType("analyze-codebase", "Analyze codebase", "Mapear código"),
 )
 ```
 
-Isso alimenta:
+O catálogo público alimenta o menu, a API e o settings.
 
 | Consumidor | Uso |
 | --- | --- |
-| `HomeScreen` / menu terminal | lista de opções |
+| `HomeScreen` / menu terminal | lista de opções públicas |
 | `run_plan` | `if spec_type_id == "..."` → função Python |
 | settings de workflow | quais IDs podem ter agent/model |
 | `CockpitState.WORKFLOW_PHASES` | quais steps a sidebar mostra |
 
 Não existe plugin, discovery em disco, nem `workflows/*.yaml` de pipeline. ID desconhecido → exit `2`.
 
-A config TOML/YAML (`workflows.new-issue.agent`, etc.) **não define o pipeline** — só agent e model. Ver [armazenamento.md](armazenamento.md).
+A config TOML/YAML (`workflows.spec.agent`, etc.) **não define o pipeline** — só agent e model. Ver [armazenamento.md](armazenamento.md).
 
 ## 2. Pipeline de carregamento (tudo workflow)
 
 ```
-usuário escolhe "New issue"
+usuário escolhe "Nova spec"
         │
         ▼
-Home / menu  →  workflow_id = "new-issue" + user_prompt
+Home / menu  →  workflow_id = "spec" + user_prompt
         │
         ▼
-CockpitScreen.configure_workflow("new-issue")
-        │     monta phases da UI (Specify/Design/Tasks/Execute)
+CockpitScreen.configure_workflow("spec")
+        │     fase Classificar
         ▼
-run_plan(spec_type_id="new-issue", workspace=..., stream=CockpitSink)
+run_plan(spec_type_id="spec", workspace=..., stream=CockpitSink)
         │
         ▼
-resolve_config(workflow="new-issue")
+resolve_config(workflow="spec")
         │     agent, model, acp_command, permission_policy, cwd
         ▼
-run_new_issue(...)          ← interpretador do workflow
+run_spec(...)               ← classifica e despacha
         │
-        ├─ resolve skill empacotada (tlc-spec-driven)
-        ├─ carrega ou cria estado em disco
-        ├─ AcpSessionRunner (processo agent acp)
-        └─ loop de fases / prompts / aprovação
+        ├─ .pulse/specs/.route.yaml  (flow: full | quick)
+        ├─ workflow.route            (sidebar ganha fases do flow)
+        ├─ run_new_issue             se full
+        └─ run_quick                 se quick
 ```
 
 Passos comuns a **todos** os flows:
@@ -71,6 +70,7 @@ Antes do ACP subir, o cockpit já sabe a forma:
 
 ```103:122:pulse/tui/state.py
 WORKFLOW_PHASES = {
+    "spec": (("classify", "Classificar"),),
     "new-issue": (("specify", "Specify"), ("design", "Design"), ...),
     "fix-bug": (("plan", "Planejar"), ("implement", "Implementar")),
     "setup-project": (("phase1", "Análise do projeto"), ("phase2", "Gerando specs")),
@@ -78,7 +78,7 @@ WORKFLOW_PHASES = {
 }
 ```
 
-`configure_workflow(id)` cria a lista de `PhaseItem`. O stream (`CockpitSink.begin_phase`) marca RUNNING / DONE. Tasks aninhadas (só `new-issue` Execute) vêm de `workflow.yaml` / `tasks.md` via `set_tasks`.
+`configure_workflow(id)` cria a lista de `PhaseItem`. Depois da classificação, `apply_routed_flow` acrescenta as fases do flow escolhido sem apagar o log. O stream (`CockpitSink.begin_phase`) marca RUNNING / DONE. Tasks aninhadas (só `new-issue` Execute) vêm de `workflow.yaml` / `tasks.md` via `set_tasks`.
 
 **Importante:** a sidebar e o `workflow.yaml` usam nomes parecidos, mas são camadas diferentes. A UI pode mostrar “Specify” enquanto o YAML ainda diz `awaiting_approval`.
 
@@ -98,6 +98,17 @@ Só muda **quem** roda o agente (binário ACP + model). O **quê** (fases, promp
 
 ## 5. Cada workflow: o que carrega e o que interpreta
 
+### `spec` — classifica e despacha
+
+**Carrega** o prompt do usuário e a skill `pulse-spec-driven` (auto-sizing + Scope Eligibility).
+
+**Interpreta**
+
+1. Sessão ACP curta: o agente grava `.pulse/specs/.route.yaml` com `flow: full|quick`.
+2. Pulse lê o arquivo. Se faltar, pergunta no terminal.
+3. Emite `workflow.route` para a TUI remontar a sidebar.
+4. Despacha `run_new_issue` (`full`) ou `run_quick` (`quick`).
+
 ### `new-issue` — o único com máquina de estados no Pulse
 
 **Carrega**
@@ -106,7 +117,7 @@ Só muda **quem** roda o agente (binário ACP + model). O **quê** (fases, promp
 | --- | --- |
 | `find_resumable_workflows(workspace)` | `.pulse/specs/features/*/workflow.yaml` incompletos |
 | ou `WorkflowState.create_new` + `save` | novo slug a partir do prompt |
-| skill `tlc-spec-driven` | referências por fase |
+| skill `pulse-spec-driven` | referências por fase |
 | depois do Tasks | `tasks.md` → lista `T1`, `T2`, … |
 
 **Interpreta**

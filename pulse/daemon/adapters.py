@@ -41,6 +41,9 @@ class ApiStreamSink:
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         self._bus.publish({"type": "phases.sync", **kwargs})
 
+    def apply_routed_flow(self, flow: str) -> None:
+        self._bus.publish({"type": "workflow.route", "flow": flow})
+
     def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
         self._bus.publish(
             {

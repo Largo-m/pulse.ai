@@ -9,10 +9,7 @@ workspace:
   root: .
 
 workflows:
-  new-issue:
-    agent: cursor
-    model: Auto
-  fix-bug:
+  spec:
     agent: cursor
     model: Auto
   setup-project:

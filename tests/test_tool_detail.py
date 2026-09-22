@@ -85,7 +85,7 @@ def test_build_tool_labels_read_prefers_path():
         {
             "title": "Read File",
             "kind": "read",
-            "rawInput": {"path": "/repo/.pulse/skills/tlc-spec-driven/workflow.yaml"},
+            "rawInput": {"path": "/repo/.pulse/skills/pulse-spec-driven/workflow.yaml"},
             "rawOutput": {"content": "version: 1\n"},
         },
         cwd="/repo",
@@ -149,8 +149,8 @@ def test_format_search_labels_with_hits():
             "rawOutput": {"totalFiles": 4},
             "locations": [
                 "/repo/.pulse/specs/features/build-dashboard-home/spec.md",
-                "/repo/.pulse/specs/skills/tlc-spec-driven/prompts/specify.md",
-                "/repo/.pulse/specs/skills/tlc-spec-driven/workflow.yaml",
+                "/repo/.pulse/specs/skills/pulse-spec-driven/prompts/specify.md",
+                "/repo/.pulse/specs/skills/pulse-spec-driven/workflow.yaml",
                 "/repo/.pulse/specs/project/STATE.md",
             ],
         },

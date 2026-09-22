@@ -6,7 +6,9 @@
 
 **When to trigger (auto-detect):** The spec contains user-facing behavior that could go multiple ways AND the user hasn't expressed a preference. If the spec is clear and unambiguous, skip this entirely.
 
-**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what".
+**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what". When any [implicit-requirement dimension](ambiguity.md) is present (persistence, external calls, auth, payments, concurrency, state transitions), trigger discuss or convert the dimension to an `assumed` / `n/a` ledger row.
+
+Every discussed or declined gray area is written to the Ambiguity Ledger in spec.md — never dropped. See [ambiguity.md](ambiguity.md) for pace (Quick / Guided / Detailed) and ledger statuses.
 
 ## Why This Phase Exists
 
@@ -39,13 +41,15 @@ Analyze spec.md and identify gray areas autonomously. When user input is require
 
 Do NOT include a "skip all" option when the user explicitly invoked discuss.
 
-### 3. Deep-Dive Each Area
+### 3. Choose pace once, then deep-dive
 
-For each selected area, resolve decisions through CLI batches per [user-input.md](user-input.md):
+Recommend **Guided**. Honor mid-discussion switches ("go faster", "just decide").
 
-1. Present 3–4 concrete questions per stop, with lettered options (not vague categories)
-2. After answers, continue autonomous work until the next blocking decision
-3. When more depth is needed on an area, include it in the next CLI batch — do not assume "move on" without user confirmation when decisions are still open
+For each selected area, resolve decisions through CLI batches per [user-input.md](user-input.md) and [ambiguity.md](ambiguity.md):
+
+1. Lead with a recommended option and one-line rationale
+2. Guided: at most 2 independent questions per batch; dependent questions one at a time. Never dump 3+ product questions in one batch
+3. After answers, update the Ambiguity Ledger (`decided` / `assumed`) and continue until the next blocking decision
 4. When all areas are resolved, write `context.md` (decisions only — not a questionnaire)
 
 **Question design** (when forming CLI batches — see [user-input.md](user-input.md)):

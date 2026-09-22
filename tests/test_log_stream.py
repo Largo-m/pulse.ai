@@ -6,7 +6,7 @@ from pulse.tui.widgets.log_stream import LogStream, _assistant_line, format_assi
 
 def test_format_assistant_lines_wraps_and_keeps_paragraphs():
     body = (
-        "Vou seguir o workflow Specify do `tlc-spec-driven`: ler as referencias "
+        "Vou seguir o workflow Specify do `pulse-spec-driven`: ler as referencias "
         "da skill e os artefatos do projeto para capturar o escopo sem implementar.\n\n"
         "**Problema:** a home mostra KPIs hardcoded."
     )

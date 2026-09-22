@@ -15,7 +15,7 @@ from pulse.skills.loader import load_bundled_skill
 
 def test_resolve_analyze_codebase_skill_returns_skill_dir():
     skill_dir = resolve_analyze_codebase_skill()
-    assert skill_dir.name == "tlc-spec-driven"
+    assert skill_dir.name == "pulse-spec-driven"
     assert (skill_dir / "SKILL.md").is_file()
     for reference in ANALYZE_CODEBASE_REFERENCES:
         assert (skill_dir / "references" / reference).is_file()
@@ -29,7 +29,7 @@ def test_build_analyze_codebase_prompt_includes_exploration_rules():
         user_prompt="Monorepo com API e frontend",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `tlc-spec-driven`" in prompt
+    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
     assert "Siga o workflow **Analyze codebase**." in prompt
     assert "Monorepo com API e frontend" in prompt
     assert "brownfield-mapping.md" in prompt

@@ -231,3 +231,24 @@ def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
 
     assert resolved.workspace_dir == explicit.resolve()
     assert resolved.sources["workspace_dir"] == "argument"
+
+
+def test_spec_workflow_uses_spec_config(monkeypatch, tmp_path: Path):
+    cfg = _global(
+        agents={
+            "cursor": AgentConfig(
+                name="cursor",
+                binary="agent",
+                acp_command=["agent", "acp"],
+                models=["Auto"],
+            ),
+        },
+        workflows={"spec": WorkflowConfig(agent="cursor", model="unified")},
+        default_agent="cursor",
+    )
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+
+    resolved = resolve_config(tmp_path, workflow="spec")
+
+    assert resolved.model == "unified"
+    assert resolved.sources["model"] == "global.workflow"

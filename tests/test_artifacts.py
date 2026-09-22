@@ -16,8 +16,8 @@ def test_is_spec_artifact_accepts_pulse_specs_markdown():
 
 
 def test_is_spec_artifact_rejects_skills_and_non_markdown():
-    assert not is_spec_artifact(".pulse/skills/tlc-spec-driven/SKILL.md")
-    assert not is_spec_artifact(".pulse/specs/skills/tlc-spec-driven/prompts/specify.md")
+    assert not is_spec_artifact(".pulse/skills/pulse-spec-driven/SKILL.md")
+    assert not is_spec_artifact(".pulse/specs/skills/pulse-spec-driven/prompts/specify.md")
     assert not is_spec_artifact(".pulse/specs/project/STATE.yaml")
     assert not is_spec_artifact("spec.md")
     assert not is_spec_artifact("pulse/cli.py")
