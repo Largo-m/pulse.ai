@@ -155,6 +155,8 @@ def build_specify_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Specify",
         references=PHASE_REFERENCES["specify"],
+        agent_id="specify",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -205,6 +207,8 @@ def build_design_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Design",
         references=PHASE_REFERENCES["design"],
+        agent_id="design",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -249,6 +253,8 @@ def build_tasks_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Tasks",
         references=PHASE_REFERENCES["tasks"],
+        agent_id="tasks",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -327,6 +333,8 @@ def build_execute_wave_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
+        agent_id="implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -393,6 +401,8 @@ def build_execute_inline_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
+        agent_id="implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -450,6 +460,8 @@ def build_phase_continuation_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow=phase.capitalize(),
         references=PHASE_REFERENCES.get(phase, ()),
+        agent_id={"specify": "specify", "design": "design", "tasks": "tasks"}.get(phase, "implement"),
+        workspace=workspace,
     )
 
     if outcome == "adjust":

@@ -146,15 +146,8 @@ class OnboardingScreen(Screen[int]):
                 self.dismiss(1)
             return
         if self._step == "acp_fail" and option_id == "acp_continue":
-            self._ask_model()
-            return
-        if self._step == "model" and option_id.startswith("model:"):
-            self._model = option_id.split(":", 1)[1]
-            self._ask_policy()
-            return
-        if self._step == "policy" and option_id.startswith("policy:"):
-            self._policy = option_id.split(":", 1)[1]
             self._finish()
+            return
 
     @on(Input.Submitted, "#onboard-input")
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -204,7 +197,7 @@ class OnboardingScreen(Screen[int]):
         def apply() -> None:
             if probe.success:
                 self._set_status(f"✓ {probe.message}")
-                self._ask_model()
+                self._finish()
                 return
             self._step = "acp_fail"
             self._set_status(f"✗ {probe.error or probe.message}")

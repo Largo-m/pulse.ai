@@ -90,6 +90,8 @@ def build_quick_plan_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
+        agent_id="quick-plan",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -193,6 +195,8 @@ def build_quick_implement_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_IMPLEMENT_REFERENCES,
+        agent_id="quick-implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -268,6 +272,8 @@ def build_quick_continuation_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
+        agent_id="quick-plan",
+        workspace=workspace,
     )
 
     if outcome == "migrate":

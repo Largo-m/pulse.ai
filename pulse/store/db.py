@@ -64,6 +64,33 @@ CREATE TABLE IF NOT EXISTS project_workflows (
   model TEXT,
   PRIMARY KEY (project_id, workflow_id)
 );
+
+CREATE TABLE IF NOT EXISTS agent_settings (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  agent_id TEXT NOT NULL,
+  runtime TEXT,
+  model TEXT,
+  permission_policy TEXT,
+  PRIMARY KEY (project_id, agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS workflows (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workflow_agents (
+  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  agent_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  PRIMARY KEY (workflow_id, position)
+);
 """
 
 

@@ -39,7 +39,7 @@ def run_spec(
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
-    resolved = resolve_config(workspace=workspace, workflow="spec")
+    resolved = resolve_config(workspace=workspace, pulse_agent="classify")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command
@@ -109,7 +109,13 @@ def run_spec(
         return 0
 
     flow, reason = route
+    from pulse.agents.compose import expand_spec_flow
+
+    roster = expand_spec_flow(flow)
     _apply_route(active_stream, flow, reason)
+    info = getattr(active_stream, "info", None)
+    if callable(info):
+        info("Agents: " + ", ".join(roster))
     if not cockpit:
         label = "Quick mode" if flow == "quick" else "Pipeline completo"
         extra = f" — {reason}" if reason else ""

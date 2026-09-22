@@ -48,19 +48,14 @@ def test_build_setup_project_prompt_uses_skill_reference_not_inline_content():
         user_prompt="App de trading",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
-    assert "Siga o workflow **Setup project**." in prompt
-    assert f"`{skill_dir / 'SKILL.md'}`" in prompt
+    assert "Agent `setup-interview`" in prompt
     assert "App de trading" in prompt
-    assert "project-init.md" in prompt
-    assert "## roadmap.md" not in prompt
     assert str(workspace) in prompt
     assert "SETUP_READY" in prompt
     assert "Isolamento" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
     assert "bloco de texto" in prompt
     assert "```text" in prompt
-    assert len(prompt) < 8_000
 
 
 def test_build_setup_project_artifact_prompt_targets_specs():

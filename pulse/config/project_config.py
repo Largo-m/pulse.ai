@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -141,6 +142,7 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
     resolved = root.resolve()
     existing = _load_project(resolved, db_path=db_path)
     if existing is not None:
+        _install_bundled_agents(resolved)
         return resolved
     project_id = str(uuid.uuid4())
     connection = connect(_db(db_path))
@@ -165,9 +167,10 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
                 """,
                 (project_id, workflow_id, defaults.agent, defaults.model),
             )
-        connection.commit()
+            connection.commit()
     finally:
         connection.close()
+    _install_bundled_agents(resolved)
     return resolved
 
 
@@ -321,3 +324,17 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
         connection.commit()
     finally:
         connection.close()
+
+
+def _install_bundled_agents(root: Path) -> None:
+    from pulse.agents.catalog import BUNDLED_AGENTS
+    from pulse.agents.loader import bundled_agents_dir
+
+    source_root = bundled_agents_dir()
+    dest_root = root / ".pulse" / "agents"
+    for agent in BUNDLED_AGENTS:
+        source = source_root / agent.id / "AGENT.md"
+        dest = dest_root / agent.id / "AGENT.md"
+        if source.is_file() and not dest.is_file():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)

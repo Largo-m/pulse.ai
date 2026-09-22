@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse.agents.loader import load_agent
+from pulse.agents.prompt import extend_prompt_with_agent
+
 
 def extend_prompt_with_bundled_skill(
     sections: list[str],
@@ -10,7 +13,14 @@ def extend_prompt_with_bundled_skill(
     skill_name: str,
     workflow: str,
     references: tuple[str, ...] = (),
+    agent_id: str | None = None,
+    workspace: Path | None = None,
 ) -> None:
+    if agent_id:
+        agent = load_agent(agent_id, workspace=workspace)
+        if agent is not None:
+            extend_prompt_with_agent(sections, agent)
+            return
     skill_file = skill_dir / "SKILL.md"
     sections.extend(
         [

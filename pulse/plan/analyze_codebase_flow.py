@@ -40,7 +40,7 @@ def run_analyze_codebase(
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
-    resolved = resolve_config(workspace=workspace, workflow="analyze-codebase")
+    resolved = resolve_config(workspace=workspace, pulse_agent="codebase-explore")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command

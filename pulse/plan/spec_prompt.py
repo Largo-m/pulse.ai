@@ -41,6 +41,8 @@ def build_classify_prompt(*, workspace: Path, user_prompt: str, skill_dir: Path)
         skill_name=PULSE_SPEC_SKILL,
         workflow="Classify spec",
         references=CLASSIFY_REFERENCES,
+        agent_id="classify",
+        workspace=workspace,
     )
     sections.extend(
         [

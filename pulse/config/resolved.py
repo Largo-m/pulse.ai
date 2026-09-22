@@ -24,6 +24,7 @@ class ResolvedConfig:
     permission_policy: str
     workspace_dir: Path
     workflow: str | None = None
+    pulse_agent: str | None = None
     agents: dict[str, AgentConfig] = field(default_factory=dict)
     sources: dict[str, str] = field(default_factory=dict)
     global_config: GlobalConfig | None = None
@@ -127,16 +128,29 @@ def resolve_config(
     *,
     workspace: Path | None = None,
     workflow: str | None = None,
+    pulse_agent: str | None = None,
 ) -> ResolvedConfig:
     base_cwd = (cwd or Path.cwd()).resolve()
     global_cfg = load_global_config()
     project_cfg = load_project_config(base_cwd)
 
     agents = _merge_agents(global_cfg, project_cfg)
-    agent_name, agent_source = _resolve_agent_name(global_cfg, project_cfg, workflow)
-    model, model_source = _resolve_model(global_cfg, project_cfg, workflow)
-    permission_policy, policy_source = _resolve_permission_policy(global_cfg, project_cfg)
     workspace_dir, workspace_source = _resolve_workspace(base_cwd, project_cfg, workspace)
+
+    if pulse_agent:
+        agent_name, agent_source, model, model_source, permission_policy, policy_source = (
+            _resolve_pulse_agent(
+                pulse_agent,
+                workspace_dir,
+                agents,
+                project_cfg,
+                global_cfg,
+            )
+        )
+    else:
+        agent_name, agent_source = _resolve_agent_name(global_cfg, project_cfg, workflow)
+        model, model_source = _resolve_model(global_cfg, project_cfg, workflow)
+        permission_policy, policy_source = _resolve_permission_policy(global_cfg, project_cfg)
 
     agent = agents.get(agent_name) or agents[DEFAULT_AGENT_NAME]
 
@@ -163,8 +177,45 @@ def resolve_config(
         permission_policy=permission_policy,
         workspace_dir=workspace_dir,
         workflow=workflow,
+        pulse_agent=pulse_agent,
         agents=agents,
         sources=sources,
         global_config=global_cfg,
         project_config=project_cfg,
     )
+
+
+def _resolve_pulse_agent(
+    pulse_agent: str,
+    workspace_dir: Path,
+    runtimes: dict[str, AgentConfig],
+    project_cfg: ProjectConfig | None,
+    global_cfg: GlobalConfig | None,
+) -> tuple[str, str, str, str, str, str]:
+    from pulse.agents.loader import load_agent
+    from pulse.store.agent_settings import load_agent_settings
+
+    loaded = load_agent(pulse_agent, workspace=workspace_dir)
+    runtime = loaded.runtime if loaded else "cursor"
+    model = loaded.model if loaded else DEFAULT_MODEL
+    policy = loaded.permission_policy if loaded else DEFAULT_PERMISSION_POLICY
+    agent_source = "agent.file"
+    model_source = "agent.file"
+    policy_source = "agent.file"
+    if project_cfg is not None:
+        stored = load_agent_settings(project_cfg.project_id, pulse_agent)
+        if stored.get("runtime"):
+            runtime = str(stored["runtime"])
+            agent_source = "agent.settings"
+        if stored.get("model"):
+            model = str(stored["model"])
+            model_source = "agent.settings"
+        if stored.get("permission_policy"):
+            policy = str(stored["permission_policy"])
+            policy_source = "agent.settings"
+    if runtime not in runtimes and global_cfg and runtime in global_cfg.agents:
+        runtime = runtime
+    if runtime not in runtimes:
+        runtime = DEFAULT_AGENT_NAME
+        agent_source = "default"
+    return runtime, agent_source, model, model_source, policy, policy_source

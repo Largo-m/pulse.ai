@@ -61,7 +61,7 @@ def run_new_issue(
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
 
-    resolved = resolve_config(workspace=workspace, workflow="spec")
+    resolved = resolve_config(workspace=workspace, pulse_agent="specify")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command

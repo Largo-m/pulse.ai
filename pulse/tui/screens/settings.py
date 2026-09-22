@@ -11,14 +11,9 @@ from textual.widgets.option_list import Option
 
 from pulse.config import (
     ensure_project_workflows,
-    global_config_exists,
-    load_global_config,
+    init_project_config,
     load_project_config,
     resolve_config,
-    update_global_defaults,
-    update_global_workflow,
-    update_project_defaults,
-    update_project_workflow,
 )
 from pulse.config.model_catalog import (
     PERMISSION_LABELS,
@@ -26,7 +21,6 @@ from pulse.config.model_catalog import (
     permission_choices,
 )
 from pulse.doctor.checks import run_environment_checks
-from pulse.plan.spec_types import SPEC_TYPES
 
 
 class SettingsScreen(Screen[None]):
@@ -75,9 +69,7 @@ class SettingsScreen(Screen[None]):
         self._set_status(self._status or "Escolha o que configurar")
         self._set_options(
             [
-                ("model", "Modelo"),
-                ("permissions", "Permissões"),
-                ("workflows", "Workflows"),
+                ("agents", "Agents"),
                 ("doctor", "Verificar ambiente"),
                 ("back", "Voltar"),
             ]
@@ -101,12 +93,8 @@ class SettingsScreen(Screen[None]):
             self.action_go_back()
             return
         if self._mode == "root":
-            if option_id == "model":
-                self._show_scope("scope_model", "Escopo do modelo")
-            elif option_id == "permissions":
-                self._show_scope("scope_permissions", "Escopo das permissões")
-            elif option_id == "workflows":
-                self._show_scope("scope_workflows", "Escopo dos workflows")
+            if option_id == "agents":
+                self._show_pulse_agents()
             elif option_id == "doctor":
                 self._run_doctor()
             return
@@ -134,6 +122,8 @@ class SettingsScreen(Screen[None]):
                 self._load_models(for_workflow=True)
             elif option_id == "wf_agent":
                 self._show_agents()
+            elif option_id == "wf_permission":
+                self._show_permissions()
             return
         if self._mode == "pick_agent" and option_id.startswith("agent:"):
             self._save_workflow_agent(option_id.split(":", 1)[1])
@@ -156,17 +146,19 @@ class SettingsScreen(Screen[None]):
             + [("back", "Voltar")]
         )
 
-    def _show_workflows(self) -> None:
+    def _show_pulse_agents(self) -> None:
         ensure_project_workflows(self._cwd)
+        init_project_config(self._cwd)
+        from pulse.agents.loader import load_agents
+
         self._mode = "pick_workflow"
-        self._set_status("Escolha o workflow")
+        self._set_status("Escolha o agent")
         options: list[tuple[str, str]] = []
-        for spec in SPEC_TYPES:
-            resolved = resolve_config(self._cwd, workflow=spec.id)
+        for agent in load_agents(workspace=self._cwd):
             options.append(
                 (
-                    f"workflow:{spec.id}",
-                    f"{spec.label} — {resolved.agent_name} · {resolved.model}",
+                    f"workflow:{agent.definition.id}",
+                    f"{agent.definition.label} — {agent.runtime} · {agent.model}",
                 )
             )
         options.append(("back", "Voltar"))
@@ -174,11 +166,12 @@ class SettingsScreen(Screen[None]):
 
     def _show_workflow_fields(self) -> None:
         self._mode = "workflow_fields"
-        self._set_status(f"Workflow: {self._workflow_id}")
+        self._set_status(f"Agent: {self._workflow_id}")
         self._set_options(
             [
-                ("wf_agent", "Agente"),
+                ("wf_agent", "Runtime"),
                 ("wf_model", "Modelo"),
+                ("wf_permission", "Permissões"),
                 ("back", "Voltar"),
             ]
         )
@@ -195,46 +188,47 @@ class SettingsScreen(Screen[None]):
         self._set_options(options)
 
     def _save_model(self, model: str) -> None:
-        if self._workflow_id and self._scope:
-            if self._scope == "global":
-                path = update_global_workflow(self._workflow_id, model=model)
-            else:
-                path = update_project_workflow(self._cwd, self._workflow_id, model=model)
-            self._set_status(f"Modelo do workflow salvo: {model} ({path})")
+        if self._workflow_id:
+            project = load_project_config(self._cwd)
+            if project is None:
+                from pulse.config.project_config import init_project_config
+
+                init_project_config(self._cwd)
+                project = load_project_config(self._cwd)
+            if project is None:
+                return
+            from pulse.store.agent_settings import upsert_agent_settings
+
+            upsert_agent_settings(project.project_id, self._workflow_id, model=model)
+            self._set_status(f"Modelo do agent salvo: {model}")
             self._show_workflow_fields()
             return
-        if self._scope == "global":
-            if not global_config_exists():
-                self._set_status("Config global não encontrada. Rode Configurar Pulse.")
-                self._show_root()
-                return
-            path = update_global_defaults(model=model)
-        else:
-            path = update_project_defaults(self._cwd, model=model)
-        self._set_status(f"Modelo salvo: {model} ({path})")
         self._show_root()
 
     def _save_permission(self, policy: str) -> None:
+        if not self._workflow_id:
+            self._show_root()
+            return
+        project = load_project_config(self._cwd)
+        if project is None:
+            return
+        from pulse.store.agent_settings import upsert_agent_settings
+
+        upsert_agent_settings(project.project_id, self._workflow_id, permission_policy=policy)
         label = PERMISSION_LABELS.get(policy, policy)
-        if self._scope == "global":
-            if not global_config_exists():
-                self._set_status("Config global não encontrada. Rode Configurar Pulse.")
-                self._show_root()
-                return
-            path = update_global_defaults(permission_policy=policy)
-        else:
-            path = update_project_defaults(self._cwd, permission_policy=policy)
-        self._set_status(f"Permissões salvas: {label} ({path})")
-        self._show_root()
+        self._set_status(f"Permissões do agent salvas: {label}")
+        self._show_workflow_fields()
 
     def _save_workflow_agent(self, agent: str) -> None:
-        if not self._workflow_id or not self._scope:
+        if not self._workflow_id:
             return
-        if self._scope == "global":
-            path = update_global_workflow(self._workflow_id, agent=agent)
-        else:
-            path = update_project_workflow(self._cwd, self._workflow_id, agent=agent)
-        self._set_status(f"Agente do workflow salvo: {agent} ({path})")
+        project = load_project_config(self._cwd)
+        if project is None:
+            return
+        from pulse.store.agent_settings import upsert_agent_settings
+
+        upsert_agent_settings(project.project_id, self._workflow_id, runtime=agent)
+        self._set_status(f"Runtime do agent salvo: {agent}")
         self._show_workflow_fields()
 
     def _run_doctor(self) -> None:
@@ -243,6 +237,8 @@ class SettingsScreen(Screen[None]):
         for check in checks:
             mark = "ok" if check.status == "ok" else check.status.upper()
             lines.append(f"[{mark}] {check.message}")
+        from pulse.config import load_global_config
+
         cfg = load_global_config()
         if cfg:
             lines.append(f"[ok] Config global · modelo={cfg.model}")
