@@ -99,3 +99,4 @@ class RunRecord:
     ended_at: str = ""
     exit_code: int | None = None
     phases: list[RunPhaseSnapshot] = field(default_factory=list)
+    acp_session_id: str = ""

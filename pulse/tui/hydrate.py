@@ -4,7 +4,8 @@ import re
 from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryStep, SpecFlow
-from pulse.history.runs import load_run_logs
+from pulse.history.runs import load_run, load_run_logs
+from pulse.tui.cursor_store import list_session_events
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.artifacts import is_spec_artifact
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseStatus
@@ -107,6 +108,32 @@ def _load_entries(item: HistoryItem, workspace: Path, state: CockpitState) -> li
                 entry.active = False
                 entry.pending = False
             return entries
+        loaded = load_run(workspace, item.run_id)
+        session_id = loaded[0].acp_session_id if loaded else ""
+        if session_id:
+            state.acp_session_id = session_id
+            events = list_session_events(session_id)
+            if events:
+                phase_id = state.phases[0].id if state.phases else ""
+                entries: list[LogEntry] = []
+                for index, event in enumerate(events):
+                    try:
+                        kind = LogKind(event.get("kind", LogKind.TOOL.value))
+                    except ValueError:
+                        kind = LogKind.TOOL
+                    detail = str(event.get("detail", ""))
+                    entries.append(
+                        LogEntry(
+                            kind=kind,
+                            title=str(event.get("title", "")),
+                            detail=detail,
+                            body=detail if kind == LogKind.ASSISTANT else "",
+                            entry_id=index + 1,
+                            tool_id=str(event.get("tool_id", "")),
+                            phase_id=phase_id,
+                        )
+                    )
+                return entries
     return [
         LogEntry(
             kind=LogKind.INFO,

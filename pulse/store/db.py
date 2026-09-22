@@ -84,12 +84,15 @@ CREATE TABLE IF NOT EXISTS workflows (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS workflow_agents (
-  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
-  position INTEGER NOT NULL,
-  agent_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  workflow_id TEXT,
+  agent_id TEXT,
+  acp_session_id TEXT,
   status TEXT NOT NULL,
-  PRIMARY KEY (workflow_id, position)
+  started_at TEXT NOT NULL,
+  ended_at TEXT
 );
 """
 

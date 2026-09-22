@@ -17,6 +17,7 @@ def test_save_and_load_run_roundtrip(tmp_path: Path):
 
     recorder = RunRecorder(tmp_path, flush_interval=0)
     record = recorder.start("new-issue", "Adicionar login")
+    state.acp_session_id = "sess-cursor-1"
     state.upsert_artifact(".pulse/specs/features/login/spec.md", ready=True)
     recorder.observe(state)
     recorder.flush(state)
@@ -30,8 +31,9 @@ def test_save_and_load_run_roundtrip(tmp_path: Path):
     assert saved.spec_dir == ".pulse/specs/features/login"
     assert saved.status == RunStatus.COMPLETED
     assert saved.exit_code == 0
-    assert any(entry.kind == LogKind.READ and "cli.py" in entry.title for entry in entries)
-    assert any(entry.kind == LogKind.ASSISTANT and "Plano" in entry.body for entry in entries)
+    assert saved.acp_session_id == "sess-cursor-1"
+    assert entries == []
+    assert not (tmp_path / ".pulse" / "runs" / record.id / "logs.jsonl").exists()
 
 
 def test_recorder_binds_quick_fix_from_artifact(tmp_path: Path):

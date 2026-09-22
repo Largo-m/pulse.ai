@@ -79,6 +79,7 @@ class CockpitSink:
 
     def set_session_id(self, session_id: str | None) -> None:
         self._store.set_session(session_id)
+        self._state.acp_session_id = session_id or ""
 
     def reset_capture(self) -> None:
         self._agent_text = ""

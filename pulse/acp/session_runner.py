@@ -47,6 +47,7 @@ class AcpSessionRunner:
         stream: Any | None = None,
         prompt_handler: Any | None = None,
         enable_mcp_ask: bool = True,
+        pulse_agent: str | None = None,
     ) -> None:
         self._command = command
         self._cwd = cwd
@@ -55,6 +56,7 @@ class AcpSessionRunner:
         self._stream = stream or NullStreamSink()
         self._prompt_handler = prompt_handler or NullPromptPort()
         self._enable_mcp_ask = enable_mcp_ask
+        self._pulse_agent = pulse_agent
         self._ask_bridge: AskQuestionHttpServer | None = None
         self._process: subprocess.Popen[str] | None = None
         self._responses: dict[int, dict[str, Any]] = {}
@@ -718,6 +720,17 @@ class AcpSessionRunner:
         self._logger.set_session_id(self._session_id)
         if hasattr(self._stream, "set_session_id"):
             self._stream.set_session_id(self._session_id)
+        try:
+            from pulse.store.sessions import persist_runtime_session
+
+            persist_runtime_session(
+                self._cwd,
+                pulse_session_id=self._run_id,
+                acp_session_id=self._session_id,
+                agent_id=self._pulse_agent,
+            )
+        except Exception:
+            pass
 
     def close_session(self) -> None:
         if self._session_id is None:

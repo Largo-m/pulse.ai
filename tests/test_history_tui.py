@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -13,7 +15,7 @@ from pulse.history.runs import save_run
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
-from pulse.tui.state import LogEntry, LogKind, PhaseStatus
+from pulse.tui.state import PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
@@ -69,8 +71,35 @@ def test_history_list_filters_items(tmp_path: Path):
     asyncio.run(run())
 
 
-def test_history_detail_renders_steps_and_logs(tmp_path: Path):
+def test_history_detail_renders_steps_and_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write_issue(tmp_path)
+    session_id = "sess-login"
+    store_root = tmp_path / "acp-sessions" / session_id
+    store_root.mkdir(parents=True)
+    db = store_root / "store.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)")
+    blob = {
+        "role": "assistant",
+        "content": [
+            {
+                "type": "tool-call",
+                "toolCallId": "call-1",
+                "title": "Read spec.md",
+                "toolName": "Read",
+                "args": {"path": "spec.md"},
+            },
+            {
+                "type": "text",
+                "text": "Specify concluído",
+            },
+        ],
+    }
+    con.execute("INSERT INTO blobs(id, data) VALUES (?, ?)", ("1", json.dumps(blob).encode("utf-8")))
+    con.commit()
+    con.close()
+    monkeypatch.setattr("pulse.tui.cursor_store._ACP_SESSIONS", tmp_path / "acp-sessions")
+    monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
     save_run(
         tmp_path,
         RunRecord(
@@ -84,23 +113,9 @@ def test_history_detail_renders_steps_and_logs(tmp_path: Path):
             started_at="2026-01-02T00:00:00+00:00",
             ended_at="2026-01-02T01:00:00+00:00",
             exit_code=0,
+            acp_session_id=session_id,
         ),
-        [
-            LogEntry(
-                kind=LogKind.READ,
-                title="spec.md",
-                detail="Reading spec.md",
-                entry_id=1,
-                phase_id="specify",
-            ),
-            LogEntry(
-                kind=LogKind.ASSISTANT,
-                title="Assistant",
-                body="Specify concluído",
-                entry_id=2,
-                phase_id="specify",
-            ),
-        ],
+        [],
     )
     item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
     assert item is not None
@@ -124,9 +139,9 @@ def test_history_detail_renders_steps_and_logs(tmp_path: Path):
             content = str(screen.query_one("#stream-content").render())
             phases = str(screen.query_one("#phase-content").render())
             assert "Specify" in phases
-            assert "Read" in content
-            assert "Specify concluído" in content or "Assistente" in content
-            assert LogKind.READ in {entry.kind for entry in screen.state.entries}
+            assert "Read spec.md" in content or "Tool" in content
+            assert "Specify concluído" in content
+            assert screen.state.acp_session_id == "sess-login"
             assert screen.query_one(PhaseSidebar)
             assert screen.query_one(LogStream)
 

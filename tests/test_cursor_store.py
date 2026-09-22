@@ -4,7 +4,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-from pulse.tui.cursor_store import CursorStoreIndex, find_session_store, normalize_tool_args
+from pulse.tui.cursor_store import CursorStoreIndex, find_session_store, list_session_events, normalize_tool_args
 
 
 def test_normalize_tool_args_aliases():
@@ -54,3 +54,5 @@ def test_cursor_store_lookup_args(tmp_path: Path, monkeypatch):
     glob_args = index.lookup_args("call-2\nfc_2")
     assert glob_args is not None
     assert glob_args["glob"] == ".pulse/specs/**/*"
+    events = list_session_events(session_id)
+    assert any(event["kind"] == "Tool" and "call-1" in event["tool_id"] for event in events)

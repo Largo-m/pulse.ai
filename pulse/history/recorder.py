@@ -106,6 +106,9 @@ class RunRecorder:
         record.kind = kind
         record.slug = slug
         record.spec_dir = spec_dir
+        session_id = getattr(state, "acp_session_id", "") or ""
+        if session_id:
+            record.acp_session_id = str(session_id)
 
     def _snapshot_locked(self, state: RunSnapshot) -> RunRecord:
         self._sync_record(state)
@@ -123,6 +126,7 @@ class RunRecorder:
             ended_at=record.ended_at,
             exit_code=record.exit_code,
             phases=list(record.phases),
+            acp_session_id=record.acp_session_id,
         )
 
 

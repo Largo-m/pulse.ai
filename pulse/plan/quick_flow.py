@@ -78,6 +78,7 @@ def run_quick(
         permission_policy=permission_policy,
         stream=active_stream,
         prompt_handler=active_handler,
+        pulse_agent=getattr(resolved, "pulse_agent", None),
     )
 
     try:

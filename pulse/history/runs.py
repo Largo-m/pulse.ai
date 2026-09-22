@@ -28,9 +28,6 @@ def save_run(workspace: Path, record: RunRecord, entries: list[LogEntry]) -> Pat
         yaml.safe_dump(run_to_dict(record), sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    logs_path = target / "logs.jsonl"
-    lines = [json.dumps(log_entry_to_dict(entry), ensure_ascii=False) for entry in entries]
-    logs_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return target
 
 
@@ -134,6 +131,7 @@ def run_to_dict(record: RunRecord) -> dict[str, Any]:
             }
             for phase in record.phases
         ],
+        "acp_session_id": record.acp_session_id,
     }
 
 
@@ -175,6 +173,7 @@ def run_from_dict(data: dict[str, Any]) -> RunRecord:
         ended_at=str(data.get("ended_at", "")),
         exit_code=int(exit_code) if exit_code is not None and str(exit_code) != "" else None,
         phases=phases,
+        acp_session_id=str(data.get("acp_session_id", "")),
     )
 
 

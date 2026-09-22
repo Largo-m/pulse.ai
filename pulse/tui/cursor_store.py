@@ -132,3 +132,46 @@ def _load_tool_args(db_path: Path) -> dict[str, dict[str, Any]]:
                 found[prefix] = normalized
     con.close()
     return found
+
+
+def list_session_events(session_id: str) -> list[dict[str, Any]]:
+    path = find_session_store(session_id)
+    if path is None:
+        return []
+    events: list[dict[str, Any]] = []
+    try:
+        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return events
+    try:
+        rows = con.execute("SELECT data FROM blobs").fetchall()
+    except sqlite3.Error:
+        con.close()
+        return events
+    for (data,) in rows:
+        try:
+            obj = json.loads(bytes(data).decode("utf-8"))
+        except Exception:
+            continue
+        content = obj.get("content")
+        if not isinstance(content, list):
+            continue
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            kind = str(item.get("type", ""))
+            if kind == "tool-call":
+                events.append(
+                    {
+                        "kind": "Tool",
+                        "title": str(item.get("title") or item.get("toolCallId") or "tool"),
+                        "tool_id": str(item.get("toolCallId") or ""),
+                        "detail": str((item.get("args") or {}).get("path") or ""),
+                    }
+                )
+            elif kind in {"assistant", "text"}:
+                text = item.get("text") or item.get("content") or ""
+                if text:
+                    events.append({"kind": "Assistant", "title": str(text)[:80], "detail": str(text)})
+    con.close()
+    return events

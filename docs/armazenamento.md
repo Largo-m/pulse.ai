@@ -1,10 +1,11 @@
 # Armazenamento do Pulse
 
-Config operacional vive em SQLite. Specs continuam Markdown no workspace. Logs de run ainda são arquivos nesta entrega.
+Config operacional vive em SQLite. Specs continuam Markdown no workspace. O Pulse não grava log ACP em arquivo.
 
 ```
-~/.pulse/pulse.db                 config da máquina e dos projetos (SQLite)
+~/.pulse/pulse.db                 config da máquina, projetos e ponteiros de sessão
 <workspace>/.pulse/specs/         artefatos Markdown
+<workspace>/.pulse/runs/<uuid>/   catálogo da run (meta.yaml, sem JSONL)
 ~/.cursor/                        SQLite do Cursor (Pulse só lê)
 ```
 
@@ -18,9 +19,9 @@ Resolução de config: `defaults do código` → tabela `machine` → tabelas `p
 | Config do projeto | `~/.pulse/pulse.db` (`projects`, `project_*`) | SQLite | Pulse (`pulse init`, `pulse config`) | Pulse |
 | Estado de feature | `.pulse/specs/features/<slug>/workflow.yaml` | YAML | Pulse (orquestra) e o agente (quando o prompt pede) | Pulse |
 | Specs / artefatos | `.pulse/specs/**/*.md` | Markdown | Agente ACP | Pulse (TUI, histórico) e o próximo prompt |
-| Histórico de run | `.pulse/runs/<uuid>/` | YAML + JSONL | Pulse (`RunRecorder`) | TUI de histórico |
-| Log bruto ACP | `~/.pulse/logs/acp/` | JSONL | Pulse (`AcpLogger`) | Diagnóstico manual |
-| Args de tool do Cursor | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
+| Histórico de run | `.pulse/runs/<uuid>/meta.yaml` | YAML | Pulse (`RunRecorder`) | TUI de histórico |
+| Ponteiro de sessão | `~/.pulse/pulse.db` (`agent_sessions`) | SQLite | Pulse (`persist_runtime_session`) | Histórico / diagnóstico |
+| Log da sessão ACP | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
 
 ## 1. Config da máquina — `~/.pulse/pulse.db`
 
@@ -35,7 +36,7 @@ Escrita em:
 
 Não há mais `config.toml`. Override de testes: variável `PULSE_DB`.
 
-Logs ACP também ficam em `~/.pulse/`: ver [logs.md](logs.md).
+O log da sessão fica no Cursor: ver [logs.md](logs.md).
 
 ## 2. Config do projeto — mesmo SQLite, `project_id`
 
@@ -76,11 +77,10 @@ Ignorado no git (`.gitignore`).
 
 ```
 .pulse/runs/<uuid>/
-├── meta.yaml      id, workflow, prompt, status, slug, spec_dir, fases, timestamps
-└── logs.jsonl     stream do cockpit (uma linha por LogEntry)
+└── meta.yaml      id, workflow, prompt, status, slug, spec_dir, fases, acp_session_id
 ```
 
-`RunRecorder` no cockpit grava no start, a cada ~400 ms se houver mudança, e no finalize. Status: `running` | `completed` | `failed`.
+`RunRecorder` no cockpit grava no start, a cada ~400 ms se houver mudança, e no finalize. Status: `running` | `completed` | `failed`. O stream da sessão é relido do store do Cursor via `acp_session_id`.
 
 O catálogo de histórico **não é um arquivo**: `HistoryCatalog` junta specs + último run.
 
@@ -91,7 +91,7 @@ O Pulse **não escreve** em `~/.cursor/`. `CursorStoreIndex` abre em modo leitur
 - `~/.cursor/acp-sessions/<sessionId>/store.db`
 - ou `~/.cursor/chats/<hash>/<sessionId>/store.db`
 
-Usa a tabela `blobs` para recuperar `args` de `tool-call` e completar títulos vagos no cockpit (`…`, `3 files`).
+Usa a tabela `blobs` para recuperar `args` de `tool-call` (cockpit ao vivo) e para montar o stream no histórico (`list_session_events`).
 
 ## 6. Só memória (não persiste)
 
