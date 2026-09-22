@@ -11,7 +11,7 @@ from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.new_issue_flow import run_new_issue
 from pulse.plan.quick_flow import run_quick
 from pulse.plan.spec_prompt import PULSE_SPEC_SKILL, build_classify_prompt, resolve_spec_skill
-from pulse.plan.spec_route import load_route
+from pulse.plan.spec_route import load_route, parse_route_text
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
@@ -103,11 +103,17 @@ def run_spec(
 
     route = load_route(workspace_root)
     if route is None:
+        route = parse_route_text(str(result.get("phaseSummary") or ""))
+    if route is None:
         route = _ask_flow(active_handler)
     if route is None:
-        if not cockpit:
-            print_workflow_result("Classificação cancelada.")
-        return 0
+        reason = "O agente não definiu o flow (quick ou full)."
+        emit_error = getattr(active_stream, "error", None)
+        if callable(emit_error):
+            emit_error("Classificação cancelada", reason)
+        elif not cockpit:
+            print_workflow_error(f"Classificação cancelada. {reason}")
+        return 1
 
     flow, reason = route
     from pulse.agents.compose import expand_spec_flow

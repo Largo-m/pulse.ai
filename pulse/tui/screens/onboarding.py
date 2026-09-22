@@ -39,28 +39,30 @@ class OnboardingScreen(Screen[int]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="onboard-content"):
-            yield Static("Configurar Pulse", classes="home-brand")
-            yield Static("", id="onboard-status", classes="home-sub")
+            yield Static("CONFIGURAR PULSE", classes="onboard-title")
+            yield Static("Ambiente", id="onboard-status", classes="onboard-hint")
             yield OptionList(id="onboard-options")
             yield Input(
                 placeholder="Caminho do workspace…",
                 id="onboard-input",
-                classes="-hidden",
             )
-            yield Static("Enter confirma · Esc cancela", classes="home-hint")
+            yield Static("", id="onboard-report", classes="onboard-report")
+            yield Static("Enter confirma  ·  Esc cancela", classes="onboard-hint-keys")
         yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#onboard-input", Input).display = False
+        self._set_report("")
         if global_config_exists() and not self._force:
             existing = load_global_config()
             if existing and existing.is_onboarded:
                 self._step = "overwrite"
-                self._set_status(f"Config já existe em {GLOBAL_CONFIG_FILE}. Reconfigurar?")
+                self._set_status("Config já existe")
+                self._set_report(str(GLOBAL_CONFIG_FILE))
                 self._set_options(
                     [
-                        ("overwrite_yes", "Sim, reconfigurar"),
-                        ("overwrite_no", "Não, manter"),
+                        ("overwrite_yes", "Sim — reconfigurar"),
+                        ("overwrite_no", "Não — manter"),
                     ]
                 )
                 return
@@ -71,6 +73,11 @@ class OnboardingScreen(Screen[int]):
 
     def _set_status(self, text: str) -> None:
         self.query_one("#onboard-status", Static).update(text)
+
+    def _set_report(self, text: str) -> None:
+        widget = self.query_one("#onboard-report", Static)
+        widget.update(text)
+        widget.display = bool(text)
 
     def _set_options(self, options: list[tuple[str, str]]) -> None:
         widget = self.query_one("#onboard-options", OptionList)
@@ -101,10 +108,11 @@ class OnboardingScreen(Screen[int]):
             f"[{agent_check.status}] {agent_check.message}",
             f"[{auth_check.status}] {auth_check.message}",
         ]
-        self._set_status("\n".join(lines))
+        self._set_status("Ambiente")
+        self._set_report("\n".join(lines))
         if agent_check.status != "ok":
             self._step = "agent_fail"
-            self._set_options([("quit", "Sair e instalar o Cursor CLI")])
+            self._set_options([("quit", "Sair — instalar o Cursor CLI")])
             return
         if auth_check.status != "ok":
             self._step = "auth"
@@ -126,6 +134,7 @@ class OnboardingScreen(Screen[int]):
             self._workspace = existing.workspace_dir
         self._step = "workspace"
         self._set_status("Diretório padrão do workspace")
+        self._set_report("")
         self._hide_options()
         self._show_input(str(self._workspace), "Caminho absoluto do workspace")
 
@@ -143,6 +152,7 @@ class OnboardingScreen(Screen[int]):
                 self._do_login()
             elif option_id == "auth_skip":
                 self._set_status("Exporte CURSOR_API_KEY e rode `pulse` de novo.")
+                self._set_report("")
                 self.dismiss(1)
             return
         if self._step == "acp_fail" and option_id == "acp_continue":
@@ -158,7 +168,8 @@ class OnboardingScreen(Screen[int]):
             return
         path = Path(text).expanduser()
         if not path.is_dir():
-            self._set_status("Diretório inválido. Escolha uma pasta existente.")
+            self._set_status("Diretório padrão do workspace")
+            self._set_report("Diretório inválido. Escolha uma pasta existente.")
             return
         self._workspace = path.resolve()
         self._hide_input()
@@ -171,7 +182,8 @@ class OnboardingScreen(Screen[int]):
         auth = check_auth()
         def apply() -> None:
             if code != 0 or auth.status != "ok":
-                self._set_status("Login não concluído.")
+                self._set_status("Login não concluído")
+                self._set_report(auth.message)
                 self._set_options(
                     [
                         ("auth_login", "Tentar de novo"),
@@ -196,11 +208,13 @@ class OnboardingScreen(Screen[int]):
 
         def apply() -> None:
             if probe.success:
-                self._set_status(f"✓ {probe.message}")
+                self._set_status("Conexão ACP")
+                self._set_report(probe.message)
                 self._finish()
                 return
             self._step = "acp_fail"
-            self._set_status(f"✗ {probe.error or probe.message}")
+            self._set_status("Conexão ACP")
+            self._set_report(probe.error or probe.message)
             self._set_options(
                 [
                     ("acp_continue", "Continuar mesmo assim"),
@@ -237,5 +251,6 @@ class OnboardingScreen(Screen[int]):
         )
         if not project_config_exists(self._workspace):
             init_project_config(self._workspace)
-        self._set_status(f"✓ Config salvo em {config_path}")
+        self._set_status("Pronto")
+        self._set_report(f"Config salvo em {config_path}")
         self.dismiss(0)

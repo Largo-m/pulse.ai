@@ -12,6 +12,7 @@ class _Stream:
     def __init__(self) -> None:
         self.routes: list[str] = []
         self.infos: list[str] = []
+        self.errors: list[tuple[str, str]] = []
 
     def apply_routed_flow(self, flow: str) -> None:
         self.routes.append(flow)
@@ -19,8 +20,13 @@ class _Stream:
     def info(self, title: str) -> None:
         self.infos.append(title)
 
+    def error(self, title: str, reason: str = "") -> None:
+        self.errors.append((title, reason))
+
 
 class _Runner:
+    summary = ""
+
     def __init__(self, *_args, **_kwargs) -> None:
         pass
 
@@ -34,7 +40,7 @@ class _Runner:
         return None
 
     def run_isolated_prompt(self, **_kwargs) -> dict[str, str]:
-        return {"stopReason": "end_turn"}
+        return {"stopReason": "end_turn", "phaseSummary": self.summary}
 
     def close(self) -> None:
         return None
@@ -138,3 +144,42 @@ def test_run_spec_asks_when_route_missing(monkeypatch, tmp_path: Path):
     )
     assert code == 0
     assert captured["user_prompt"] == "Algo ambíguo"
+
+
+def test_run_spec_uses_agent_summary_when_route_file_missing(monkeypatch, tmp_path: Path):
+    _patch_classify(monkeypatch, tmp_path, "quick")
+    route_file(tmp_path).unlink()
+    _Runner.summary = "flow: full\nreason: feature grande\n"
+    captured: dict[str, object] = {}
+
+    def fake_full(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("pulse.plan.spec_flow.run_new_issue", fake_full)
+    monkeypatch.setattr("pulse.plan.spec_flow.run_quick", lambda **_k: 99)
+    code = run_spec(
+        user_prompt="Login social",
+        workspace=tmp_path,
+        stream=_Stream(),
+        render_header=False,
+    )
+    _Runner.summary = ""
+    assert code == 0
+    assert captured["user_prompt"] == "Login social"
+
+
+def test_run_spec_returns_error_when_route_missing(monkeypatch, tmp_path: Path):
+    _patch_classify(monkeypatch, tmp_path, "quick")
+    route_file(tmp_path).unlink()
+    stream = _Stream()
+    code = run_spec(
+        user_prompt="Algo ambíguo",
+        workspace=tmp_path,
+        stream=stream,
+        render_header=False,
+    )
+    assert code == 1
+    assert stream.errors
+    assert stream.errors[0][0] == "Classificação cancelada"
+    assert "flow" in stream.errors[0][1]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -15,8 +16,10 @@ from pulse.daemon.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
+    clear_daemon_meta,
     read_daemon_meta,
 )
+from pulse.daemon.protocol import ENGINE_PROTOCOL
 
 
 class EngineClient:
@@ -33,12 +36,14 @@ class EngineClient:
         self._client: httpx.Client | None = None
 
     def ensure_daemon(self, *, timeout: float = 20.0) -> None:
-        if self.ping():
+        if self.ping() and self._protocol_ok():
             return
+        if self.ping():
+            self._stop_daemon()
         self._start_daemon()
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if self.ping():
+            if self.ping() and self._protocol_ok():
                 return
             time.sleep(0.25)
         raise RuntimeError("Não foi possível conectar ao pulse-engine")
@@ -107,6 +112,31 @@ class EngineClient:
 
     def workflows(self) -> list[dict[str, str]]:
         return list(self.get("/api/workflows").get("workflows", []))
+
+    def _protocol_ok(self) -> bool:
+        try:
+            data = self.get("/api/status")
+            return int(data.get("protocol") or 0) >= ENGINE_PROTOCOL
+        except Exception:
+            return False
+
+    def _stop_daemon(self) -> None:
+        meta = read_daemon_meta() or {}
+        pid = meta.get("pid")
+        self.close()
+        if isinstance(pid, int):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break
+                time.sleep(0.1)
+        clear_daemon_meta()
 
     def _start_daemon(self) -> None:
         cmd = [sys.executable, "-m", "pulse.daemon", "serve"]

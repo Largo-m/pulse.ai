@@ -20,6 +20,7 @@ class LogKind(str, Enum):
     WRITE = "Write"
     SHELL = "Shell"
     INFO = "Info"
+    ERROR = "Error"
     ASSISTANT = "Assistant"
     QUESTION = "Question"
     ANSWER = "Answer"

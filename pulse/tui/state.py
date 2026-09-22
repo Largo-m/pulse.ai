@@ -301,6 +301,27 @@ class CockpitState:
         self.entries.append(entry)
         self.notify()
 
+    def add_error(self, title: str, reason: str = "") -> None:
+        text = str(title or "Erro").strip() or "Erro"
+        detail = str(reason or "").strip()
+        self._clear_active_flags()
+        self._active_assistant_id = None
+        entry = LogEntry(
+            kind=LogKind.ERROR,
+            title=text,
+            detail=detail or text,
+            active=True,
+            entry_id=self._next_entry_id,
+            phase_id=self._entry_phase_id(),
+            task_id=self._entry_task_id(),
+        )
+        self._next_entry_id += 1
+        self.entries.append(entry)
+        self.notify()
+
+    def has_error(self) -> bool:
+        return any(entry.kind == LogKind.ERROR for entry in self.entries)
+
     def append_assistant(self, text: str) -> None:
         if not text:
             return

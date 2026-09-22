@@ -191,6 +191,12 @@ class CockpitSink:
         self._state.add_info(text)
         self._emit()
 
+    def error(self, title: str, reason: str = "") -> None:
+        text = str(title or "").strip() or "Erro"
+        self._finish_message_line()
+        self._state.add_error(text, str(reason or "").strip())
+        self._emit()
+
     def finish(self) -> None:
         self._finish_message_line()
 

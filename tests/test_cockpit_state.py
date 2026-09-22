@@ -110,6 +110,17 @@ def test_add_qa_records_question_and_answer():
     assert answer.phase_id == "phase1"
 
 
+def test_add_error_keeps_title_and_reason():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    state.add_error("Classificação cancelada", "O agente não definiu o flow (quick ou full).")
+    assert state.has_error() is True
+    entry = state.entries[-1]
+    assert entry.kind == LogKind.ERROR
+    assert entry.title == "Classificação cancelada"
+    assert "flow" in entry.detail
+
+
 def test_mark_finished():
     state = CockpitState()
     state.configure_workflow("analyze-codebase")

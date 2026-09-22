@@ -12,7 +12,12 @@ from pulse.plan.analyze_codebase_prompt import (
     build_analyze_codebase_prompt,
     resolve_analyze_codebase_skill,
 )
-from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
+from pulse.plan.cli_output import (
+    emit_stream_error,
+    print_workflow_banner,
+    print_workflow_error,
+    print_workflow_result,
+)
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
@@ -93,14 +98,20 @@ def run_analyze_codebase(
 
     stop_reason = result.get("stopReason", "end_turn")
     ask_count = int(result.get("askQuestionCount", 0))
-    if cockpit:
-        return 1 if stop_reason == "cancelled" else 0
-
-    print()
     if stop_reason == "cancelled":
-        print_workflow_result("Análise cancelada.")
+        emit_stream_error(
+            active_stream,
+            "Questionário cancelado",
+            "O questionário foi cancelado ou não pôde ser respondido.",
+        )
+        if not cockpit:
+            print_workflow_result("Análise cancelada.")
         return 1
 
+    if cockpit:
+        return 0
+
+    print()
     print_workflow_result(f"Sessão concluída ({stop_reason})")
     if ask_count:
         print_workflow_result(f"{ask_count} pergunta(s) respondida(s) no terminal")

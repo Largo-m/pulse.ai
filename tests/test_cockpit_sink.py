@@ -8,6 +8,17 @@ from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 
 
+def test_cockpit_sink_records_error_with_reason():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    sink = CockpitSink(state)
+    sink.error("Classificação cancelada", "O agente não definiu o flow (quick ou full).")
+    entry = state.entries[-1]
+    assert entry.kind == LogKind.ERROR
+    assert entry.title == "Classificação cancelada"
+    assert "flow" in entry.detail
+
+
 def test_cockpit_sink_streams_assistant_and_tools():
     state = CockpitState()
     state.configure_workflow("new-issue")

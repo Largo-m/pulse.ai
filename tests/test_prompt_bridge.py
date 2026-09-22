@@ -91,6 +91,45 @@ def test_textual_prompt_handler_permission_ask_uses_select():
     assert result["outcome"]["optionId"] == "allow-once"
 
 
+def test_textual_prompt_handler_permission_deny_writes_allows_pulse_specs():
+    bridge = PromptBridge()
+    handler = TextualPromptHandler(bridge)
+    result = handler.respond_to_permission(
+        {
+            "permission": {"title": "Write route", "kind": "write"},
+            "toolCall": {
+                "kind": "edit",
+                "rawInput": {"path": "/repo/.pulse/specs/.route.yaml"},
+            },
+            "options": [
+                {"optionId": "allow-once", "kind": "allow_once"},
+                {"optionId": "reject-once", "kind": "reject_once"},
+            ],
+        },
+        policy="deny_writes",
+    )
+    assert result["outcome"]["outcome"] == "selected"
+    assert result["outcome"]["optionId"] == "allow-once"
+
+
+def test_textual_prompt_handler_permission_deny_writes_blocks_app_code():
+    bridge = PromptBridge()
+    handler = TextualPromptHandler(bridge)
+    result = handler.respond_to_permission(
+        {
+            "permission": {"title": "Editar app.py", "kind": "edit"},
+            "toolCall": {"kind": "edit", "rawInput": {"path": "/repo/app.py"}},
+            "options": [
+                {"optionId": "allow-once", "kind": "allow_once"},
+                {"optionId": "reject-once", "kind": "reject_once"},
+            ],
+        },
+        policy="deny_writes",
+    )
+    assert result["outcome"]["outcome"] == "selected"
+    assert result["outcome"]["optionId"] == "reject-once"
+
+
 def test_textual_prompt_handler_permission_auto_approve():
     bridge = PromptBridge()
     handler = TextualPromptHandler(bridge)
