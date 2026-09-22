@@ -61,7 +61,7 @@ Cada fase manda um **subconjunto** de referências:
 | setup-project | project-init, roadmap, state-management, user-input |
 | analyze-codebase | brownfield-mapping, concerns, code-analysis, user-input |
 
-Não há skill global do Pulse em `~/.pulse/skills/`. “Global” no produto é só config (`~/.pulse/config.toml`).
+Não há skill global do Pulse em `~/.pulse/skills/`. “Global” no produto é config no SQLite (`~/.pulse/pulse.db`).
 
 ### 2. Skills e rules do workspace — o ACP carrega
 

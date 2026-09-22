@@ -58,7 +58,7 @@ def _build_parser() -> argparse.ArgumentParser:
         nargs="?",
         default="show",
         choices=["show", "init"],
-        help="show: config efetiva; init: criar .pulse/config.yaml",
+        help="show: config efetiva; init: registrar projeto no SQLite",
     )
     config_parser.add_argument(
         "--workflow",

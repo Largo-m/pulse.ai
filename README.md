@@ -38,48 +38,22 @@ O wizard verifica:
 - conexão ACP com prompt de teste
 - diretório padrão, modelo e política de permissões
 
-A configuração global é salva em `~/.pulse/config.toml`. Ao final, o `pulse init`
-também cria um `.pulse/config.yaml` no workspace escolhido (se ainda não existir).
+A configuração da máquina e dos projetos é salva em `~/.pulse/pulse.db`.
+Ao final, o `pulse init` também registra o workspace no SQLite (se ainda não existir).
 
 ## Configuração por projeto
 
-Cada projeto pode ter suas próprias preferências em `.pulse/config.yaml`, que
-sobrescrevem a config global. A resolução segue as camadas:
+Cada projeto tem um `project_id` no SQLite da máquina. A resolução segue:
 
 ```
-defaults do código → ~/.pulse/config.toml (global) → <projeto>/.pulse/config.yaml (projeto)
+defaults do código → machine (SQLite) → project_* (mesmo SQLite, por root_path)
 ```
 
-O template padrão gerado por `pulse init` e `pulse config init` é:
+`pulse init` e `pulse config init` cadastram o projeto com defaults: agent `cursor`, model `claude-sonnet-4-6`, `permission_policy` `deny_writes`, e workflows `spec` / `setup-project` / `analyze-codebase`.
 
-```yaml
-version: 1
+Campos por projeto: agent, model, permission_policy, workspace e `workflows.*`.
 
-defaults:
-  agent: cursor
-  model: claude-sonnet-4-6
-  permission_policy: deny_writes
-
-workspace:
-  root: .
-
-workflows:
-  spec:
-    agent: cursor
-    model: Auto
-  setup-project:
-    agent: claude
-    model: claude-opus-4.8
-  analyze-codebase:
-    agent: cursor
-    model: gpt-5.5
-```
-
-Campos sobrescrevíveis por projeto: `defaults.agent`, `defaults.model`,
-`permission_policy`, `workspace.root` e `workflows.*`.
-
-Opcionalmente, um bloco `agents:` no YAML do projeto pode sobrescrever ou
-estender os agents do `~/.pulse/config.toml` (binary, models, acp_command).
+Agents do projeto podem sobrescrever ou estender os da máquina (binary, models, acp_command).
 
 ### Agentes e workflows
 
@@ -118,7 +92,7 @@ pulse config show --workflow setup-project
 
 ## Documentação interna
 
-Como o Pulse funciona hoje (código atual, sem banco):
+Como o Pulse funciona hoje (código atual):
 
 - [Armazenamento](docs/armazenamento.md) — o que é persistido e onde
 - [Workflows — carga e interpretação](docs/workflows.md) — como cada workflow é carregado e interpretado
@@ -137,5 +111,5 @@ pulse init --force     Reconfigurar
 pulse doctor           Verificar ambiente
 pulse doctor --test-acp Incluir teste ACP
 pulse config           Mostrar config efetiva (global + projeto)
-pulse config init      Criar .pulse/config.yaml no projeto atual
+pulse config init      Registrar o projeto atual no SQLite
 ```

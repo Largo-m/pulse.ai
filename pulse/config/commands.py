@@ -43,5 +43,5 @@ def _show(base: Path, workflow: str | None) -> int:
 
 def _init_project(base: Path) -> int:
     path = init_project_config(base)
-    print(f"Config de projeto criada em {path}")
+    print(f"Projeto registrado no SQLite: {path}")
     return 0

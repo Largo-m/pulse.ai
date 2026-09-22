@@ -147,8 +147,8 @@ Só existe tela e interação. Não executa workflow no mesmo processo via `run_
 
 Persistência:
 
-- Global: `~/.pulse/` (`config.toml`, `daemon.sock`, …)
-- Projeto: `<workspace>/.pulse/` (`config.yaml`, `specs/`, `runs/`)
+- Global: `~/.pulse/` (`pulse.db`, `daemon.sock`, …)
+- Projeto: linhas em `pulse.db` por `project_id`; artefatos em `<workspace>/.pulse/` (`specs/`, `runs/`)
 
 ### 5. Domínio (regras de negócio)
 

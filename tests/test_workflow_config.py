@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from pulse.config.global_config import load_global_config, mark_onboarding_complete, update_global_workflow
-from pulse.config.project_config import init_project_config, update_project_workflow
+from pulse.config.project_config import init_project_config, load_project_config, update_project_workflow
 
 
 def test_update_global_workflow(tmp_path: Path):
-    config_path = tmp_path / "config.toml"
+    config_path = tmp_path / "pulse.db"
     mark_onboarding_complete(
         agent_binary="agent",
         acp_command=["agent", "acp"],
@@ -37,8 +37,6 @@ def test_update_project_workflow(tmp_path: Path):
         agent="cursor",
         model="gpt-5.5",
     )
-    from pulse.config.project_config import load_project_config
-
     loaded = load_project_config(tmp_path)
     assert loaded is not None
     assert loaded.workflows["analyze-codebase"].agent == "cursor"

@@ -88,8 +88,8 @@ class SettingsScreen(Screen[None]):
         self._set_status(title)
         self._set_options(
             [
-                ("scope:global", "Global (~/.pulse/config.toml)"),
-                ("scope:project", "Projeto (.pulse/config.yaml)"),
+                ("scope:global", "Global (SQLite da máquina)"),
+                ("scope:project", "Projeto (SQLite por project_id)"),
                 ("back", "Voltar"),
             ]
         )

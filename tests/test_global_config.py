@@ -11,7 +11,7 @@ from pulse.config.global_config import (
 
 
 def test_global_config_roundtrip(tmp_path: Path):
-    config_path = tmp_path / "config.toml"
+    config_path = tmp_path / "pulse.db"
     saved = mark_onboarding_complete(
         agent_binary="agent",
         acp_command=["agent", "acp"],
@@ -37,28 +37,8 @@ def test_global_config_roundtrip(tmp_path: Path):
     assert loaded.workflows["setup-project"].agent == "claude"
 
 
-def test_global_config_to_toml_contains_sections():
-    config = GlobalConfig(
-        version=1,
-        agent_binary="agent",
-        acp_command=["agent", "acp"],
-        auth_method="api_key",
-        workspace_dir=Path("/tmp/work"),
-        model="gpt-5.5",
-        permission_policy="auto_approve",
-        completed_at="2026-06-21T12:00:00+00:00",
-        acp_test_passed=True,
-    )
-    toml = config.to_toml()
-    assert "[agent]" in toml
-    assert "[auth]" in toml
-    assert "[defaults]" in toml
-    assert "[onboarding]" in toml
-    assert 'permission_policy = "auto_approve"' in toml
-
-
 def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
-    config_path = tmp_path / "config.toml"
+    config_path = tmp_path / "pulse.db"
     config = GlobalConfig(
         version=1,
         agent_binary="agent",
@@ -94,7 +74,7 @@ def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
 
 
 def test_save_global_config_creates_parent(tmp_path: Path):
-    config_path = tmp_path / "nested" / "config.toml"
+    config_path = tmp_path / "nested" / "pulse.db"
     config = GlobalConfig(
         version=1,
         agent_binary="agent",

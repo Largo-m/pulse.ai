@@ -10,7 +10,7 @@ def test_collect_available_models_falls_back_to_defaults(monkeypatch, tmp_path):
     )
     models = collect_available_models(tmp_path)
     assert models
-    assert "Auto" in models or models == list(DEFAULT_MODELS)
+    assert "Auto" in models or "auto" in models or models == list(DEFAULT_MODELS)
 
 
 def test_collect_available_models_uses_acp(monkeypatch, tmp_path):

@@ -16,7 +16,7 @@ from pulse.config import (
     init_project_config,
     load_global_config,
     mark_onboarding_complete,
-    project_config_file,
+    project_config_exists,
 )
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
 from pulse.doctor.checks import check_agent_in_path, check_auth, find_agent_binary
@@ -242,8 +242,7 @@ class OnboardingScreen(Screen[int]):
             permission_policy=self._policy,
             acp_test_passed=self._acp_ok,
         )
-        project_path = project_config_file(self._workspace)
-        if not project_path.is_file():
+        if not project_config_exists(self._workspace):
             init_project_config(self._workspace)
         self._set_status(f"✓ Config salvo em {config_path}")
         self.dismiss(0)

@@ -1,47 +1,47 @@
 # Armazenamento do Pulse
 
-O Pulse **não tem banco próprio**. Tudo que ele persiste vive em arquivos. Há três raízes e um store externo só de leitura.
+Config operacional vive em SQLite. Specs continuam Markdown no workspace. Logs de run ainda são arquivos nesta entrega.
 
 ```
-~/.pulse/                         config e logs ACP (máquina)
-<workspace>/.pulse/               config, specs e histórico do projeto
+~/.pulse/pulse.db                 config da máquina e dos projetos (SQLite)
+<workspace>/.pulse/specs/         artefatos Markdown
 ~/.cursor/                        SQLite do Cursor (Pulse só lê)
 ```
 
-Resolução de config: `defaults do código` → `~/.pulse/config.toml` → `<projeto>/.pulse/config.yaml`.
+Resolução de config: `defaults do código` → tabela `machine` → tabelas `project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.
 
 ## Quem escreve o quê
 
 | Dado | Caminho | Formato | Quem escreve | Quem lê |
 | --- | --- | --- | --- | --- |
-| Config global | `~/.pulse/config.toml` | TOML | Pulse (`pulse init`, settings) | Pulse |
-| Config do projeto | `.pulse/config.yaml` | YAML | Pulse (`pulse init`, `pulse config`) | Pulse |
+| Config global | `~/.pulse/pulse.db` (`machine*`) | SQLite | Pulse (`pulse init`, settings) | Pulse |
+| Config do projeto | `~/.pulse/pulse.db` (`projects`, `project_*`) | SQLite | Pulse (`pulse init`, `pulse config`) | Pulse |
 | Estado de feature | `.pulse/specs/features/<slug>/workflow.yaml` | YAML | Pulse (orquestra) e o agente (quando o prompt pede) | Pulse |
 | Specs / artefatos | `.pulse/specs/**/*.md` | Markdown | Agente ACP | Pulse (TUI, histórico) e o próximo prompt |
 | Histórico de run | `.pulse/runs/<uuid>/` | YAML + JSONL | Pulse (`RunRecorder`) | TUI de histórico |
 | Log bruto ACP | `~/.pulse/logs/acp/` | JSONL | Pulse (`AcpLogger`) | Diagnóstico manual |
 | Args de tool do Cursor | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
 
-## 1. Config global — `~/.pulse/`
+## 1. Config da máquina — `~/.pulse/pulse.db`
 
-Arquivo: `~/.pulse/config.toml` (`pulse/config/paths.py`).
+Tabelas `machine`, `machine_agents`, `machine_workflows`.
 
-Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace, permission_policy), onboarding, lista de agents e overrides por workflow.
+Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace, permission_policy), onboarding, lista de runtimes e overrides por workflow.
 
 Escrita em:
 
 - `pulse init` / `pulse init --force` → `mark_onboarding_complete`
 - menu de configurações → `update_global_defaults`, `update_global_agent`, `update_global_workflow`
 
-Se `~/.pulse/config.toml` não existe e `~/.dev-orchestrator/config.toml` existe, o Pulse **copia** o legado para o caminho novo.
+Não há mais `config.toml`. Override de testes: variável `PULSE_DB`.
 
-Logs ACP também ficam aqui: ver [logs.md](logs.md).
+Logs ACP também ficam em `~/.pulse/`: ver [logs.md](logs.md).
 
-## 2. Config do projeto — `.pulse/config.yaml`
+## 2. Config do projeto — mesmo SQLite, `project_id`
 
-Descoberta: sobe a partir do CWD até achar `.pulse/config.yaml`.
+Descoberta: sobe a partir do CWD até achar um `root_path` cadastrado em `projects`.
 
-Campos: `defaults.agent`, `defaults.model`, `defaults.permission_policy`, `workspace.root`, `workflows.<id>`, opcionalmente `agents`.
+Campos em `project_settings` / `project_workflows` / `project_agents`: agent, model, permission_policy, workspace, workflows.
 
 Criado por `pulse init` (se ainda não existir) e `pulse config init`. Atualizado pelo menu de settings do projeto.
 

@@ -18,6 +18,7 @@ from pulse.config.global_config import (
 from pulse.config.paths import (
     GLOBAL_CONFIG_DIR,
     GLOBAL_CONFIG_FILE,
+    GLOBAL_DB_FILE,
     LEGACY_GLOBAL_CONFIG_DIR,
     LEGACY_GLOBAL_CONFIG_FILE,
     PROJECT_CONFIG_DIRNAME,
@@ -44,6 +45,7 @@ from pulse.config.resolved import ResolvedConfig, resolve_config
 __all__ = [
     "GLOBAL_CONFIG_DIR",
     "GLOBAL_CONFIG_FILE",
+    "GLOBAL_DB_FILE",
     "LEGACY_GLOBAL_CONFIG_DIR",
     "LEGACY_GLOBAL_CONFIG_FILE",
     "PROJECT_CONFIG_DIRNAME",
