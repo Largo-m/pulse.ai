@@ -99,6 +99,7 @@ class RunRecorder:
         if record is None:
             return
         record.phases = [_phase_snapshot(phase) for phase in state.phases]
+        _sync_sessions(record, state)
         binding = _binding_from_state(state, record.workflow_id)
         if binding is None:
             return
@@ -106,9 +107,6 @@ class RunRecorder:
         record.kind = kind
         record.slug = slug
         record.spec_dir = spec_dir
-        session_id = getattr(state, "acp_session_id", "") or ""
-        if session_id:
-            record.acp_session_id = str(session_id)
 
     def _snapshot_locked(self, state: RunSnapshot) -> RunRecord:
         self._sync_record(state)
@@ -127,6 +125,7 @@ class RunRecorder:
             exit_code=record.exit_code,
             phases=list(record.phases),
             acp_session_id=record.acp_session_id,
+            acp_sessions=[dict(item) for item in record.acp_sessions],
         )
 
 
@@ -179,3 +178,38 @@ def _parse_spec_path(path: str) -> tuple[HistoryKind, str, str] | None:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sync_sessions(record: RunRecord, state: RunSnapshot) -> None:
+    raw = getattr(state, "acp_sessions", None)
+    refs = _normalize_session_refs(raw if isinstance(raw, list) else [])
+    session_id = str(getattr(state, "acp_session_id", "") or "")
+    if session_id and all(item["session_id"] != session_id for item in refs):
+        phase_id = ""
+        getter = getattr(state, "_entry_phase_id", None)
+        if callable(getter):
+            phase_id = str(getter() or "")
+        refs.append({"session_id": session_id, "phase_id": phase_id})
+    if not refs:
+        return
+    record.acp_sessions = refs
+    record.acp_session_id = refs[-1]["session_id"]
+
+
+def _normalize_session_refs(items: list[object]) -> list[dict[str, str]]:
+    refs: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        session_id = str(item.get("session_id", "") or "").strip()
+        if not session_id or session_id in seen:
+            continue
+        seen.add(session_id)
+        refs.append(
+            {
+                "session_id": session_id,
+                "phase_id": str(item.get("phase_id", "") or ""),
+            }
+        )
+    return refs

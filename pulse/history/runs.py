@@ -132,6 +132,14 @@ def run_to_dict(record: RunRecord) -> dict[str, Any]:
             for phase in record.phases
         ],
         "acp_session_id": record.acp_session_id,
+        "acp_sessions": [
+            {
+                "session_id": str(item.get("session_id", "")),
+                "phase_id": str(item.get("phase_id", "")),
+            }
+            for item in record.acp_sessions
+            if isinstance(item, dict) and item.get("session_id")
+        ],
     }
 
 
@@ -161,6 +169,26 @@ def run_from_dict(data: dict[str, Any]) -> RunRecord:
                 )
             )
     exit_code = data.get("exit_code")
+    sessions_raw = data.get("acp_sessions", [])
+    acp_sessions: list[dict[str, str]] = []
+    if isinstance(sessions_raw, list):
+        seen: set[str] = set()
+        for item in sessions_raw:
+            if not isinstance(item, dict):
+                continue
+            session_id = str(item.get("session_id", "")).strip()
+            if not session_id or session_id in seen:
+                continue
+            seen.add(session_id)
+            acp_sessions.append(
+                {
+                    "session_id": session_id,
+                    "phase_id": str(item.get("phase_id", "")),
+                }
+            )
+    fallback_id = str(data.get("acp_session_id", "")).strip()
+    if fallback_id and fallback_id not in {item["session_id"] for item in acp_sessions}:
+        acp_sessions.append({"session_id": fallback_id, "phase_id": ""})
     return RunRecord(
         id=str(data.get("id", "")),
         workflow_id=str(data.get("workflow_id", "")),
@@ -173,7 +201,8 @@ def run_from_dict(data: dict[str, Any]) -> RunRecord:
         ended_at=str(data.get("ended_at", "")),
         exit_code=int(exit_code) if exit_code is not None and str(exit_code) != "" else None,
         phases=phases,
-        acp_session_id=str(data.get("acp_session_id", "")),
+        acp_session_id=acp_sessions[-1]["session_id"] if acp_sessions else fallback_id,
+        acp_sessions=acp_sessions,
     )
 
 

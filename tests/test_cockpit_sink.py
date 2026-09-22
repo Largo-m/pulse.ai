@@ -782,3 +782,18 @@ def test_read_and_search_do_not_register_artifacts():
     )
     assert state.artifacts == []
     assert state.artifact_pane_open is False
+
+
+def test_cockpit_sink_collects_acp_sessions_per_phase():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state)
+    sink.set_session_id("sess-specify")
+    sink.begin_phase("Specify")
+    sink.set_session_id("sess-design")
+    sink.begin_phase("Design")
+    assert state.acp_session_id == "sess-design"
+    assert state.acp_sessions == [
+        {"session_id": "sess-specify", "phase_id": "specify"},
+        {"session_id": "sess-design", "phase_id": "design"},
+    ]

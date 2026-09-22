@@ -55,6 +55,7 @@ class CockpitState:
     running: bool = False
     exit_code: int | None = None
     acp_session_id: str = ""
+    acp_sessions: list[dict[str, str]] = field(default_factory=list)
     _listeners: list[Listener] = field(default_factory=list, repr=False)
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None

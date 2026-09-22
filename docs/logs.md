@@ -13,9 +13,9 @@ agente ACP (JSON-RPC)
                 └─ CockpitSink        TUI
                         │
                         ├─ CockpitState.entries          (ao vivo)
-                        ├─ CockpitState.acp_session_id
+                        ├─ CockpitState.acp_sessions     (uma por fase isolada)
                         └─ RunRecorder ── .pulse/runs/<uuid>/meta.yaml
-                                           (catálogo + acp_session_id)
+                                           (catálogo + acp_sessions)
 
 Cursor ── ~/.cursor/acp-sessions/<sessionId>/store.db
           (histórico relê este SQLite)
@@ -27,7 +27,7 @@ Cursor ── ~/.cursor/acp-sessions/<sessionId>/store.db
 
 Preenchida quando o `AcpSessionRunner` recebe o `sessionId` do runtime (`persist_runtime_session`).
 
-**Run:** `.pulse/runs/<uuid>/meta.yaml` inclui `acp_session_id`. Não há `logs.jsonl`.
+**Run:** `.pulse/runs/<uuid>/meta.yaml` inclui `acp_sessions` (lista `session_id` + `phase_id`) e `acp_session_id` (último). Não há `logs.jsonl`.
 
 `AcpLogger` permanece na API (`log_sent` / `log_received`) para não espalhar `if` no runner; os métodos não escrevem arquivo.
 
@@ -49,7 +49,7 @@ Preenchida quando o `AcpSessionRunner` recebe o `sessionId` do runtime (`persist
 
 1. Abre o último `run_id` ligado à spec (`latest_run_for`)
 2. Se ainda existir `logs.jsonl` legado, usa
-3. Senão, lê `acp_session_id` do `meta.yaml` e `list_session_events` no `store.db` do Cursor
+3. Senão, lê `acp_sessions` do `meta.yaml` (ou o `acp_session_id` legado) e `list_session_events` no `store.db` do Cursor, cada sessão na fase gravada
 4. Se não houver store: uma linha `Info` por fase — “Nenhum log persistido para esta sessão.”
 
 Artefatos vêm do disco (`.md` da spec), não do log.

@@ -77,7 +77,7 @@ Ignorado no git (`.gitignore`).
 
 ```
 .pulse/runs/<uuid>/
-└── meta.yaml      id, workflow, prompt, status, slug, spec_dir, fases, acp_session_id
+└── meta.yaml      id, workflow, prompt, status, slug, spec_dir, fases, acp_sessions
 ```
 
 `RunRecorder` no cockpit grava no start, a cada ~400 ms se houver mudança, e no finalize. Status: `running` | `completed` | `failed`. O stream da sessão é relido do store do Cursor via `acp_session_id`.

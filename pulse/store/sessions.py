@@ -57,8 +57,14 @@ def persist_runtime_session(cwd: str, *, pulse_session_id: str, acp_session_id: 
         return
     connection = connect(default_db_path())
     try:
+        already = connection.execute(
+            "SELECT id FROM agent_sessions WHERE acp_session_id = ?",
+            (acp_session_id,),
+        ).fetchone()
+        if already is not None:
+            return
         row = connection.execute(
-            "SELECT id FROM agent_sessions WHERE id = ?",
+            "SELECT id, acp_session_id FROM agent_sessions WHERE id = ?",
             (pulse_session_id,),
         ).fetchone()
         now = datetime.now(UTC).replace(microsecond=0).isoformat()
@@ -71,10 +77,19 @@ def persist_runtime_session(cwd: str, *, pulse_session_id: str, acp_session_id: 
                 """,
                 (pulse_session_id, project.project_id, agent_id, acp_session_id, now),
             )
-        else:
+        elif not row["acp_session_id"]:
             connection.execute(
                 "UPDATE agent_sessions SET acp_session_id = ?, agent_id = COALESCE(?, agent_id) WHERE id = ?",
                 (acp_session_id, agent_id, pulse_session_id),
+            )
+        else:
+            connection.execute(
+                """
+                INSERT INTO agent_sessions (
+                  id, project_id, workflow_id, agent_id, acp_session_id, status, started_at
+                ) VALUES (?, ?, NULL, ?, ?, 'running', ?)
+                """,
+                (str(uuid.uuid4()), project.project_id, agent_id, acp_session_id, now),
             )
         connection.commit()
     finally:

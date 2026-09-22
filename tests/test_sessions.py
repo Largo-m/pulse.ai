@@ -26,7 +26,7 @@ def test_start_agent_session_inserts_row(tmp_path: Path):
     assert row["status"] == "running"
 
 
-def test_persist_runtime_session_creates_and_updates(tmp_path: Path):
+def test_persist_runtime_session_creates_and_keeps_each_session(tmp_path: Path):
     init_project_config(tmp_path)
     persist_runtime_session(
         str(tmp_path),
@@ -41,10 +41,10 @@ def test_persist_runtime_session_creates_and_updates(tmp_path: Path):
         agent_id=None,
     )
     connection = connect(default_db_path())
-    row = connection.execute(
-        "SELECT acp_session_id, agent_id FROM agent_sessions WHERE id = ?",
-        ("pulse-sess",),
-    ).fetchone()
+    rows = connection.execute(
+        "SELECT acp_session_id, agent_id FROM agent_sessions ORDER BY rowid"
+    ).fetchall()
     connection.close()
-    assert row["acp_session_id"] == "acp-sess-2"
-    assert row["agent_id"] == "specify"
+    assert [row["acp_session_id"] for row in rows] == ["acp-sess", "acp-sess-2"]
+    assert rows[0]["agent_id"] == "specify"
+    assert rows[1]["agent_id"] is None

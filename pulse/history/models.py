@@ -100,3 +100,4 @@ class RunRecord:
     exit_code: int | None = None
     phases: list[RunPhaseSnapshot] = field(default_factory=list)
     acp_session_id: str = ""
+    acp_sessions: list[dict[str, str]] = field(default_factory=list)
