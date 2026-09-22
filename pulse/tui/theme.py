@@ -6,6 +6,8 @@ LIME = "#A2D729"
 LIME_MUTED = "#4A5F1A"
 TEXT = "#E0E0E0"
 TEXT_MUTED = "#888888"
+ERROR = "#E85D5D"
+ERROR_SOFT = "#FF8A8A"
 ACCENT_YELLOW = "#D4AF37"
 BORDER = "#333333"
 
@@ -265,6 +267,11 @@ HomeScreen OptionList {{
     background: {BG_PANEL};
     border: solid {BORDER};
     color: {TEXT};
+    padding: 0 1;
+}}
+
+HomeScreen OptionList > .option-list--option {{
+    padding: 0 1;
 }}
 
 HomeScreen OptionList:focus {{
@@ -330,6 +337,135 @@ HistoryListScreen OptionList:focus {{
 }}
 
 HistoryListScreen .history-empty {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-top: 1;
+}}
+
+SettingsScreen {{
+    background: {BG};
+    align: center middle;
+}}
+
+SettingsScreen #settings-content {{
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    align: center middle;
+}}
+
+SettingsScreen .settings-title {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+SettingsScreen .settings-hint {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+SettingsScreen OptionList {{
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+    padding: 0 1;
+}}
+
+SettingsScreen OptionList > .option-list--option {{
+    padding: 0 1;
+}}
+
+SettingsScreen OptionList:focus {{
+    border: solid {LIME};
+}}
+
+SettingsScreen .settings-report {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: left;
+    margin-top: 1;
+    height: auto;
+    max-height: 12;
+}}
+
+SettingsScreen .settings-hint-keys {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-top: 1;
+}}
+
+OnboardingScreen {{
+    background: {BG};
+    align: center middle;
+}}
+
+OnboardingScreen #onboard-content {{
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    align: center middle;
+}}
+
+OnboardingScreen .onboard-title {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+OnboardingScreen .onboard-hint {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+OnboardingScreen OptionList {{
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+}}
+
+OnboardingScreen OptionList:focus {{
+    border: solid {LIME};
+}}
+
+OnboardingScreen .onboard-report {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: left;
+    margin-top: 1;
+    height: auto;
+    max-height: 12;
+}}
+
+OnboardingScreen #onboard-input {{
+    width: 100%;
+    margin-top: 1;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+}}
+
+OnboardingScreen #onboard-input:focus {{
+    border: solid {LIME};
+}}
+
+OnboardingScreen .onboard-hint-keys {{
     width: 100%;
     color: {TEXT_MUTED};
     text-align: center;

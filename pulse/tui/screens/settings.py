@@ -24,7 +24,7 @@ from pulse.doctor.checks import run_environment_checks
 
 
 class SettingsScreen(Screen[None]):
-    BINDINGS = [("escape", "go_back", "Voltar"), ("q", "go_back", "Voltar")]
+    BINDINGS = [("escape", "go_back", "Voltar"), ("q", "go_back", "Voltar"), ("b", "go_back", "Voltar")]
 
     def __init__(self, *, cwd: Path | None = None) -> None:
         super().__init__()
@@ -32,44 +32,58 @@ class SettingsScreen(Screen[None]):
         self._mode = "root"
         self._scope: str | None = None
         self._workflow_id: str | None = None
-        self._status = ""
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-content"):
-            yield Static("Configurações", classes="home-brand")
-            yield Static("", id="settings-status", classes="home-sub")
+            yield Static("CONFIGURAÇÕES", classes="settings-title")
+            yield Static("Agents e ambiente", id="settings-status", classes="settings-hint")
             yield OptionList(id="settings-options")
-            yield Static("Enter seleciona · Esc volta", classes="home-hint")
+            yield Static("", id="settings-report", classes="settings-report")
+            yield Static("Enter seleciona  ·  Esc volta", classes="settings-hint-keys")
         yield Footer()
 
     def on_mount(self) -> None:
+        self._set_report("")
         self._show_root()
 
     def action_go_back(self) -> None:
         if self._mode == "root":
             self.app.pop_screen()
             return
+        if self._mode in {"pick_model", "pick_permission", "pick_agent"} and self._workflow_id:
+            self._show_workflow_fields()
+            return
+        if self._mode in {"workflow_fields", "doctor"}:
+            self._show_pulse_agents() if self._mode == "workflow_fields" else self._show_root()
+            return
         self._show_root()
 
     def _set_status(self, text: str) -> None:
-        self._status = text
         self.query_one("#settings-status", Static).update(text)
+
+    def _set_report(self, text: str) -> None:
+        widget = self.query_one("#settings-report", Static)
+        widget.update(text)
+        widget.display = bool(text)
 
     def _set_options(self, options: list[tuple[str, str]]) -> None:
         widget = self.query_one("#settings-options", OptionList)
         widget.clear_options()
+        widget.display = True
         for option_id, label in options:
             widget.add_option(Option(label, id=option_id))
-        widget.focus()
+        if options:
+            widget.focus()
 
     def _show_root(self) -> None:
         self._mode = "root"
         self._scope = None
         self._workflow_id = None
-        self._set_status(self._status or "Escolha o que configurar")
+        self._set_report("")
+        self._set_status("Agents e ambiente")
         self._set_options(
             [
-                ("agents", "Agents"),
+                ("agents", "Agents — runtime, modelo e permissões"),
                 ("doctor", "Verificar ambiente"),
                 ("back", "Voltar"),
             ]
@@ -80,8 +94,8 @@ class SettingsScreen(Screen[None]):
         self._set_status(title)
         self._set_options(
             [
-                ("scope:global", "Global (SQLite da máquina)"),
-                ("scope:project", "Projeto (SQLite por project_id)"),
+                ("scope:global", "Global — SQLite da máquina"),
+                ("scope:project", "Projeto — SQLite por project_id"),
                 ("back", "Voltar"),
             ]
         )
@@ -131,60 +145,99 @@ class SettingsScreen(Screen[None]):
     @work(thread=True)
     def _load_models(self, *, for_workflow: bool = False) -> None:
         self.app.call_from_thread(self._set_status, "Carregando modelos…")
-        models = collect_available_models(self._cwd)
+        runtime = self._effective_agent_fields()[0] if self._workflow_id else None
+        models = collect_available_models(self._cwd, agent_name=runtime)
+
         def apply() -> None:
             self._mode = "pick_model"
-            self._set_status("Escolha o modelo" + (" do workflow" if for_workflow else ""))
-            self._set_options([(f"model:{m}", m) for m in models] + [("back", "Voltar")])
+            current = self._effective_agent_fields()[1] if self._workflow_id else ""
+            self._set_status("Escolha o modelo")
+            self._set_options(
+                [(f"model:{item}", _mark_current(item, current)) for item in models]
+            )
+
         self.app.call_from_thread(apply)
 
     def _show_permissions(self) -> None:
         self._mode = "pick_permission"
+        current = self._effective_agent_fields()[2] if self._workflow_id else ""
         self._set_status("Escolha a política de permissões")
         self._set_options(
-            [(f"policy:{key}", label) for key, label in permission_choices()]
-            + [("back", "Voltar")]
+            [
+                (f"policy:{key}", _mark_current(label, PERMISSION_LABELS.get(current, current)))
+                for key, label in permission_choices()
+            ]
         )
 
     def _show_pulse_agents(self) -> None:
         ensure_project_workflows(self._cwd)
         init_project_config(self._cwd)
-        from pulse.agents.loader import load_agents
+        from pulse.agents.loader import apply_agent_settings, load_agents
 
         self._mode = "pick_workflow"
+        self._set_report("")
         self._set_status("Escolha o agent")
+        project_id = self._project_id()
         options: list[tuple[str, str]] = []
         for agent in load_agents(workspace=self._cwd):
+            view = apply_agent_settings(agent, project_id)
             options.append(
                 (
-                    f"workflow:{agent.definition.id}",
-                    f"{agent.definition.label} — {agent.runtime} · {agent.model}",
+                    f"workflow:{view.definition.id}",
+                    f"{view.definition.label} — {view.runtime} · {view.model}",
                 )
             )
-        options.append(("back", "Voltar"))
         self._set_options(options)
 
     def _show_workflow_fields(self) -> None:
         self._mode = "workflow_fields"
-        self._set_status(f"Agent: {self._workflow_id}")
+        runtime, model, policy = self._effective_agent_fields()
+        policy_label = PERMISSION_LABELS.get(policy, policy)
+        self._set_report("")
+        self._set_status(self._agent_label())
         self._set_options(
             [
-                ("wf_agent", "Runtime"),
-                ("wf_model", "Modelo"),
-                ("wf_permission", "Permissões"),
-                ("back", "Voltar"),
+                ("wf_agent", f"Runtime — {runtime}"),
+                ("wf_model", f"Modelo — {model}"),
+                ("wf_permission", f"Permissões — {policy_label}"),
             ]
         )
+
+    def _project_id(self) -> str | None:
+        project = load_project_config(self._cwd)
+        if project is None:
+            return None
+        return project.project_id
+
+    def _agent_label(self) -> str:
+        from pulse.agents.loader import load_agent
+
+        loaded = load_agent(self._workflow_id or "", workspace=self._cwd)
+        if loaded is None:
+            return self._workflow_id or "Agent"
+        return loaded.definition.label
+
+    def _effective_agent_fields(self) -> tuple[str, str, str]:
+        from pulse.agents.loader import apply_agent_settings, load_agent
+
+        agent_id = self._workflow_id or ""
+        loaded = load_agent(agent_id, workspace=self._cwd)
+        if loaded is None:
+            return "cursor", "Auto", "ask"
+        view = apply_agent_settings(loaded, self._project_id())
+        return view.runtime, view.model, view.permission_policy
 
     def _show_agents(self) -> None:
         resolved = resolve_config(self._cwd, workflow=self._workflow_id)
         self._mode = "pick_agent"
-        self._set_status("Escolha o agente")
-        options = [
-            (f"agent:{name}", f"{name} ({agent.binary})")
-            for name, agent in resolved.agents.items()
-        ]
-        options.append(("back", "Voltar"))
+        current = self._effective_agent_fields()[0]
+        self._set_status("Escolha o runtime")
+        options = []
+        for name, agent in resolved.agents.items():
+            label = f"{name} — {agent.binary}"
+            if name == current:
+                label = f"{label}  · atual"
+            options.append((f"agent:{name}", label))
         self._set_options(options)
 
     def _save_model(self, model: str) -> None:
@@ -200,7 +253,6 @@ class SettingsScreen(Screen[None]):
             from pulse.store.agent_settings import upsert_agent_settings
 
             upsert_agent_settings(project.project_id, self._workflow_id, model=model)
-            self._set_status(f"Modelo do agent salvo: {model}")
             self._show_workflow_fields()
             return
         self._show_root()
@@ -215,8 +267,6 @@ class SettingsScreen(Screen[None]):
         from pulse.store.agent_settings import upsert_agent_settings
 
         upsert_agent_settings(project.project_id, self._workflow_id, permission_policy=policy)
-        label = PERMISSION_LABELS.get(policy, policy)
-        self._set_status(f"Permissões do agent salvas: {label}")
         self._show_workflow_fields()
 
     def _save_workflow_agent(self, agent: str) -> None:
@@ -228,7 +278,6 @@ class SettingsScreen(Screen[None]):
         from pulse.store.agent_settings import upsert_agent_settings
 
         upsert_agent_settings(project.project_id, self._workflow_id, runtime=agent)
-        self._set_status(f"Runtime do agent salvo: {agent}")
         self._show_workflow_fields()
 
     def _run_doctor(self) -> None:
@@ -245,5 +294,13 @@ class SettingsScreen(Screen[None]):
         project = load_project_config(self._cwd)
         if project is not None:
             lines.append(f"[ok] Config projeto · {project.source_file}")
-        self._set_status("\n".join(lines) if lines else "Nenhum check")
-        self._show_root()
+        self._mode = "doctor"
+        self._set_status("Ambiente")
+        self._set_report("\n".join(lines) if lines else "Nenhum check")
+        self._set_options([("back", "Voltar")])
+
+
+def _mark_current(label: str, current: str) -> str:
+    if current and label == current:
+        return f"{label}  · atual"
+    return label

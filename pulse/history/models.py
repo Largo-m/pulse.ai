@@ -23,12 +23,6 @@ class HistoryStatus(str, Enum):
     DONE = "done"
 
 
-class RunStatus(str, Enum):
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
 @dataclass
 class HistoryStep:
     id: str
@@ -77,27 +71,3 @@ class HistoryItem:
         return labels.get(self.status, self.status.value)
 
 
-@dataclass
-class RunPhaseSnapshot:
-    id: str
-    label: str
-    status: str
-    files: int = 0
-    issues: int = 0
-
-
-@dataclass
-class RunRecord:
-    id: str
-    workflow_id: str
-    prompt: str
-    status: RunStatus = RunStatus.RUNNING
-    kind: HistoryKind | None = None
-    slug: str = ""
-    spec_dir: str = ""
-    started_at: str = ""
-    ended_at: str = ""
-    exit_code: int | None = None
-    phases: list[RunPhaseSnapshot] = field(default_factory=list)
-    acp_session_id: str = ""
-    acp_sessions: list[dict[str, str]] = field(default_factory=list)

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, HistoryStep, SpecFlow
 from pulse.history.quick_index import list_quick_tasks
-from pulse.history.runs import latest_run_for, list_runs
 from pulse.plan.specify_state import (
     PHASE_ORDER,
     PhaseStatus,
@@ -34,9 +33,8 @@ class HistoryCatalog:
         self.workspace = workspace
 
     def list_items(self) -> list[HistoryItem]:
-        runs = list_runs(self.workspace)
-        items = [_item_from_workflow(state, runs) for state in list_feature_workflows(self.workspace)]
-        items.extend(_item_from_quick(task, runs) for task in list_quick_tasks(self.workspace))
+        items = [_item_from_workflow(state) for state in list_feature_workflows(self.workspace)]
+        items.extend(_item_from_quick(task) for task in list_quick_tasks(self.workspace))
         items.sort(key=lambda item: item.updated_at, reverse=True)
         return items
 
@@ -74,9 +72,8 @@ def search_history(
     return HistoryCatalog(workspace).search(query, kind=kind, flow=flow)
 
 
-def _item_from_workflow(state: WorkflowState, runs: list) -> HistoryItem:
+def _item_from_workflow(state: WorkflowState) -> HistoryItem:
     spec_dir = state.feature_dir.as_posix()
-    run = latest_run_for(runs, spec_dir=spec_dir, slug=state.feature_slug, kind=HistoryKind.SPEC)
     title = state.user_prompt.strip() or state.feature_slug
     return HistoryItem(
         kind=HistoryKind.SPEC,
@@ -88,17 +85,10 @@ def _item_from_workflow(state: WorkflowState, runs: list) -> HistoryItem:
         spec_dir=spec_dir,
         flow=SpecFlow.FULL,
         steps=_issue_steps(state),
-        run_id=run.id if run is not None else None,
     )
 
 
-def _item_from_quick(task, runs: list) -> HistoryItem:
-    run = latest_run_for(
-        runs,
-        spec_dir=task.spec_dir,
-        slug=task.slug,
-        kind=HistoryKind.SPEC,
-    )
+def _item_from_quick(task) -> HistoryItem:
     return HistoryItem(
         kind=HistoryKind.SPEC,
         slug=task.slug,
@@ -109,7 +99,6 @@ def _item_from_quick(task, runs: list) -> HistoryItem:
         spec_dir=task.spec_dir,
         flow=SpecFlow.QUICK,
         steps=_fix_steps(task.status),
-        run_id=run.id if run is not None else None,
     )
 
 

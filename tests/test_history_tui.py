@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -10,8 +8,6 @@ import pytest
 pytest.importorskip("textual")
 
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.models import HistoryKind, RunRecord, RunStatus
-from pulse.history.runs import save_run
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
@@ -71,55 +67,11 @@ def test_history_list_filters_items(tmp_path: Path):
     asyncio.run(run())
 
 
-def test_history_detail_renders_steps_and_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_history_detail_renders_steps_without_run_log(tmp_path: Path):
     _write_issue(tmp_path)
-    session_id = "sess-login"
-    store_root = tmp_path / "acp-sessions" / session_id
-    store_root.mkdir(parents=True)
-    db = store_root / "store.db"
-    con = sqlite3.connect(db)
-    con.execute("CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)")
-    blob = {
-        "role": "assistant",
-        "content": [
-            {
-                "type": "tool-call",
-                "toolCallId": "call-1",
-                "title": "Read spec.md",
-                "toolName": "Read",
-                "args": {"path": "spec.md"},
-            },
-            {
-                "type": "text",
-                "text": "Specify concluído",
-            },
-        ],
-    }
-    con.execute("INSERT INTO blobs(id, data) VALUES (?, ?)", ("1", json.dumps(blob).encode("utf-8")))
-    con.commit()
-    con.close()
-    monkeypatch.setattr("pulse.tui.cursor_store._ACP_SESSIONS", tmp_path / "acp-sessions")
-    monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
-    save_run(
-        tmp_path,
-        RunRecord(
-            id="run-login",
-            workflow_id="new-issue",
-            prompt="Adicionar login social",
-            status=RunStatus.COMPLETED,
-            kind=HistoryKind.SPEC,
-            slug="login-flow",
-            spec_dir=".pulse/specs/features/login-flow",
-            started_at="2026-01-02T00:00:00+00:00",
-            ended_at="2026-01-02T01:00:00+00:00",
-            exit_code=0,
-            acp_session_id=session_id,
-        ),
-        [],
-    )
     item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
     assert item is not None
-    assert item.run_id == "run-login"
+    assert item.run_id is None
 
     async def run() -> None:
         from textual.app import App
@@ -139,9 +91,8 @@ def test_history_detail_renders_steps_and_logs(tmp_path: Path, monkeypatch: pyte
             content = str(screen.query_one("#stream-content").render())
             phases = str(screen.query_one("#phase-content").render())
             assert "Specify" in phases
-            assert "Read spec.md" in content or "Tool" in content
-            assert "Specify concluído" in content
-            assert screen.state.acp_session_id == "sess-login"
+            assert "Nenhum log persistido" in content
+            assert screen.state.acp_session_id == ""
             assert screen.query_one(PhaseSidebar)
             assert screen.query_one(LogStream)
 

@@ -4,8 +4,6 @@ import re
 from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryStep, SpecFlow
-from pulse.history.runs import load_run, load_run_logs
-from pulse.tui.cursor_store import list_session_events
 from pulse.plan.specify_state import WorkflowState
 from pulse.tui.artifacts import is_spec_artifact
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseStatus
@@ -100,36 +98,7 @@ def _backfill_task_ids(entries: list[LogEntry]) -> None:
             entry.task_id = current
 
 
-def _load_entries(item: HistoryItem, workspace: Path, state: CockpitState) -> list[LogEntry]:
-    if item.run_id:
-        entries = load_run_logs(workspace, item.run_id)
-        if entries:
-            for entry in entries:
-                entry.active = False
-                entry.pending = False
-            return entries
-        loaded = load_run(workspace, item.run_id)
-        if loaded is None:
-            return [
-                LogEntry(
-                    kind=LogKind.INFO,
-                    title=_NO_LOGS,
-                    detail=_NO_LOGS,
-                    entry_id=index + 1,
-                    phase_id=phase.id,
-                )
-                for index, phase in enumerate(state.phases)
-            ]
-        record = loaded[0]
-        refs = list(record.acp_sessions)
-        if not refs and record.acp_session_id:
-            refs = [{"session_id": record.acp_session_id, "phase_id": ""}]
-        if refs:
-            state.acp_session_id = refs[-1]["session_id"]
-            state.acp_sessions = [dict(item) for item in refs]
-            entries = _entries_from_sessions(refs, state)
-            if entries:
-                return entries
+def _load_entries(_item: HistoryItem, _workspace: Path, state: CockpitState) -> list[LogEntry]:
     return [
         LogEntry(
             kind=LogKind.INFO,
@@ -140,43 +109,6 @@ def _load_entries(item: HistoryItem, workspace: Path, state: CockpitState) -> li
         )
         for index, phase in enumerate(state.phases)
     ]
-
-
-def _entries_from_sessions(refs: list[dict[str, str]], state: CockpitState) -> list[LogEntry]:
-    known = {phase.id for phase in state.phases}
-    entries: list[LogEntry] = []
-    entry_id = 1
-    for index, ref in enumerate(refs):
-        session_id = str(ref.get("session_id", "")).strip()
-        if not session_id:
-            continue
-        phase_id = str(ref.get("phase_id", "")).strip()
-        if phase_id not in known:
-            if index < len(state.phases):
-                phase_id = state.phases[index].id
-            elif state.phases:
-                phase_id = state.phases[0].id
-            else:
-                phase_id = ""
-        for event in list_session_events(session_id):
-            try:
-                kind = LogKind(event.get("kind", LogKind.TOOL.value))
-            except ValueError:
-                kind = LogKind.TOOL
-            detail = str(event.get("detail", ""))
-            entries.append(
-                LogEntry(
-                    kind=kind,
-                    title=str(event.get("title", "")),
-                    detail=detail,
-                    body=detail if kind == LogKind.ASSISTANT else "",
-                    entry_id=entry_id,
-                    tool_id=str(event.get("tool_id", "")),
-                    phase_id=phase_id,
-                )
-            )
-            entry_id += 1
-    return entries
 
 
 def _scan_artifacts(item: HistoryItem, workspace: Path) -> list[ArtifactItem]:
