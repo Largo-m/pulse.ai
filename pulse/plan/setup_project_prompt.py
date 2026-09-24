@@ -48,6 +48,8 @@ def build_setup_project_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
+        agent_id="setup-interview",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -133,6 +135,8 @@ def build_setup_project_artifact_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Setup project",
         references=SETUP_PROJECT_REFERENCES,
+        agent_id="setup-artifacts",
+        workspace=workspace,
     )
     sections.extend(
         [

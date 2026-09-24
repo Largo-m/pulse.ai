@@ -1,6 +1,8 @@
 from pulse.prompts.text_questionnaire import (
     extract_questionnaire_block,
     parse_text_questionnaire,
+    questionnaire_from_payload,
+    serialize_questionnaire,
 )
 
 SAMPLE = """
@@ -63,3 +65,15 @@ def test_parse_text_questionnaire_extracts_four_questions():
         "A",
         "Plataforma de paper trading — simular operações de bolsa sem dinheiro real",
     )
+    assert "Stock Trader" in parsed.raw
+
+
+def test_questionnaire_payload_roundtrip_without_raw():
+    parsed = parse_text_questionnaire(SAMPLE)
+    assert parsed is not None
+    payload = serialize_questionnaire(parsed)
+    payload.pop("raw")
+    restored = questionnaire_from_payload(payload)
+    assert restored is not None
+    assert len(restored.questions) == 4
+    assert restored.questions[0].options[0][0] == "A"

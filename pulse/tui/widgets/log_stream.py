@@ -13,6 +13,7 @@ from textual.widgets import Static
 
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest, format_prompt_reply
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+from pulse.tui.theme import ERROR, ERROR_SOFT
 from pulse.tui.widgets.prompt_dock import PromptDock
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
@@ -285,6 +286,17 @@ class LogStream(Widget):
                 continue
 
             prefix = "▌ " if active else "  "
+            if entry.kind == LogKind.ERROR:
+                output.append(prefix, style=ERROR if active else "#333333")
+                output.append("Erro\n", style=f"bold {ERROR}")
+                title = entry.title.strip() or "Falha no workflow"
+                output.append(f"  {escape(title)}\n", style=f"bold {ERROR_SOFT}")
+                reason = entry.detail.strip()
+                if reason and reason != title:
+                    for line in reason.splitlines():
+                        output.append(f"  {escape(line)}\n", style=ERROR)
+                output.append("\n")
+                continue
             output.append(prefix, style="#A2D729" if active else "#333333")
             if entry.kind == LogKind.INFO:
                 output.append(f"{entry.title}\n", style="#888888")

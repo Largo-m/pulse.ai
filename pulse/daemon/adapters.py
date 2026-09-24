@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.prompts.text_questionnaire import parse_text_questionnaire
+from pulse.prompts.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
 
 
 class ApiStreamSink:
@@ -37,6 +37,9 @@ class ApiStreamSink:
 
     def info(self, title: str) -> None:
         self._bus.publish({"type": "phase.info", "title": title})
+
+    def error(self, title: str, reason: str = "") -> None:
+        self._bus.publish({"type": "phase.error", "title": title, "reason": reason})
 
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         self._bus.publish({"type": "phases.sync", **kwargs})
@@ -92,10 +95,13 @@ class ApiPromptPort:
         return answer
 
     def run_parsed_questionnaire(self, questionnaire: Any) -> str | None:
-        payload = {
-            "title": getattr(questionnaire, "title", ""),
-            "raw": getattr(questionnaire, "raw", ""),
-        }
+        if hasattr(questionnaire, "questions"):
+            payload = serialize_questionnaire(questionnaire)
+        else:
+            payload = {
+                "title": getattr(questionnaire, "title", ""),
+                "raw": getattr(questionnaire, "raw", ""),
+            }
         answer = self._correlator.request("questionnaire", payload)
         if answer is None:
             return None

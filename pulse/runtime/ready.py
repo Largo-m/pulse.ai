@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.config import global_config_exists, load_global_config
+from pulse.config import global_config_exists, load_global_config, project_config_exists
 
 
 def is_pulse_ready(cwd: Path | None = None) -> bool:
@@ -10,5 +10,4 @@ def is_pulse_ready(cwd: Path | None = None) -> bool:
         config = load_global_config()
         if config and config.is_onboarded:
             return True
-    root = cwd or Path.cwd()
-    return (root / ".pulse" / "config.yaml").is_file()
+    return project_config_exists(cwd or Path.cwd())

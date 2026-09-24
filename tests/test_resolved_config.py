@@ -3,7 +3,15 @@ from pathlib import Path
 import pulse.config.resolved as resolved_module
 from pulse.config.agents import AgentConfig, WorkflowConfig
 from pulse.config.global_config import GlobalConfig
+from pulse.config.project_config import (
+    init_project_config,
+    load_project_config,
+    update_project_agent,
+    update_project_defaults,
+    update_project_workflow,
+)
 from pulse.config.resolved import resolve_config
+from pulse.store.db import connect, default_db_path
 
 
 def _global(**overrides) -> GlobalConfig:
@@ -20,12 +28,6 @@ def _global(**overrides) -> GlobalConfig:
     )
     base.update(overrides)
     return GlobalConfig(**base)
-
-
-def _write_project_config(root: Path, body: str) -> None:
-    target = root / ".pulse" / "config.yaml"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(body, encoding="utf-8")
 
 
 def test_defaults_when_no_config(monkeypatch, tmp_path: Path):
@@ -53,9 +55,11 @@ def test_global_used_when_no_project(monkeypatch, tmp_path: Path):
 
 def test_project_overrides_global(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
-    _write_project_config(
+    init_project_config(tmp_path)
+    update_project_defaults(
         tmp_path,
-        "version: 1\ndefaults:\n  model: project-model\n  permission_policy: deny_writes\n",
+        model="project-model",
+        permission_policy="deny_writes",
     )
 
     resolved = resolve_config(tmp_path)
@@ -70,7 +74,16 @@ def test_project_overrides_global(monkeypatch, tmp_path: Path):
 
 def test_partial_project_override_keeps_global(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
-    _write_project_config(tmp_path, "version: 1\ndefaults:\n  model: only-model\n")
+    init_project_config(tmp_path)
+    config = load_project_config(tmp_path)
+    assert config is not None
+    connection = connect(default_db_path())
+    connection.execute(
+        "UPDATE project_settings SET model = ?, permission_policy = NULL WHERE project_id = ?",
+        ("only-model", config.project_id),
+    )
+    connection.commit()
+    connection.close()
 
     resolved = resolve_config(tmp_path)
 
@@ -167,13 +180,12 @@ def test_project_workflow_overrides_global_workflow(monkeypatch, tmp_path: Path)
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
-    _write_project_config(
+    init_project_config(tmp_path)
+    update_project_workflow(
         tmp_path,
-        "version: 1\n"
-        "workflows:\n"
-        "  setup-project:\n"
-        "    agent: claude\n"
-        "    model: claude-opus-4.8\n",
+        "setup-project",
+        agent="claude",
+        model="claude-opus-4.8",
     )
 
     resolved = resolve_config(tmp_path, workflow="setup-project")
@@ -197,18 +209,19 @@ def test_project_agents_override_and_extend_global(monkeypatch, tmp_path: Path):
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
-    _write_project_config(
+    init_project_config(tmp_path)
+    update_project_defaults(tmp_path, agent="local")
+    update_project_agent(
         tmp_path,
-        "version: 1\n"
-        "defaults:\n"
-        "  agent: local\n"
-        "agents:\n"
-        "  cursor:\n"
-        "    binary: agent-local\n"
-        "    models: [LocalAuto]\n"
-        "  local:\n"
-        "    binary: my-agent\n"
-        "    models: [fast]\n",
+        "cursor",
+        binary="agent-local",
+        models=["LocalAuto"],
+    )
+    update_project_agent(
+        tmp_path,
+        "local",
+        binary="my-agent",
+        models=["fast"],
     )
 
     resolved = resolve_config(tmp_path)
@@ -223,7 +236,7 @@ def test_project_agents_override_and_extend_global(monkeypatch, tmp_path: Path):
 
 def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
-    _write_project_config(tmp_path, "version: 1\nworkspace:\n  root: sub\n")
+    init_project_config(tmp_path)
     explicit = tmp_path / "explicit"
     explicit.mkdir()
 
@@ -233,22 +246,20 @@ def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
     assert resolved.sources["workspace_dir"] == "argument"
 
 
-def test_spec_workflow_uses_spec_config(monkeypatch, tmp_path: Path):
-    cfg = _global(
-        agents={
-            "cursor": AgentConfig(
-                name="cursor",
-                binary="agent",
-                acp_command=["agent", "acp"],
-                models=["Auto"],
-            ),
-        },
-        workflows={"spec": WorkflowConfig(agent="cursor", model="unified")},
-        default_agent="cursor",
-    )
-    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+def test_pulse_agent_model_comes_from_workspace_project(monkeypatch, tmp_path: Path):
+    from pulse.store.agent_settings import upsert_agent_settings
 
-    resolved = resolve_config(tmp_path, workflow="spec")
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
+    project = tmp_path / "project"
+    project.mkdir()
+    daemon_cwd = tmp_path / "daemon"
+    daemon_cwd.mkdir()
+    init_project_config(project)
+    loaded = load_project_config(project)
+    assert loaded is not None
+    upsert_agent_settings(loaded.project_id, "implement", model="Auto")
 
-    assert resolved.model == "unified"
-    assert resolved.sources["model"] == "global.workflow"
+    resolved = resolve_config(daemon_cwd, workspace=project, pulse_agent="implement")
+
+    assert resolved.model == "Auto"
+    assert resolved.sources["model"] == "agent.settings"

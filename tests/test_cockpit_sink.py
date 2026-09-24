@@ -8,6 +8,17 @@ from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 
 
+def test_cockpit_sink_records_error_with_reason():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    sink = CockpitSink(state)
+    sink.error("Classificação cancelada", "O agente não definiu o flow (quick ou full).")
+    entry = state.entries[-1]
+    assert entry.kind == LogKind.ERROR
+    assert entry.title == "Classificação cancelada"
+    assert "flow" in entry.detail
+
+
 def test_cockpit_sink_streams_assistant_and_tools():
     state = CockpitState()
     state.configure_workflow("new-issue")
@@ -782,3 +793,18 @@ def test_read_and_search_do_not_register_artifacts():
     )
     assert state.artifacts == []
     assert state.artifact_pane_open is False
+
+
+def test_cockpit_sink_collects_acp_sessions_per_phase():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    sink = CockpitSink(state)
+    sink.set_session_id("sess-specify")
+    sink.begin_phase("Specify")
+    sink.set_session_id("sess-design")
+    sink.begin_phase("Design")
+    assert state.acp_session_id == "sess-design"
+    assert state.acp_sessions == [
+        {"session_id": "sess-specify", "phase_id": "specify"},
+        {"session_id": "sess-design", "phase_id": "design"},
+    ]

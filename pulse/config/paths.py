@@ -1,16 +1,32 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 GLOBAL_CONFIG_DIR = Path.home() / ".pulse"
-GLOBAL_CONFIG_FILE = GLOBAL_CONFIG_DIR / "config.toml"
+GLOBAL_DB_FILE = GLOBAL_CONFIG_DIR / "pulse.db"
+GLOBAL_CONFIG_FILE = GLOBAL_DB_FILE
 
 LEGACY_GLOBAL_CONFIG_DIR = Path.home() / ".dev-orchestrator"
 LEGACY_GLOBAL_CONFIG_FILE = LEGACY_GLOBAL_CONFIG_DIR / "config.toml"
 
 PROJECT_CONFIG_DIRNAME = ".pulse"
-PROJECT_CONFIG_FILENAME = "config.yaml"
+PROJECT_CONFIG_FILENAME = "pulse.db"
 PROJECT_SPECS_DIRNAME = f"{PROJECT_CONFIG_DIRNAME}/specs"
+
+
+def global_state_dir() -> Path:
+    home = os.environ.get("PULSE_HOME")
+    if home:
+        return Path(home).expanduser()
+    db_override = os.environ.get("PULSE_DB")
+    if db_override:
+        return Path(db_override).expanduser().resolve().parent
+    return GLOBAL_CONFIG_DIR
+
+
+def global_agents_dir() -> Path:
+    return global_state_dir() / "agents"
 
 
 def project_specs_dir(root: Path) -> Path:
@@ -18,13 +34,10 @@ def project_specs_dir(root: Path) -> Path:
 
 
 def project_config_file(root: Path) -> Path:
-    return root / PROJECT_CONFIG_DIRNAME / PROJECT_CONFIG_FILENAME
+    return root.resolve()
 
 
 def find_project_config_file(start: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
-    for directory in (current, *current.parents):
-        candidate = directory / PROJECT_CONFIG_DIRNAME / PROJECT_CONFIG_FILENAME
-        if candidate.is_file():
-            return candidate
-    return None
+    from pulse.config.project_config import find_project_root
+
+    return find_project_root(start)

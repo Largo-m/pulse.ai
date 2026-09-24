@@ -55,26 +55,39 @@ def first_questionnaire_answer(answers_text: str) -> str:
     return ""
 
 
+def _questionnaire_answers(answers_text: str) -> list[str]:
+    answers: list[str] = []
+    for line in answers_text.splitlines():
+        if line.strip().startswith("→"):
+            answer = line.lstrip("→").strip()
+            if answer:
+                answers.append(answer)
+    return answers
+
+
 def approval_is_positive(answers_text: str) -> bool:
-    answer = first_questionnaire_answer(answers_text).lower()
-    if not answer:
+    answers = [answer.lower() for answer in _questionnaire_answers(answers_text)]
+    if not answers:
         return False
-    if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "pular fase")):
-        return False
-    return "aprov" in answer or answer.startswith("a)") or "sim" in answer
+    for answer in answers:
+        if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "pular")):
+            continue
+        if "aprov" in answer:
+            return True
+    return False
 
 
 def classify_phase_questionnaire_outcome(answers_text: str) -> str:
-    answer = first_questionnaire_answer(answers_text).lower()
-    if not answer:
+    answers = [answer.lower() for answer in _questionnaire_answers(answers_text)]
+    if not answers:
         return "unknown"
-    if "cancelar" in answer:
+    if any("cancelar" in answer for answer in answers):
         return "cancel"
-    if "pular" in answer and "fase" in answer:
+    if any("pular" in answer and "fase" in answer for answer in answers):
         return "skip"
     if approval_is_positive(answers_text):
         return "approve"
-    if "ajuste" in answer:
+    if any("ajuste" in answer for answer in answers):
         return "adjust"
     return "continue"
 
@@ -125,8 +138,9 @@ def _workflow_state_instructions(state: WorkflowState) -> list[str]:
         f"- `complexity`: avalie (small/medium/large/complex)",
         f"- `current_phase`: fase atual",
         "- `phases.<fase>.status`: `awaiting_approval` ao terminar",
-        "- `phases.design.skip` / `phases.tasks.skip`: `true` quando a fase não for necessária",
-        "- `phases.<fase>.skip_reason`: motivo quando skip=true",
+        "- `phases.design.skip`: `true` somente quando Design não for necessário",
+        "- `phases.tasks.skip`: sempre `false` — o pipeline completo sempre cria `tasks.md`",
+        "- `phases.design.skip_reason`: motivo quando Design for pulado",
         "",
         "O Pulse lê este arquivo para decidir a próxima fase. Mantenha-o consistente.",
         "",
@@ -155,6 +169,8 @@ def build_specify_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Specify",
         references=PHASE_REFERENCES["specify"],
+        agent_id="specify",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -171,7 +187,7 @@ def build_specify_prompt(
             "   - Defina `complexity`",
             "   - Marque `phases.specify.status: awaiting_approval`",
             "   - Se Design não for necessário: `phases.design.skip: true` + `skip_reason`",
-            "   - Se Tasks não for necessário: `phases.tasks.skip: true` + `skip_reason`",
+            "   - Mantenha `phases.tasks.skip: false`. Tasks é obrigatória neste pipeline.",
             "5. Atualize `STATE.md` → Current Work com esta feature.",
             "",
             "Apresente resumo curto: problema, escopo, complexidade, fases que serão puladas.",
@@ -205,6 +221,8 @@ def build_design_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Design",
         references=PHASE_REFERENCES["design"],
+        agent_id="design",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -249,6 +267,8 @@ def build_tasks_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Tasks",
         references=PHASE_REFERENCES["tasks"],
+        agent_id="tasks",
+        workspace=workspace,
     )
     sections.extend(_workflow_state_instructions(state))
     sections.extend(
@@ -257,7 +277,8 @@ def build_tasks_prompt(
             "",
             f"Leia `{feature_dir}/spec.md`",
             f"Leia `{feature_dir}/design.md` se existir",
-            f"Crie `{feature_dir}/tasks.md` conforme `tasks.md` (T1, T2, … com Depends on).",
+            f"Crie `{feature_dir}/tasks.md` com um heading por task (`### T1: …`, `### T2: …`).",
+            "Não encerre esta fase sem esse arquivo. Uma pergunta de esclarecimento não aprova a fase.",
             "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
             f"Atualize `{state.workflow_path.as_posix()}`:",
             "   - `phases.tasks.status: awaiting_approval`",
@@ -327,6 +348,8 @@ def build_execute_wave_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
+        agent_id="implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -393,6 +416,8 @@ def build_execute_inline_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Execute",
         references=PHASE_REFERENCES["execute"],
+        agent_id="implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -450,6 +475,8 @@ def build_phase_continuation_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow=phase.capitalize(),
         references=PHASE_REFERENCES.get(phase, ()),
+        agent_id={"specify": "specify", "design": "design", "tasks": "tasks"}.get(phase, "implement"),
+        workspace=workspace,
     )
 
     if outcome == "adjust":

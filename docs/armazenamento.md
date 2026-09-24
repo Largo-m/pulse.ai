@@ -1,47 +1,48 @@
 # Armazenamento do Pulse
 
-O Pulse **não tem banco próprio**. Tudo que ele persiste vive em arquivos. Há três raízes e um store externo só de leitura.
+Config operacional vive em SQLite. Specs continuam Markdown no workspace. O Pulse não grava log ACP em arquivo.
 
 ```
-~/.pulse/                         config e logs ACP (máquina)
-<workspace>/.pulse/               config, specs e histórico do projeto
-~/.cursor/                        SQLite do Cursor (Pulse só lê)
+~/.pulse/pulse.db                 config da máquina, projetos e ponteiros de sessão
+~/.pulse/agents/                  prompts dos agents do Pulse (uma cópia na máquina)
+<workspace>/.pulse/specs/         artefatos Markdown
+~/.cursor/                        SQLite do Cursor (Pulse só lê, ao vivo)
 ```
 
-Resolução de config: `defaults do código` → `~/.pulse/config.toml` → `<projeto>/.pulse/config.yaml`.
+Resolução de config: `defaults do código` → tabela `machine` → tabelas `project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.
 
 ## Quem escreve o quê
 
 | Dado | Caminho | Formato | Quem escreve | Quem lê |
 | --- | --- | --- | --- | --- |
-| Config global | `~/.pulse/config.toml` | TOML | Pulse (`pulse init`, settings) | Pulse |
-| Config do projeto | `.pulse/config.yaml` | YAML | Pulse (`pulse init`, `pulse config`) | Pulse |
+| Config global | `~/.pulse/pulse.db` (`machine*`) | SQLite | Pulse (`pulse init`, settings) | Pulse |
+| Config do projeto | `~/.pulse/pulse.db` (`projects`, `project_*`) | SQLite | Pulse (`pulse init`, `pulse config`) | Pulse |
 | Estado de feature | `.pulse/specs/features/<slug>/workflow.yaml` | YAML | Pulse (orquestra) e o agente (quando o prompt pede) | Pulse |
 | Specs / artefatos | `.pulse/specs/**/*.md` | Markdown | Agente ACP | Pulse (TUI, histórico) e o próximo prompt |
-| Histórico de run | `.pulse/runs/<uuid>/` | YAML + JSONL | Pulse (`RunRecorder`) | TUI de histórico |
-| Log bruto ACP | `~/.pulse/logs/acp/` | JSONL | Pulse (`AcpLogger`) | Diagnóstico manual |
-| Args de tool do Cursor | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
+| Agents do Pulse | `~/.pulse/agents/<id>/AGENT.md` | Markdown | Pulse (cópia no init) e o usuário | Pulse (`load_agent`) |
+| Ponteiro de sessão | `~/.pulse/pulse.db` (`agent_sessions`) | SQLite | Pulse (`persist_runtime_session`) | diagnóstico |
+| Log da sessão ACP | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
 
-## 1. Config global — `~/.pulse/`
+## 1. Config da máquina — `~/.pulse/pulse.db`
 
-Arquivo: `~/.pulse/config.toml` (`pulse/config/paths.py`).
+Tabelas `machine`, `machine_agents`, `machine_workflows`.
 
-Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace, permission_policy), onboarding, lista de agents e overrides por workflow.
+Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace, permission_policy), onboarding, lista de runtimes e overrides por workflow.
 
 Escrita em:
 
 - `pulse init` / `pulse init --force` → `mark_onboarding_complete`
 - menu de configurações → `update_global_defaults`, `update_global_agent`, `update_global_workflow`
 
-Se `~/.pulse/config.toml` não existe e `~/.dev-orchestrator/config.toml` existe, o Pulse **copia** o legado para o caminho novo.
+Não há mais `config.toml`. Override de testes: variável `PULSE_DB`.
 
-Logs ACP também ficam aqui: ver [logs.md](logs.md).
+O log da sessão fica no Cursor: ver [logs.md](logs.md).
 
-## 2. Config do projeto — `.pulse/config.yaml`
+## 2. Config do projeto — mesmo SQLite, `project_id`
 
-Descoberta: sobe a partir do CWD até achar `.pulse/config.yaml`.
+Descoberta: sobe a partir do CWD até achar um `root_path` cadastrado em `projects`.
 
-Campos: `defaults.agent`, `defaults.model`, `defaults.permission_policy`, `workspace.root`, `workflows.<id>`, opcionalmente `agents`.
+Campos em `project_settings` / `project_workflows` / `project_agents`: agent, model, permission_policy, workspace, workflows.
 
 Criado por `pulse init` (se ainda não existir) e `pulse config init`. Atualizado pelo menu de settings do projeto.
 
@@ -70,39 +71,40 @@ O Pulse **não gera** os Markdowns. O agente os cria porque o prompt aponta os a
 
 `STATE.md` é a memória persistente do projeto (decisões, blockers, quick tasks). Não é um banco: é um Markdown que o agente mantém.
 
-## 4. Runs — `.pulse/runs/<uuid>/`
+## 4. Agents — `~/.pulse/agents/`
 
-Ignorado no git (`.gitignore`).
+O init copia cada `AGENT.md` empacotado para `~/.pulse/agents/<id>/AGENT.md` se o arquivo ainda não existir. A cópia vale para todos os projetos desta máquina. O Pulse não lê `<projeto>/.pulse/agents/`, `.cursor/agents/`, `.claude/agents/` nem `.codex/agents/`.
 
-```
-.pulse/runs/<uuid>/
-├── meta.yaml      id, workflow, prompt, status, slug, spec_dir, fases, timestamps
-└── logs.jsonl     stream do cockpit (uma linha por LogEntry)
-```
+Quem ganha o prompt:
 
-`RunRecorder` no cockpit grava no start, a cada ~400 ms se houver mudança, e no finalize. Status: `running` | `completed` | `failed`.
+1. bundled do pacote, se a cópia da máquina não existir
+2. `~/.pulse/agents/<id>/AGENT.md` (ou `<id>.md`)
 
-O catálogo de histórico **não é um arquivo**: `HistoryCatalog` junta specs + último run.
+Um agent extra, fora do catálogo, só entra se estiver em `~/.pulse/agents/`.
 
-## 5. Store do Cursor (externo)
+## 5. Histórico
+
+Não há catálogo de runs nem pasta `.pulse/runs`. O cockpit não grava `meta.yaml`. A lista de histórico lê specs em `.pulse/specs/` (`workflow.yaml` e `TASK.md`). Cada fase ACP grava só o id da sessão em `spec_sessions` (`~/.pulse/pulse.db`). Abrir o histórico relê mensagens e tools dessa sessão no `store.db` do Cursor.
+
+## 6. Store do Cursor (externo)
 
 O Pulse **não escreve** em `~/.cursor/`. `CursorStoreIndex` abre em modo leitura:
 
 - `~/.cursor/acp-sessions/<sessionId>/store.db`
 - ou `~/.cursor/chats/<hash>/<sessionId>/store.db`
 
-Usa a tabela `blobs` para recuperar `args` de `tool-call` e completar títulos vagos no cockpit (`…`, `3 files`).
+Usa a tabela `blobs` para recuperar `args` de `tool-call` no cockpit ao vivo.
 
-## 6. Só memória (não persiste)
+## 7. Só memória (não persiste)
 
 - `CockpitState` (fases, tasks, entries, artefatos selecionados)
 - sessão ACP (`sessionId`, processo do agent)
 - `ResolvedConfig` (merge em runtime)
 - questionários e permissões no terminal
 
-Se o cockpit fechar no meio, o último flush em `.pulse/runs/` é o que sobra. `workflow.yaml` e os `.md` no disco é que permitem retomar um `new-issue`.
+Se o cockpit fechar no meio, o stream da sessão se perde. `workflow.yaml` e os `.md` no disco é que permitem retomar um `new-issue`.
 
-## 7. Legado e leftovers
+## 8. Legado e leftovers
 
 O código **apaga** no start de workflow:
 

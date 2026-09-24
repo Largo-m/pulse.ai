@@ -29,11 +29,8 @@ def test_build_analyze_codebase_prompt_includes_exploration_rules():
         user_prompt="Monorepo com API e frontend",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
-    assert "Siga o workflow **Analyze codebase**." in prompt
+    assert "Agent `codebase-explore`" in prompt
     assert "Monorepo com API e frontend" in prompt
-    assert "brownfield-mapping.md" in prompt
-    assert "## brownfield-mapping.md" not in prompt
     assert str(workspace) in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
     assert "ANALYZE_READY" in prompt

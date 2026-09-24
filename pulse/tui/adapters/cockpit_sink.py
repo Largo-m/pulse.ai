@@ -73,12 +73,22 @@ class CockpitSink:
         self._visible_tool_ids: set[str] = set()
         self._tool_payloads: dict[str, dict[str, Any]] = {}
         self._store = CursorStoreIndex(session_id)
+        self._pending_session_phase = False
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
 
     def set_session_id(self, session_id: str | None) -> None:
         self._store.set_session(session_id)
+        sid = session_id or ""
+        self._state.acp_session_id = sid
+        self._pending_session_phase = bool(sid)
+        if not sid:
+            return
+        refs = self._state.acp_sessions
+        if refs and refs[-1].get("session_id") == sid:
+            return
+        refs.append({"session_id": sid, "phase_id": ""})
 
     def reset_capture(self) -> None:
         self._agent_text = ""
@@ -145,6 +155,9 @@ class CockpitSink:
         self._visible_tool_ids.clear()
         self._tool_payloads.clear()
         self._state.begin_phase(title)
+        if self._pending_session_phase and self._state.acp_sessions:
+            self._state.acp_sessions[-1]["phase_id"] = self._state._entry_phase_id()
+            self._pending_session_phase = False
         match = _TASK_LABEL_RE.search(str(title or ""))
         if match is not None:
             task_id = match.group(1)
@@ -158,8 +171,13 @@ class CockpitSink:
         *,
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
+        failed_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
-        self._state.apply_phase_statuses(done_ids=done_ids, skipped_ids=skipped_ids)
+        self._state.apply_phase_statuses(
+            done_ids=done_ids,
+            skipped_ids=skipped_ids,
+            failed_ids=failed_ids,
+        )
         self._emit()
 
     def apply_routed_flow(self, flow: str) -> None:
@@ -176,6 +194,12 @@ class CockpitSink:
             return
         self._finish_message_line()
         self._state.add_info(text)
+        self._emit()
+
+    def error(self, title: str, reason: str = "") -> None:
+        text = str(title or "").strip() or "Erro"
+        self._finish_message_line()
+        self._state.add_error(text, str(reason or "").strip())
         self._emit()
 
     def finish(self) -> None:

@@ -19,6 +19,9 @@ def test_pulse_app_has_cockpit_theme():
     app = PulseApp()
     assert app.CSS == COCKPIT_CSS
     assert "#A2D729" in COCKPIT_CSS
+    assert "SettingsScreen" in COCKPIT_CSS
+    assert "OnboardingScreen" in COCKPIT_CSS
+    assert "HistoryListScreen" in COCKPIT_CSS
 
 
 def test_cockpit_screen_initial_state():
@@ -93,6 +96,10 @@ def test_log_stream_and_sidebar_render_text():
                         }
                     }
                 )
+                screen.sink.error(
+                    "Classificação cancelada",
+                    "O agente não definiu o flow (quick ou full).",
+                )
                 self.query_one(PhaseSidebar).sync_from_state(screen.state)
                 self.query_one(LogStream).sync_from_state(screen.state, force=True)
 
@@ -104,6 +111,9 @@ def test_log_stream_and_sidebar_render_text():
             assert "Read" in content
             assert "Plano" in content
             assert "Assistente" in content
+            assert "Erro" in content
+            assert "Classificação cancelada" in content
+            assert "flow" in content
             assert "Planejar" in phases
             assert LogKind.READ in {
                 entry.kind for entry in state_holder["screen"].state.entries

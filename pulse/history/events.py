@@ -10,6 +10,7 @@ class PhaseStatus(str, Enum):
     RUNNING = "running"
     DONE = "done"
     SKIPPED = "skipped"
+    FAILED = "failed"
 
 
 class LogKind(str, Enum):
@@ -20,6 +21,7 @@ class LogKind(str, Enum):
     WRITE = "Write"
     SHELL = "Shell"
     INFO = "Info"
+    ERROR = "Error"
     ASSISTANT = "Assistant"
     QUESTION = "Question"
     ANSWER = "Answer"

@@ -15,11 +15,10 @@ from pulse.config.global_config import (
 )
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
+from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunManager
 from pulse.doctor.checks import run_environment_checks
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.runs import load_run, load_run_logs, log_entry_to_dict, run_to_dict
-
 
 class StartRunBody(BaseModel):
     prompt: str = ""
@@ -76,7 +75,12 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/status")
     def status() -> dict[str, Any]:
-        return {"ok": True, "version": __version__, "service": "pulse-engine"}
+        return {
+            "ok": True,
+            "version": __version__,
+            "service": "pulse-engine",
+            "protocol": ENGINE_PROTOCOL,
+        }
 
     @app.get("/api/doctor")
     def doctor() -> dict[str, Any]:
@@ -262,19 +266,6 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 }
                 for step in item.steps
             ],
-        }
-
-    @app.get("/api/runs/{run_id}/logs")
-    def run_logs(run_id: str, workspace: str | None = None) -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
-        loaded = load_run(root, run_id)
-        if loaded is None:
-            entries = load_run_logs(root, run_id)
-            return {"run": None, "entries": [log_entry_to_dict(e) for e in entries]}
-        record, entries = loaded
-        return {
-            "run": run_to_dict(record),
-            "entries": [log_entry_to_dict(e) for e in entries],
         }
 
     @app.exception_handler(Exception)

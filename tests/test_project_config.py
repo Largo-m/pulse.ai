@@ -9,18 +9,11 @@ from pulse.config.project_config import (
     ensure_project_workflows,
     init_project_config,
     load_project_config,
-    parse_project_config,
     project_config_exists,
     update_project_agent,
     update_project_defaults,
 )
-
-
-def _write_project_config(root: Path, body: str) -> Path:
-    target = root / ".pulse" / "config.yaml"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(body, encoding="utf-8")
-    return target
+from pulse.store.db import connect, default_db_path
 
 
 def test_project_specs_dir(tmp_path: Path):
@@ -29,12 +22,11 @@ def test_project_specs_dir(tmp_path: Path):
 
 
 def test_load_project_config_reads_overrides(tmp_path: Path):
-    _write_project_config(
+    init_project_config(tmp_path)
+    update_project_defaults(
         tmp_path,
-        "version: 1\n"
-        "defaults:\n"
-        "  model: claude-sonnet-4-6\n"
-        "  permission_policy: deny_writes\n",
+        model="claude-sonnet-4-6",
+        permission_policy="deny_writes",
     )
 
     config = load_project_config(tmp_path)
@@ -46,36 +38,49 @@ def test_load_project_config_reads_overrides(tmp_path: Path):
 
 
 def test_find_project_config_walks_up_from_subdir(tmp_path: Path):
-    _write_project_config(tmp_path, "version: 1\ndefaults:\n  model: gpt-5.5\n")
+    init_project_config(tmp_path)
     nested = tmp_path / "a" / "b"
     nested.mkdir(parents=True)
 
     found = find_project_config_file(nested)
 
-    assert found == (tmp_path / ".pulse" / "config.yaml").resolve()
+    assert found == tmp_path.resolve()
 
 
 def test_invalid_permission_policy_is_ignored(tmp_path: Path):
-    config_file = _write_project_config(
-        tmp_path,
-        "version: 1\ndefaults:\n  permission_policy: nonsense\n",
+    init_project_config(tmp_path)
+    config = load_project_config(tmp_path)
+    assert config is not None
+    connection = connect(default_db_path())
+    connection.execute(
+        "UPDATE project_settings SET permission_policy = ? WHERE project_id = ?",
+        ("nonsense", config.project_id),
     )
+    connection.commit()
+    connection.close()
 
-    config = parse_project_config(config_file)
+    loaded = load_project_config(tmp_path)
 
-    assert config.permission_policy is None
+    assert loaded is not None
+    assert loaded.permission_policy is None
 
 
 def test_workspace_relative_is_resolved_against_project_root(tmp_path: Path):
-    _write_project_config(
-        tmp_path,
-        "version: 1\nworkspace:\n  root: subdir\n",
-    )
-
+    init_project_config(tmp_path)
     config = load_project_config(tmp_path)
-
     assert config is not None
-    assert config.workspace == (tmp_path / "subdir").resolve()
+    connection = connect(default_db_path())
+    connection.execute(
+        "UPDATE project_settings SET workspace_root = ? WHERE project_id = ?",
+        ("subdir", config.project_id),
+    )
+    connection.commit()
+    connection.close()
+
+    loaded = load_project_config(tmp_path)
+
+    assert loaded is not None
+    assert loaded.workspace == (tmp_path / "subdir").resolve()
 
 
 def test_no_project_config_returns_none(tmp_path: Path):
@@ -84,16 +89,8 @@ def test_no_project_config_returns_none(tmp_path: Path):
 
 
 def test_load_project_config_parses_workflows(tmp_path: Path):
-    _write_project_config(
-        tmp_path,
-        "version: 1\n"
-        "defaults:\n"
-        "  agent: claude\n"
-        "workflows:\n"
-        "  setup-project:\n"
-        "    agent: claude\n"
-        "    model: claude-opus-4.8\n",
-    )
+    init_project_config(tmp_path)
+    update_project_defaults(tmp_path, agent="claude")
 
     config = load_project_config(tmp_path)
 
@@ -104,17 +101,19 @@ def test_load_project_config_parses_workflows(tmp_path: Path):
 
 
 def test_load_project_config_parses_agents(tmp_path: Path):
-    _write_project_config(
+    init_project_config(tmp_path)
+    update_project_agent(
         tmp_path,
-        "version: 1\n"
-        "agents:\n"
-        "  cursor:\n"
-        "    binary: agent\n"
-        "    models: [Auto, gpt-5.5]\n"
-        "  local:\n"
-        "    binary: my-agent\n"
-        "    acp_command: [my-agent, acp]\n"
-        "    models: [fast]\n",
+        "cursor",
+        binary="agent",
+        models=["Auto", "gpt-5.5"],
+    )
+    update_project_agent(
+        tmp_path,
+        "local",
+        binary="my-agent",
+        acp_command=["my-agent", "acp"],
+        models=["fast"],
     )
 
     config = load_project_config(tmp_path)
@@ -129,7 +128,7 @@ def test_load_project_config_parses_agents(tmp_path: Path):
 def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     path = init_project_config(tmp_path)
 
-    assert path.is_file()
+    assert path == tmp_path.resolve()
     config = load_project_config(tmp_path)
     assert config is not None
     assert config.default_agent == "cursor"
@@ -143,39 +142,28 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert config.workflows["spec"].model == "Auto"
     assert "new-issue" not in config.workflows
     assert "fix-bug" not in config.workflows
-
-    content = path.read_text(encoding="utf-8")
-    assert "agents:" not in content
+    assert not (tmp_path / ".pulse" / "config.yaml").exists()
 
 
 def test_ensure_project_workflows_adds_missing_entries(tmp_path: Path):
-    _write_project_config(
-        tmp_path,
-        "version: 1\n"
-        "defaults:\n"
-        "  agent: cursor\n"
-        "  model: Auto\n"
-        "  permission_policy: deny_writes\n"
-        "workspace:\n"
-        "  root: .\n"
-        "workflows:\n"
-        "  setup-project:\n"
-        "    agent: cursor\n"
-        "    model: Auto\n"
-        "  analyze-codebase:\n"
-        "    agent: cursor\n"
-        "    model: Auto\n",
+    init_project_config(tmp_path)
+    config = load_project_config(tmp_path)
+    assert config is not None
+    connection = connect(default_db_path())
+    connection.execute(
+        "DELETE FROM project_workflows WHERE project_id = ? AND workflow_id = ?",
+        (config.project_id, "spec"),
     )
+    connection.commit()
+    connection.close()
 
     path = ensure_project_workflows(tmp_path)
     loaded = load_project_config(tmp_path)
 
     assert path == find_project_config_file(tmp_path)
     assert loaded is not None
-    assert loaded.workflows["setup-project"].agent == "cursor"
-    assert loaded.workflows["setup-project"].model == "Auto"
+    assert loaded.workflows["setup-project"].agent == "claude"
     assert loaded.workflows["analyze-codebase"].agent == "cursor"
-    assert loaded.workflows["analyze-codebase"].model == "Auto"
     assert loaded.workflows["spec"].agent == "cursor"
     assert loaded.workflows["spec"].model == "Auto"
 

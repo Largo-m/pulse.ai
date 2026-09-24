@@ -11,6 +11,7 @@ _GATE_LINE_RE = re.compile(
     r"Gate check passes:\s*`([^`]+)`",
     re.IGNORECASE,
 )
+_GATE_FIELD_RE = re.compile(r"^\*\*Gate\*\*:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
 _VERIFY_CMD_RE = re.compile(
     r"^\s*(flutter\s+(?:test|analyze|pub\s+get)|dart\s+analyze|npm\s+test|pytest|cargo\s+test|go\s+test)\b.*$",
     re.IGNORECASE | re.MULTILINE,
@@ -21,7 +22,7 @@ _CMD_PREFIX_RE = re.compile(
 )
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 _TASK_HEADER_RE = re.compile(
-    r"^###\s+(T\d+):\s*(.+)$",
+    r"^#{2,3}\s+(T\d+)\s*[:.\-—]\s*(.+)$",
     re.MULTILINE,
 )
 _DEPENDS_RE = re.compile(
@@ -275,6 +276,10 @@ def _parse_gate_commands(body: str) -> tuple[str, ...]:
         seen.add(normalized)
         commands.append(normalized)
 
+    for match in _GATE_FIELD_RE.finditer(body):
+        for tick in _BACKTICK_RE.finditer(match.group(1)):
+            add(tick.group(1))
+
     done_match = _DONE_WHEN_BLOCK_RE.search(body)
     if done_match:
         for match in _GATE_LINE_RE.finditer(done_match.group(1)):
@@ -299,6 +304,9 @@ def _normalize_gate_command(command: str) -> str:
     text = command.strip().strip("`").strip()
     if not text:
         return ""
+    token = text.split()[0]
+    if token.startswith("./") or token in {"gradle", "gradlew"} or token.endswith("gradlew"):
+        return text
     match = _CMD_PREFIX_RE.match(text)
     if not match:
         return ""

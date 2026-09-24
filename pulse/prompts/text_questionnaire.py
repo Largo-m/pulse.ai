@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 from pulse.prompts.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
 
@@ -25,6 +26,7 @@ class TextQuestion:
 class TextQuestionnaire:
     title: str
     questions: tuple[TextQuestion, ...]
+    raw: str = ""
 
 
 def _strip_resposta_footer(block: str) -> str:
@@ -127,7 +129,61 @@ def parse_text_questionnaire(text: str) -> TextQuestionnaire | None:
 
     if not questions:
         return None
-    return TextQuestionnaire(title=title, questions=tuple(questions))
+    return TextQuestionnaire(title=title, questions=tuple(questions), raw=block)
+
+
+def serialize_questionnaire(questionnaire: TextQuestionnaire) -> dict[str, Any]:
+    return {
+        "title": questionnaire.title,
+        "raw": questionnaire.raw,
+        "questions": [
+            {
+                "id": question.id,
+                "prompt": question.prompt,
+                "options": [
+                    {"id": letter, "label": label}
+                    for letter, label in question.options
+                ],
+            }
+            for question in questionnaire.questions
+        ],
+    }
+
+
+def questionnaire_from_payload(payload: dict[str, Any]) -> TextQuestionnaire | None:
+    raw = str(payload.get("raw") or "")
+    if raw:
+        parsed = parse_text_questionnaire(raw)
+        if parsed is not None:
+            return parsed
+    items = payload.get("questions") or []
+    questions: list[TextQuestion] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        options: list[tuple[str, str]] = []
+        for option in item.get("options") or []:
+            if isinstance(option, dict):
+                letter = str(option.get("id") or option.get("letter") or "").strip()
+                label = str(option.get("label") or "").strip()
+                if letter and label:
+                    options.append((letter, label))
+            elif isinstance(option, (list, tuple)) and len(option) >= 2:
+                options.append((str(option[0]), str(option[1])))
+        prompt = str(item.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        questions.append(
+            TextQuestion(
+                id=str(item.get("id") or f"q{len(questions) + 1}"),
+                prompt=prompt,
+                options=tuple(options),
+            )
+        )
+    if not questions:
+        return None
+    title = str(payload.get("title") or DEFAULT_QUESTIONNAIRE_TITLE).strip()
+    return TextQuestionnaire(title=title or DEFAULT_QUESTIONNAIRE_TITLE, questions=tuple(questions), raw=raw)
 
 
 def format_questionnaire_answers(

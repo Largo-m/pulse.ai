@@ -7,7 +7,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.history.recorder import RunRecorder
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
 from pulse.tui.state import CockpitState
@@ -71,9 +70,6 @@ class CockpitScreen(Screen[None]):
             cwd=self._cwd,
         )
         self.prompt_handler = TextualPromptHandler(self.bridge)
-        self.recorder = RunRecorder(Path(self._cwd))
-        self.recorder.start(workflow_id, user_prompt)
-        self.state.subscribe(self._on_record)
         self._worker = None
         self._dirty = False
         self._prompt_open = False
@@ -95,16 +91,11 @@ class CockpitScreen(Screen[None]):
 
     def on_unmount(self) -> None:
         self.bridge.close()
-        self._persist_run()
-
-    def _on_record(self) -> None:
-        self.recorder.observe(self.state)
 
     def _on_state_change(self) -> None:
         self._dirty = True
 
     def _flush_ui(self) -> None:
-        self.recorder.maybe_flush(self.state)
         if not self._dirty:
             return
         self._dirty = False
@@ -181,7 +172,7 @@ class CockpitScreen(Screen[None]):
                 workspace=self._cwd,
             )
         except Exception as error:
-            self.state.add_info(f"Erro: {error}")
+            self.state.add_error("Workflow falhou", str(error))
             self._dirty = True
             code = 1
         self.state.mark_finished(code)
@@ -192,18 +183,14 @@ class CockpitScreen(Screen[None]):
             pass
 
     def _on_workflow_done(self, code: int) -> None:
-        self.state.add_info(f"Workflow finalizado · exit {code}")
-        self._persist_run(code)
+        if code == 0:
+            self.state.add_info("Workflow concluído")
+        elif not self.state.has_error():
+            self.state.add_error(
+                "Workflow falhou",
+                f"O fluxo encerrou com código {code}.",
+            )
         self._sync_ui(force=True)
-
-    def _persist_run(self, exit_code: int | None = None) -> None:
-        if self.state.running:
-            code = 1 if exit_code is None else exit_code
-            self.state.mark_finished(code)
-            exit_code = code
-        if exit_code is None:
-            exit_code = self.state.exit_code
-        self.recorder.finalize(self.state, 0 if exit_code is None else exit_code)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":
@@ -301,5 +288,4 @@ class CockpitScreen(Screen[None]):
     def action_back_to_menu(self) -> None:
         if self.state.running:
             self.bridge.close()
-        self._persist_run(1 if self.state.running else self.state.exit_code)
         self.app.pop_screen()
