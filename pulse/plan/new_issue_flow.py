@@ -36,7 +36,22 @@ from pulse.plan.task_waves import (
 )
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.prompts.permission import PermissionPolicy
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
+from pulse.store.spec_sessions import record_spec_session
+
+_SUCCESS_STOPS = frozenset({"end_turn", "end", "stop"})
+_PHASE_FILES = {
+    "specify": "spec.md",
+    "design": "design.md",
+    "tasks": "tasks.md",
+}
+_PHASE_AGENTS = {
+    "specify": "specify",
+    "design": "design",
+    "tasks": "tasks",
+    "execute": "implement",
+}
 
 
 def run_new_issue(
@@ -46,6 +61,7 @@ def run_new_issue(
     stream: Any | None = None,
     prompt_handler: Any | None = None,
     render_header: bool = True,
+    classify_session_id: str | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if not cockpit and not is_interactive():
@@ -92,6 +108,14 @@ def run_new_issue(
         prompt_handler=active_handler,
         pulse_agent=getattr(resolved, "pulse_agent", None),
     )
+    runner.bind_spec(state.feature_dir.as_posix())
+    if classify_session_id:
+        record_spec_session(
+            workspace_root,
+            spec_dir=state.feature_dir.as_posix(),
+            phase_id="specify",
+            acp_session_id=classify_session_id,
+        )
 
     try:
         return _run_pipeline(
@@ -222,6 +246,9 @@ def _run_pipeline(
 
         start_index = _phase_start_index(state)
         for phase in PHASE_ORDER[start_index:]:
+            if phase == "tasks":
+                _require_tasks_phase(state)
+
             if phase == "execute":
                 exit_code = _run_execute_phase(
                     runner=runner,
@@ -284,6 +311,33 @@ def _run_pipeline(
         runner.close()
 
 
+def _require_tasks_phase(state: WorkflowState) -> None:
+    phase = state.phases["tasks"]
+    phase.skip = False
+    phase.skip_reason = ""
+    if phase.status == PhaseStatus.SKIPPED:
+        phase.status = PhaseStatus.PENDING
+
+
+def _activate_phase_agent(
+    runner: AcpSessionRunner,
+    workspace: Path,
+    phase: str,
+    fallback_model: str | None,
+) -> str | None:
+    agent_id = _PHASE_AGENTS.get(phase, "specify")
+    resolved = resolve_config(workspace=workspace, pulse_agent=agent_id)
+    policies: dict[str, PermissionPolicy] = {
+        "ask": "ask",
+        "auto_approve": "auto_approve",
+        "deny_writes": "deny_writes",
+    }
+    use_agent = getattr(runner, "use_agent", None)
+    if callable(use_agent):
+        use_agent(agent_id, policies.get(resolved.permission_policy, "ask"))
+    return resolved.model or fallback_model
+
+
 def _phase_start_index(state: WorkflowState) -> int:
     current = state.current_phase
     if current in PHASE_ORDER:
@@ -306,6 +360,45 @@ def _run_approval_phase(
     phase: str,
     preferred_model: str | None,
 ) -> int:
+    while True:
+        outcome, reason = _attempt_approval_phase(
+            runner=runner,
+            cockpit=cockpit,
+            workspace=workspace,
+            user_prompt=user_prompt,
+            skill_dir=skill_dir,
+            state=state,
+            phase=phase,
+            preferred_model=preferred_model,
+        )
+        if outcome == "approved":
+            return 0
+        if outcome == "skip" and phase in OPTIONAL_PHASES:
+            skip_reason = state.phases[phase].skip_reason or reason or "Fase opcional não necessária"
+            state.mark_phase_skipped(phase, skip_reason)
+            state.save(workspace)
+            _sync_stream_phases(runner, state)
+            return 0
+        choice = _offer_retry(runner, f"Fase {phase.capitalize()} falhou", reason)
+        if choice != "retry":
+            state.mark_phase_failed(phase)
+            state.save(workspace)
+            _sync_stream_phases(runner, state)
+            return 1
+        _notify(runner, f"Refazendo fase {phase}")
+
+
+def _attempt_approval_phase(
+    *,
+    runner: AcpSessionRunner,
+    cockpit: bool,
+    workspace: Path,
+    user_prompt: str,
+    skill_dir: Path,
+    state: WorkflowState,
+    phase: str,
+    preferred_model: str | None,
+) -> tuple[str, str]:
     prompt_builder = _phase_prompt_builder(phase)
     state.mark_phase_in_progress(phase)
     state.save(workspace)
@@ -329,49 +422,69 @@ def _run_approval_phase(
             prompt_builder=prompt_builder,
         )
 
-    initial_prompt = prompt_builder(
-        workspace=workspace,
-        user_prompt=user_prompt,
-        skill_dir=skill_dir,
-        state=state,
-    )
-
+    preferred_model = _activate_phase_agent(runner, workspace, phase, preferred_model)
     result = runner.run_isolated_phase(
         workflow="spec",
         phase_label=f"Fase {phase.capitalize()}",
-        initial_prompt=initial_prompt,
+        initial_prompt=prompt_builder(
+            workspace=workspace,
+            user_prompt=user_prompt,
+            skill_dir=skill_dir,
+            state=state,
+        ),
         preferred_model=preferred_model,
         build_continuation=build_continuation,
         continuation_kwargs={},
+        phase_id=phase,
     )
 
     outcome = str(result.get("outcome", ""))
     if outcome in {"cancel", "cancelled"}:
         if not cockpit:
             print_workflow_result(f"{phase.capitalize()} cancelada.")
-        state.save(workspace)
-        return 1
+        return "failed", "fase cancelada"
+
+    if outcome == "skip":
+        return "skip", state.phases[phase].skip_reason or "fase marcada para pular"
+
+    if phase == "tasks" and bool(result.get("approved")):
+        tasks_path = workspace / state.feature_dir / "tasks.md"
+        state.sync_tasks_from_markdown(tasks_path)
+        if not state.tasks:
+            _notify(runner, "tasks.md sem tasks — fase não aprovada")
+            if not cockpit:
+                print_workflow_result("tasks.md sem tasks — fase não aprovada.")
+            return "failed", "tasks.md sem tasks"
+
+    artifact_name = _PHASE_FILES.get(phase)
+    if artifact_name and phase != "tasks" and bool(result.get("approved")):
+        artifact_path = workspace / state.feature_dir / artifact_name
+        if not artifact_path.is_file():
+            message = f"{artifact_name} não foi criado — fase não aprovada"
+            _notify(runner, message)
+            if not cockpit:
+                print_workflow_result(message)
+            return "failed", message
 
     if not bool(result.get("approved")):
         if not cockpit:
-            print_workflow_result(f"{phase.capitalize()} não aprovada — pipeline pausado.")
-        state.mark_phase_awaiting_approval(phase)
-        state.save(workspace)
-        return 0
+            print_workflow_result(f"{phase.capitalize()} não aprovada.")
+        return "failed", "fase não aprovada"
 
     state.approve_phase(phase)
     state.save(workspace)
     if not cockpit:
         print_workflow_result(f"✓ {phase.capitalize()} aprovada")
 
-    state = _reload_state(workspace, state)
+    reloaded = _reload_state(workspace, state)
     if phase == "tasks":
-        tasks_path = workspace / state.feature_dir / "tasks.md"
-        state.sync_tasks_from_markdown(tasks_path)
-        state.save(workspace)
+        tasks_path = workspace / reloaded.feature_dir / "tasks.md"
+        reloaded.sync_tasks_from_markdown(tasks_path)
+        reloaded.save(workspace)
+        state.tasks = reloaded.tasks
         _sync_stream_tasks(runner, state)
 
-    return 0
+    return "approved", ""
 
 
 def _run_execute_phase(
@@ -384,38 +497,60 @@ def _run_execute_phase(
     state: WorkflowState,
     preferred_model: str | None,
 ) -> int:
+    preferred_model = _activate_phase_agent(runner, workspace, "execute", preferred_model)
     state.mark_phase_in_progress("execute")
     state.save(workspace)
 
     tasks_skipped = not state.should_run_phase("tasks") or state.phases["tasks"].skip
+    tasks_path = workspace / state.feature_dir / "tasks.md"
     if tasks_skipped or not state.tasks:
-        tasks_path = workspace / state.feature_dir / "tasks.md"
         state.sync_tasks_from_markdown(tasks_path)
         state.save(workspace)
+
+    if state.tasks:
+        tasks_skipped = False
 
     if not state.tasks:
         if not cockpit:
             print_workflow_result("Execute — implementação inline (Tasks pulada)")
-        result = runner.run_isolated_prompt(
-            workflow="spec",
-            phase_label="Fase Execute — implementação",
-            prompt_text=build_execute_inline_prompt(
-                workspace=workspace,
-                user_prompt=user_prompt,
-                skill_dir=skill_dir,
-                state=state,
-            ),
-            preferred_model=preferred_model,
-        )
-        if result.get("stopReason") == "cancelled":
-            if not cockpit:
-                print_workflow_result("Execute cancelada.")
-            return 1
-        state.mark_phase_done("execute")
-        state.save(workspace)
-        if not cockpit:
-            print_workflow_result("✓ Execute concluída")
-        return 0
+        while True:
+            result = runner.run_isolated_prompt(
+                workflow="spec",
+                phase_label="Fase Execute — implementação",
+                prompt_text=build_execute_inline_prompt(
+                    workspace=workspace,
+                    user_prompt=user_prompt,
+                    skill_dir=skill_dir,
+                    state=state,
+                ),
+                preferred_model=preferred_model,
+                phase_id="execute",
+            )
+            if result.get("stopReason") == "cancelled" or not _prompt_succeeded(result):
+                reason = (
+                    "fase cancelada"
+                    if result.get("stopReason") == "cancelled"
+                    else str(result.get("stopReason") or "o agente não concluiu a fase")
+                )
+                if not cockpit:
+                    print_workflow_result(f"Execute falhou: {reason}")
+                if _offer_retry(runner, "Fase Execute falhou", reason) != "retry":
+                    state.mark_phase_failed("execute")
+                    state.save(workspace)
+                    _sync_stream_phases(runner, state)
+                    return 1
+                _notify(runner, "Refazendo fase Execute")
+                continue
+            state.sync_tasks_from_markdown(tasks_path)
+            state.save(workspace)
+            if not state.tasks:
+                state.mark_phase_done("execute")
+                state.save(workspace)
+                if not cockpit:
+                    print_workflow_result("✓ Execute concluída")
+                return 0
+            _notify(runner, f"tasks.md encontrado — executando {len(state.tasks)} task(s)")
+            break
 
     tasks_path = workspace / state.feature_dir / "tasks.md"
     specs = _load_task_specs(tasks_path, state)
@@ -447,9 +582,18 @@ def _run_execute_phase(
             if remaining > 0:
                 _notify(
                     runner,
-                    f"Execute pausada em Task {spec.task_id} — {remaining} task(s) pendente(s)",
+                    f"Execute parada em Task {spec.task_id} — {remaining} task(s) pendente(s)",
                 )
+            state.mark_phase_failed("execute")
+            state.save(workspace)
+            _sync_stream_phases(runner, state)
             return exit_code
+
+    if not state.all_tasks_done():
+        state.mark_phase_failed("execute")
+        state.save(workspace)
+        _sync_stream_phases(runner, state)
+        return 1
 
     state.mark_phase_done("execute")
     state.save(workspace)
@@ -487,6 +631,45 @@ def _run_execute_task(
         return 0
 
     label = f"Task {task.task_id}: {task.title}".strip()
+    while True:
+        outcome, reason = _attempt_execute_task(
+            runner=runner,
+            cockpit=cockpit,
+            workspace=workspace,
+            user_prompt=user_prompt,
+            skill_dir=skill_dir,
+            state=state,
+            preferred_model=preferred_model,
+            tasks_skipped=tasks_skipped,
+            task=task,
+            label=label,
+        )
+        if outcome == "done":
+            return 0
+        if outcome == "cancelled":
+            return 1
+        choice = _offer_retry(runner, f"Task {task.task_id} falhou", reason)
+        if choice != "retry":
+            state.mark_task_failed(task.task_id)
+            state.save(workspace)
+            _sync_stream_tasks(runner, state)
+            return 1
+        _notify(runner, f"Refazendo Task {task.task_id}")
+
+
+def _attempt_execute_task(
+    *,
+    runner: AcpSessionRunner,
+    cockpit: bool,
+    workspace: Path,
+    user_prompt: str,
+    skill_dir: Path,
+    state: WorkflowState,
+    preferred_model: str | None,
+    tasks_skipped: bool,
+    task: TaskSpec,
+    label: str,
+) -> tuple[str, str]:
     if not cockpit:
         print_workflow_result(f"{label}")
     _notify(runner, label)
@@ -503,47 +686,75 @@ def _run_execute_task(
             tasks_skipped=tasks_skipped,
         ),
         preferred_model=preferred_model,
+        phase_id="execute",
+        task_id=task.task_id,
     )
     if result.get("stopReason") == "cancelled":
         if not cockpit:
-            print_workflow_result(f"{label} cancelada — pipeline pausado.")
-        _notify(runner, f"{label} cancelada — pipeline pausado")
-        state.save(workspace)
-        return 1
+            print_workflow_result(f"{label} cancelada.")
+        _notify(runner, f"{label} cancelada")
+        return "cancelled", "task cancelada"
+
+    if not _prompt_succeeded(result):
+        reason = str(result.get("stopReason") or "o agente não concluiu a task")
+        if not cockpit:
+            print_workflow_result(f"{label} não concluída ({reason}).")
+        _notify(runner, f"{label} não concluída ({reason})")
+        return "failed", reason
 
     reloaded = _reload_state(workspace, state)
     _sync_workflow_tasks(state, reloaded)
     _force_task_pending(state, task.task_id)
 
+    if not task.gate_commands:
+        reason = "sem gate de verificação — a task não foi confirmada"
+        if not cockpit:
+            print_workflow_result(f"{label} {reason}.")
+        _notify(runner, f"{label} {reason}")
+        return "failed", reason
+
     gate_wave = Wave(wave_id=1, tasks=(task,), parallel=False)
     gate_results = run_wave_gates(workspace=workspace, wave=gate_wave)
     failed = [item for item in gate_results if not item.ok]
     if failed:
+        details = []
         for item in failed:
             if not cockpit:
                 print_workflow_result(f"Gate falhou: `{item.command}` (exit {item.exit_code})")
             _notify(runner, f"Gate falhou: {item.command} (exit {item.exit_code})")
-            if item.output:
-                if not cockpit:
-                    print_workflow_result(f"{item.output[-2000:]}")
-        if not cockpit:
-            print_workflow_result(f"{label} não marcada como done — corrija o gate e retome.")
-        _notify(runner, f"{label} não marcada como done — corrija o gate e retome")
-        state.save(workspace)
-        return 1
+            if item.output and not cockpit:
+                print_workflow_result(f"{item.output[-2000:]}")
+            details.append(f"{item.command} (exit {item.exit_code})")
+        return "failed", "gate falhou: " + "; ".join(details)
 
     state.mark_task_done(task.task_id)
     state.save(workspace)
     _sync_stream_tasks(runner, state)
-    if gate_results:
-        if not cockpit:
-            print_workflow_result(f"✓ {label} — gates ok")
-        _notify(runner, f"{label} — gates ok")
-    else:
-        if not cockpit:
-            print_workflow_result(f"✓ {label}")
-        _notify(runner, f"{label} concluída")
-    return 0
+    if not cockpit:
+        print_workflow_result(f"✓ {label} — gates ok")
+    _notify(runner, f"{label} — gates ok")
+    return "done", ""
+
+
+def _prompt_succeeded(result: dict[str, Any]) -> bool:
+    return str(result.get("stopReason") or "") in _SUCCESS_STOPS
+
+
+def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> str:
+    handler = getattr(runner, "_prompt_handler", None)
+    select = getattr(handler, "select_choice", None)
+    prompt = reason.strip() or "A etapa não foi concluída."
+    if not callable(select):
+        _notify(runner, f"{title}: {prompt}")
+        return "stop"
+    choice = select(
+        prompt,
+        [("Refazer", "retry"), ("Parar", "stop")],
+        title=title,
+    )
+    if choice == "retry":
+        return "retry"
+    return "stop"
 
 
 def _notify(runner: AcpSessionRunner, message: str) -> None:
@@ -564,13 +775,16 @@ def _sync_stream_phases(runner: AcpSessionRunner, state: WorkflowState) -> None:
         return
     done_ids: list[str] = []
     skipped_ids: list[str] = []
+    failed_ids: list[str] = []
     for phase_name in PHASE_ORDER:
         phase = state.phases[phase_name]
-        if phase.status == PhaseStatus.SKIPPED or phase.skip:
+        if phase.status == PhaseStatus.FAILED:
+            failed_ids.append(phase_name)
+        elif phase.status == PhaseStatus.SKIPPED or phase.skip:
             skipped_ids.append(phase_name)
         elif phase.status in {PhaseStatus.APPROVED, PhaseStatus.DONE}:
             done_ids.append(phase_name)
-    apply(done_ids=done_ids, skipped_ids=skipped_ids)
+    apply(done_ids=done_ids, skipped_ids=skipped_ids, failed_ids=failed_ids)
 
 
 def _sync_stream_tasks(runner: AcpSessionRunner, state: WorkflowState) -> None:

@@ -84,7 +84,7 @@ Um agent extra, fora do catálogo, só entra se estiver em `~/.pulse/agents/`.
 
 ## 5. Histórico
 
-Não há catálogo de runs. O cockpit não grava `meta.yaml`. A lista de histórico lê specs em `.pulse/specs/` (`workflow.yaml` e `TASK.md`). Abrir um item antigo mostra as fases e os Markdowns. O log da sessão não é relido.
+Não há catálogo de runs nem pasta `.pulse/runs`. O cockpit não grava `meta.yaml`. A lista de histórico lê specs em `.pulse/specs/` (`workflow.yaml` e `TASK.md`). Cada fase ACP grava só o id da sessão em `spec_sessions` (`~/.pulse/pulse.db`). Abrir o histórico relê mensagens e tools dessa sessão no `store.db` do Cursor.
 
 ## 6. Store do Cursor (externo)
 

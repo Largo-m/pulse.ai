@@ -222,6 +222,17 @@ Testes cobrem `apiValue` e `fromApi`.
     assert by_id["T3"].gate_commands == ()
 
 
+def test_parse_gate_field_accepts_shell_command():
+    content = """
+## T1: Build
+
+**Depends on**: None
+**Gate**: build — `./gradlew :app:testDebugUnitTest`
+"""
+    specs = parse_task_specs(content)
+    assert specs[0].gate_commands == ("./gradlew :app:testDebugUnitTest",)
+
+
 def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
 
     from pulse.plan import new_issue_flow
@@ -243,14 +254,17 @@ def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
 ### T1: One
 
 **Depends on**: None
+**Gate**: `npm test`
 
 ### T2: Two
 
 **Depends on**: None
+**Gate**: `npm test`
 
 ### T3: Three
 
 **Depends on**: T1
+**Gate**: `npm test`
 """,
         encoding="utf-8",
     )

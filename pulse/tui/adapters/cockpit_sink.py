@@ -171,8 +171,13 @@ class CockpitSink:
         *,
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
+        failed_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
-        self._state.apply_phase_statuses(done_ids=done_ids, skipped_ids=skipped_ids)
+        self._state.apply_phase_statuses(
+            done_ids=done_ids,
+            skipped_ids=skipped_ids,
+            failed_ids=failed_ids,
+        )
         self._emit()
 
     def apply_routed_flow(self, flow: str) -> None:

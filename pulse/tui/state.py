@@ -110,13 +110,6 @@ class CockpitState:
                 continue
             if phase.status == PhaseStatus.RUNNING:
                 phase.finish(now)
-            elif (
-                matched_index is not None
-                and index < matched_index
-                and phase.status == PhaseStatus.PENDING
-            ):
-                phase.status = PhaseStatus.DONE
-                phase.ended_at = now
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
                 matched.started_at = now
@@ -136,12 +129,18 @@ class CockpitState:
         *,
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
+        failed_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         done = set(done_ids)
         skipped = set(skipped_ids)
+        failed = set(failed_ids)
         now = time.monotonic()
         for phase in self.phases:
-            if phase.id in skipped:
+            if phase.id in failed:
+                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
+                    phase.ended_at = now
+                phase.status = PhaseStatus.FAILED
+            elif phase.id in skipped:
                 if phase.status == PhaseStatus.RUNNING:
                     phase.ended_at = now if phase.started_at is not None else phase.ended_at
                 phase.status = PhaseStatus.SKIPPED
@@ -178,8 +177,25 @@ class CockpitState:
                 task.finish(now)
         self.notify()
 
+    def fail_active(self) -> None:
+        now = time.monotonic()
+        for phase in self.phases:
+            if phase.status == PhaseStatus.RUNNING:
+                if phase.started_at is not None:
+                    phase.ended_at = now
+                phase.status = PhaseStatus.FAILED
+        for task in self.tasks:
+            if task.status == PhaseStatus.RUNNING:
+                if task.started_at is not None:
+                    task.ended_at = now
+                task.status = PhaseStatus.FAILED
+        self.notify()
+
     def mark_finished(self, exit_code: int = 0) -> None:
-        self.complete_active_phase()
+        if exit_code == 0:
+            self.complete_active_phase()
+        else:
+            self.fail_active()
         self.running = False
         self.exit_code = exit_code
         self.notify()
@@ -424,7 +440,11 @@ class CockpitState:
                 item = prior
                 item.label = label
             mapped = _task_status_from_name(status)
-            if item.status == PhaseStatus.RUNNING and mapped == PhaseStatus.DONE:
+            if mapped == PhaseStatus.FAILED:
+                if item.status == PhaseStatus.RUNNING and item.started_at is not None:
+                    item.ended_at = now
+                item.status = PhaseStatus.FAILED
+            elif item.status == PhaseStatus.RUNNING and mapped == PhaseStatus.DONE:
                 item.finish(now)
             elif item.status != PhaseStatus.RUNNING:
                 item.status = mapped
@@ -756,4 +776,6 @@ def _task_status_from_name(status: str) -> PhaseStatus:
         return PhaseStatus.SKIPPED
     if raw in {"running", "in_progress", "in-progress"}:
         return PhaseStatus.RUNNING
+    if raw in {"failed", "error", "falhou"}:
+        return PhaseStatus.FAILED
     return PhaseStatus.PENDING

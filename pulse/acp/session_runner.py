@@ -64,6 +64,10 @@ class AcpSessionRunner:
         self._reader: threading.Thread | None = None
         self._next_id = 1
         self._session_id: str | None = None
+        self.last_session_id = ""
+        self._spec_dir = ""
+        self._phase_id = ""
+        self._task_id = ""
         self._run_id = str(uuid.uuid4())
         self.ask_question_count = 0
         self._logger = AcpLogger(self._run_id)
@@ -245,7 +249,11 @@ class AcpSessionRunner:
         preferred_model: str | None = None,
         build_continuation: Callable[..., str] | None = None,
         continuation_kwargs: dict[str, Any] | None = None,
+        phase_id: str = "",
     ) -> dict[str, Any]:
+        if phase_id:
+            self._phase_id = phase_id
+        self._task_id = ""
         self._logger.log_event(
             "run_isolated_phase_start",
             {"workflow": workflow, "phase": phase_label},
@@ -360,7 +368,12 @@ class AcpSessionRunner:
         prompt_text: str,
         preferred_model: str | None = None,
         agent_mode: bool = True,
+        phase_id: str = "",
+        task_id: str = "",
     ) -> dict[str, Any]:
+        if phase_id:
+            self._phase_id = phase_id
+        self._task_id = task_id
         self._logger.log_event(
             "run_isolated_prompt_start",
             {"workflow": workflow, "phase": phase_label},
@@ -715,8 +728,19 @@ class AcpSessionRunner:
         }
         return self._request("session/new", params)
 
+    def bind_spec(self, spec_dir: str) -> None:
+        self._spec_dir = spec_dir
+
+    def set_permission_policy(self, policy: PermissionPolicy) -> None:
+        self._permission_policy = policy
+
+    def use_agent(self, agent_id: str, policy: PermissionPolicy) -> None:
+        self._pulse_agent = agent_id
+        self._permission_policy = policy
+
     def _activate_session(self, session_id: str) -> None:
         self._session_id = str(session_id)
+        self.last_session_id = self._session_id
         self._logger.set_session_id(self._session_id)
         if hasattr(self._stream, "set_session_id"):
             self._stream.set_session_id(self._session_id)
@@ -728,6 +752,23 @@ class AcpSessionRunner:
                 pulse_session_id=self._run_id,
                 acp_session_id=self._session_id,
                 agent_id=self._pulse_agent,
+            )
+        except Exception:
+            pass
+        self._remember_spec_session()
+
+    def _remember_spec_session(self) -> None:
+        if not self._spec_dir or not self._session_id or not self._phase_id:
+            return
+        try:
+            from pulse.store.spec_sessions import record_spec_session
+
+            record_spec_session(
+                self._cwd,
+                spec_dir=self._spec_dir,
+                phase_id=self._phase_id,
+                acp_session_id=self._session_id,
+                task_id=self._task_id,
             )
         except Exception:
             pass

@@ -10,6 +10,7 @@ class PhaseStatus(str, Enum):
     RUNNING = "running"
     DONE = "done"
     SKIPPED = "skipped"
+    FAILED = "failed"
 
 
 class LogKind(str, Enum):

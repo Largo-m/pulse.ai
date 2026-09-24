@@ -37,7 +37,7 @@ Preenchida quando o `AcpSessionRunner` recebe o `sessionId` do runtime (`persist
 
 ## 4. Reler no histórico
 
-`hydrate_history_item` monta fases e artefatos a partir dos Markdowns da spec. O log da sessão não é relido: cada fase recebe uma linha `Info` — “Nenhum log persistido para esta sessão.”
+`hydrate_history_item` monta fases e artefatos a partir dos Markdowns da spec. As mensagens e tools são relidas do `store.db` do Cursor, usando o `acp_session_id` gravado em `spec_sessions` (ou, se essa linha não existir, as `agent_sessions` do mesmo projeto na janela da spec). Sem sessão ACP, cada fase mostra “Nenhum log persistido para esta sessão.”
 
 ## 5. O que **não** é log do Pulse
 

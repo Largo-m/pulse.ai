@@ -25,6 +25,7 @@ _WORKFLOW_TO_UI = {
     PhaseStatus.APPROVED: "done",
     PhaseStatus.DONE: "done",
     PhaseStatus.SKIPPED: "skipped",
+    PhaseStatus.FAILED: "failed",
 }
 
 

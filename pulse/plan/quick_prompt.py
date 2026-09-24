@@ -35,12 +35,25 @@ def format_plan_summary(text: str) -> str:
 
 
 def approval_is_positive(answers_text: str) -> bool:
-    answer = first_questionnaire_answer(answers_text).lower()
-    if not answer:
+    answers = [answer.lower() for answer in _quick_answers(answers_text)]
+    if not answers:
         return False
-    if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "migrar", "reduzir")):
-        return False
-    return "aprov" in answer or answer.startswith("a)") or "sim" in answer
+    for answer in answers:
+        if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "migrar", "reduzir", "pular")):
+            continue
+        if "aprov" in answer:
+            return True
+    return False
+
+
+def _quick_answers(answers_text: str) -> list[str]:
+    answers: list[str] = []
+    for line in answers_text.splitlines():
+        if line.strip().startswith("→"):
+            answer = line.lstrip("→").strip()
+            if answer:
+                answers.append(answer)
+    return answers
 
 
 def first_questionnaire_answer(answers_text: str) -> str:

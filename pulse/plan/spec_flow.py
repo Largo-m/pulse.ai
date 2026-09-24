@@ -137,7 +137,8 @@ def run_spec(
     }
     if flow == "quick":
         return run_quick(**kwargs)
-    return run_new_issue(**kwargs)
+    classify_session_id = getattr(runner, "last_session_id", "") or None
+    return run_new_issue(**kwargs, classify_session_id=classify_session_id)
 
 
 def _apply_route(stream: Any, flow: str, reason: str) -> None:

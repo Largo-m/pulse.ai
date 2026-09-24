@@ -29,6 +29,39 @@ def test_slugify_feature():
     assert slugify_feature("   ") == "feature"
 
 
+def test_parse_tasks_from_markdown_accepts_h2_and_table():
+    content = """
+## T1: Bootstrap projeto
+
+| ID | Title |
+| T2 | Domínio |
+"""
+    tasks = parse_tasks_from_markdown(content)
+    assert [task.task_id for task in tasks] == ["T1"]
+    assert tasks[0].title == "Bootstrap projeto"
+    table_only = "| ID | Title |\n| T2 | Domínio Task |\n"
+    parsed = parse_tasks_from_markdown(table_only)
+    assert parsed[0].task_id == "T2"
+    assert parsed[0].title == "Domínio Task"
+
+
+def test_resumable_workflow_reads_tasks_written_as_headings(tmp_path: Path):
+    from pulse.plan.specify_state import PhaseStatus, find_resumable_workflows
+
+    state = WorkflowState.create_new(feature_slug="todoist", user_prompt="app")
+    state.approve_phase("specify")
+    state.approve_phase("design")
+    state.approve_phase("tasks")
+    state.mark_phase_done("execute")
+    state.save(tmp_path)
+    tasks = tmp_path / state.feature_dir / "tasks.md"
+    tasks.write_text("## T1: Bootstrap projeto\n", encoding="utf-8")
+    found = find_resumable_workflows(tmp_path)
+    assert len(found) == 1
+    assert found[0].tasks[0].task_id == "T1"
+    assert found[0].phases["execute"].status == PhaseStatus.DONE
+
+
 def test_parse_tasks_from_markdown():
     content = """
 # Tasks
@@ -162,13 +195,17 @@ def test_build_execute_wave_prompt_lists_task():
 
 def test_classify_phase_questionnaire_outcome():
     assert classify_phase_questionnaire_outcome("→ Sim, aprovar e continuar") == "approve"
+    assert classify_phase_questionnaire_outcome("→ A) Sim, aprovar e continuar") == "approve"
     assert classify_phase_questionnaire_outcome("→ Cancelar workflow") == "cancel"
     assert classify_phase_questionnaire_outcome("→ Não, preciso de ajustes") == "adjust"
+    assert classify_phase_questionnaire_outcome("→ A) Unit (JUnit JVM)") == "continue"
 
 
 def test_approval_is_positive():
     assert approval_is_positive("→ Sim, aprovar e continuar")
     assert not approval_is_positive("→ Não, preciso de ajustes")
+    assert not approval_is_positive("→ A) Unit (JUnit JVM)")
+    assert not approval_is_positive("→ A) Sim, usar só unit tests")
 
 
 def test_run_plan_rejects_legacy_ids(monkeypatch):
@@ -267,7 +304,81 @@ def test_run_execute_task_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
         spec=TaskSpec(task_id="T1", title="A", gate_commands=("false",)),
     )
     assert code == 1
-    assert state.tasks[0].status == "pending"
+    assert state.tasks[0].status == "failed"
+
+
+def test_run_execute_task_retries_then_marks_done(monkeypatch, tmp_path: Path):
+    from pulse.plan import new_issue_flow
+    from pulse.plan.task_waves import GateResult, TaskSpec
+
+    state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
+    state.tasks = [TaskState(task_id="T1", title="A")]
+    state.save(tmp_path)
+
+    class Handler:
+        def select_choice(self, _prompt, _choices, *, title=""):
+            assert "T1" in title
+            return "retry"
+
+    class FakeRunner:
+        def __init__(self) -> None:
+            self._prompt_handler = Handler()
+            self.prompts = 0
+
+        def run_isolated_prompt(self, **_kwargs):
+            self.prompts += 1
+            if self.prompts == 1:
+                return {"stopReason": "error"}
+            return {"stopReason": "end_turn"}
+
+    runner = FakeRunner()
+    monkeypatch.setattr(
+        new_issue_flow,
+        "run_wave_gates",
+        lambda **_kwargs: [GateResult(ok=True, command="true", exit_code=0)],
+    )
+
+    code = new_issue_flow._run_execute_task(
+        runner=runner,
+        cockpit=True,
+        workspace=tmp_path,
+        user_prompt="x",
+        skill_dir=resolve_new_issue_skill(),
+        state=state,
+        preferred_model=None,
+        tasks_skipped=False,
+        spec=TaskSpec(task_id="T1", title="A", gate_commands=("true",)),
+    )
+    assert code == 0
+    assert runner.prompts == 2
+    assert state.tasks[0].status == "done"
+
+
+def test_run_execute_task_does_not_mark_done_without_gate(tmp_path: Path):
+    from pulse.plan import new_issue_flow
+    from pulse.plan.task_waves import TaskSpec
+
+    state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
+    state.tasks = [TaskState(task_id="T1", title="A")]
+    state.save(tmp_path)
+
+    class FakeRunner:
+        def run_isolated_prompt(self, **_kwargs):
+            return {"stopReason": "end_turn"}
+
+    code = new_issue_flow._run_execute_task(
+        runner=FakeRunner(),
+        cockpit=True,
+        workspace=tmp_path,
+        user_prompt="x",
+        skill_dir=resolve_new_issue_skill(),
+        state=state,
+        preferred_model=None,
+        tasks_skipped=False,
+        spec=TaskSpec(task_id="T1", title="A"),
+    )
+    assert code == 1
+    assert state.tasks[0].status == "failed"
 
 
 def test_sync_stream_phases_marks_completed_and_skipped():
@@ -294,5 +405,6 @@ def test_sync_stream_phases_marks_completed_and_skipped():
         {
             "done_ids": ["specify", "tasks"],
             "skipped_ids": ["design"],
+            "failed_ids": [],
         }
     ]
