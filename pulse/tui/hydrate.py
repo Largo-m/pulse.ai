@@ -43,9 +43,11 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     _backfill_task_ids(state.entries)
     _note_tasks_without_logs(state)
     state.artifacts = _scan_artifacts(item, workspace)
-    if state.artifacts:
-        state.selected_artifact_path = state.artifacts[-1].path
+    displayable = [artifact for artifact in state.artifacts if artifact.has_content]
+    if displayable:
+        state.selected_artifact_path = displayable[-1].path
         state.artifact_pane_open = True
+        state._had_displayable = True
     selected = 0
     logged = {entry.phase_id for entry in state.entries if entry.phase_id}
     for index, phase in enumerate(state.phases):
@@ -317,11 +319,16 @@ def _scan_artifacts(item: HistoryItem, workspace: Path) -> list[ArtifactItem]:
             relative = f"{item.spec_dir}/{path.name}"
         if not is_spec_artifact(relative):
             continue
+        try:
+            has_content = path.stat().st_size > 0
+        except OSError:
+            has_content = False
         artifacts.append(
             ArtifactItem(
                 path=relative,
                 phase_id=_ARTIFACT_PHASE.get(path.name.lower(), _fallback_phase(item, path.name)),
                 ready=True,
+                has_content=has_content,
             )
         )
     return artifacts

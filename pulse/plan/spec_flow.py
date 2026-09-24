@@ -25,8 +25,22 @@ def run_spec(
     stream: Any | None = None,
     prompt_handler: Any | None = None,
     render_header: bool = True,
+    spec_slug: str | None = None,
+    spec_mode: str | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
+    if spec_slug and spec_mode:
+        # Retomar/refazer um spec conhecido: o flow já é `full`, classificar de
+        # novo só gastaria uma sessão para chegar na mesma conclusão.
+        return _run_known_spec(
+            user_prompt=user_prompt,
+            workspace=workspace,
+            stream=stream,
+            prompt_handler=prompt_handler,
+            render_header=render_header,
+            spec_slug=spec_slug,
+            spec_mode=spec_mode,
+        )
     if not cockpit and not is_interactive():
         print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
@@ -144,6 +158,29 @@ def run_spec(
         return run_quick(**kwargs)
     classify_session_id = getattr(runner, "last_session_id", "") or None
     return run_new_issue(**kwargs, classify_session_id=classify_session_id)
+
+
+def _run_known_spec(
+    *,
+    user_prompt: str,
+    workspace: Path | None,
+    stream: Any | None,
+    prompt_handler: Any | None,
+    render_header: bool,
+    spec_slug: str,
+    spec_mode: str,
+) -> int:
+    active_stream = stream or NullStreamSink()
+    _apply_route(active_stream, "full", "retomando" if spec_mode == "resume" else "refazendo")
+    return run_new_issue(
+        user_prompt=user_prompt,
+        workspace=workspace,
+        stream=active_stream,
+        prompt_handler=prompt_handler or NullPromptPort(),
+        render_header=render_header,
+        spec_slug=spec_slug,
+        spec_mode=spec_mode,
+    )
 
 
 def _apply_route(stream: Any, flow: str, reason: str) -> None:

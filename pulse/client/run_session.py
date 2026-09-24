@@ -26,12 +26,16 @@ class EngineRunSession:
         workflow_id: str,
         user_prompt: str,
         workspace: str | Path | None = None,
+        spec_slug: str | None = None,
+        spec_mode: str | None = None,
     ) -> int:
         self._client.ensure_daemon()
         created = self._client.start_run(
             workflow_id,
             prompt=user_prompt,
             workspace=str(workspace) if workspace is not None else None,
+            spec_slug=spec_slug,
+            spec_mode=spec_mode,
         )
         run_id = str(created["id"])
         try:

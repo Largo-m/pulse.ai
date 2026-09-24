@@ -15,7 +15,8 @@ class _FakeClient:
     def ensure_daemon(self) -> None:
         return None
 
-    def start_run(self, workflow_id: str, *, prompt: str, workspace: str | None = None) -> dict[str, Any]:
+    def start_run(self, workflow_id: str, **kwargs: Any) -> dict[str, Any]:
+        self.start_kwargs = kwargs
         return {"id": "run-1", "workflow_id": workflow_id, "status": "running"}
 
     def stream_events(self, run_id: str):

@@ -56,10 +56,14 @@ class CockpitScreen(Screen[None]):
         user_prompt: str,
         *,
         workspace: Path | None = None,
+        spec_slug: str | None = None,
+        spec_mode: str | None = None,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
+        self.spec_slug = spec_slug
+        self.spec_mode = spec_mode
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
@@ -170,6 +174,8 @@ class CockpitScreen(Screen[None]):
                 workflow_id=self.workflow_id,
                 user_prompt=self.user_prompt,
                 workspace=self._cwd,
+                spec_slug=self.spec_slug,
+                spec_mode=self.spec_mode,
             )
         except Exception as error:
             self.state.add_error("Workflow falhou", str(error))

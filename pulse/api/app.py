@@ -23,6 +23,9 @@ from pulse.history.catalog import HistoryCatalog
 class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
+    #: "resume" | "restart" para um spec já existente em `spec_slug`.
+    spec_slug: str | None = None
+    spec_mode: str | None = None
 
 
 class PromptAnswerBody(BaseModel):
@@ -163,6 +166,8 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 workflow_id=workflow_id,
                 prompt=body.prompt,
                 workspace=body.workspace,
+                spec_slug=body.spec_slug,
+                spec_mode=body.spec_mode,
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

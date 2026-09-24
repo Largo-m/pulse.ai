@@ -23,6 +23,9 @@ class RunState:
     bus: EventBus = field(default_factory=EventBus)
     correlator: PromptCorrelator | None = None
     cancel_requested: bool = False
+    #: Spec conhecido a retomar/refazer (escolhido no histórico).
+    spec_slug: str | None = None
+    spec_mode: str | None = None
 
 
 class RunManager:
@@ -42,6 +45,8 @@ class RunManager:
         workflow_id: str,
         prompt: str,
         workspace: str | None = None,
+        spec_slug: str | None = None,
+        spec_mode: str | None = None,
     ) -> RunState:
         if get_spec_type(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
@@ -55,6 +60,8 @@ class RunManager:
             workspace=workspace or str(Path.cwd()),
             bus=bus,
             correlator=correlator,
+            spec_slug=spec_slug,
+            spec_mode=spec_mode,
         )
         with self._lock:
             self._runs[run_id] = state
@@ -106,6 +113,8 @@ class RunManager:
                 stream=stream,
                 prompt_handler=prompt_handler,
                 render_header=False,
+                spec_slug=state.spec_slug,
+                spec_mode=state.spec_mode,
             )
         except Exception as error:
             state.status = "failed"

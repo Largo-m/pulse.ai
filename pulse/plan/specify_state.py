@@ -382,3 +382,25 @@ def _default_artifact(phase: str) -> str:
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def find_workflow_by_slug(workspace: Path, slug: str) -> WorkflowState | None:
+    for state in list_feature_workflows(workspace):
+        if state.feature_slug == slug:
+            return state
+    return None
+
+
+def workflow_is_incomplete(state: WorkflowState) -> bool:
+    """Workflow ainda tem fase ou task pendente — dá para retomar."""
+    return _is_workflow_incomplete(state)
+
+
+def resume_summary(state: WorkflowState) -> str:
+    """Resumo curto de onde o workflow parou, para exibir na escolha."""
+    phase = state.current_phase
+    status = state.phases[phase].status.value if phase in state.phases else "pending"
+    done = sum(1 for item in state.tasks if item.status == PhaseStatus.DONE)
+    if state.tasks:
+        return f"{phase} ({status}) · tasks {done}/{len(state.tasks)}"
+    return f"{phase} ({status})"

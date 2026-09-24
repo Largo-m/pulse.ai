@@ -200,8 +200,8 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     state.configure_workflow("setup-project")
     state.begin_phase("Fase 2 — Gerando specs")
     first = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=False)
-    second = state.upsert_artifact("/repo/.pulse/specs/project/ROADMAP.md", ready=True)
-    third = state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True)
+    second = state.upsert_artifact("/repo/.pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
+    third = state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True, has_content=True)
     assert first is not None and second is not None and third is not None
     assert [item.path for item in state.artifacts] == [
         ".pulse/specs/project/PROJECT.md",
@@ -212,7 +212,7 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     assert state.follow_artifact is True
     assert state.artifact_pane_open is True
 
-    again = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    again = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
     assert again is first
     assert len(state.artifacts) == 3
     assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
@@ -222,12 +222,12 @@ def test_manual_artifact_select_disables_follow():
     state = CockpitState()
     state.configure_workflow("setup-project")
     state.begin_phase("Fase 2 — Gerando specs")
-    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
-    state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True)
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+    state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
     state.select_artifact(".pulse/specs/project/PROJECT.md")
     assert state.follow_artifact is False
     assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
-    state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True)
+    state.upsert_artifact(".pulse/specs/project/STATE.md", ready=True, has_content=True)
     assert state.selected_artifact_path == ".pulse/specs/project/PROJECT.md"
     state.move_artifact(1)
     assert state.selected_artifact_path == ".pulse/specs/project/ROADMAP.md"
@@ -237,9 +237,9 @@ def test_visible_artifacts_are_scoped_to_selected_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
     state.begin_phase("Fase Design")
-    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True)
+    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True, has_content=True)
     assert [item.path for item in state.visible_artifacts()] == [
         ".pulse/specs/features/demo/design.md"
     ]
@@ -253,8 +253,8 @@ def test_upsert_ignores_non_spec_paths():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Specify")
-    assert state.upsert_artifact("pulse/cli.py", ready=True) is None
-    assert state.upsert_artifact(".pulse/skills/pulse-spec-driven/SKILL.md", ready=True) is None
+    assert state.upsert_artifact("pulse/cli.py", ready=True, has_content=True) is None
+    assert state.upsert_artifact(".pulse/skills/pulse-spec-driven/SKILL.md", ready=True, has_content=True) is None
     assert state.artifacts == []
     assert state.artifact_pane_open is False
 
@@ -263,8 +263,8 @@ def test_reveal_artifact_from_prompt_opens_matching_file():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
-    state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True)
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
+    state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True, has_content=True)
     state.toggle_artifact_pane()
     assert state.artifact_pane_open is False
     opened = state.reveal_artifact_from_prompt(
@@ -285,7 +285,7 @@ def test_toggle_focus_cycles_artifact_when_pane_open():
     state.toggle_focus()
     assert state.focus_target == "phases"
     state.begin_phase("Planejar")
-    state.upsert_artifact(".pulse/specs/quick/001-x/TASK.md", ready=True)
+    state.upsert_artifact(".pulse/specs/quick/001-x/TASK.md", ready=True, has_content=True)
     state.focus_target = "phases"
     state.toggle_focus()
     assert state.focus_target == "stream"
@@ -304,7 +304,7 @@ def test_close_artifact_pane_hides_and_moves_focus():
     state = CockpitState()
     state.configure_workflow("setup-project")
     state.begin_phase("Fase 2 — Gerando specs")
-    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
     state.focus_target = "artifact"
     assert state.artifact_pane_open is True
     state.close_artifact_pane()
@@ -318,7 +318,7 @@ def test_open_artifact_pane_shows_again():
     state = CockpitState()
     state.configure_workflow("setup-project")
     state.begin_phase("Fase 2 — Gerando specs")
-    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+    state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
     state.close_artifact_pane()
     assert state.artifact_pane_open is False
     state.open_artifact_pane()
@@ -331,7 +331,7 @@ def test_phase_has_artifacts_follows_selected_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
     assert state.phase_has_artifacts() is True
     state.begin_phase("Fase Design")
     assert state.phase_has_artifacts() is False
@@ -461,3 +461,74 @@ def test_apply_routed_flow_full_appends_pipeline():
         "execute",
     ]
     assert state.phases[0].status == PhaseStatus.DONE
+
+
+def test_pane_stays_closed_while_artifact_has_no_content():
+    """Write anunciado mas ainda sem arquivo em disco não deve abrir a aba."""
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Design")
+    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=False)
+
+    assert state.artifact_pane_open is False
+    assert state.phase_has_artifacts() is False
+    assert state.displayable_artifacts() == []
+    # o artefato existe na coleção — a aba, se aberta à mão, mostra "escrevendo…"
+    assert [item.path for item in state.visible_artifacts()] == [
+        ".pulse/specs/features/demo/design.md"
+    ]
+
+
+def test_pane_opens_when_the_artifact_gains_content():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Design")
+    path = ".pulse/specs/features/demo/design.md"
+    state.upsert_artifact(path, ready=False)
+    assert state.artifact_pane_open is False
+
+    state.upsert_artifact(path, ready=True, has_content=True)
+
+    assert state.artifact_pane_open is True
+    assert state.phase_has_artifacts() is True
+
+
+def test_write_that_never_lands_never_opens_the_pane():
+    """Escrita negada/falha conclui sem arquivo: nada a exibir, nada a abrir."""
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Design")
+    path = ".pulse/specs/features/demo/design.md"
+    state.upsert_artifact(path, ready=False)
+    state.upsert_artifact(path, ready=True)  # concluiu, mas sem conteúdo
+
+    assert state.artifact_pane_open is False
+    assert state.phase_has_artifacts() is False
+
+
+def test_pane_does_not_reopen_after_the_user_closes_it():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Design")
+    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True, has_content=True)
+    assert state.artifact_pane_open is True
+
+    state.close_artifact_pane()
+    state.upsert_artifact(".pulse/specs/features/demo/tasks.md", ready=True, has_content=True)
+
+    assert state.artifact_pane_open is False
+    assert state.phase_has_artifacts() is True
+
+
+def test_reveal_from_prompt_ignores_artifacts_without_content():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=False)
+
+    opened = state.reveal_artifact_from_prompt(
+        "Aprovar Specify (.pulse/specs/features/demo/spec.md) e avançar?"
+    )
+
+    assert opened is False
+    assert state.artifact_pane_open is False

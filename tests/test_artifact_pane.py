@@ -36,8 +36,8 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
             def on_mount(self) -> None:
                 state = holder["state"]
                 state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
-                state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True)
+                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+                state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
                 state.select_artifact(".pulse/specs/project/PROJECT.md")
                 pane = self.query_one(ArtifactPane)
                 pane.sync_from_state(state, force=True)
@@ -94,7 +94,7 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
             def on_mount(self) -> None:
                 state = holder["state"]
                 state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
         app = Harness()
@@ -106,7 +106,7 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
             assert [child.name for child in tabs.children] == [
                 ".pulse/specs/project/PROJECT.md"
             ]
-            state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True)
+            state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
             pane.sync_from_state(state, force=True)
             await pilot.pause()
             names = [child.name for child in tabs.children]
@@ -142,7 +142,7 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
             def on_mount(self) -> None:
                 state = holder["state"]
                 state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True)
+                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
             def on_artifact_pane_closed(self, event: ArtifactPaneClosed) -> None:
@@ -206,7 +206,7 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
             def on_mount(self) -> None:
                 state = holder["state"]
                 state.begin_phase("Fase Specify")
-                state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True)
+                state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
                 state.close_artifact_pane()
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 

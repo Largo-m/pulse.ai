@@ -26,6 +26,7 @@ from pulse.plan.specify_state import (
     PhaseStatus,
     WorkflowState,
     find_resumable_workflows,
+    list_feature_workflows,
     slugify_feature,
 )
 from pulse.plan.task_waves import (
@@ -63,6 +64,8 @@ def run_new_issue(
     prompt_handler: Any | None = None,
     render_header: bool = True,
     classify_session_id: str | None = None,
+    spec_slug: str | None = None,
+    spec_mode: str | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if not cockpit and not is_interactive():
@@ -96,7 +99,13 @@ def run_new_issue(
         return 1
 
     active_handler = prompt_handler or NullPromptPort()
-    state = _resolve_workflow_state(workspace_root, user_prompt, prompt_handler=active_handler)
+    state = _resolve_workflow_state(
+        workspace_root,
+        user_prompt,
+        prompt_handler=active_handler,
+        spec_slug=spec_slug,
+        spec_mode=spec_mode,
+    )
     if state is None:
         return 0
 
@@ -144,7 +153,12 @@ def _resolve_workflow_state(
     user_prompt: str,
     *,
     prompt_handler: Any | None = None,
+    spec_slug: str | None = None,
+    spec_mode: str | None = None,
 ) -> WorkflowState | None:
+    # Decisão já tomada (ex.: retomar/refazer escolhido no histórico): não pergunta.
+    if spec_slug and spec_mode:
+        return _apply_spec_decision(workspace, user_prompt, spec_slug, spec_mode)
     resumable = find_resumable_workflows(workspace)
     if resumable:
         return _pick_resumable(
@@ -157,6 +171,36 @@ def _resolve_workflow_state(
     state = WorkflowState.create_new(feature_slug=slug, user_prompt=user_prompt)
     state.save(workspace)
     return state
+
+
+def _apply_spec_decision(
+    workspace: Path,
+    user_prompt: str,
+    spec_slug: str,
+    spec_mode: str,
+) -> WorkflowState | None:
+    """Retoma ou recomeça um spec específico, sem perguntar nada.
+
+    `restart` não apaga artefatos: reseta o workflow.yaml para pendente e deixa
+    o pipeline reescrever spec.md/design.md/tasks.md por cima.
+    """
+    existing = next(
+        (item for item in list_feature_workflows(workspace) if item.feature_slug == spec_slug),
+        None,
+    )
+    if spec_mode == "resume":
+        if existing is None:
+            return None
+        tasks_path = workspace / existing.feature_dir / "tasks.md"
+        if tasks_path.is_file():
+            existing.sync_tasks_from_markdown(tasks_path)
+        return existing
+    if spec_mode == "restart":
+        prompt = user_prompt or (existing.user_prompt if existing else "")
+        state = WorkflowState.create_new(feature_slug=spec_slug, user_prompt=prompt)
+        state.save(workspace)
+        return state
+    return None
 
 
 def _pick_resumable(

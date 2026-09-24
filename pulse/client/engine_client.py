@@ -101,10 +101,15 @@ class EngineClient:
         *,
         prompt: str,
         workspace: str | None = None,
+        spec_slug: str | None = None,
+        spec_mode: str | None = None,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt}
         if workspace is not None:
             body["workspace"] = workspace
+        if spec_slug and spec_mode:
+            body["spec_slug"] = spec_slug
+            body["spec_mode"] = spec_mode
         return self.post(f"/api/workflows/{workflow_id}/runs", body)
 
     def doctor(self) -> dict[str, Any]:

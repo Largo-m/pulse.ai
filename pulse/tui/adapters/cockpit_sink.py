@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pulse.prompts.text_questionnaire import extract_questionnaire_block
+from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
 from pulse.tui.tool_detail import (
@@ -387,7 +388,11 @@ class CockpitSink:
             self._state.record_files(paths)
             if log_kind in {LogKind.WRITE, LogKind.EDIT}:
                 for path in paths:
-                    self._state.upsert_artifact(path, ready=ready)
+                    self._state.upsert_artifact(
+                        path,
+                        ready=ready,
+                        has_content=artifact_has_content(path, self._cwd),
+                    )
 
     def _maybe_enter_questionnaire_mode(self) -> None:
         if self._questionnaire_mode:

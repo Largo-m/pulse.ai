@@ -62,6 +62,15 @@ def resolve_artifact_path(path: str, cwd: str | None = None) -> Path:
     return candidates[0] if candidates else Path(key)
 
 
+def artifact_has_content(path: str, cwd: str | None = None) -> bool:
+    """Arquivo existe e não está vazio — há algo de fato para exibir."""
+    target = resolve_artifact_path(path, cwd)
+    try:
+        return target.is_file() and target.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def read_artifact_markdown(path: str, cwd: str | None = None) -> tuple[str, float, bool]:
     target = resolve_artifact_path(path, cwd)
     try:

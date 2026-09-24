@@ -60,6 +60,8 @@ class CockpitState:
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
     _follow_live: bool = True
+    #: Já abrimos a aba alguma vez? Evita reabrir depois que o usuário fecha.
+    _had_displayable: bool = False
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -86,6 +88,7 @@ class CockpitState:
         self.selected_artifact_path = ""
         self.follow_artifact = True
         self.artifact_pane_open = False
+        self._had_displayable = False
         self.focus_target = "phases"
         self._next_entry_id = 1
         self._active_assistant_id = None
@@ -560,7 +563,13 @@ class CockpitState:
                 self.selected_artifact_path = visible[-1].path
         self.notify()
 
-    def upsert_artifact(self, path: str, *, ready: bool) -> ArtifactItem | None:
+    def upsert_artifact(
+        self,
+        path: str,
+        *,
+        ready: bool,
+        has_content: bool = False,
+    ) -> ArtifactItem | None:
         key = artifact_key(path)
         if not is_spec_artifact(key):
             return None
@@ -568,19 +577,30 @@ class CockpitState:
         for item in self.artifacts:
             if item.path != key:
                 continue
+            was_displayable = item.has_content
             item.ready = ready
+            item.has_content = item.has_content or has_content
             if not item.phase_id:
                 item.phase_id = phase_id
             if self.follow_artifact:
                 self.selected_artifact_path = item.path
+            # Abre quando o artefato passa a ter conteúdo, não quando é anunciado.
+            if item.has_content and not was_displayable and not self._had_displayable:
+                self._had_displayable = True
+                self.artifact_pane_open = True
             self.notify()
             return item
-        was_empty = not self.artifacts
-        item = ArtifactItem(path=key, phase_id=phase_id, ready=ready)
+        item = ArtifactItem(
+            path=key,
+            phase_id=phase_id,
+            ready=ready,
+            has_content=has_content,
+        )
         self.artifacts.append(item)
         if self.follow_artifact or not self.selected_artifact_path:
             self.selected_artifact_path = item.path
-        if was_empty:
+        if has_content and not self._had_displayable:
+            self._had_displayable = True
             self.artifact_pane_open = True
         self.notify()
         return item
@@ -594,8 +614,14 @@ class CockpitState:
         pid = phase.id
         return [item for item in self.artifacts if item.phase_id == pid]
 
+    def displayable_artifacts(self) -> list[ArtifactItem]:
+        """Artefatos da fase que têm mesmo algo para mostrar."""
+        return [item for item in self.visible_artifacts() if item.has_content]
+
     def phase_has_artifacts(self) -> bool:
-        return bool(self.visible_artifacts())
+        # Gate da aba (trilho "ABRIR" e atalho `a`): sem artefato exibível não
+        # faz sentido oferecer abrir um painel que só diria "escrevendo…".
+        return bool(self.displayable_artifacts())
 
     def selected_artifact(self) -> ArtifactItem | None:
         visible = self.visible_artifacts()
@@ -654,17 +680,18 @@ class CockpitState:
 
     def reveal_artifact_from_prompt(self, text: str) -> bool:
         keys = extract_spec_artifacts_from_text(text)
+        candidates = [item for item in self.artifacts if item.has_content]
         matched: ArtifactItem | None = None
         for key in keys:
-            for item in self.artifacts:
+            for item in candidates:
                 if item.path == key or item.path.endswith(key) or key.endswith(item.path):
                     matched = item
                     break
             if matched is not None:
                 break
-        if matched is None and self.artifacts:
-            visible = self.visible_artifacts()
-            matched = visible[-1] if visible else self.artifacts[-1]
+        if matched is None and candidates:
+            visible = self.displayable_artifacts()
+            matched = visible[-1] if visible else candidates[-1]
         if matched is None:
             return False
         self.selected_artifact_path = matched.path

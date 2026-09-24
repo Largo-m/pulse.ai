@@ -79,6 +79,9 @@ class ArtifactItem:
     path: str
     phase_id: str = ""
     ready: bool = False
+    #: Arquivo existe em disco e tem conteúdo. Só artefato exibível abre a aba:
+    #: um write pendente ou negado não deve escancarar um painel vazio.
+    has_content: bool = False
 
 
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
