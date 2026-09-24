@@ -2,7 +2,7 @@
 name: setup-interview
 description: Entrevista de setup do projeto
 runtime: claude
-model: claude-opus-4.8
+model: opus[1m]
 permission_policy: deny_writes
 ---
 

@@ -17,7 +17,7 @@ from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunManager
-from pulse.doctor.checks import run_environment_checks
+from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
 
 class StartRunBody(BaseModel):
@@ -84,7 +84,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/doctor")
     def doctor() -> dict[str, Any]:
-        results = run_environment_checks()
+        results = run_doctor_checks()
         return {
             "checks": [
                 {
@@ -102,7 +102,11 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         from pulse.acp.client import probe_acp_connection
 
         cwd = workspace or str(Path.cwd())
-        result = probe_acp_connection(cwd=cwd)
+        ws = Path(workspace).resolve() if workspace else None
+        result = probe_acp_connection(
+            command=list(resolve_config(workspace=ws).acp_command),
+            cwd=cwd,
+        )
         return {
             "ok": result.success,
             "message": result.message,

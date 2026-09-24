@@ -7,11 +7,15 @@ from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
 
-DEFAULT_ACP_COMMAND = ["agent", "acp"]
+from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
+
+_DEFAULT_RUNTIME = get_runtime(DEFAULT_RUNTIME_ID)
+
+DEFAULT_ACP_COMMAND = _DEFAULT_RUNTIME.acp_command
 DEFAULT_MODEL = "auto"
 DEFAULT_PERMISSION_POLICY = "ask"
-DEFAULT_AGENT_BINARY = "agent"
-DEFAULT_AUTH_METHOD = "cursor_login"
+DEFAULT_AGENT_BINARY = _DEFAULT_RUNTIME.binary
+DEFAULT_AUTH_METHOD = _DEFAULT_RUNTIME.auth_method_label
 
 
 @dataclass(frozen=True)
@@ -198,7 +202,7 @@ def _resolve_pulse_agent(
     from pulse.store.agent_settings import load_agent_settings
 
     loaded = load_agent(pulse_agent, workspace=workspace_dir)
-    runtime = loaded.runtime if loaded else "cursor"
+    runtime = loaded.runtime if loaded else DEFAULT_RUNTIME_ID
     model = loaded.model if loaded else DEFAULT_MODEL
     policy = loaded.permission_policy if loaded else DEFAULT_PERMISSION_POLICY
     agent_source = "agent.file"
@@ -215,9 +219,41 @@ def _resolve_pulse_agent(
         if stored.get("permission_policy"):
             policy = str(stored["permission_policy"])
             policy_source = "agent.settings"
-    if runtime not in runtimes and global_cfg and runtime in global_cfg.agents:
-        runtime = runtime
     if runtime not in runtimes:
         runtime = DEFAULT_AGENT_NAME
         agent_source = "default"
+
+    fallback = _available_runtime_fallback(runtime, project_cfg, global_cfg)
+    if fallback is not None:
+        runtime, agent_source = fallback, "runtime.fallback"
     return runtime, agent_source, model, model_source, policy, policy_source
+
+
+def _available_runtime_fallback(
+    runtime: str,
+    project_cfg: ProjectConfig | None,
+    global_cfg: GlobalConfig | None,
+) -> str | None:
+    """Runtime alternativo quando o declarado não existe nesta máquina.
+
+    O `runtime:` de um AGENT.md é preferência do autor do agente, não requisito
+    da máquina: quem só tem o Claude instalado não deve ficar travado porque o
+    agente declara `cursor`. O modelo é preservado — se o id não existir no
+    runtime novo, o próprio agente cai no default dele.
+    """
+    if get_runtime(runtime).is_available():
+        return None
+
+    preferred = None
+    if project_cfg and project_cfg.default_agent:
+        preferred = project_cfg.default_agent
+    elif global_cfg and global_cfg.default_agent:
+        preferred = global_cfg.default_agent
+
+    candidates = [preferred, *(item.id for item in all_runtimes())]
+    for candidate in candidates:
+        if not candidate or candidate == runtime:
+            continue
+        if get_runtime(candidate).is_available():
+            return candidate
+    return None

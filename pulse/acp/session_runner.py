@@ -12,7 +12,8 @@ from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
-from pulse.acp.models import resolve_interview_model_id, resolve_model_display_name
+from pulse.acp.models import resolve_model_display_name
+from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
@@ -30,8 +31,6 @@ from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.permission import PermissionPolicy
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
 
-INTERVIEW_MODE = "agent"
-AGENT_MODE = "agent"
 MAX_QUICK_PLAN_TURNS = 4
 MAX_PHASE_APPROVAL_TURNS = 4
 
@@ -48,8 +47,10 @@ class AcpSessionRunner:
         prompt_handler: Any | None = None,
         enable_mcp_ask: bool = True,
         pulse_agent: str | None = None,
+        runtime: AgentRuntime | None = None,
     ) -> None:
         self._command = command
+        self._runtime = runtime or runtime_for_command(command)
         self._cwd = cwd
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
@@ -69,6 +70,7 @@ class AcpSessionRunner:
         self._phase_id = ""
         self._task_id = ""
         self._run_id = str(uuid.uuid4())
+        self._auth_methods: list[str] = []
         self.ask_question_count = 0
         self._logger = AcpLogger(self._run_id)
 
@@ -115,12 +117,9 @@ class AcpSessionRunner:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
             self._activate_session(str(session_id))
 
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+            self.apply_model(session, preferred_model)
 
-            self.set_mode(self._session_id, INTERVIEW_MODE)
+            self.apply_mode(session, execute=False)
             self._stream.begin_phase("Fase 1 — Análise do projeto")
             self._stream.reset_capture()
             interview_result = self.prompt(self._session_id, interview_prompt)
@@ -144,7 +143,7 @@ class AcpSessionRunner:
                 questionnaire_answers=answers_text,
             )
 
-            self.set_mode(self._session_id, AGENT_MODE)
+            self.apply_mode(session, execute=True)
             self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/project/")
             self._stream.reset_capture()
             artifact_result = self.prompt(self._session_id, artifact_prompt)
@@ -190,12 +189,9 @@ class AcpSessionRunner:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
             self._activate_session(str(session_id))
 
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+            self.apply_model(session, preferred_model)
 
-            self.set_mode(self._session_id, INTERVIEW_MODE)
+            self.apply_mode(session, execute=False)
             self._stream.begin_phase("Fase 1 — Explorando codebase")
             self._stream.reset_capture()
             explore_result = self.prompt(self._session_id, explore_prompt)
@@ -219,7 +215,7 @@ class AcpSessionRunner:
                 questionnaire_answers=answers_text,
             )
 
-            self.set_mode(self._session_id, AGENT_MODE)
+            self.apply_mode(session, execute=True)
             self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/codebase/")
             self._stream.reset_capture()
             artifact_result = self.prompt(self._session_id, artifact_prompt)
@@ -264,12 +260,9 @@ class AcpSessionRunner:
             raise RuntimeError("Sessão ACP não retornou sessionId")
         self._activate_session(str(session_id))
 
-        model_id = resolve_interview_model_id(session, preferred_model)
-        if model_id:
-            self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+        self.apply_model(session, preferred_model)
 
-        self.set_mode(self._session_id, INTERVIEW_MODE)
+        self.apply_mode(session, execute=False)
         next_prompt = initial_prompt
         phase_summary = ""
         answers_text = ""
@@ -384,13 +377,9 @@ class AcpSessionRunner:
             raise RuntimeError("Sessão ACP não retornou sessionId")
         self._activate_session(str(session_id))
 
-        model_id = resolve_interview_model_id(session, preferred_model)
-        if model_id:
-            self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+        self.apply_model(session, preferred_model)
 
-        mode = AGENT_MODE if agent_mode else INTERVIEW_MODE
-        self.set_mode(self._session_id, mode)
+        self.apply_mode(session, execute=agent_mode)
         self._stream.begin_phase(phase_label)
         self._stream.reset_capture()
 
@@ -431,12 +420,9 @@ class AcpSessionRunner:
                 raise RuntimeError("Sessão ACP não retornou sessionId")
             self._activate_session(str(session_id))
 
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+            self.apply_model(session, preferred_model)
 
-            self.set_mode(self._session_id, INTERVIEW_MODE)
+            self.apply_mode(session, execute=False)
             next_prompt = plan_prompt
             plan_summary = ""
             answers_text = ""
@@ -522,7 +508,7 @@ class AcpSessionRunner:
                 approval_answers=answers_text,
             )
 
-            self.set_mode(self._session_id, AGENT_MODE)
+            self.apply_mode(session, execute=True)
             self._stream.begin_phase("Fase 2 — Implementando quick task")
             self._stream.reset_capture()
             implement_result = self.prompt(self._session_id, implement_prompt)
@@ -707,13 +693,54 @@ class AcpSessionRunner:
             },
         )
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        self._auth_methods = [
+            str(method.get("id"))
+            for method in result.get("authMethods", [])
+            if isinstance(method, dict) and method.get("id")
+        ]
         return result
 
     def authenticate(self) -> dict[str, Any]:
-        try:
-            return self._request("authenticate", {"methodId": "cursor_login"})
-        except RuntimeError:
+        method_id = self._runtime.auth_method(self._auth_methods)
+        if method_id is None:
             return {}
+        try:
+            return self._request("authenticate", {"methodId": method_id})
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event(
+                "authenticate_failed", {"method": method_id, "error": str(error)}
+            )
+            return {}
+
+    def apply_model(self, session: dict[str, Any], preferred_model: str | None) -> None:
+        """Aplica o modelo pelo dialeto do runtime, sem derrubar a sessão se falhar."""
+        if self._session_id is None:
+            return
+        request = self._runtime.model_request(
+            session, preferred_model, session_id=self._session_id
+        )
+        if request is None:
+            return
+        try:
+            self._request(request.method, request.params)
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event(
+                "set_model_failed",
+                {"method": request.method, "model": request.model_id, "error": str(error)},
+            )
+            return
+        self._emit_info(f"Modelo: {resolve_model_display_name(session, request.model_id)}")
+
+    def apply_mode(self, session: dict[str, Any], *, execute: bool) -> None:
+        if self._session_id is None:
+            return
+        mode_id = self._runtime.resolve_mode(session, execute=execute)
+        if not mode_id:
+            return
+        try:
+            self.set_mode(self._session_id, mode_id)
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event("set_mode_failed", {"mode": mode_id, "error": str(error)})
 
     def new_session(self, cwd: str, *, workflow: str = "setup-project") -> dict[str, Any]:
         params: dict[str, Any] = {

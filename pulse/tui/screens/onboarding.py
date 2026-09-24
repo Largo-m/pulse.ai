@@ -19,8 +19,8 @@ from pulse.config import (
     project_config_exists,
 )
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
-from pulse.doctor.checks import check_agent_in_path, check_auth, find_agent_binary
-from pulse.doctor.report import run_agent_login
+from pulse.doctor.checks import run_agent_checks
+from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
 
 
 class OnboardingScreen(Screen[int]):
@@ -33,7 +33,8 @@ class OnboardingScreen(Screen[int]):
         self._workspace = Path.cwd()
         self._model = "Auto"
         self._policy = "ask"
-        self._auth_method = "cursor_login"
+        self._runtime = get_runtime(DEFAULT_RUNTIME_ID)
+        self._auth_method = self._runtime.auth_method_label
         self._acp_ok = False
         self._models: list[str] = list(DEFAULT_MODELS)
 
@@ -66,7 +67,15 @@ class OnboardingScreen(Screen[int]):
                     ]
                 )
                 return
-        self._start_checks()
+        self._ask_runtime()
+
+    def _ask_runtime(self) -> None:
+        self._step = "runtime"
+        self._set_status("Agente padrão")
+        self._set_report("")
+        self._set_options(
+            [(f"runtime:{item.id}", f"{item.label} — `{item.binary}`") for item in all_runtimes()]
+        )
 
     def action_cancel(self) -> None:
         self.dismiss(130)
@@ -102,31 +111,29 @@ class OnboardingScreen(Screen[int]):
         prompt.display = False
 
     def _start_checks(self) -> None:
-        agent_check = check_agent_in_path()
-        auth_check = check_auth()
-        lines = [
-            f"[{agent_check.status}] {agent_check.message}",
-            f"[{auth_check.status}] {auth_check.message}",
-        ]
-        self._set_status("Ambiente")
-        self._set_report("\n".join(lines))
-        if agent_check.status != "ok":
+        checks = run_agent_checks(self._runtime.id)
+        auth_check = checks[-1]
+        cli_checks = checks[:-1]
+        self._set_status(f"Ambiente — {self._runtime.label}")
+        self._set_report("\n".join(f"[{c.status}] {c.message}" for c in checks))
+        if any(check.status == "fail" for check in cli_checks):
             self._step = "agent_fail"
-            self._set_options([("quit", "Sair — instalar o Cursor CLI")])
+            self._set_options([("quit", f"Sair — {self._runtime.install_hint}")])
             return
-        if auth_check.status != "ok":
+        if auth_check.status == "fail":
             self._step = "auth"
-            self._set_options(
-                [
-                    ("auth_login", "Executar `agent login`"),
-                    ("auth_skip", "Usar CURSOR_API_KEY depois"),
-                    ("quit", "Cancelar"),
-                ]
-            )
+            self._set_options(self._auth_options())
             return
         if auth_check.detail == "api_key":
             self._auth_method = "api_key"
         self._ask_workspace()
+
+    def _auth_options(self, retry: bool = False) -> list[tuple[str, str]]:
+        return [
+            ("auth_login", "Tentar de novo" if retry else self._runtime.login_label),
+            ("auth_skip", f"Usar {self._runtime.auth_env_var} depois"),
+            ("quit", "Cancelar"),
+        ]
 
     def _ask_workspace(self) -> None:
         existing = load_global_config()
@@ -145,13 +152,20 @@ class OnboardingScreen(Screen[int]):
             self.dismiss(0 if option_id == "overwrite_no" else 1)
             return
         if option_id == "overwrite_yes":
+            self._ask_runtime()
+            return
+        if option_id.startswith("runtime:"):
+            self._runtime = get_runtime(option_id.split(":", 1)[1])
+            self._auth_method = self._runtime.auth_method_label
             self._start_checks()
             return
         if self._step == "auth":
             if option_id == "auth_login":
                 self._do_login()
             elif option_id == "auth_skip":
-                self._set_status("Exporte CURSOR_API_KEY e rode `pulse` de novo.")
+                self._set_status(
+                    f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo."
+                )
                 self._set_report("")
                 self.dismiss(1)
             return
@@ -177,33 +191,33 @@ class OnboardingScreen(Screen[int]):
 
     @work(thread=True)
     def _do_login(self) -> None:
-        self.app.call_from_thread(self._set_status, "Abrindo `agent login`…")
-        code = run_agent_login()
-        auth = check_auth()
+        self.app.call_from_thread(self._set_status, f"Abrindo {self._runtime.login_label}…")
+        code = self._runtime.login()
+        auth = run_agent_checks(self._runtime.id)[-1]
+
         def apply() -> None:
-            if code != 0 or auth.status != "ok":
+            if code != 0 or auth.status == "fail":
                 self._set_status("Login não concluído")
                 self._set_report(auth.message)
-                self._set_options(
-                    [
-                        ("auth_login", "Tentar de novo"),
-                        ("auth_skip", "Usar CURSOR_API_KEY depois"),
-                        ("quit", "Cancelar"),
-                    ]
-                )
+                self._set_options(self._auth_options(retry=True))
                 return
-            self._auth_method = "api_key" if auth.detail == "api_key" else "cursor_login"
+            self._auth_method = (
+                "api_key" if auth.detail == "api_key" else self._runtime.auth_method_label
+            )
             self._ask_workspace()
         self.app.call_from_thread(apply)
 
     @work(thread=True)
     def _run_acp_probe(self) -> None:
         self.app.call_from_thread(self._set_status, "Testando conexão ACP…")
-        probe = probe_acp_connection(cwd=str(self._workspace))
+        probe = probe_acp_connection(
+            command=list(self._runtime.acp_command),
+            cwd=str(self._workspace),
+        )
         models = list(probe.available_models or [])
         if not models:
-            models = collect_available_models(self._workspace)
-        self._models = models or list(DEFAULT_MODELS)
+            models = collect_available_models(self._workspace, agent_name=self._runtime.id)
+        self._models = models or list(self._runtime.default_models) or list(DEFAULT_MODELS)
         self._acp_ok = probe.success
 
         def apply() -> None:
@@ -239,15 +253,15 @@ class OnboardingScreen(Screen[int]):
         self._set_options([(f"policy:{key}", label) for key, label in permission_choices()])
 
     def _finish(self) -> None:
-        agent_binary = find_agent_binary() or "agent"
         config_path = mark_onboarding_complete(
-            agent_binary=agent_binary,
-            acp_command=[agent_binary, "acp"],
+            agent_binary=self._runtime.find_binary() or self._runtime.binary,
+            acp_command=list(self._runtime.acp_command),
             auth_method=self._auth_method,
             workspace_dir=self._workspace,
             model=self._model,
             permission_policy=self._policy,
             acp_test_passed=self._acp_ok,
+            default_agent=self._runtime.id,
         )
         if not project_config_exists(self._workspace):
             init_project_config(self._workspace)

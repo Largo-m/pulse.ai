@@ -61,14 +61,7 @@ def test_run_plan_forwards_workspace(monkeypatch, tmp_path: Path):
 )
 def test_cockpit_bypasses_interactive_gate(module, runner_name, workflow, monkeypatch, tmp_path: Path):
     monkeypatch.setattr(f"{module.__name__}.is_interactive", lambda: False)
-    monkeypatch.setattr(
-        f"{module.__name__}.check_agent_in_path",
-        lambda: type("R", (), {"status": "ok"})(),
-    )
-    monkeypatch.setattr(
-        f"{module.__name__}.check_auth",
-        lambda: type("R", (), {"status": "ok"})(),
-    )
+    monkeypatch.setattr(f"{module.__name__}.check_runtime_ready", lambda _runtime: None)
 
     class Resolved:
         workspace_dir = tmp_path
@@ -156,23 +149,20 @@ def test_non_cockpit_still_requires_interactive(module, runner_name, monkeypatch
 )
 def test_cockpit_surfaces_auth_failures(module, runner_name, monkeypatch):
     monkeypatch.setattr(f"{module.__name__}.is_interactive", lambda: False)
+    from pulse.doctor.checks import CheckResult
+
     monkeypatch.setattr(
-        f"{module.__name__}.check_agent_in_path",
-        lambda: type("R", (), {"status": "fail"})(),
-    )
-    monkeypatch.setattr(
-        f"{module.__name__}.check_auth",
-        lambda: type("R", (), {"status": "ok"})(),
+        f"{module.__name__}.check_runtime_ready",
+        lambda _runtime: CheckResult("Cursor CLI", "fail", "sem agent", "instale o Cursor CLI"),
     )
     run = getattr(module, runner_name)
-    with pytest.raises(RuntimeError, match="agent e autenticação"):
+    with pytest.raises(RuntimeError, match="indisponível"):
         run(user_prompt="x", stream=_CockpitStream(), render_header=False)
 
 
 def test_analyze_codebase_emits_error_when_questionnaire_cancelled(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(analyze_codebase_flow, "is_interactive", lambda: False)
-    monkeypatch.setattr(analyze_codebase_flow, "check_agent_in_path", lambda: type("R", (), {"status": "ok"})())
-    monkeypatch.setattr(analyze_codebase_flow, "check_auth", lambda: type("R", (), {"status": "ok"})())
+    monkeypatch.setattr(analyze_codebase_flow, "check_runtime_ready", lambda _runtime: None)
 
     class Resolved:
         workspace_dir = tmp_path

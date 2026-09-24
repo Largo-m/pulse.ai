@@ -20,6 +20,16 @@ class WorkflowConfig:
     model: str | None = None
 
 
+def default_acp_command(name: str, binary: str) -> list[str]:
+    """Comando ACP quando o config não traz `acp_command` explícito."""
+    from pulse.runtimes import find_runtime
+
+    runtime = find_runtime(name) or find_runtime(binary)
+    if runtime is not None:
+        return list(runtime.acp_command)
+    return [binary, "acp"]
+
+
 def parse_agents(raw: Any) -> dict[str, AgentConfig]:
     if not isinstance(raw, dict):
         return {}
@@ -32,7 +42,7 @@ def parse_agents(raw: Any) -> dict[str, AgentConfig]:
         if isinstance(acp_command, list) and acp_command:
             command = [str(part) for part in acp_command]
         else:
-            command = [binary, "acp"]
+            command = default_acp_command(str(name), binary)
         models_raw = spec.get("models")
         models = [str(model) for model in models_raw] if isinstance(models_raw, list) else []
         agents[str(name)] = AgentConfig(
@@ -61,25 +71,23 @@ def parse_workflows(raw: Any) -> dict[str, WorkflowConfig]:
 
 
 def default_global_agents() -> dict[str, AgentConfig]:
+    """Um AgentConfig por runtime registrado."""
+    from pulse.runtimes import all_runtimes
+
     return {
-        "cursor": AgentConfig(
-            name="cursor",
-            binary="agent",
-            acp_command=["agent", "acp"],
-            models=["Auto", "gpt-5.5"],
-        ),
-        "claude": AgentConfig(
-            name="claude",
-            binary="claude-code",
-            acp_command=["claude-code", "acp"],
-            models=["claude-opus-4.8"],
-        ),
+        runtime.id: AgentConfig(
+            name=runtime.id,
+            binary=runtime.binary,
+            acp_command=list(runtime.acp_command),
+            models=list(runtime.default_models),
+        )
+        for runtime in all_runtimes()
     }
 
 
 def default_global_workflows() -> dict[str, WorkflowConfig]:
     return {
-        "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+        "setup-project": WorkflowConfig(agent="claude", model="opus[1m]"),
         "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
         "spec": WorkflowConfig(agent="cursor", model="gpt-5.5"),
     }

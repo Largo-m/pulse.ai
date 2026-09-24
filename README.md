@@ -1,13 +1,14 @@
 # Pulse
 
-Orquestrador terminal-first de workflows com agentes de IA via Cursor.
+Orquestrador terminal-first de workflows com agentes de IA via ACP. Suporta
+**Cursor** (`agent` CLI) e **Claude Code** (`claude` CLI).
 
 Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Arquitetura
 
 ```
-CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  Cursor Agent
+CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (Cursor | Claude Code)
 ```
 
 - **Engine** (`pulse-engine`): composition root; dono do estado e dos workflows
@@ -18,6 +19,28 @@ CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  Cursor Agent
 pulse daemon start|status|stop
 pulse-engine   # foreground
 ```
+
+## Runtimes suportados
+
+Um *runtime* é o backend que executa um Pulse agent. Cada um declara binário,
+comando ACP, checagens de ambiente e como aplicar modo e modelo:
+
+| Runtime | Binário | Comando ACP | Autenticação |
+| --- | --- | --- | --- |
+| `cursor` | `agent` | `agent acp` | `agent login` ou `CURSOR_API_KEY` |
+| `claude` | `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | `claude /login` ou `ANTHROPIC_API_KEY` |
+
+O Claude Code não fala ACP nativamente: o Pulse usa o adapter oficial distribuído
+via npm, então o **Node.js 18+ (`npx`) precisa estar no PATH**. O adapter herda o
+login do `claude` CLI — não há passo de autenticação separado.
+
+Modelos do runtime `claude`: `default`, `opus[1m]`, `claude-fable-5-1`, `sonnet`,
+`haiku`.
+
+O registry fica em [`pulse/runtimes/`](pulse/runtimes/): adicionar um agente novo
+é escrever um módulo com a subclasse de `AgentRuntime` e registrá-lo em
+`RUNTIMES`. O resto do Pulse (config, doctor, onboarding, session runner) passa a
+enxergá-lo sem mudanças.
 
 ## Instalação
 
@@ -31,12 +54,15 @@ pipx install -e .
 pulse init
 ```
 
-O wizard verifica:
+O wizard pergunta qual runtime será o padrão e verifica:
 
-- `agent` no PATH
-- autenticação (`agent login` ou `CURSOR_API_KEY`)
+- o binário do runtime no PATH (`agent`, ou `claude` + `npx`)
+- autenticação (`agent login`/`CURSOR_API_KEY`, ou `claude /login`/`ANTHROPIC_API_KEY`)
 - conexão ACP com prompt de teste
 - diretório padrão, modelo e política de permissões
+
+O `pulse doctor` reprova apenas o runtime ativo; os demais aparecem como aviso.
+Assim uma máquina que só tem o Claude não falha por não ter o Cursor instalado.
 
 A configuração da máquina e dos projetos é salva em `~/.pulse/pulse.db`.
 Ao final, o `pulse init` também registra o workspace no SQLite (se ainda não existir).
@@ -57,8 +83,8 @@ Agents do projeto podem sobrescrever ou estender os da máquina (binary, models,
 
 ### Agentes e workflows
 
-- `agents` define cada backend ACP (binário e modelos disponíveis). O comando ACP é
-  derivado do binário (`<binary> acp`); use `acp_command` apenas para sobrescrever.
+- `agents` define cada backend ACP (binário e modelos disponíveis). O comando ACP
+  vem do runtime registrado; use `acp_command` apenas para sobrescrever.
 - `defaults.agent` / `defaults.model` definem o agente e modelo padrão.
 - `workflows.<id>` permite que cada workflow use um agente e modelo próprios.
 

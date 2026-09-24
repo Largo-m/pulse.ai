@@ -2,7 +2,7 @@
 name: setup-artifacts
 description: Gera PROJECT.md e ROADMAP.md
 runtime: claude
-model: claude-opus-4.8
+model: opus[1m]
 permission_policy: deny_writes
 ---
 

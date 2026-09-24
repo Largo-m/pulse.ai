@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Any
 
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.runtimes import get_runtime
 from pulse.config import resolve_config
-from pulse.doctor.checks import check_agent_in_path, check_auth
+from pulse.doctor.checks import check_runtime_ready
 from pulse.plan.cli_output import (
     emit_stream_error,
     print_workflow_banner,
@@ -36,16 +37,19 @@ def run_quick(
         print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
         return 1
 
-    agent_check = check_agent_in_path()
-    auth_check = check_auth()
-    if agent_check.status != "ok" or auth_check.status != "ok":
-        message = "Corrija agent e autenticação antes de iniciar."
+    # Resolve antes de checar: cada workflow pode rodar em um runtime diferente.
+    resolved = resolve_config(workspace=workspace, pulse_agent="quick-plan")
+    runtime = get_runtime(getattr(resolved, "agent_name", None))
+    blocking = check_runtime_ready(runtime.id)
+    if blocking is not None:
+        message = (
+            f"Runtime `{runtime.id}` indisponível: {blocking.message}. "
+            f"{blocking.detail or ''}".strip()
+        )
         if cockpit:
             raise RuntimeError(message)
         print(f"[pulse] {message}", file=sys.stderr)
         return 1
-
-    resolved = resolve_config(workspace=workspace, pulse_agent="quick-plan")
     workspace_root = resolved.workspace_dir
     permission_policy = resolved.permission_policy
     acp_command = resolved.acp_command
@@ -84,6 +88,7 @@ def run_quick(
         stream=active_stream,
         prompt_handler=active_handler,
         pulse_agent=getattr(resolved, "pulse_agent", None),
+        runtime=get_runtime(getattr(resolved, "agent_name", None)),
     )
 
     try:

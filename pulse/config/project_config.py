@@ -12,7 +12,7 @@ from pulse.store.db import connect, default_db_path
 
 DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {
     "spec": WorkflowConfig(agent="cursor", model="Auto"),
-    "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+    "setup-project": WorkflowConfig(agent="claude", model="opus[1m]"),
     "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
 }
 

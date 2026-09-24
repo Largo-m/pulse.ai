@@ -97,7 +97,7 @@ def test_load_project_config_parses_workflows(tmp_path: Path):
     assert config is not None
     assert config.default_agent == "claude"
     assert config.workflows["setup-project"].agent == "claude"
-    assert config.workflows["setup-project"].model == "claude-opus-4.8"
+    assert config.workflows["setup-project"].model == "opus[1m]"
 
 
 def test_load_project_config_parses_agents(tmp_path: Path):
@@ -135,7 +135,7 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert config.model == "claude-sonnet-4-6"
     assert config.permission_policy == "deny_writes"
     assert config.workflows["setup-project"].agent == "claude"
-    assert config.workflows["setup-project"].model == "claude-opus-4.8"
+    assert config.workflows["setup-project"].model == "opus[1m]"
     assert config.workflows["analyze-codebase"].agent == "cursor"
     assert config.workflows["analyze-codebase"].model == "gpt-5.5"
     assert config.workflows["spec"].agent == "cursor"

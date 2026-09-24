@@ -48,14 +48,7 @@ class _Runner:
 
 def _patch_classify(monkeypatch, tmp_path: Path, flow: str) -> None:
     monkeypatch.setattr("pulse.plan.spec_flow.is_interactive", lambda: False)
-    monkeypatch.setattr(
-        "pulse.plan.spec_flow.check_agent_in_path",
-        lambda: SimpleNamespace(status="ok"),
-    )
-    monkeypatch.setattr(
-        "pulse.plan.spec_flow.check_auth",
-        lambda: SimpleNamespace(status="ok"),
-    )
+    monkeypatch.setattr("pulse.plan.spec_flow.check_runtime_ready", lambda _runtime: None)
     monkeypatch.setattr(
         "pulse.plan.spec_flow.resolve_config",
         lambda **_k: SimpleNamespace(

@@ -6,12 +6,19 @@ from pulse.acp.client import fetch_acp_available_models
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.resolved import resolve_config
 
-DEFAULT_MODELS = [
-    "Auto",
-    "claude-sonnet-4-6",
-    "gpt-5.5",
-    "composer-2.5",
-]
+def _default_models() -> list[str]:
+    """União dos modelos declarados por cada runtime registrado."""
+    from pulse.runtimes import all_runtimes
+
+    models: list[str] = []
+    for runtime in all_runtimes():
+        for model in runtime.default_models:
+            if model not in models:
+                models.append(model)
+    return models
+
+
+DEFAULT_MODELS = _default_models()
 
 PERMISSION_LABELS = {
     "ask": "Perguntar antes de cada permissão",
