@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from pulse.agents.catalog import AGENT_BY_ID, AgentDefinition, BUNDLED_AGENTS
+from pulse.config.paths import global_agents_dir
 
 
 @dataclass(frozen=True)
@@ -37,32 +39,30 @@ def parse_agent_markdown(text: str, fallback: AgentDefinition) -> tuple[dict[str
     return meta, parts[2].lstrip("\n")
 
 
-def _agent_paths(workspace: Path | None, agent_id: str) -> list[tuple[str, Path]]:
-    paths: list[tuple[str, Path]] = [
+def install_global_agents() -> Path:
+    source_root = bundled_agents_dir()
+    dest_root = global_agents_dir()
+    for agent in BUNDLED_AGENTS:
+        source = source_root / agent.id / "AGENT.md"
+        dest = dest_root / agent.id / "AGENT.md"
+        if source.is_file() and not dest.is_file():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, dest)
+    return dest_root
+
+
+def _agent_paths(_workspace: Path | None, agent_id: str) -> list[tuple[str, Path]]:
+    root = global_agents_dir()
+    return [
         ("bundled", bundled_agents_dir() / agent_id / "AGENT.md"),
+        ("global", root / f"{agent_id}.md"),
+        ("global", root / agent_id / "AGENT.md"),
     ]
-    if workspace is not None:
-        root = workspace.resolve()
-        paths.extend(
-            [
-                ("project", root / ".pulse" / "agents" / agent_id / "AGENT.md"),
-                ("claude", root / ".claude" / "agents" / f"{agent_id}.md"),
-                ("cursor", root / ".cursor" / "agents" / f"{agent_id}.md"),
-            ]
-        )
-    return paths
 
 
-def _discover_extra_ids(workspace: Path | None) -> list[str]:
-    if workspace is None:
-        return []
+def _discover_extra_ids(_workspace: Path | None) -> list[str]:
     extras: list[str] = []
-    root = workspace.resolve()
-    candidates = [
-        root / ".pulse" / "agents",
-        root / ".claude" / "agents",
-        root / ".cursor" / "agents",
-    ]
+    candidates = [global_agents_dir()]
     for directory in candidates:
         if not directory.is_dir():
             continue
@@ -132,3 +132,27 @@ def load_agents(*, workspace: Path | None = None) -> list[LoadedAgent]:
         if loaded is not None:
             agents.append(loaded)
     return agents
+
+
+def apply_agent_settings(agent: LoadedAgent, project_id: str | None) -> LoadedAgent:
+    if not project_id:
+        return agent
+    from pulse.store.agent_settings import load_agent_settings
+
+    stored = load_agent_settings(project_id, agent.definition.id)
+    if not stored:
+        return agent
+    runtime = stored.get("runtime") or agent.runtime
+    model = stored.get("model") or agent.model
+    policy = stored.get("permission_policy") or agent.permission_policy
+    if runtime == agent.runtime and model == agent.model and policy == agent.permission_policy:
+        return agent
+    return LoadedAgent(
+        definition=agent.definition,
+        body=agent.body,
+        origin=agent.origin,
+        path=agent.path,
+        runtime=str(runtime),
+        model=str(model),
+        permission_policy=str(policy),
+    )

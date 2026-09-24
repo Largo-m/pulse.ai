@@ -4,6 +4,8 @@ import json
 import threading
 import time
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
@@ -16,6 +18,7 @@ def test_status_and_workflows():
     status = client.get("/api/status")
     assert status.status_code == 200
     assert status.json()["ok"] is True
+    assert status.json()["protocol"] >= 2
     workflows = client.get("/api/workflows")
     assert workflows.status_code == 200
     ids = {item["id"] for item in workflows.json()["workflows"]}
@@ -36,8 +39,10 @@ def test_start_run_and_prompt_correlator(monkeypatch):
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app)
+    captured: dict[str, object] = {}
 
     def fake_run_plan(**kwargs):
+        captured["workspace"] = kwargs.get("workspace")
         stream = kwargs["stream"]
         prompt_handler = kwargs["prompt_handler"]
         stream.begin_phase("Test")
@@ -98,6 +103,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         payload = client.get(f"/api/runs/{run_id}").json()
         if payload.get("exit_code") is not None:
             assert payload["exit_code"] == 0
+            assert captured["workspace"] == Path("/tmp")
             return
         time.sleep(0.05)
     raise AssertionError("run did not finish")

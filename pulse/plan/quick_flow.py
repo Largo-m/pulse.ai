@@ -7,7 +7,12 @@ from typing import Any
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
 from pulse.doctor.checks import check_agent_in_path, check_auth
-from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
+from pulse.plan.cli_output import (
+    emit_stream_error,
+    print_workflow_banner,
+    print_workflow_error,
+    print_workflow_result,
+)
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.quick_prompt import (
     PULSE_SPEC_SKILL,
@@ -78,6 +83,7 @@ def run_quick(
         permission_policy=permission_policy,
         stream=active_stream,
         prompt_handler=active_handler,
+        pulse_agent=getattr(resolved, "pulse_agent", None),
     )
 
     try:
@@ -98,15 +104,20 @@ def run_quick(
     ask_count = int(result.get("askQuestionCount", 0))
     approved = bool(result.get("approved", False))
     outcome = str(result.get("outcome", ""))
+    if stop_reason == "cancelled" or outcome == "cancelled":
+        emit_stream_error(
+            active_stream,
+            "Questionário cancelado",
+            "O questionário foi cancelado ou não pôde ser respondido.",
+        )
+        if not cockpit:
+            print_workflow_result("Quick task cancelada.")
+        return 1
+
     if cockpit:
-        if stop_reason == "cancelled" or outcome == "cancelled":
-            return 1
         return 0
 
     print()
-    if stop_reason == "cancelled" or outcome == "cancelled":
-        print_workflow_result("Quick task cancelada.")
-        return 1
 
     if outcome == "cancel":
         print_workflow_result("Operação cancelada pelo usuário.")

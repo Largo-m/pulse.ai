@@ -70,6 +70,9 @@ class NullStreamSink:
     def info(self, title: str) -> None:
         return None
 
+    def error(self, title: str, reason: str = "") -> None:
+        return None
+
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         return None
 

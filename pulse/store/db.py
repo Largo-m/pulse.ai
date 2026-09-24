@@ -84,12 +84,25 @@ CREATE TABLE IF NOT EXISTS workflows (
   updated_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS workflow_agents (
-  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
-  position INTEGER NOT NULL,
-  agent_id TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS agent_sessions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  workflow_id TEXT,
+  agent_id TEXT,
+  acp_session_id TEXT,
   status TEXT NOT NULL,
-  PRIMARY KEY (workflow_id, position)
+  started_at TEXT NOT NULL,
+  ended_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS spec_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  spec_dir TEXT NOT NULL,
+  phase_id TEXT NOT NULL,
+  acp_session_id TEXT NOT NULL UNIQUE,
+  task_id TEXT NOT NULL DEFAULT '',
+  started_at TEXT NOT NULL
 );
 """
 
@@ -108,7 +121,14 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(SCHEMA)
+    _ensure_spec_session_task_id(connection)
     return connection
+
+
+def _ensure_spec_session_task_id(connection: sqlite3.Connection) -> None:
+    columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(spec_sessions)")}
+    if columns and "task_id" not in columns:
+        connection.execute("ALTER TABLE spec_sessions ADD COLUMN task_id TEXT NOT NULL DEFAULT ''")
 
 
 def reset_default_path_cache() -> None:

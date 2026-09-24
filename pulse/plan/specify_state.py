@@ -11,7 +11,7 @@ import yaml
 
 WORKFLOW_VERSION = 1
 PHASE_ORDER = ("specify", "design", "tasks", "execute")
-OPTIONAL_PHASES = frozenset({"design", "tasks"})
+OPTIONAL_PHASES = frozenset({"design"})
 
 
 class PhaseStatus(str, Enum):
@@ -21,6 +21,7 @@ class PhaseStatus(str, Enum):
     APPROVED = "approved"
     SKIPPED = "skipped"
     DONE = "done"
+    FAILED = "failed"
 
 
 @dataclass
@@ -141,6 +142,11 @@ class WorkflowState:
         self.phases[phase].status = PhaseStatus.DONE
         self.touch()
 
+    def mark_phase_failed(self, phase: str) -> None:
+        self.current_phase = phase
+        self.phases[phase].status = PhaseStatus.FAILED
+        self.touch()
+
     def should_run_phase(self, phase: str) -> bool:
         phase_state = self.phases[phase]
         if phase_state.skip or phase_state.status == PhaseStatus.SKIPPED:
@@ -171,6 +177,14 @@ class WorkflowState:
             if task.task_id == task_id:
                 task.status = "done"
                 task.completed_at = _utc_now()
+                self.current_task_id = task_id
+                self.touch()
+                return
+
+    def mark_task_failed(self, task_id: str) -> None:
+        for task in self.tasks:
+            if task.task_id == task_id:
+                task.status = "failed"
                 self.current_task_id = task_id
                 self.touch()
                 return
@@ -280,12 +294,35 @@ def slugify_feature(text: str) -> str:
     return normalized[:64].rstrip("-")
 
 
+_HEADING_TASK = re.compile(r"^#{2,3}\s+(T\d+)\s*[:.\-—]\s*(.+?)\s*$", re.MULTILINE)
+_TABLE_TASK = re.compile(r"^\|\s*(T\d+)\s*\|\s*([^|]+?)\s*\|", re.MULTILINE)
+_TITLE_SKIP = frozenset({"title", "título", "titulo"})
+
+
+def _clean_task_title(title: str) -> str:
+    cleaned = title.strip().strip("*").strip()
+    cleaned = re.sub(r"\s*\[P\]\s*$", "", cleaned).strip()
+    return cleaned
+
+
 def parse_tasks_from_markdown(content: str) -> list[ParsedTask]:
     tasks: list[ParsedTask] = []
-    for match in re.finditer(r"^###\s+(T\d+):\s*(.+)$", content, re.MULTILINE):
+    seen: set[str] = set()
+    for match in _HEADING_TASK.finditer(content):
         task_id = match.group(1)
-        title = match.group(2).strip()
-        title = re.sub(r"\s*\[P\]\s*$", "", title).strip()
+        title = _clean_task_title(match.group(2))
+        if not title or task_id in seen:
+            continue
+        seen.add(task_id)
+        tasks.append(ParsedTask(task_id=task_id, title=title))
+    if tasks:
+        return tasks
+    for match in _TABLE_TASK.finditer(content):
+        task_id = match.group(1)
+        title = _clean_task_title(match.group(2))
+        if not title or title.casefold() in _TITLE_SKIP or task_id in seen:
+            continue
+        seen.add(task_id)
         tasks.append(ParsedTask(task_id=task_id, title=title))
     return tasks
 
@@ -306,11 +343,14 @@ def list_feature_workflows(workspace: Path) -> list[WorkflowState]:
 
 
 def find_resumable_workflows(workspace: Path) -> list[WorkflowState]:
-    return [
-        state
-        for state in list_feature_workflows(workspace)
-        if _is_workflow_incomplete(state)
-    ]
+    found: list[WorkflowState] = []
+    for state in list_feature_workflows(workspace):
+        tasks_path = workspace / state.feature_dir / "tasks.md"
+        if tasks_path.is_file():
+            state.sync_tasks_from_markdown(tasks_path)
+        if _is_workflow_incomplete(state):
+            found.append(state)
+    return found
 
 
 def _is_workflow_incomplete(state: WorkflowState) -> bool:
@@ -320,7 +360,12 @@ def _is_workflow_incomplete(state: WorkflowState) -> bool:
         return True
     for phase_name in PHASE_ORDER:
         status = state.phases[phase_name].status
-        if status in {PhaseStatus.PENDING, PhaseStatus.IN_PROGRESS, PhaseStatus.AWAITING_APPROVAL}:
+        if status in {
+            PhaseStatus.PENDING,
+            PhaseStatus.IN_PROGRESS,
+            PhaseStatus.AWAITING_APPROVAL,
+            PhaseStatus.FAILED,
+        }:
             return True
     return False
 

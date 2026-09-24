@@ -132,7 +132,9 @@ def resolve_config(
 ) -> ResolvedConfig:
     base_cwd = (cwd or Path.cwd()).resolve()
     global_cfg = load_global_config()
-    project_cfg = load_project_config(base_cwd)
+    project_cfg = load_project_config(workspace.resolve() if workspace is not None else base_cwd)
+    if project_cfg is None and workspace is not None:
+        project_cfg = load_project_config(base_cwd)
 
     agents = _merge_agents(global_cfg, project_cfg)
     workspace_dir, workspace_source = _resolve_workspace(base_cwd, project_cfg, workspace)
