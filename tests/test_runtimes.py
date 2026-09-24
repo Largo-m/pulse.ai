@@ -87,8 +87,23 @@ def test_cursor_keeps_agent_mode_in_both_phases():
 
 def test_claude_uses_its_own_mode_ids():
     claude = get_runtime("claude")
-    assert claude.resolve_mode(CLAUDE_SESSION, execute=False) == "plan"
+    assert claude.resolve_mode(CLAUDE_SESSION, execute=False) == "default"
     assert claude.resolve_mode(CLAUDE_SESSION, execute=True) == "default"
+
+
+def test_claude_never_uses_plan_mode():
+    """As fases de planejamento do Pulse escrevem spec.md/design.md/tasks.md.
+
+    No modo `plan` o Claude não escreve o arquivo pedido: grava um plano em
+    ~/.claude/plans e espera aprovação. O artefato nunca chega na sessão e a
+    opção de exibir o arquivo não aparece. Quem limita escrita é a
+    permission_policy, não o modo.
+    """
+    claude = get_runtime("claude")
+    assert "plan" not in claude.interview_modes[:1]
+    assert "plan" not in claude.execute_modes[:1]
+    for execute in (False, True):
+        assert claude.resolve_mode(CLAUDE_SESSION, execute=execute) != "plan"
 
 
 def test_session_without_modes_keeps_historic_behavior():

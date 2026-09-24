@@ -36,8 +36,12 @@ class ClaudeRuntime(AgentRuntime):
     )
     login_command = ("claude", "/login")
     login_label = "Executar `claude /login`"
-    # Fase de análise em `plan` garante que nada é escrito antes da aprovação.
-    interview_modes = ("plan", "default", "agent")
+    # NÃO usar o modo `plan` aqui: as fases de "planejamento" do Pulse
+    # (specify/design/tasks) são justamente as que escrevem os artefatos. Em
+    # `plan` o Claude não escreve o arquivo pedido — ele grava um plano em
+    # ~/.claude/plans e espera aprovação, e o artefato nunca aparece na sessão.
+    # Quem limita escrita é a permission_policy do Pulse, como no Cursor.
+    interview_modes = ("default", "acceptEdits", "agent")
     execute_modes = ("default", "acceptEdits", "agent")
 
     def _check_auth_cli(self) -> RuntimeCheck:
