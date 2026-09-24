@@ -141,7 +141,7 @@ Só existe tela e interação. Não executa workflow no mesmo processo via `run_
 | Runtime | `GET /status`, `GET /doctor`, `POST /doctor/acp-probe` |
 | Config | `GET /config`, `GET /config/resolved`, `PATCH /config/global`, `POST /config/project` |
 | Workflows | `GET /workflows`, `POST /workflows/{id}/runs` |
-| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE), `GET /runs/{id}/logs` |
+| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
 | History | `GET /history`, `GET /history/{id}` |
 
@@ -185,7 +185,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 | Pasta | Função |
 |-------|--------|
 | [`pulse/config/`](pulse/config/) | Global TOML, projeto YAML, resolve efetivo, catálogo de models |
-| [`pulse/history/`](pulse/history/) | Models neutros, grava/lê `.pulse/runs/` |
+| [`pulse/history/`](pulse/history/) | Catálogo das specs em `.pulse/specs/` |
 | [`pulse/prompts/`](pulse/prompts/) | Parse de ask-question / questionnaires (sem UI) |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de agent/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
@@ -209,7 +209,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 9. Agent responde → eventos SSE → CockpitSink → tela atualiza
 10. Agent pergunta → prompt.request → TUI responde
    → POST /prompts/{id}/answer
-11. run.finished → history em .pulse/runs/
+11. run.finished → a spec em `.pulse/specs/` é o que permanece |
 ```
 
 ---

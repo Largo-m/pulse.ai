@@ -63,6 +63,8 @@ def build_analyze_codebase_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
+        agent_id="codebase-explore",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -142,6 +144,8 @@ def build_analyze_codebase_artifact_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Analyze codebase",
         references=ANALYZE_CODEBASE_REFERENCES,
+        agent_id="codebase-docs",
+        workspace=workspace,
     )
     sections.extend(
         [

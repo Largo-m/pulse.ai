@@ -31,12 +31,12 @@ def test_begin_phase_marks_prior_pending_when_resuming_mid_flow():
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Execute")
     assert [phase.status for phase in state.phases] == [
-        PhaseStatus.DONE,
-        PhaseStatus.DONE,
-        PhaseStatus.DONE,
+        PhaseStatus.PENDING,
+        PhaseStatus.PENDING,
+        PhaseStatus.PENDING,
         PhaseStatus.RUNNING,
     ]
-    assert state.done_count() == 3
+    assert state.done_count() == 0
 
 
 def test_begin_phase_preserves_timer_across_same_phase_tasks():
@@ -110,6 +110,17 @@ def test_add_qa_records_question_and_answer():
     assert answer.phase_id == "phase1"
 
 
+def test_add_error_keeps_title_and_reason():
+    state = CockpitState()
+    state.configure_workflow("spec")
+    state.add_error("Classificação cancelada", "O agente não definiu o flow (quick ou full).")
+    assert state.has_error() is True
+    entry = state.entries[-1]
+    assert entry.kind == LogKind.ERROR
+    assert entry.title == "Classificação cancelada"
+    assert "flow" in entry.detail
+
+
 def test_mark_finished():
     state = CockpitState()
     state.configure_workflow("analyze-codebase")
@@ -120,6 +131,18 @@ def test_mark_finished():
     assert state.phases[0].status == PhaseStatus.DONE
     assert state.phases[0].ended_at is not None
     assert state.phases[0].elapsed_label() != ""
+
+
+def test_mark_finished_on_error_marks_failed():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("Fase Specify")
+    state.mark_finished(1)
+    assert state.running is False
+    assert state.exit_code == 1
+    assert state.phases[0].status == PhaseStatus.FAILED
+    assert state.phases[1].status == PhaseStatus.PENDING
+    assert state.done_count() == 0
 
 
 def test_entries_are_scoped_to_selected_step():

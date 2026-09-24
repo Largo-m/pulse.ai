@@ -102,6 +102,7 @@ class RunManager:
             exit_code = run_plan(
                 spec_type_id=state.workflow_id,
                 user_prompt=state.prompt,
+                workspace=Path(state.workspace) if state.workspace else None,
                 stream=stream,
                 prompt_handler=prompt_handler,
                 render_header=False,

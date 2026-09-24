@@ -12,6 +12,14 @@ from textual.widgets import Static
 
 from pulse.tui.state import NAV_PHASE, NAV_TASK, CockpitState, PhaseItem, PhaseStatus
 
+_STATUS_LABEL = {
+    PhaseStatus.PENDING: "pendente",
+    PhaseStatus.RUNNING: "em curso",
+    PhaseStatus.DONE: "concluído",
+    PhaseStatus.SKIPPED: "pulado",
+    PhaseStatus.FAILED: "falhou",
+}
+
 
 class NavSelected(Message):
     def __init__(self, kind: str, index: int) -> None:
@@ -138,17 +146,21 @@ class PhaseSidebar(Widget):
             prefix = "Ⅱ "
         elif item.status == PhaseStatus.SKIPPED:
             prefix = "⏭ "
+        elif item.status == PhaseStatus.FAILED:
+            prefix = "✗ "
         else:
             prefix = "✓ "
 
-        name_style = "#A2D729" if running else ("#E0E0E0" if accent else "#888888")
+        name_style = "#E07070" if item.status == PhaseStatus.FAILED else (
+            "#A2D729" if running else ("#E0E0E0" if accent else "#888888")
+        )
         label = f"{prefix}{self._item_label(item, nested=nested)}"
         max_len = 24 if nested else 28
         if len(label) > max_len:
             label = f"{label[: max_len - 1]}…"
         output.append(label, style=name_style)
         output.append("\n")
-        status = item.status.value.upper()
+        status = _STATUS_LABEL.get(item.status, item.status.value)
         timer = item.elapsed_label(now) or "--:--"
         meta_indent = "     " if nested else "   "
         output.append(f"{meta_indent}{status} · {timer}\n", style="#888888")

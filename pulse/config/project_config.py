@@ -138,9 +138,11 @@ def render_project_config() -> str:
 
 
 def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
+    from pulse.agents.loader import install_global_agents
     resolved = root.resolve()
     existing = _load_project(resolved, db_path=db_path)
     if existing is not None:
+        install_global_agents()
         return resolved
     project_id = str(uuid.uuid4())
     connection = connect(_db(db_path))
@@ -165,9 +167,10 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
                 """,
                 (project_id, workflow_id, defaults.agent, defaults.model),
             )
-        connection.commit()
+            connection.commit()
     finally:
         connection.close()
+    install_global_agents()
     return resolved
 
 

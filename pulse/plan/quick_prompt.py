@@ -35,12 +35,25 @@ def format_plan_summary(text: str) -> str:
 
 
 def approval_is_positive(answers_text: str) -> bool:
-    answer = first_questionnaire_answer(answers_text).lower()
-    if not answer:
+    answers = [answer.lower() for answer in _quick_answers(answers_text)]
+    if not answers:
         return False
-    if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "migrar", "reduzir")):
-        return False
-    return "aprov" in answer or answer.startswith("a)") or "sim" in answer
+    for answer in answers:
+        if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "migrar", "reduzir", "pular")):
+            continue
+        if "aprov" in answer:
+            return True
+    return False
+
+
+def _quick_answers(answers_text: str) -> list[str]:
+    answers: list[str] = []
+    for line in answers_text.splitlines():
+        if line.strip().startswith("→"):
+            answer = line.lstrip("→").strip()
+            if answer:
+                answers.append(answer)
+    return answers
 
 
 def first_questionnaire_answer(answers_text: str) -> str:
@@ -90,6 +103,8 @@ def build_quick_plan_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
+        agent_id="quick-plan",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -193,6 +208,8 @@ def build_quick_implement_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_IMPLEMENT_REFERENCES,
+        agent_id="quick-implement",
+        workspace=workspace,
     )
     sections.extend(
         [
@@ -268,6 +285,8 @@ def build_quick_continuation_prompt(
         skill_name=PULSE_SPEC_SKILL,
         workflow="Quick mode",
         references=QUICK_PLAN_REFERENCES,
+        agent_id="quick-plan",
+        workspace=workspace,
     )
 
     if outcome == "migrate":

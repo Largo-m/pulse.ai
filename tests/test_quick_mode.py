@@ -29,12 +29,9 @@ def test_build_quick_plan_prompt_enforces_scope_and_approval():
         user_prompt="Corrigir botão de login que retorna 401",
         skill_dir=skill_dir,
     )
-    assert "Use a skill instalada: `pulse-spec-driven`" in prompt
-    assert "Siga o workflow **Quick mode**." in prompt
+    assert "Agent `quick-plan`" in prompt
     assert "Corrigir botão de login" in prompt
     assert str(workspace) in prompt
-    assert "quick-mode.md" in prompt
-    assert "## quick-mode.md" not in prompt
     assert "Isolamento" in prompt
     assert "Awaiting Approval" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt

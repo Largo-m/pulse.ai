@@ -377,7 +377,7 @@ def test_textual_render_smoke_all_workflows(workflow_id: str):
             assert "v Read" in content or "Read" in content
             assert "\n  " in content or "  pulse/" in content or "cli.py" in content
             assert any(phase.label in phases for phase in holder["state"].phases)
-            assert "RUNNING" in phases or "PENDING" in phases
+            assert "em curso" in phases or "pendente" in phases
 
     asyncio.run(run())
 

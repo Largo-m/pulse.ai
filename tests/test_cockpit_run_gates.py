@@ -13,6 +13,14 @@ from pulse.runtime.tty import is_cockpit_stream
 @dataclass
 class _CockpitStream:
     cockpit: bool = True
+    errors: list = None
+
+    def __post_init__(self) -> None:
+        if self.errors is None:
+            self.errors = []
+
+    def error(self, title: str, reason: str = "") -> None:
+        self.errors.append((title, reason))
 
 
 def test_is_cockpit_stream_detects_flag():
@@ -159,3 +167,37 @@ def test_cockpit_surfaces_auth_failures(module, runner_name, monkeypatch):
     run = getattr(module, runner_name)
     with pytest.raises(RuntimeError, match="agent e autenticação"):
         run(user_prompt="x", stream=_CockpitStream(), render_header=False)
+
+
+def test_analyze_codebase_emits_error_when_questionnaire_cancelled(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(analyze_codebase_flow, "is_interactive", lambda: False)
+    monkeypatch.setattr(analyze_codebase_flow, "check_agent_in_path", lambda: type("R", (), {"status": "ok"})())
+    monkeypatch.setattr(analyze_codebase_flow, "check_auth", lambda: type("R", (), {"status": "ok"})())
+
+    class Resolved:
+        workspace_dir = tmp_path
+        permission_policy = "ask"
+        acp_command = ["agent", "acp"]
+        model = "auto"
+
+    monkeypatch.setattr(analyze_codebase_flow, "resolve_config", lambda **_k: Resolved())
+    monkeypatch.setattr(analyze_codebase_flow, "cleanup_legacy_pulse_questions", lambda **_k: None)
+    monkeypatch.setattr(analyze_codebase_flow, "resolve_analyze_codebase_skill", lambda: tmp_path)
+    monkeypatch.setattr(analyze_codebase_flow, "build_analyze_codebase_prompt", lambda **_k: "prompt")
+
+    class Runner:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def run_analyze_codebase(self, **_k):
+            return {"stopReason": "cancelled"}
+
+    monkeypatch.setattr(analyze_codebase_flow, "AcpSessionRunner", Runner)
+    stream = _CockpitStream()
+    assert analyze_codebase_flow.run_analyze_codebase(
+        user_prompt="x",
+        stream=stream,
+        render_header=False,
+    ) == 1
+    assert stream.errors
+    assert stream.errors[0][0] == "Questionário cancelado"

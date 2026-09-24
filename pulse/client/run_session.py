@@ -57,6 +57,11 @@ class EngineRunSession:
             if callable(info):
                 info(str(event.get("title", "")))
             return
+        if kind == "phase.error":
+            error = getattr(self._stream, "error", None)
+            if callable(error):
+                error(str(event.get("title", "Erro")), str(event.get("reason", "")))
+            return
         if kind == "phases.sync":
             apply = getattr(self._stream, "apply_phase_statuses", None)
             if callable(apply):
@@ -97,6 +102,11 @@ class EngineRunSession:
         if kind == "run.finished":
             code = event.get("exit_code")
             self._exit_code = 0 if code is None else int(code)
+            message = event.get("error")
+            if message:
+                error = getattr(self._stream, "error", None)
+                if callable(error):
+                    error("Workflow falhou", str(message))
             self._stream.finish()
             return
 
@@ -119,11 +129,7 @@ class EngineRunSession:
                 allow_terminal=bool(payload.get("allow_terminal")),
             )
         elif prompt_kind == "questionnaire":
-            raw = str(payload.get("raw") or "")
-            if raw and hasattr(self._prompt_handler, "run_text_questionnaire"):
-                answer = self._prompt_handler.run_text_questionnaire(raw)
-            else:
-                answer = None
+            answer = self._handle_questionnaire(payload)
         elif prompt_kind == "choice":
             select = getattr(self._prompt_handler, "select_choice", None)
             choices_raw = payload.get("choices") or []
@@ -144,3 +150,28 @@ class EngineRunSession:
         else:
             answer = {"outcome": {"outcome": "cancelled"}}
         self._client.answer_prompt(prompt_id, answer)
+
+    def _handle_questionnaire(self, payload: dict[str, Any]) -> Any:
+        from pulse.prompts.text_questionnaire import (
+            parse_text_questionnaire,
+            questionnaire_from_payload,
+        )
+
+        parsed = questionnaire_from_payload(payload)
+        if parsed is None:
+            getter = getattr(self._stream, "agent_text", None)
+            text = getter() if callable(getter) else ""
+            parsed = parse_text_questionnaire(str(text or ""))
+        run_parsed = getattr(self._prompt_handler, "run_parsed_questionnaire", None)
+        if parsed is not None and callable(run_parsed):
+            return run_parsed(parsed)
+        self._emit_error(
+            "Questionário inválido",
+            "O agente pediu um questionário, mas as perguntas não puderam ser abertas.",
+        )
+        return None
+
+    def _emit_error(self, title: str, reason: str) -> None:
+        emit = getattr(self._stream, "error", None)
+        if callable(emit):
+            emit(title, reason)

@@ -244,3 +244,22 @@ def test_workspace_argument_wins(monkeypatch, tmp_path: Path):
 
     assert resolved.workspace_dir == explicit.resolve()
     assert resolved.sources["workspace_dir"] == "argument"
+
+
+def test_pulse_agent_model_comes_from_workspace_project(monkeypatch, tmp_path: Path):
+    from pulse.store.agent_settings import upsert_agent_settings
+
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: _global())
+    project = tmp_path / "project"
+    project.mkdir()
+    daemon_cwd = tmp_path / "daemon"
+    daemon_cwd.mkdir()
+    init_project_config(project)
+    loaded = load_project_config(project)
+    assert loaded is not None
+    upsert_agent_settings(loaded.project_id, "implement", model="Auto")
+
+    resolved = resolve_config(daemon_cwd, workspace=project, pulse_agent="implement")
+
+    assert resolved.model == "Auto"
+    assert resolved.sources["model"] == "agent.settings"
