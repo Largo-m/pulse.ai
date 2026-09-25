@@ -104,6 +104,26 @@ CREATE TABLE IF NOT EXISTS spec_sessions (
   task_id TEXT NOT NULL DEFAULT '',
   started_at TEXT NOT NULL
 );
+
+-- Log da spec gravado pelo próprio Pulse. Antes o histórico era lido do store
+-- do Cursor (~/.cursor), que não existe para os outros runtimes: spec rodada no
+-- Claude Code reabria sem log nenhum.
+CREATE TABLE IF NOT EXISTS spec_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  spec_dir TEXT NOT NULL,
+  phase_id TEXT NOT NULL DEFAULT '',
+  task_id TEXT NOT NULL DEFAULT '',
+  acp_session_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  tool_id TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS spec_events_by_spec
+  ON spec_events (project_id, spec_dir, id);
 """
 
 

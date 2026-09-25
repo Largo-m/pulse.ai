@@ -151,7 +151,7 @@ def test_guidance_reaches_the_prompt_of_the_next_attempt(tmp_path, monkeypatch):
         spec=TaskSpec(task_id="T2", title="fazer algo"),
     )
 
-    assert code == 1
+    assert code == new_issue_flow.TASK_ABORTED
     assert len(prompts) == 2
     assert "use a lib nova" not in prompts[0]
     assert "use a lib nova" in prompts[1]

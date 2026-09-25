@@ -81,7 +81,7 @@ def test_unverified_never_offers_a_plain_retry():
 
     _offer_unverified(_runner(handler), "Task T2 sem gate", "sem gate")
 
-    assert handler.choice_calls[0] == ["accept", "guidance", "stop"]
+    assert handler.choice_calls[0] == ["accept", "guidance", "skip", "stop"]
     assert "retry" not in handler.choice_calls[0]
 
 
@@ -159,7 +159,7 @@ def test_stopping_an_unverified_task_ends_the_loop(monkeypatch, tmp_path):
 
     code = _run_task_loop(monkeypatch, tmp_path, handler, attempts_seen=attempts)
 
-    assert code == 1
+    assert code == new_issue_flow.TASK_ABORTED
     assert len(attempts) == 1
 
 
@@ -170,7 +170,7 @@ def test_guidance_retries_once_then_stops(monkeypatch, tmp_path):
 
     code = _run_task_loop(monkeypatch, tmp_path, handler, attempts_seen=attempts)
 
-    assert code == 1
+    assert code == new_issue_flow.TASK_ABORTED
     assert len(attempts) == 2
 
 

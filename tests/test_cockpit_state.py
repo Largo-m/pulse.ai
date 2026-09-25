@@ -210,7 +210,7 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     ]
     assert state.selected_artifact_path == ".pulse/specs/project/STATE.md"
     assert state.follow_artifact is True
-    assert state.artifact_pane_open is True
+    assert state.artifact_pane_open is False  # a aba só abre a pedido
 
     again = state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
     assert again is first
@@ -265,7 +265,6 @@ def test_reveal_artifact_from_prompt_opens_matching_file():
     state.begin_phase("Specify")
     state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
     state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True, has_content=True)
-    state.toggle_artifact_pane()
     assert state.artifact_pane_open is False
     opened = state.reveal_artifact_from_prompt(
         "Aprovar Specify (.pulse/specs/features/demo/spec.md) e avançar?"
@@ -286,6 +285,7 @@ def test_toggle_focus_cycles_artifact_when_pane_open():
     assert state.focus_target == "phases"
     state.begin_phase("Planejar")
     state.upsert_artifact(".pulse/specs/quick/001-x/TASK.md", ready=True, has_content=True)
+    state.open_artifact_pane()
     state.focus_target = "phases"
     state.toggle_focus()
     assert state.focus_target == "stream"
@@ -305,6 +305,7 @@ def test_close_artifact_pane_hides_and_moves_focus():
     state.configure_workflow("setup-project")
     state.begin_phase("Fase 2 — Gerando specs")
     state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+    state.open_artifact_pane()
     state.focus_target = "artifact"
     assert state.artifact_pane_open is True
     state.close_artifact_pane()
@@ -479,7 +480,8 @@ def test_pane_stays_closed_while_artifact_has_no_content():
     ]
 
 
-def test_pane_opens_when_the_artifact_gains_content():
+def test_artifact_with_content_is_offered_but_never_opens_alone():
+    """Abrir sozinho roubava a tela do stream no meio da spec."""
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Design")
@@ -489,8 +491,11 @@ def test_pane_opens_when_the_artifact_gains_content():
 
     state.upsert_artifact(path, ready=True, has_content=True)
 
+    assert state.artifact_pane_open is False
+    assert state.phase_has_artifacts() is True  # o trilho "ABRIR" aparece
+
+    state.open_artifact_pane()
     assert state.artifact_pane_open is True
-    assert state.phase_has_artifacts() is True
 
 
 def test_write_that_never_lands_never_opens_the_pane():
@@ -511,6 +516,7 @@ def test_pane_does_not_reopen_after_the_user_closes_it():
     state.configure_workflow("new-issue")
     state.begin_phase("Fase Design")
     state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True, has_content=True)
+    state.open_artifact_pane()
     assert state.artifact_pane_open is True
 
     state.close_artifact_pane()

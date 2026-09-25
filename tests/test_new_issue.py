@@ -303,7 +303,7 @@ def test_run_execute_task_keeps_pending_when_gate_fails(monkeypatch, tmp_path: P
         tasks_skipped=False,
         spec=TaskSpec(task_id="T1", title="A", gate_commands=("false",)),
     )
-    assert code == 1
+    assert code == new_issue_flow.TASK_ABORTED
     assert state.tasks[0].status == "failed"
 
 
@@ -377,7 +377,7 @@ def test_run_execute_task_does_not_mark_done_without_gate(tmp_path: Path):
         tasks_skipped=False,
         spec=TaskSpec(task_id="T1", title="A"),
     )
-    assert code == 1
+    assert code == new_issue_flow.TASK_ABORTED
     assert state.tasks[0].status == "failed"
 
 

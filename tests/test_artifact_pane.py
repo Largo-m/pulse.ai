@@ -39,6 +39,7 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
                 state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
                 state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
                 state.select_artifact(".pulse/specs/project/PROJECT.md")
+                state.open_artifact_pane()  # a aba não abre sozinha
                 pane = self.query_one(ArtifactPane)
                 pane.sync_from_state(state, force=True)
 
@@ -95,6 +96,7 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
                 state = holder["state"]
                 state.begin_phase("Fase 2 — Gerando specs")
                 state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+                state.open_artifact_pane()  # a aba não abre sozinha
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
         app = Harness()
@@ -143,6 +145,7 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
                 state = holder["state"]
                 state.begin_phase("Fase 2 — Gerando specs")
                 state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+                state.open_artifact_pane()  # a aba não abre sozinha
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
             def on_artifact_pane_closed(self, event: ArtifactPaneClosed) -> None:

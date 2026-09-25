@@ -69,6 +69,8 @@ class AcpSessionRunner:
         self._spec_dir = ""
         self._phase_id = ""
         self._task_id = ""
+        #: Texto do agente acumulado até o próximo tool call / fim do prompt.
+        self._spec_text_buffer: list[str] = []
         self._run_id = str(uuid.uuid4())
         self._auth_methods: list[str] = []
         self.ask_question_count = 0
@@ -600,6 +602,7 @@ class AcpSessionRunner:
                     or session_id == self._session_id
                 ):
                     self._stream.handle_update(params)
+                    self._record_spec_event(params)
                 continue
 
             message_id = message.get("id")
@@ -784,6 +787,69 @@ class AcpSessionRunner:
             pass
         self._remember_spec_session()
 
+    def _record_spec_event(self, params: dict[str, Any]) -> None:
+        """Grava no store do Pulse o que o cockpit está mostrando.
+
+        Sem isso o histórico da spec só existe no store do runtime — e o do
+        Cursor é o único que o Pulse sabe ler.
+        """
+        if not self._spec_dir:
+            return
+        update = params.get("update", params)
+        if not isinstance(update, dict):
+            return
+        kind = str(update.get("sessionUpdate") or "")
+        if kind == "agent_message_chunk":
+            content = update.get("content")
+            if isinstance(content, dict) and content.get("type") == "text":
+                text = str(content.get("text") or "")
+                if text:
+                    self._spec_text_buffer.append(text)
+            return
+        if kind not in {"tool_call", "tool_call_update"}:
+            return
+        self._flush_spec_text()
+        title = str(update.get("title") or update.get("kind") or "tool").strip()
+        raw = update.get("rawInput")
+        detail = ""
+        if isinstance(raw, dict):
+            for key in ("path", "file_path", "target_file", "command", "pattern", "query"):
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    detail = value.strip()
+                    break
+        self._save_spec_event(
+            kind="Tool",
+            title=title,
+            detail=detail,
+            tool_id=str(update.get("toolCallId") or ""),
+        )
+
+    def _flush_spec_text(self) -> None:
+        text = "".join(self._spec_text_buffer).strip()
+        self._spec_text_buffer.clear()
+        if text:
+            self._save_spec_event(kind="Assistant", title=text[:160], detail=text)
+
+    def _save_spec_event(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:
+        try:
+            from pulse.store.spec_events import record_spec_event
+
+            record_spec_event(
+                self._cwd,
+                spec_dir=self._spec_dir,
+                phase_id=self._phase_id,
+                task_id=self._task_id,
+                acp_session_id=self._session_id or "",
+                kind=kind,
+                title=title,
+                detail=detail,
+                tool_id=tool_id,
+            )
+        except Exception:
+            # Log é acessório: falha ao gravar não pode derrubar a fase.
+            pass
+
     def _remember_spec_session(self) -> None:
         if not self._spec_dir or not self._session_id or not self._phase_id:
             return
@@ -822,13 +888,16 @@ class AcpSessionRunner:
         )
 
     def prompt(self, session_id: str, text: str) -> dict[str, Any]:
-        return self._request(
-            "session/prompt",
-            {
-                "sessionId": session_id,
-                "prompt": [{"type": "text", "text": text}],
-            },
-        )
+        try:
+            return self._request(
+                "session/prompt",
+                {
+                    "sessionId": session_id,
+                    "prompt": [{"type": "text", "text": text}],
+                },
+            )
+        finally:
+            self._flush_spec_text()
 
     def _mcp_servers(self) -> list[dict[str, Any]]:
         if not self._enable_mcp_ask or self._ask_bridge is None:

@@ -46,8 +46,6 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     displayable = [artifact for artifact in state.artifacts if artifact.has_content]
     if displayable:
         state.selected_artifact_path = displayable[-1].path
-        state.artifact_pane_open = True
-        state._had_displayable = True
     selected = 0
     logged = {entry.phase_id for entry in state.entries if entry.phase_id}
     for index, phase in enumerate(state.phases):
@@ -195,6 +193,10 @@ def _backfill_task_ids(entries: list[LogEntry]) -> None:
 
 
 def _load_entries(item: HistoryItem, workspace: Path, state: CockpitState) -> list[LogEntry]:
+    entries = _entries_from_store(item, workspace)
+    if entries:
+        return entries
+    # Specs antigas: o log só existe no store do Cursor.
     sessions = _sessions_for_item(item, workspace)
     entries = _entries_from_sessions(sessions)
     if entries:
@@ -209,6 +211,34 @@ def _load_entries(item: HistoryItem, workspace: Path, state: CockpitState) -> li
         )
         for index, phase in enumerate(state.phases)
     ]
+
+
+def _entries_from_store(item: HistoryItem, workspace: Path) -> list[LogEntry]:
+    """Log gravado pelo próprio Pulse — vale para qualquer runtime."""
+    try:
+        from pulse.store.spec_events import list_spec_events
+
+        rows = list_spec_events(workspace, item.spec_dir)
+    except Exception:
+        return []
+    entries: list[LogEntry] = []
+    for row in rows:
+        title = row.get("title", "").strip()
+        detail = row.get("detail", "").strip()
+        if not title and not detail:
+            continue
+        entries.append(
+            LogEntry(
+                kind=LogKind.TOOL if row.get("kind") == "Tool" else LogKind.ASSISTANT,
+                title=title[:160] or detail[:160],
+                detail=detail,
+                entry_id=len(entries) + 1,
+                tool_id=row.get("tool_id", ""),
+                phase_id=row.get("phase_id", ""),
+                task_id=row.get("task_id", ""),
+            )
+        )
+    return entries
 
 
 def _sessions_for_item(item: HistoryItem, workspace: Path) -> list[dict[str, str]]:

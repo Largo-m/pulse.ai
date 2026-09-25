@@ -629,8 +629,10 @@ def _run_execute_phase(
     if not cockpit:
         print_workflow_result(f"Execute — {len(state.tasks)} task(s)")
     _notify(runner, f"Execute — {len(state.tasks)} task(s)")
-    for index, spec in enumerate(ordered, start=1):
-        exit_code = _run_execute_task(
+
+    pending = list(ordered)
+    while True:
+        outcome, stuck = _run_task_round(
             runner=runner,
             cockpit=cockpit,
             workspace=workspace,
@@ -639,19 +641,28 @@ def _run_execute_phase(
             state=state,
             preferred_model=preferred_model,
             tasks_skipped=tasks_skipped,
-            spec=spec,
+            pending=pending,
         )
-        if exit_code != 0:
-            remaining = len(ordered) - index
-            if remaining > 0:
-                _notify(
-                    runner,
-                    f"Execute parada em Task {spec.task_id} — {remaining} task(s) pendente(s)",
-                )
+        if outcome == "aborted":
             state.mark_phase_failed("execute")
             state.save(workspace)
             _sync_stream_phases(runner, state)
-            return exit_code
+            return 1
+        if not stuck:
+            break
+        # A rodada acabou com tasks falhas/bloqueadas, mas a run continua viva:
+        # dá para consertar o ambiente e tentar de novo sem sair do workflow.
+        if _offer_failed_round(runner, stuck) != "retry":
+            state.mark_phase_failed("execute")
+            state.save(workspace)
+            _sync_stream_phases(runner, state)
+            return 1
+        pending = [
+            spec for spec in ordered if _task_status(state, spec.task_id) != "done"
+        ]
+        if not pending:
+            break
+        _notify(runner, f"Tentando novamente {len(pending)} task(s)")
 
     if not state.all_tasks_done():
         state.mark_phase_failed("execute")
@@ -676,6 +687,68 @@ def _load_task_specs(tasks_path: Path, state: WorkflowState):
     ]
 
 
+#: Resultados de uma task. "Pular" não encerra a Execute — só tira a task da
+#: rodada; "Parar" é a única saída que abandona a fase.
+TASK_DONE = 0
+TASK_SKIPPED = 1
+TASK_ABORTED = 2
+
+
+def _run_task_round(
+    *,
+    runner: AcpSessionRunner,
+    cockpit: bool,
+    workspace: Path,
+    user_prompt: str,
+    skill_dir: Path,
+    state: WorkflowState,
+    preferred_model: str | None,
+    tasks_skipped: bool,
+    pending: list[TaskSpec],
+) -> tuple[str, list[tuple[str, str]]]:
+    """Roda uma passada pelas tasks pendentes.
+
+    Uma task pulada não derruba a fase: as tasks seguintes que não dependem
+    dela continuam. Só as dependentes ficam bloqueadas. Devolve
+    `(desfecho, [(task_id, motivo)])` com o que sobrou por resolver.
+    """
+    failed: set[str] = set()
+    stuck: list[tuple[str, str]] = []
+    for spec in pending:
+        blocking = [dep for dep in spec.depends_on if dep in failed]
+        if blocking:
+            reason = "depende de " + ", ".join(blocking)
+            stuck.append((spec.task_id, reason))
+            failed.add(spec.task_id)
+            if not cockpit:
+                print_workflow_result(f"  Task {spec.task_id} bloqueada — {reason}")
+            _notify(runner, f"Task {spec.task_id} bloqueada — {reason}")
+            continue
+        result = _run_execute_task(
+            runner=runner,
+            cockpit=cockpit,
+            workspace=workspace,
+            user_prompt=user_prompt,
+            skill_dir=skill_dir,
+            state=state,
+            preferred_model=preferred_model,
+            tasks_skipped=tasks_skipped,
+            spec=spec,
+        )
+        if result == TASK_ABORTED:
+            remaining = len(pending) - pending.index(spec) - 1
+            if remaining > 0:
+                _notify(
+                    runner,
+                    f"Execute parada em Task {spec.task_id} — {remaining} task(s) pendente(s)",
+                )
+            return "aborted", stuck
+        if result == TASK_SKIPPED:
+            failed.add(spec.task_id)
+            stuck.append((spec.task_id, "falhou"))
+    return "finished", stuck
+
+
 def _run_execute_task(
     *,
     runner: AcpSessionRunner,
@@ -692,7 +765,7 @@ def _run_execute_task(
     if _task_status(state, task.task_id) == "done":
         if not cockpit:
             print_workflow_result(f"  Task {task.task_id} — já concluída")
-        return 0
+        return TASK_DONE
 
     label = f"Task {task.task_id}: {task.title}".strip()
     guidance = ""
@@ -711,32 +784,42 @@ def _run_execute_task(
             guidance=guidance,
         )
         if outcome == "done":
-            return 0
+            return TASK_DONE
         if outcome == "cancelled":
-            return 1
+            return TASK_ABORTED
         if outcome == "unverified":
             choice, guidance = _offer_unverified(
                 runner, f"Task {task.task_id} sem gate", reason
             )
-            if choice == "accept":
-                state.mark_task_done(task.task_id)
-                state.save(workspace)
-                _sync_stream_tasks(runner, state)
-                _notify(runner, f"Task {task.task_id} concluída sem verificação")
-                return 0
-            if choice != "retry":
-                state.mark_task_failed(task.task_id)
-                state.save(workspace)
-                _sync_stream_tasks(runner, state)
-                return 1
-            _notify(runner, f"Refazendo Task {task.task_id} com orientação do usuário")
-            continue
-        choice, guidance = _offer_retry(runner, f"Task {task.task_id} falhou", reason)
-        if choice != "retry":
+            accepted = "concluída sem verificação"
+        elif outcome == "gate_failed":
+            choice, guidance = _offer_gate_failure(
+                runner, f"Task {task.task_id}: gate falhou", reason
+            )
+            accepted = "concluída com gate ignorado"
+        else:
+            choice, guidance = _offer_retry(
+                runner, f"Task {task.task_id} falhou", reason, allow_skip=True
+            )
+            accepted = "concluída mesmo assim"
+
+        if choice == "accept":
+            state.mark_task_done(task.task_id)
+            state.save(workspace)
+            _sync_stream_tasks(runner, state)
+            _notify(runner, f"Task {task.task_id} {accepted}")
+            return TASK_DONE
+        if choice in {"skip", "stop"}:
             state.mark_task_failed(task.task_id)
             state.save(workspace)
             _sync_stream_tasks(runner, state)
-            return 1
+            if choice == "skip":
+                _notify(
+                    runner,
+                    f"Task {task.task_id} pulada — seguindo nas tasks que não dependem dela",
+                )
+                return TASK_SKIPPED
+            return TASK_ABORTED
         if guidance:
             _notify(runner, f"Refazendo Task {task.task_id} com orientação do usuário")
         else:
@@ -816,7 +899,10 @@ def _attempt_execute_task(
             if item.output and not cockpit:
                 print_workflow_result(f"{item.output[-2000:]}")
             details.append(f"{item.command} (exit {item.exit_code})")
-        return "failed", "gate falhou: " + "; ".join(details)
+        # Quem roda o gate é o Pulse, não o agente: nenhuma orientação dada ao
+        # agente ("pule esse teste") impede o comando de rodar de novo. Por isso
+        # a falha de gate tem outcome próprio, com uma saída que ignora o gate.
+        return "gate_failed", "gate falhou: " + "; ".join(details)
 
     state.mark_task_done(task.task_id)
     state.save(workspace)
@@ -831,7 +917,20 @@ def _prompt_succeeded(result: dict[str, Any]) -> bool:
     return str(result.get("stopReason") or "") in _SUCCESS_STOPS
 
 
-def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+def _skip_choice(allow_skip: bool) -> list[tuple[str, str]]:
+    """"Pular" só existe para task: uma fase pulada não tem o que continuar."""
+    if not allow_skip:
+        return []
+    return [("Pular esta task e seguir nas outras", "skip")]
+
+
+def _offer_retry(
+    runner: AcpSessionRunner,
+    title: str,
+    reason: str,
+    *,
+    allow_skip: bool = False,
+) -> tuple[str, str]:
     """Decide o que fazer com uma etapa que falhou.
 
     Devolve `(escolha, orientação)`. "Outro" deixa o usuário escrever o que o
@@ -848,18 +947,21 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str
         [
             ("Refazer", "retry"),
             ("Outro — dizer o que fazer", "guidance"),
+            *_skip_choice(allow_skip),
             ("Parar", "stop"),
         ],
         title=title,
     )
     if choice == "retry":
         return "retry", ""
+    if choice == "skip" and allow_skip:
+        return "skip", ""
     if choice == "guidance":
         guidance = _ask_guidance(runner, title)
         if guidance:
             return "retry", guidance
         # desistiu de escrever: volta a perguntar em vez de parar por engano
-        return _offer_retry(runner, title, reason)
+        return _offer_retry(runner, title, reason, allow_skip=allow_skip)
     return "stop", ""
 
 
@@ -882,18 +984,87 @@ def _offer_unverified(runner: AcpSessionRunner, title: str, reason: str) -> tupl
         [
             ("Concluir sem verificação", "accept"),
             ("Outro — dizer o que fazer", "guidance"),
+            ("Pular esta task e seguir nas outras", "skip"),
             ("Parar", "stop"),
         ],
         title=title,
     )
     if choice == "accept":
         return "accept", ""
+    if choice == "skip":
+        return "skip", ""
     if choice == "guidance":
         guidance = _ask_guidance(runner, title)
         if guidance:
             return "retry", guidance
         return _offer_unverified(runner, title, reason)
     return "stop", ""
+
+
+def _offer_gate_failure(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+    """Decide o que fazer quando o gate da task falha.
+
+    Diferente de `_offer_retry`, oferece "Ignorar o gate": o comando é rodado
+    pelo Pulse, então pedir ao agente para pular o teste não impede o gate de
+    rodar de novo — sem essa saída, ambiente quebrado (emulador fora do ar,
+    por exemplo) vira loop infinito.
+    """
+    handler = getattr(runner, "_prompt_handler", None)
+    select = getattr(handler, "select_choice", None)
+    prompt = reason.strip() or "O gate da task não passou."
+    if not callable(select):
+        _notify(runner, f"{title}: {prompt}")
+        return "stop", ""
+    choice = select(
+        prompt,
+        [
+            ("Refazer", "retry"),
+            ("Ignorar o gate e concluir a task", "accept"),
+            ("Outro — dizer o que fazer", "guidance"),
+            ("Pular esta task e seguir nas outras", "skip"),
+            ("Parar", "stop"),
+        ],
+        title=title,
+    )
+    if choice == "retry":
+        return "retry", ""
+    if choice == "accept":
+        return "accept", ""
+    if choice == "skip":
+        return "skip", ""
+    if choice == "guidance":
+        guidance = _ask_guidance(runner, title)
+        if guidance:
+            return "retry", guidance
+        return _offer_gate_failure(runner, title, reason)
+    return "stop", ""
+
+
+def _offer_failed_round(
+    runner: AcpSessionRunner, stuck: list[tuple[str, str]]
+) -> str:
+    """Pergunta, no fim da rodada, o que fazer com o que ficou por resolver.
+
+    Existe para não obrigar a sair do workflow: com a run ainda viva dá para
+    consertar o que travou (destravar um emulador, subir um serviço) e mandar
+    tentar de novo daqui mesmo.
+    """
+    handler = getattr(runner, "_prompt_handler", None)
+    select = getattr(handler, "select_choice", None)
+    resumo = "; ".join(f"{task_id} ({reason})" for task_id, reason in stuck)
+    prompt = f"Ficaram por resolver: {resumo}"
+    _notify(runner, prompt)
+    if not callable(select):
+        return "stop"
+    choice = select(
+        prompt,
+        [
+            ("Tentar novamente estas tasks", "retry"),
+            ("Encerrar a Execute assim mesmo", "stop"),
+        ],
+        title="Execute — tasks pendentes",
+    )
+    return "retry" if choice == "retry" else "stop"
 
 
 def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:

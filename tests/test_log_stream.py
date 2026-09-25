@@ -36,3 +36,16 @@ def test_render_qa_entries_in_stream():
     assert "O que você está construindo?" in plain
     assert "Você" in plain
     assert "Produto / plataforma" in plain
+
+
+def test_elapsed_label_does_not_show_966_minutes():
+    """Spec retomada no dia seguinte virava "966:46" na coluna do tempo."""
+    from pulse.history.events import format_elapsed
+
+    assert format_elapsed(0) == "00:00"
+    assert format_elapsed(46) == "00:46"
+    assert format_elapsed(3 * 60 + 38) == "03:38"
+    assert format_elapsed(59 * 60 + 59) == "59:59"
+    assert format_elapsed(3600) == "1h00"
+    assert format_elapsed(966 * 60 + 46) == "16h06"
+    assert format_elapsed(50 * 3600) == "2d02"

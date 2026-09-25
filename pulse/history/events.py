@@ -28,6 +28,23 @@ class LogKind(str, Enum):
     TOOL = "Tool"
 
 
+def format_elapsed(seconds: float) -> str:
+    """Duração legível numa coluna estreita.
+
+    `MM:SS` só vale até uma hora — uma spec retomada no dia seguinte virava
+    "966:46". Acima disso o passo muda: `1h06`, `2d03`.
+    """
+    total = int(max(0.0, seconds))
+    if total < 3600:
+        minutes, secs = divmod(total, 60)
+        return f"{minutes:02d}:{secs:02d}"
+    hours, remainder = divmod(total, 3600)
+    if hours < 24:
+        return f"{hours}h{remainder // 60:02d}"
+    days, leftover = divmod(hours, 24)
+    return f"{days}d{leftover:02d}"
+
+
 @dataclass
 class PhaseItem:
     id: str
@@ -49,9 +66,7 @@ class PhaseItem:
             end = self.ended_at
         else:
             return ""
-        elapsed = int(end - self.started_at)
-        minutes, seconds = divmod(max(0, elapsed), 60)
-        return f"{minutes:02d}:{seconds:02d}"
+        return format_elapsed(end - self.started_at)
 
     def finish(self, ended_at: float | None = None) -> None:
         if self.status == PhaseStatus.RUNNING and self.started_at is not None:

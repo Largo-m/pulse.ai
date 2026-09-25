@@ -60,8 +60,6 @@ class CockpitState:
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
     _follow_live: bool = True
-    #: Já abrimos a aba alguma vez? Evita reabrir depois que o usuário fecha.
-    _had_displayable: bool = False
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -88,7 +86,6 @@ class CockpitState:
         self.selected_artifact_path = ""
         self.follow_artifact = True
         self.artifact_pane_open = False
-        self._had_displayable = False
         self.focus_target = "phases"
         self._next_entry_id = 1
         self._active_assistant_id = None
@@ -577,17 +574,14 @@ class CockpitState:
         for item in self.artifacts:
             if item.path != key:
                 continue
-            was_displayable = item.has_content
             item.ready = ready
             item.has_content = item.has_content or has_content
             if not item.phase_id:
                 item.phase_id = phase_id
             if self.follow_artifact:
                 self.selected_artifact_path = item.path
-            # Abre quando o artefato passa a ter conteúdo, não quando é anunciado.
-            if item.has_content and not was_displayable and not self._had_displayable:
-                self._had_displayable = True
-                self.artifact_pane_open = True
+            # A aba não abre sozinha: um artefato novo no meio da spec roubava a
+            # tela do stream. O trilho "ABRIR" (tecla `a`) fica anunciando.
             self.notify()
             return item
         item = ArtifactItem(
@@ -599,9 +593,6 @@ class CockpitState:
         self.artifacts.append(item)
         if self.follow_artifact or not self.selected_artifact_path:
             self.selected_artifact_path = item.path
-        if has_content and not self._had_displayable:
-            self._had_displayable = True
-            self.artifact_pane_open = True
         self.notify()
         return item
 
