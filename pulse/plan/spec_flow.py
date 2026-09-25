@@ -15,6 +15,7 @@ from pulse.plan.spec_prompt import PULSE_SPEC_SKILL, build_classify_prompt, reso
 from pulse.plan.spec_route import load_route, parse_route_text
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
 
 
@@ -27,6 +28,7 @@ def run_spec(
     render_header: bool = True,
     spec_slug: str | None = None,
     spec_mode: str | None = None,
+    control: RunControl | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if spec_slug and spec_mode:
@@ -40,6 +42,7 @@ def run_spec(
             render_header=render_header,
             spec_slug=spec_slug,
             spec_mode=spec_mode,
+            control=control,
         )
     if not cockpit and not is_interactive():
         print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
@@ -96,6 +99,7 @@ def run_spec(
         prompt_handler=active_handler,
         pulse_agent=getattr(resolved, "pulse_agent", None),
         runtime=get_runtime(getattr(resolved, "agent_name", None)),
+        control=control,
     )
 
     result: dict[str, Any] = {}
@@ -103,12 +107,21 @@ def run_spec(
         runner.start()
         runner.initialize()
         runner.authenticate()
-        result = runner.run_isolated_prompt(
-            workflow="spec",
-            phase_label="Classificar spec",
-            prompt_text=classify_prompt,
-            preferred_model=preferred_model,
-        )
+        while True:
+            result = runner.run_isolated_prompt(
+                workflow="spec",
+                phase_label="Classificar spec",
+                prompt_text=classify_prompt,
+                preferred_model=preferred_model,
+            )
+            if result.get("stopReason") != "cancelled":
+                break
+            # Classificar é um step só: pausar aqui significa refazê-lo inteiro
+            # ao retomar, como em qualquer outro step.
+            if not runner.control.interrupted:
+                break
+            if not runner.control.wait_while_paused():
+                return RUN_STOPPED
     except (RuntimeError, TimeoutError, OSError) as error:
         if cockpit:
             raise
@@ -155,9 +168,13 @@ def run_spec(
         "render_header": False,
     }
     if flow == "quick":
-        return run_quick(**kwargs)
+        return run_quick(**kwargs, control=control)
     classify_session_id = getattr(runner, "last_session_id", "") or None
-    return run_new_issue(**kwargs, classify_session_id=classify_session_id)
+    return run_new_issue(
+        **kwargs,
+        classify_session_id=classify_session_id,
+        control=control,
+    )
 
 
 def _run_known_spec(
@@ -169,6 +186,7 @@ def _run_known_spec(
     render_header: bool,
     spec_slug: str,
     spec_mode: str,
+    control: RunControl | None = None,
 ) -> int:
     active_stream = stream or NullStreamSink()
     _apply_route(active_stream, "full", "retomando" if spec_mode == "resume" else "refazendo")
@@ -180,6 +198,7 @@ def _run_known_spec(
         render_header=render_header,
         spec_slug=spec_slug,
         spec_mode=spec_mode,
+        control=control,
     )
 
 

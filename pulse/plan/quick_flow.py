@@ -21,6 +21,7 @@ from pulse.plan.quick_prompt import (
     resolve_quick_skill,
 )
 from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
 
 
@@ -31,6 +32,7 @@ def run_quick(
     stream: Any | None = None,
     prompt_handler: Any | None = None,
     render_header: bool = True,
+    control: RunControl | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if not cockpit and not is_interactive():
@@ -89,6 +91,7 @@ def run_quick(
         prompt_handler=active_handler,
         pulse_agent=getattr(resolved, "pulse_agent", None),
         runtime=get_runtime(getattr(resolved, "agent_name", None)),
+        control=control,
     )
 
     try:
@@ -110,6 +113,12 @@ def run_quick(
     approved = bool(result.get("approved", False))
     outcome = str(result.get("outcome", ""))
     if stop_reason == "cancelled" or outcome == "cancelled":
+        # Quick mode roda num fôlego só: parar encerra a run, e o cockpit oferece
+        # retomar em vez de mostrar erro.
+        if control is not None and control.interrupted:
+            if not cockpit:
+                print_workflow_result("Quick task parada pelo usuário.")
+            return RUN_STOPPED
         emit_stream_error(
             active_stream,
             "Questionário cancelado",

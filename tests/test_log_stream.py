@@ -49,3 +49,35 @@ def test_elapsed_label_does_not_show_966_minutes():
     assert format_elapsed(3600) == "1h00"
     assert format_elapsed(966 * 60 + 46) == "16h06"
     assert format_elapsed(50 * 3600) == "2d02"
+
+
+def test_elapsed_label_only_runs_while_the_step_runs():
+    """Só passo executando tem relógio andando; o resto fica congelado."""
+    import time
+
+    from pulse.history.events import PhaseItem, PhaseStatus
+
+    now = time.monotonic()
+
+    running = PhaseItem(id="specify", label="Specify", status=PhaseStatus.RUNNING, started_at=100.0)
+    assert running.elapsed_label(163.0) == "01:03"
+
+    # Spec aberta pelo histórico: a fase vem como `running`, mas com a duração
+    # já fechada — a coluna não pode voltar a contar contra o relógio de agora.
+    hydrated = PhaseItem(
+        id="specify",
+        label="Specify",
+        status=PhaseStatus.RUNNING,
+        started_at=0.0,
+        ended_at=150.0,
+    )
+    assert hydrated.elapsed_label(now) == "02:30"
+
+    for status in (PhaseStatus.DONE, PhaseStatus.SKIPPED, PhaseStatus.FAILED):
+        frozen = PhaseItem(id="x", label="x", status=status, started_at=10.0, ended_at=40.0)
+        assert frozen.elapsed_label(now) == "00:30"
+        assert frozen.elapsed_label(now + 60) == "00:30"
+
+    assert PhaseItem(id="x", label="x").elapsed_label(now) == ""
+    stopped = PhaseItem(id="x", label="x", status=PhaseStatus.DONE, started_at=10.0)
+    assert stopped.elapsed_label(now) == ""

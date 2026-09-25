@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from pulse.status_labels import status_label
+
 
 class HistoryKind(str, Enum):
     SPEC = "spec"
@@ -61,13 +63,6 @@ class HistoryItem:
 
     @property
     def status_label(self) -> str:
-        labels = {
-            HistoryStatus.PENDING: "pending",
-            HistoryStatus.IN_PROGRESS: "in progress",
-            HistoryStatus.AWAITING_APPROVAL: "aguardando",
-            HistoryStatus.BLOCKED: "blocked",
-            HistoryStatus.DONE: "done",
-        }
-        return labels.get(self.status, self.status.value)
+        return status_label(self.status)
 
 

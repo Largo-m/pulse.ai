@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
+from pulse.runcontrol import RUN_STOPPED
 
 
 def test_status_and_workflows():
@@ -117,3 +118,95 @@ def test_unknown_workflow_returns_404():
     for workflow_id in ("new-issue", "fix-bug"):
         rejected = client.post(f"/api/workflows/{workflow_id}/runs", json={"prompt": "x"})
         assert rejected.status_code == 404
+
+
+def test_pause_resume_and_stop_reach_the_running_flow(monkeypatch):
+    """A tecla no cockpit vira HTTP, e o flow enxerga pausa/parada de verdade."""
+    manager = RunManager()
+    app = create_app(manager)
+    client = TestClient(app)
+    seen: dict[str, object] = {}
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_run_plan(**kwargs):
+        control = kwargs["control"]
+        seen["control"] = control
+        entered.set()
+        # Como o flow real: uma barreira entre cada step, não uma só.
+        while not release.is_set():
+            if not control.checkpoint():
+                return RUN_STOPPED
+            time.sleep(0.01)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+
+    run_id = client.post(
+        "/api/workflows/spec/runs",
+        json={"prompt": "x", "workspace": "/tmp"},
+    ).json()["id"]
+    assert entered.wait(timeout=5)
+    control = seen["control"]
+
+    assert client.post(f"/api/runs/{run_id}/pause").status_code == 200
+    assert control.paused is True
+    assert control.interrupted is True
+    assert client.get(f"/api/runs/{run_id}").json()["status"] == "paused"
+
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+    assert control.paused is False
+    assert client.get(f"/api/runs/{run_id}").json()["status"] == "running"
+
+    release.set()
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        payload = client.get(f"/api/runs/{run_id}").json()
+        if payload.get("exit_code") is not None:
+            assert payload["exit_code"] == 0, "retomar leva a run até o fim"
+            return
+        time.sleep(0.05)
+    raise AssertionError("run não encerrou depois de retomar")
+
+
+def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
+    manager = RunManager()
+    app = create_app(manager)
+    client = TestClient(app)
+    entered = threading.Event()
+
+    def fake_run_plan(**kwargs):
+        control = kwargs["control"]
+        entered.set()
+        # Só sai quando o usuário parar: é o cancel que encerra esta run.
+        while True:
+            if not control.checkpoint():
+                return RUN_STOPPED
+            time.sleep(0.01)
+
+    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+
+    run_id = client.post(
+        "/api/workflows/spec/runs",
+        json={"prompt": "x", "workspace": "/tmp"},
+    ).json()["id"]
+    assert entered.wait(timeout=5)
+
+    client.post(f"/api/runs/{run_id}/pause")
+    assert client.post(f"/api/runs/{run_id}/cancel").status_code == 200
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        payload = client.get(f"/api/runs/{run_id}").json()
+        if payload.get("exit_code") is not None:
+            assert payload["exit_code"] == RUN_STOPPED
+            assert payload["status"] == "stopped", "parar não é falhar"
+            return
+        time.sleep(0.05)
+    raise AssertionError("run não encerrou depois do stop")
+
+
+def test_control_endpoints_404_for_unknown_run():
+    client = TestClient(create_app(RunManager()))
+    for action in ("pause", "resume", "cancel"):
+        assert client.post(f"/api/runs/nao-existe/{action}").status_code == 404

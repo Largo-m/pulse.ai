@@ -192,6 +192,18 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "exit_code": state.exit_code,
         }
 
+    @app.post("/api/runs/{run_id}/pause")
+    def pause_run(run_id: str) -> dict[str, Any]:
+        if not runs.pause(run_id):
+            raise HTTPException(status_code=404, detail="run não encontrado")
+        return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/resume")
+    def resume_run(run_id: str) -> dict[str, Any]:
+        if not runs.resume(run_id):
+            raise HTTPException(status_code=404, detail="run não encontrado")
+        return {"ok": True}
+
     @app.post("/api/runs/{run_id}/cancel")
     def cancel_run(run_id: str) -> dict[str, Any]:
         if not runs.cancel(run_id):

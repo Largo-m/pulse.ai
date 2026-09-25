@@ -10,15 +10,8 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.status_labels import status_color, status_icon, status_label
 from pulse.tui.state import NAV_PHASE, NAV_TASK, CockpitState, PhaseItem, PhaseStatus
-
-_STATUS_LABEL = {
-    PhaseStatus.PENDING: "pendente",
-    PhaseStatus.RUNNING: "em curso",
-    PhaseStatus.DONE: "concluído",
-    PhaseStatus.SKIPPED: "pulado",
-    PhaseStatus.FAILED: "falhou",
-}
 
 
 class NavSelected(Message):
@@ -140,30 +133,23 @@ class PhaseSidebar(Widget):
         else:
             output.append(f"{indent}  ", style="#333333")
 
-        if item.status == PhaseStatus.RUNNING:
-            prefix = "▸ "
-        elif item.status == PhaseStatus.PENDING:
-            prefix = "Ⅱ "
-        elif item.status == PhaseStatus.SKIPPED:
-            prefix = "⏭ "
-        elif item.status == PhaseStatus.FAILED:
-            prefix = "✗ "
-        else:
-            prefix = "✓ "
-
-        name_style = "#E07070" if item.status == PhaseStatus.FAILED else (
-            "#A2D729" if running else ("#E0E0E0" if accent else "#888888")
+        # A cor do status manda no nome só quando ele pede atenção (rodando ou
+        # quebrado); nos demais, o realce é da seleção.
+        tone = status_color(item.status)
+        name_style = tone if item.status in {PhaseStatus.RUNNING, PhaseStatus.FAILED} else (
+            "#E0E0E0" if accent else "#888888"
         )
-        label = f"{prefix}{self._item_label(item, nested=nested)}"
+        label = f"{status_icon(item.status)} {self._item_label(item, nested=nested)}"
         max_len = 24 if nested else 28
         if len(label) > max_len:
             label = f"{label[: max_len - 1]}…"
         output.append(label, style=name_style)
         output.append("\n")
-        status = _STATUS_LABEL.get(item.status, item.status.value)
         timer = item.elapsed_label(now) or "--:--"
         meta_indent = "     " if nested else "   "
-        output.append(f"{meta_indent}{status} · {timer}\n", style="#888888")
+        output.append(meta_indent)
+        output.append(status_label(item.status), style=tone)
+        output.append(f" · {timer}\n", style="#888888")
         if trailing_blank:
             output.append("\n")
         return output

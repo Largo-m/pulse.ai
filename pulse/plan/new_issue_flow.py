@@ -39,6 +39,7 @@ from pulse.plan.task_waves import (
 from pulse.plan.cli_output import print_workflow_banner, print_workflow_error, print_workflow_result
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.permission import PermissionPolicy
+from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
 from pulse.store.spec_sessions import record_spec_session
 
@@ -54,6 +55,12 @@ _PHASE_AGENTS = {
     "tasks": "tasks",
     "execute": "implement",
 }
+#: Fallback para runner sem controle (CLI, testes): nunca pausa nem para.
+_NEVER_INTERRUPTED = RunControl()
+
+
+def _control(runner: AcpSessionRunner) -> RunControl:
+    return getattr(runner, "control", None) or _NEVER_INTERRUPTED
 
 
 def run_new_issue(
@@ -66,6 +73,7 @@ def run_new_issue(
     classify_session_id: str | None = None,
     spec_slug: str | None = None,
     spec_mode: str | None = None,
+    control: RunControl | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if not cockpit and not is_interactive():
@@ -121,6 +129,7 @@ def run_new_issue(
         prompt_handler=active_handler,
         pulse_agent=getattr(resolved, "pulse_agent", None),
         runtime=get_runtime(getattr(resolved, "agent_name", None)),
+        control=control,
     )
     runner.bind_spec(state.feature_dir.as_posix())
     if classify_session_id:
@@ -295,6 +304,11 @@ def _run_pipeline(
 
         start_index = _phase_start_index(state)
         for phase in PHASE_ORDER[start_index:]:
+            # Pausa pedida entre dois steps: segura aqui, sem nada em voo.
+            if not _control(runner).checkpoint():
+                _notify(runner, "Run parada pelo usuário")
+                return RUN_STOPPED
+
             if phase == "tasks":
                 _require_tasks_phase(state)
 
@@ -398,6 +412,34 @@ def _phase_start_index(state: WorkflowState) -> int:
     return 0
 
 
+def _hold_for_pause(
+    runner: AcpSessionRunner,
+    *,
+    workspace: Path,
+    state: WorkflowState,
+    phase: str | None = None,
+    label: str = "",
+) -> bool:
+    """Segura o fluxo enquanto a run está pausada.
+
+    O step que foi cortado volta para pendente: ele não terminou, então será
+    refeito inteiro ao retomar. Devolve `False` quando a run foi parada.
+    """
+    if phase is not None and state.phases[phase].status == PhaseStatus.IN_PROGRESS:
+        state.phases[phase].status = PhaseStatus.PENDING
+        state.save(workspace)
+        _sync_stream_phases(runner, state)
+    if _control(runner).stopped:
+        _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
+        return False
+    _notify(runner, f"Pausado em {label}" if label else "Run pausada")
+    if not _control(runner).wait_while_paused():
+        _notify(runner, "Run parada pelo usuário")
+        return False
+    _notify(runner, f"Retomando {label}" if label else "Retomando a run")
+    return True
+
+
 def _run_approval_phase(
     *,
     runner: AcpSessionRunner,
@@ -430,6 +472,18 @@ def _run_approval_phase(
             state.save(workspace)
             _sync_stream_phases(runner, state)
             return 0
+        # A fase não terminou porque o usuário cortou, não porque falhou: não
+        # faz sentido perguntar "quer tentar de novo?" — é só segurar e refazer.
+        if _control(runner).interrupted:
+            if not _hold_for_pause(
+                runner,
+                workspace=workspace,
+                state=state,
+                phase=phase,
+                label=f"fase {phase.capitalize()}",
+            ):
+                return RUN_STOPPED
+            continue
         choice, guidance = _offer_retry(runner, f"Fase {phase.capitalize()} falhou", reason)
         if choice != "retry":
             state.mark_phase_failed(phase)
@@ -590,6 +644,16 @@ def _run_execute_phase(
                     if result.get("stopReason") == "cancelled"
                     else str(result.get("stopReason") or "o agente não concluiu a fase")
                 )
+                if _control(runner).interrupted:
+                    if not _hold_for_pause(
+                        runner,
+                        workspace=workspace,
+                        state=state,
+                        phase="execute",
+                        label="fase Execute",
+                    ):
+                        return RUN_STOPPED
+                    continue
                 if not cockpit:
                     print_workflow_result(f"Execute falhou: {reason}")
                 execute_choice, execute_guidance = _offer_retry(
@@ -643,6 +707,12 @@ def _run_execute_phase(
             tasks_skipped=tasks_skipped,
             pending=pending,
         )
+        if outcome == "stopped":
+            # Parar não é falhar: o que já foi salvo continua retomável.
+            state.save(workspace)
+            _sync_stream_phases(runner, state)
+            _sync_stream_tasks(runner, state)
+            return RUN_STOPPED
         if outcome == "aborted":
             state.mark_phase_failed("execute")
             state.save(workspace)
@@ -692,6 +762,8 @@ def _load_task_specs(tasks_path: Path, state: WorkflowState):
 TASK_DONE = 0
 TASK_SKIPPED = 1
 TASK_ABORTED = 2
+#: Run parada pelo usuário: a fase não falhou, só não continuou.
+TASK_STOPPED = 3
 
 
 def _run_task_round(
@@ -715,6 +787,10 @@ def _run_task_round(
     failed: set[str] = set()
     stuck: list[tuple[str, str]] = []
     for spec in pending:
+        # Pausa pedida entre duas tasks: segura antes de abrir a próxima sessão.
+        if not _control(runner).checkpoint():
+            return "stopped", stuck
+
         blocking = [dep for dep in spec.depends_on if dep in failed]
         if blocking:
             reason = "depende de " + ", ".join(blocking)
@@ -735,6 +811,8 @@ def _run_task_round(
             tasks_skipped=tasks_skipped,
             spec=spec,
         )
+        if result == TASK_STOPPED:
+            return "stopped", stuck
         if result == TASK_ABORTED:
             remaining = len(pending) - pending.index(spec) - 1
             if remaining > 0:
@@ -786,6 +864,16 @@ def _run_execute_task(
         if outcome == "done":
             return TASK_DONE
         if outcome == "cancelled":
+            # Corte do usuário: a task fica pendente e é refeita ao retomar.
+            if _control(runner).interrupted:
+                if not _hold_for_pause(
+                    runner,
+                    workspace=workspace,
+                    state=state,
+                    label=f"Task {task.task_id}",
+                ):
+                    return TASK_STOPPED
+                continue
             return TASK_ABORTED
         if outcome == "unverified":
             choice, guidance = _offer_unverified(

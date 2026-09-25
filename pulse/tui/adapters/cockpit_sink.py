@@ -189,6 +189,20 @@ class CockpitSink:
         self._state.set_tasks(items)
         self._emit()
 
+    def mark_paused(self) -> None:
+        self._finish_message_line()
+        self._state.mark_paused()
+        self._emit()
+
+    def mark_resumed(self) -> None:
+        self._state.mark_resumed()
+        self._emit()
+
+    def mark_stopped(self) -> None:
+        self._finish_message_line()
+        self._state.mark_stopped()
+        self._emit()
+
     def info(self, title: str) -> None:
         text = str(title or "").strip()
         if not text:

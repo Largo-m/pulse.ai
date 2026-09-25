@@ -9,6 +9,8 @@ from typing import Any
 
 import yaml
 
+from pulse.status_labels import status_label
+
 WORKFLOW_VERSION = 1
 PHASE_ORDER = ("specify", "design", "tasks", "execute")
 OPTIONAL_PHASES = frozenset({"design"})
@@ -399,7 +401,8 @@ def workflow_is_incomplete(state: WorkflowState) -> bool:
 def resume_summary(state: WorkflowState) -> str:
     """Resumo curto de onde o workflow parou, para exibir na escolha."""
     phase = state.current_phase
-    status = state.phases[phase].status.value if phase in state.phases else "pending"
+    raw = state.phases[phase].status if phase in state.phases else PhaseStatus.PENDING
+    status = status_label(raw)
     done = sum(1 for item in state.tasks if item.status == PhaseStatus.DONE)
     if state.tasks:
         return f"{phase} ({status}) · tasks {done}/{len(state.tasks)}"

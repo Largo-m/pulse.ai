@@ -19,6 +19,9 @@ class EngineRunSession:
         self._client = client or EngineClient()
         self._exit_code = 1
         self._owns_client = client is None
+        #: Conhecido só depois que o daemon aceita a run; pausar/parar antes
+        #: disso simplesmente não faz nada.
+        self.run_id = ""
 
     def run(
         self,
@@ -38,6 +41,7 @@ class EngineRunSession:
             spec_mode=spec_mode,
         )
         run_id = str(created["id"])
+        self.run_id = run_id
         try:
             for event in self._client.stream_events(run_id):
                 self._dispatch(event)
@@ -45,6 +49,30 @@ class EngineRunSession:
             if self._owns_client:
                 self._client.close()
         return self._exit_code
+
+    def pause(self) -> bool:
+        return self._control("pause")
+
+    def resume(self) -> bool:
+        return self._control("resume")
+
+    def stop(self) -> bool:
+        return self._control("cancel")
+
+    def _control(self, action: str) -> bool:
+        """Comandos de controle vêm da UI, fora da thread que roda a run."""
+        if not self.run_id:
+            return False
+        method = {
+            "pause": self._client.pause_run,
+            "resume": self._client.resume_run,
+            "cancel": self._client.cancel_run,
+        }[action]
+        try:
+            method(self.run_id)
+        except Exception:
+            return False
+        return True
 
     def _dispatch(self, event: dict[str, Any]) -> None:
         kind = str(event.get("type", ""))
@@ -93,6 +121,11 @@ class EngineRunSession:
             setter = getattr(self._stream, "set_session_id", None)
             if callable(setter):
                 setter(str(event.get("session_id", "")))
+            return
+        if kind in {"run.paused", "run.resumed", "run.stopped"}:
+            handler = getattr(self._stream, f"mark_{kind.split('.', 1)[1]}", None)
+            if callable(handler):
+                handler()
             return
         if kind == "stream.finish":
             self._stream.finish()

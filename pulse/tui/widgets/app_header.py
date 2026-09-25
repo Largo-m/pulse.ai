@@ -6,6 +6,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.status_labels import status_label
 from pulse.tui.state import CockpitState, progress_bar
 
 
@@ -38,7 +39,12 @@ class AppHeader(Widget):
             done = state.task_done_count()
             total = state.task_total_count()
             bar = progress_bar(done, total, width=12)
-            self.run_label = f"[{bar}] {done}/{total}"
+            label = f"[{bar}] {done}/{total}"
         else:
-            self.run_label = f"RUN {state.done_count()}/{state.total_count()}"
+            label = f"RUN {state.done_count()}/{state.total_count()}"
+        if state.paused:
+            label = f"{label} · {status_label('paused').upper()}"
+        elif state.stopped:
+            label = f"{label} · PARADA"
+        self.run_label = label
         self.workflow_label = state.workflow_label

@@ -58,12 +58,19 @@ class PhaseItem:
     _seen_issues: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def elapsed_label(self, now: float | None = None) -> str:
+        """Duração do passo. O relógio só anda enquanto o passo executa.
+
+        A duração fechada tem precedência sobre o status: uma spec aberta pelo
+        histórico chega com a fase marcada como `running` e a duração já gravada
+        em `ended_at` — sem essa ordem, a coluna voltava a contar do zero do
+        processo e crescia sozinha numa tela que não está rodando nada.
+        """
         if self.started_at is None:
             return ""
-        if self.status == PhaseStatus.RUNNING:
-            end = now or time.monotonic()
-        elif self.ended_at is not None:
+        if self.ended_at is not None:
             end = self.ended_at
+        elif self.status == PhaseStatus.RUNNING:
+            end = now or time.monotonic()
         else:
             return ""
         return format_elapsed(end - self.started_at)

@@ -20,6 +20,7 @@ def run_plan(
     render_header: bool = True,
     spec_slug: str | None = None,
     spec_mode: str | None = None,
+    control: Any | None = None,
 ) -> int:
     kwargs: dict[str, Any] = {
         "user_prompt": user_prompt,
@@ -36,7 +37,12 @@ def run_plan(
         return run_analyze_codebase(**kwargs)
 
     if spec_type_id == "spec":
-        return run_spec(**kwargs, spec_slug=spec_slug, spec_mode=spec_mode)
+        return run_spec(
+            **kwargs,
+            spec_slug=spec_slug,
+            spec_mode=spec_mode,
+            control=control,
+        )
 
     spec_type = get_spec_type(spec_type_id)
     label = spec_type.label if spec_type else spec_type_id

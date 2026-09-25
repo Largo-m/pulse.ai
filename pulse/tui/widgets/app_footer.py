@@ -36,6 +36,13 @@ class AppFooter(Widget):
         elif state is not None and state.phase_has_artifacts():
             text.append("[A]", style="#A2D729")
             text.append(" ABRIR  ", style="#888888")
+        if state is not None and state.running:
+            if state.can_pause:
+                text.append("[P]", style="#A2D729")
+                text.append(" RETOMAR  " if state.paused else " PAUSAR  ", style="#888888")
+            if state.can_stop:
+                text.append("[S]", style="#A2D729")
+                text.append(" PARAR  ", style="#888888")
         text.append("[↑↓/JK]", style="#A2D729")
         text.append(" NAV  ", style="#888888")
         text.append("[TAB]", style="#A2D729")

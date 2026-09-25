@@ -15,6 +15,7 @@ from pulse.history.events import (
     PhaseItem,
     PhaseStatus,
 )
+from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.artifacts import (
     artifact_key,
     extract_spec_artifacts_from_text,
@@ -25,6 +26,11 @@ Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 NAV_TASK = "task"
+
+#: Flows com barreira entre steps: pausar segura e retomar segue do ponto certo.
+PAUSABLE_WORKFLOWS = frozenset({"spec", "new-issue"})
+#: Parar corta o turno em voo; vale também para quem não tem barreira.
+STOPPABLE_WORKFLOWS = frozenset({"spec", "new-issue", "fix-bug"})
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -53,6 +59,13 @@ class CockpitState:
     artifact_pane_open: bool = False
     focus_target: str = "phases"
     running: bool = False
+    #: Run viva, mas segurada pelo usuário. `running` continua True.
+    paused: bool = False
+    stopped: bool = False
+    #: Nem todo flow tem barreira entre steps: sem ela, pausar viraria parar.
+    #: Melhor não oferecer a tecla do que quebrar a promessa de retomar.
+    can_pause: bool = False
+    can_stop: bool = False
     exit_code: int | None = None
     acp_session_id: str = ""
     acp_sessions: list[dict[str, str]] = field(default_factory=list)
@@ -91,6 +104,10 @@ class CockpitState:
         self._active_assistant_id = None
         self._follow_live = True
         self.running = False
+        self.paused = False
+        self.stopped = False
+        self.can_pause = workflow_id in PAUSABLE_WORKFLOWS
+        self.can_stop = workflow_id in STOPPABLE_WORKFLOWS
         self.exit_code = None
         self.notify()
 
@@ -152,6 +169,10 @@ class CockpitState:
         routed_id = ROUTED_FLOW_WORKFLOWS.get(str(flow).strip().lower())
         if routed_id is None:
             return
+        # Só agora se sabe onde a spec caiu: quick roda num fôlego só e não tem
+        # onde segurar, então lá a pausa deixa de ser oferecida.
+        self.can_pause = routed_id in PAUSABLE_WORKFLOWS
+        self.can_stop = routed_id in STOPPABLE_WORKFLOWS
         now = time.monotonic()
         for phase in self.phases:
             if phase.id == "classify":
@@ -191,12 +212,47 @@ class CockpitState:
                 task.status = PhaseStatus.FAILED
         self.notify()
 
+    def mark_paused(self) -> None:
+        """Pausa cortou o step em voo — ele volta para pendente e o relógio para.
+
+        O step interrompido é refeito do começo ao retomar, então zerar o
+        cronômetro é o que descreve a verdade: o tempo que ele já tinha gasto
+        não conta para nada.
+        """
+        self.paused = True
+        for item in [*self.phases, *self.tasks]:
+            if item.status != PhaseStatus.RUNNING:
+                continue
+            item.status = PhaseStatus.PENDING
+            item.started_at = None
+            item.ended_at = None
+        self.notify()
+
+    def mark_resumed(self) -> None:
+        self.paused = False
+        self.notify()
+
+    def mark_stopped(self) -> None:
+        self.paused = False
+        self.stopped = True
+        for item in [*self.phases, *self.tasks]:
+            if item.status != PhaseStatus.RUNNING:
+                continue
+            item.status = PhaseStatus.PENDING
+            item.started_at = None
+            item.ended_at = None
+        self.notify()
+
     def mark_finished(self, exit_code: int = 0) -> None:
         if exit_code == 0:
             self.complete_active_phase()
+        elif exit_code == RUN_STOPPED:
+            # Parada do usuário não é falha: nada vira "falhou" na sidebar.
+            self.mark_stopped()
         else:
             self.fail_active()
         self.running = False
+        self.paused = False
         self.exit_code = exit_code
         self.notify()
 

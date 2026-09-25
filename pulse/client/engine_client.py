@@ -95,6 +95,15 @@ class EngineClient:
     def answer_prompt(self, prompt_id: str, answer: Any) -> dict[str, Any]:
         return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})
 
+    def pause_run(self, run_id: str) -> dict[str, Any]:
+        return self.post(f"/api/runs/{run_id}/pause")
+
+    def resume_run(self, run_id: str) -> dict[str, Any]:
+        return self.post(f"/api/runs/{run_id}/resume")
+
+    def cancel_run(self, run_id: str) -> dict[str, Any]:
+        return self.post(f"/api/runs/{run_id}/cancel")
+
     def start_run(
         self,
         workflow_id: str,

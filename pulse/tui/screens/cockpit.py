@@ -7,8 +7,10 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
+from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
+from pulse.tui.screens.resume_choice import RESTART, RESUME, ResumeChoiceScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -22,6 +24,10 @@ from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 _PROMPT_BLOCKED = {
+    # Com um prompt aberto quem está travado é o usuário, não o agente: cortar
+    # o turno aqui deixaria a pergunta sem ninguém para respondê-la.
+    "toggle_pause",
+    "stop_run",
     "toggle_artifact_pane",
     "close_artifact_pane",
     "escape_back",
@@ -37,6 +43,8 @@ class CockpitScreen(Screen[None]):
     BINDINGS = [
         Binding("q", "back_to_menu", "Menu"),
         Binding("b", "back_to_menu", "Menu"),
+        Binding("p", "toggle_pause", "Pausar"),
+        Binding("s", "stop_run", "Parar"),
         Binding("tab", "toggle_focus", "Focus"),
         Binding("a", "toggle_artifact_pane", "Artifacts"),
         Binding("escape", "escape_back", "Back"),
@@ -77,6 +85,8 @@ class CockpitScreen(Screen[None]):
         self._worker = None
         self._dirty = False
         self._prompt_open = False
+        #: Criada na thread da run; as teclas de controle falam com ela por HTTP.
+        self._session = None
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -124,6 +134,10 @@ class CockpitScreen(Screen[None]):
         if self._prompt_open and action in {"nav_up", "nav_down"}:
             if self.state.focus_target != "phases":
                 return False
+        if action == "toggle_pause":
+            return self.state.running and self.state.can_pause and self._session is not None
+        if action == "stop_run":
+            return self.state.running and self.state.can_stop and self._session is not None
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":
@@ -170,6 +184,7 @@ class CockpitScreen(Screen[None]):
                 stream=self.sink,
                 prompt_handler=self.prompt_handler,
             )
+            self._session = session
             code = session.run(
                 workflow_id=self.workflow_id,
                 user_prompt=self.user_prompt,
@@ -191,12 +206,87 @@ class CockpitScreen(Screen[None]):
     def _on_workflow_done(self, code: int) -> None:
         if code == 0:
             self.state.add_info("Workflow concluído")
+        elif code == RUN_STOPPED:
+            self.state.add_info("Run parada — dá para retomar de onde parou")
+            self._sync_ui(force=True)
+            self._offer_restart()
+            return
         elif not self.state.has_error():
             self.state.add_error(
                 "Workflow falhou",
                 f"O fluxo encerrou com código {code}.",
             )
         self._sync_ui(force=True)
+
+    def action_toggle_pause(self) -> None:
+        """`p` pausa a run viva e retoma a pausada."""
+        session = self._session
+        if session is None or not self.state.running or not self.state.can_pause:
+            return
+        if self.state.paused:
+            session.resume()
+            return
+        session.pause()
+        # O corte do turno leva alguns instantes; o estado real chega pelo
+        # evento `run.paused`, mas a intenção aparece na hora.
+        self.state.add_info("Pausando — cortando o step em execução")
+        self._sync_ui(force=True)
+
+    def action_stop_run(self) -> None:
+        session = self._session
+        if session is None or not self.state.running or not self.state.can_stop:
+            return
+        session.stop()
+        self.state.add_info("Parando a run")
+        self._sync_ui(force=True)
+
+    def _offer_restart(self) -> None:
+        """Depois de parar, oferece o mesmo retomar/refazer do histórico."""
+        pending = self._resumable_workflow()
+        if pending is None:
+            return
+        slug, summary = pending
+
+        def _chosen(mode: str | None) -> None:
+            if mode not in {RESUME, RESTART}:
+                return
+            self.app.pop_screen()
+            self.app.open_cockpit(
+                self.workflow_id,
+                self.user_prompt,
+                spec_slug=slug,
+                spec_mode=mode,
+            )
+
+        self.app.push_screen(
+            ResumeChoiceScreen(slug=slug, summary=summary),
+            callback=_chosen,
+        )
+
+    def _resumable_workflow(self) -> tuple[str, str] | None:
+        from pulse.plan.specify_state import (
+            find_resumable_workflows,
+            find_workflow_by_slug,
+            resume_summary,
+            workflow_is_incomplete,
+        )
+
+        workspace = Path(self._cwd)
+        try:
+            if self.spec_slug:
+                state = find_workflow_by_slug(workspace, self.spec_slug)
+                if state is None or not workflow_is_incomplete(state):
+                    return None
+                return state.feature_slug, resume_summary(state)
+            # Spec nova: o slug só existe depois que o agente criou a pasta, então
+            # a run parada é a incompleta mais recente.
+            pending = find_resumable_workflows(workspace)
+        except (OSError, ValueError):
+            return None
+        if not pending:
+            return None
+        newest = max(pending, key=lambda item: item.updated_at or item.created_at)
+        return newest.feature_slug, resume_summary(newest)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":

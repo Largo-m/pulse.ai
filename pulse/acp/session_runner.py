@@ -30,9 +30,14 @@ from pulse.plan.setup_project_prompt import build_setup_project_artifact_prompt
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.permission import PermissionPolicy
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
+from pulse.runcontrol import RunControl
 
 MAX_QUICK_PLAN_TURNS = 4
 MAX_PHASE_APPROVAL_TURNS = 4
+
+#: Depois de pedir `session/cancel`, quanto esperamos o agente fechar o turno
+#: por conta própria antes de considerar cancelado mesmo assim.
+CANCEL_GRACE_SECONDS = 10.0
 
 
 class AcpSessionRunner:
@@ -48,8 +53,11 @@ class AcpSessionRunner:
         enable_mcp_ask: bool = True,
         pulse_agent: str | None = None,
         runtime: AgentRuntime | None = None,
+        control: RunControl | None = None,
     ) -> None:
         self._command = command
+        #: Sem controle externo (CLI), o padrão nunca pausa nem para.
+        self._control = control or RunControl()
         self._runtime = runtime or runtime_for_command(command)
         self._cwd = cwd
         self._permission_policy = permission_policy
@@ -668,10 +676,19 @@ class AcpSessionRunner:
         )
 
         deadline = time.monotonic() + self._timeout_seconds
+        cancelling = False
         while time.monotonic() < deadline:
+            # Pausar/parar corta o turno em voo. Só vale para `session/prompt`:
+            # o resto do protocolo é rápido e cancelar no meio deixaria a
+            # sessão num estado que o agente não sabe descrever.
+            if not cancelling and method == "session/prompt" and self._control.interrupted:
+                self._cancel_active_session()
+                cancelling = True
+                deadline = min(deadline, time.monotonic() + CANCEL_GRACE_SECONDS)
+
             remaining = deadline - time.monotonic()
             try:
-                response_id = self._response_queue.get(timeout=min(1.0, remaining))
+                response_id = self._response_queue.get(timeout=min(1.0, max(0.0, remaining)))
             except Empty:
                 continue
 
@@ -681,10 +698,36 @@ class AcpSessionRunner:
 
             if "error" in response:
                 error = response["error"]
+                if cancelling:
+                    # O agente reclamou do cancelamento: o corte é o que importa.
+                    return {"stopReason": "cancelled"}
                 raise RuntimeError(error.get("message", "Erro ACP desconhecido"))
             return response.get("result", {})
 
+        if cancelling:
+            # O agente não fechou o turno no prazo — a sessão é descartada logo
+            # em seguida (`close_session`), então seguir como cancelado é seguro.
+            self._logger.log_event("prompt_cancel_timeout", {"method": method})
+            return {"stopReason": "cancelled"}
         raise TimeoutError(f"Timeout aguardando resposta de `{method}`")
+
+    def _cancel_active_session(self) -> None:
+        """Pede ao agente para abortar o turno da sessão ativa."""
+        session_id = self._session_id
+        if session_id is None:
+            return
+        self._logger.log_event("session_cancel", {"session_id": session_id})
+        try:
+            self._send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session/cancel",
+                    "params": {"sessionId": session_id},
+                }
+            )
+        except (RuntimeError, OSError, ValueError) as error:
+            # Processo já caiu ou stdin fechou: o turno morre junto, tudo bem.
+            self._logger.log_event("session_cancel_failed", {"error": str(error)})
 
     def initialize(self) -> dict[str, Any]:
         result = self._request(
@@ -760,6 +803,11 @@ class AcpSessionRunner:
 
     def bind_spec(self, spec_dir: str) -> None:
         self._spec_dir = spec_dir
+
+    @property
+    def control(self) -> RunControl:
+        """Pausa/parada desta run — os flows consultam nas barreiras."""
+        return self._control
 
     def set_permission_policy(self, policy: PermissionPolicy) -> None:
         self._permission_policy = policy

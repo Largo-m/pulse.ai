@@ -10,6 +10,7 @@ from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.plan.runner import run_plan
 from pulse.plan.spec_types import SPEC_TYPES, get_spec_type
+from pulse.runcontrol import RUN_STOPPED, RunControl
 
 
 @dataclass
@@ -23,6 +24,7 @@ class RunState:
     bus: EventBus = field(default_factory=EventBus)
     correlator: PromptCorrelator | None = None
     cancel_requested: bool = False
+    control: RunControl | None = None
     #: Spec conhecido a retomar/refazer (escolhido no histórico).
     spec_slug: str | None = None
     spec_mode: str | None = None
@@ -53,6 +55,10 @@ class RunManager:
         run_id = str(uuid.uuid4())
         bus = EventBus()
         correlator = PromptCorrelator(bus)
+
+        def _publish_control(kind: str) -> None:
+            bus.publish({"type": f"run.{kind}", "run_id": run_id})
+
         state = RunState(
             id=run_id,
             workflow_id=workflow_id,
@@ -60,6 +66,7 @@ class RunManager:
             workspace=workspace or str(Path.cwd()),
             bus=bus,
             correlator=correlator,
+            control=RunControl(on_change=_publish_control),
             spec_slug=spec_slug,
             spec_mode=spec_mode,
         )
@@ -78,12 +85,31 @@ class RunManager:
         with self._lock:
             return self._runs.get(run_id)
 
+    def pause(self, run_id: str) -> bool:
+        """Corta o step em voo e segura a run. Retomável sem refazer o resto."""
+        state = self.get(run_id)
+        if state is None or state.control is None:
+            return False
+        state.control.pause()
+        state.status = "paused"
+        return True
+
+    def resume(self, run_id: str) -> bool:
+        state = self.get(run_id)
+        if state is None or state.control is None:
+            return False
+        state.control.resume()
+        state.status = "running"
+        return True
+
     def cancel(self, run_id: str) -> bool:
         state = self.get(run_id)
         if state is None:
             return False
         state.cancel_requested = True
-        state.bus.publish({"type": "run.cancel_requested"})
+        if state.control is not None:
+            state.control.stop()
+        state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
         return True
 
     def answer_prompt(self, prompt_id: str, answer: Any) -> bool:
@@ -115,6 +141,7 @@ class RunManager:
                 render_header=False,
                 spec_slug=state.spec_slug,
                 spec_mode=state.spec_mode,
+                control=state.control,
             )
         except Exception as error:
             state.status = "failed"
@@ -130,7 +157,12 @@ class RunManager:
             state.bus.close()
             return
         state.exit_code = exit_code
-        state.status = "completed" if exit_code == 0 else "failed"
+        if exit_code == 0:
+            state.status = "completed"
+        elif exit_code == RUN_STOPPED:
+            state.status = "stopped"
+        else:
+            state.status = "failed"
         state.bus.publish(
             {
                 "type": "run.finished",

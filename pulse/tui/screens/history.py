@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -11,6 +12,7 @@ from textual.widgets.option_list import Option
 
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
+from pulse.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 
 
@@ -89,8 +91,11 @@ class HistoryListScreen(Screen[None]):
         self.query_one("#history-search", Input).focus()
 
 
-def _format_item(item: HistoryItem) -> str:
+def _format_item(item: HistoryItem) -> Text:
     title = item.title.replace("\n", " ").strip() or item.slug
     if len(title) > 48:
         title = title[:47] + "…"
-    return f"{item.kind_label:<5}  {item.flow_label:<5}  {item.status_label:<12}  {title}"
+    line = Text(f"{item.kind_label:<5}  {item.flow_label:<5}  ")
+    line.append(f"{item.status_label:<{LABEL_WIDTH}}", style=status_color(item.status))
+    line.append(f"  {title}")
+    return line
