@@ -714,6 +714,23 @@ def _run_execute_task(
             return 0
         if outcome == "cancelled":
             return 1
+        if outcome == "unverified":
+            choice, guidance = _offer_unverified(
+                runner, f"Task {task.task_id} sem gate", reason
+            )
+            if choice == "accept":
+                state.mark_task_done(task.task_id)
+                state.save(workspace)
+                _sync_stream_tasks(runner, state)
+                _notify(runner, f"Task {task.task_id} concluída sem verificação")
+                return 0
+            if choice != "retry":
+                state.mark_task_failed(task.task_id)
+                state.save(workspace)
+                _sync_stream_tasks(runner, state)
+                return 1
+            _notify(runner, f"Refazendo Task {task.task_id} com orientação do usuário")
+            continue
         choice, guidance = _offer_retry(runner, f"Task {task.task_id} falhou", reason)
         if choice != "retry":
             state.mark_task_failed(task.task_id)
@@ -778,11 +795,14 @@ def _attempt_execute_task(
     _force_task_pending(state, task.task_id)
 
     if not task.gate_commands:
+        # Não é falha da tentativa: `tasks.md` não declarou como verificar. Refazer
+        # daria exatamente o mesmo resultado — por isso vira um outcome próprio,
+        # com decisões que terminam o laço.
         reason = "sem gate de verificação — a task não foi confirmada"
         if not cockpit:
             print_workflow_result(f"{label} {reason}.")
         _notify(runner, f"{label} {reason}")
-        return "failed", reason
+        return "unverified", reason
 
     gate_wave = Wave(wave_id=1, tasks=(task,), parallel=False)
     gate_results = run_wave_gates(workspace=workspace, wave=gate_wave)
@@ -840,6 +860,39 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str
             return "retry", guidance
         # desistiu de escrever: volta a perguntar em vez de parar por engano
         return _offer_retry(runner, title, reason)
+    return "stop", ""
+
+
+def _offer_unverified(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+    """Decide o que fazer com uma task que rodou mas não tem como ser verificada.
+
+    Não oferece "Refazer" puro de propósito: a ausência de gate está no
+    `tasks.md`, não na execução, então repetir a tentativa cairia no mesmo
+    lugar — era o loop infinito. Todas as saídas aqui terminam o laço, e só
+    "Outro" repete, agora com instrução nova.
+    """
+    handler = getattr(runner, "_prompt_handler", None)
+    select = getattr(handler, "select_choice", None)
+    prompt = reason.strip() or "A task não pôde ser verificada."
+    if not callable(select):
+        _notify(runner, f"{title}: {prompt}")
+        return "stop", ""
+    choice = select(
+        prompt,
+        [
+            ("Concluir sem verificação", "accept"),
+            ("Outro — dizer o que fazer", "guidance"),
+            ("Parar", "stop"),
+        ],
+        title=title,
+    )
+    if choice == "accept":
+        return "accept", ""
+    if choice == "guidance":
+        guidance = _ask_guidance(runner, title)
+        if guidance:
+            return "retry", guidance
+        return _offer_unverified(runner, title, reason)
     return "stop", ""
 
 

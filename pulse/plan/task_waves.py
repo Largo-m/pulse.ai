@@ -7,8 +7,10 @@ from pathlib import Path
 
 
 MAX_WAVE_SIZE = 5
+# Aceita as variações que as skills realmente escrevem: "Gate check passes:",
+# "Gate check:", "Gate:" — todas seguidas do comando entre crases.
 _GATE_LINE_RE = re.compile(
-    r"Gate check passes:\s*`([^`]+)`",
+    r"Gate(?:\s+check)?(?:\s+passes)?\s*:\s*`([^`]+)`",
     re.IGNORECASE,
 )
 _GATE_FIELD_RE = re.compile(r"^\*\*Gate\*\*:\s*(.+)$", re.MULTILINE | re.IGNORECASE)
@@ -38,9 +40,11 @@ _DONE_WHEN_BLOCK_RE = re.compile(
     re.IGNORECASE,
 )
 _VERIFY_BLOCK_RE = re.compile(
-    r"\*\*Verify\*\*:\s*\n((?:.*\n)*?)(?=\n\*\*|\n### |\Z)",
+    r"\*\*Verify\*\*:[ \t]*\n((?:.*\n)*?)(?=\n\*\*|\n### |\Z)",
     re.IGNORECASE,
 )
+#: `**Verify**: <comando>` na mesma linha, forma tão comum quanto o bloco.
+_VERIFY_INLINE_RE = re.compile(r"^\*\*Verify\*\*:[ \t]*(\S.*)$", re.MULTILINE | re.IGNORECASE)
 _TASK_ID_TOKEN_RE = re.compile(r"\bT\d+\b")
 
 
@@ -284,6 +288,10 @@ def _parse_gate_commands(body: str) -> tuple[str, ...]:
     if done_match:
         for match in _GATE_LINE_RE.finditer(done_match.group(1)):
             add(match.group(1))
+
+    for match in _VERIFY_INLINE_RE.finditer(body):
+        for tick in _BACKTICK_RE.finditer(match.group(1)):
+            add(tick.group(1))
 
     verify_match = _VERIFY_BLOCK_RE.search(body)
     if verify_match:
