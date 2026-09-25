@@ -36,6 +36,8 @@ class PromptPort(Protocol):
 
     def run_text_questionnaire(self, text: str) -> str | None: ...
 
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None: ...
+
 
 class NullStreamSink:
     def __init__(self) -> None:
@@ -106,6 +108,9 @@ class NullPromptPort:
         return None
 
     def run_text_questionnaire(self, text: str) -> str | None:
+        return None
+
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
         return None
 
     def select_choice(

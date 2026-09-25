@@ -345,6 +345,13 @@ class TextualPromptHandler:
             return permission_cancelled()
         return permission_selected(str(selected))
 
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
+        answer = self._bridge.text(prompt, title=title)
+        if answer is None:
+            return None
+        text = str(answer).strip()
+        return text or None
+
     def select_choice(
         self,
         prompt: str,

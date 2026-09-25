@@ -134,6 +134,16 @@ class EngineRunSession:
             )
         elif prompt_kind == "questionnaire":
             answer = self._handle_questionnaire(payload)
+        elif prompt_kind == "text":
+            ask_text = getattr(self._prompt_handler, "ask_text", None)
+            answer = (
+                ask_text(
+                    str(payload.get("prompt") or ""),
+                    title=str(payload.get("title") or ""),
+                )
+                if callable(ask_text)
+                else None
+            )
         elif prompt_kind == "choice":
             select = getattr(self._prompt_handler, "select_choice", None)
             choices_raw = payload.get("choices") or []

@@ -409,6 +409,7 @@ def _run_approval_phase(
     phase: str,
     preferred_model: str | None,
 ) -> int:
+    guidance = ""
     while True:
         outcome, reason = _attempt_approval_phase(
             runner=runner,
@@ -419,6 +420,7 @@ def _run_approval_phase(
             state=state,
             phase=phase,
             preferred_model=preferred_model,
+            guidance=guidance,
         )
         if outcome == "approved":
             return 0
@@ -428,13 +430,16 @@ def _run_approval_phase(
             state.save(workspace)
             _sync_stream_phases(runner, state)
             return 0
-        choice = _offer_retry(runner, f"Fase {phase.capitalize()} falhou", reason)
+        choice, guidance = _offer_retry(runner, f"Fase {phase.capitalize()} falhou", reason)
         if choice != "retry":
             state.mark_phase_failed(phase)
             state.save(workspace)
             _sync_stream_phases(runner, state)
             return 1
-        _notify(runner, f"Refazendo fase {phase}")
+        if guidance:
+            _notify(runner, f"Refazendo fase {phase} com orientação do usuário")
+        else:
+            _notify(runner, f"Refazendo fase {phase}")
 
 
 def _attempt_approval_phase(
@@ -447,6 +452,7 @@ def _attempt_approval_phase(
     state: WorkflowState,
     phase: str,
     preferred_model: str | None,
+    guidance: str = "",
 ) -> tuple[str, str]:
     prompt_builder = _phase_prompt_builder(phase)
     state.mark_phase_in_progress(phase)
@@ -480,7 +486,8 @@ def _attempt_approval_phase(
             user_prompt=user_prompt,
             skill_dir=skill_dir,
             state=state,
-        ),
+        )
+        + _guidance_block(guidance),
         preferred_model=preferred_model,
         build_continuation=build_continuation,
         continuation_kwargs={},
@@ -562,6 +569,7 @@ def _run_execute_phase(
     if not state.tasks:
         if not cockpit:
             print_workflow_result("Execute — implementação inline (Tasks pulada)")
+        execute_guidance = ""
         while True:
             result = runner.run_isolated_prompt(
                 workflow="spec",
@@ -571,7 +579,8 @@ def _run_execute_phase(
                     user_prompt=user_prompt,
                     skill_dir=skill_dir,
                     state=state,
-                ),
+                )
+                + _guidance_block(execute_guidance),
                 preferred_model=preferred_model,
                 phase_id="execute",
             )
@@ -583,12 +592,18 @@ def _run_execute_phase(
                 )
                 if not cockpit:
                     print_workflow_result(f"Execute falhou: {reason}")
-                if _offer_retry(runner, "Fase Execute falhou", reason) != "retry":
+                execute_choice, execute_guidance = _offer_retry(
+                    runner, "Fase Execute falhou", reason
+                )
+                if execute_choice != "retry":
                     state.mark_phase_failed("execute")
                     state.save(workspace)
                     _sync_stream_phases(runner, state)
                     return 1
-                _notify(runner, "Refazendo fase Execute")
+                if execute_guidance:
+                    _notify(runner, "Refazendo fase Execute com orientação do usuário")
+                else:
+                    _notify(runner, "Refazendo fase Execute")
                 continue
             state.sync_tasks_from_markdown(tasks_path)
             state.save(workspace)
@@ -680,6 +695,7 @@ def _run_execute_task(
         return 0
 
     label = f"Task {task.task_id}: {task.title}".strip()
+    guidance = ""
     while True:
         outcome, reason = _attempt_execute_task(
             runner=runner,
@@ -692,18 +708,22 @@ def _run_execute_task(
             tasks_skipped=tasks_skipped,
             task=task,
             label=label,
+            guidance=guidance,
         )
         if outcome == "done":
             return 0
         if outcome == "cancelled":
             return 1
-        choice = _offer_retry(runner, f"Task {task.task_id} falhou", reason)
+        choice, guidance = _offer_retry(runner, f"Task {task.task_id} falhou", reason)
         if choice != "retry":
             state.mark_task_failed(task.task_id)
             state.save(workspace)
             _sync_stream_tasks(runner, state)
             return 1
-        _notify(runner, f"Refazendo Task {task.task_id}")
+        if guidance:
+            _notify(runner, f"Refazendo Task {task.task_id} com orientação do usuário")
+        else:
+            _notify(runner, f"Refazendo Task {task.task_id}")
 
 
 def _attempt_execute_task(
@@ -718,6 +738,7 @@ def _attempt_execute_task(
     tasks_skipped: bool,
     task: TaskSpec,
     label: str,
+    guidance: str = "",
 ) -> tuple[str, str]:
     if not cockpit:
         print_workflow_result(f"{label}")
@@ -733,7 +754,8 @@ def _attempt_execute_task(
             task_id=task.task_id,
             task_title=task.title,
             tasks_skipped=tasks_skipped,
-        ),
+        )
+        + _guidance_block(guidance),
         preferred_model=preferred_model,
         phase_id="execute",
         task_id=task.task_id,
@@ -789,21 +811,60 @@ def _prompt_succeeded(result: dict[str, Any]) -> bool:
     return str(result.get("stopReason") or "") in _SUCCESS_STOPS
 
 
-def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> str:
+def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+    """Decide o que fazer com uma etapa que falhou.
+
+    Devolve `(escolha, orientação)`. "Outro" deixa o usuário escrever o que o
+    agente deve fazer — nem toda falha se resolve repetindo a mesma tentativa.
+    """
     handler = getattr(runner, "_prompt_handler", None)
     select = getattr(handler, "select_choice", None)
     prompt = reason.strip() or "A etapa não foi concluída."
     if not callable(select):
         _notify(runner, f"{title}: {prompt}")
-        return "stop"
+        return "stop", ""
     choice = select(
         prompt,
-        [("Refazer", "retry"), ("Parar", "stop")],
+        [
+            ("Refazer", "retry"),
+            ("Outro — dizer o que fazer", "guidance"),
+            ("Parar", "stop"),
+        ],
         title=title,
     )
     if choice == "retry":
-        return "retry"
-    return "stop"
+        return "retry", ""
+    if choice == "guidance":
+        guidance = _ask_guidance(runner, title)
+        if guidance:
+            return "retry", guidance
+        # desistiu de escrever: volta a perguntar em vez de parar por engano
+        return _offer_retry(runner, title, reason)
+    return "stop", ""
+
+
+def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:
+    handler = getattr(runner, "_prompt_handler", None)
+    ask_text = getattr(handler, "ask_text", None)
+    if not callable(ask_text):
+        return ""
+    answer = ask_text(
+        "O que o agente deve fazer nesta nova tentativa?",
+        title=title,
+    )
+    return str(answer or "").strip()
+
+
+def _guidance_block(guidance: str) -> str:
+    text = guidance.strip()
+    if not text:
+        return ""
+    return (
+        "\n\n## Orientação do usuário para esta tentativa\n\n"
+        "A tentativa anterior falhou. Siga a orientação abaixo — ela tem\n"
+        "precedência sobre o plano original desta etapa:\n\n"
+        f"{text}\n"
+    )
 
 
 def _notify(runner: AcpSessionRunner, message: str) -> None:

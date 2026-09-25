@@ -113,6 +113,13 @@ class ApiPromptPort:
             return None
         return self.run_parsed_questionnaire(questionnaire)
 
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
+        answer = self._correlator.request("text", {"prompt": prompt, "title": title})
+        if answer is None:
+            return None
+        text = str(answer).strip()
+        return text or None
+
     def select_choice(
         self,
         prompt: str,
