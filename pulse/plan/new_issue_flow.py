@@ -12,15 +12,15 @@ from pulse.doctor.checks import check_runtime_ready
 from pulse.plan.legacy_cleanup import cleanup_legacy_pulse_questions
 from pulse.plan.new_issue_prompt import (
     PULSE_SPEC_SKILL,
-    build_design_prompt,
+    build_techspec_prompt,
     build_execute_inline_prompt,
     build_execute_task_prompt,
     build_phase_continuation_prompt,
-    build_specify_prompt,
+    build_prd_prompt,
     build_tasks_prompt,
     resolve_new_issue_skill,
 )
-from pulse.plan.specify_state import (
+from pulse.plan.workflow_state import (
     OPTIONAL_PHASES,
     PHASE_ORDER,
     PhaseStatus,
@@ -45,13 +45,13 @@ from pulse.store.spec_sessions import record_spec_session
 
 _SUCCESS_STOPS = frozenset({"end_turn", "end", "stop"})
 _PHASE_FILES = {
-    "specify": "spec.md",
-    "design": "design.md",
+    "prd": "PRD.md",
+    "techspec": "TECHSPEC.md",
     "tasks": "tasks.md",
 }
 _PHASE_AGENTS = {
-    "specify": "specify",
-    "design": "design",
+    "prd": "prd",
+    "techspec": "techspec",
     "tasks": "tasks",
     "execute": "implement",
 }
@@ -81,7 +81,7 @@ def run_new_issue(
         return 1
 
     # Resolve antes de checar: cada workflow pode rodar em um runtime diferente.
-    resolved = resolve_config(workspace=workspace, pulse_agent="specify")
+    resolved = resolve_config(workspace=workspace, pulse_agent="prd")
     runtime = get_runtime(getattr(resolved, "agent_name", None))
     blocking = check_runtime_ready(runtime.id)
     if blocking is not None:
@@ -136,7 +136,7 @@ def run_new_issue(
         record_spec_session(
             workspace_root,
             spec_dir=state.feature_dir.as_posix(),
-            phase_id="specify",
+            phase_id="prd",
             acp_session_id=classify_session_id,
         )
 
@@ -191,7 +191,7 @@ def _apply_spec_decision(
     """Retoma ou recomeça um spec específico, sem perguntar nada.
 
     `restart` não apaga artefatos: reseta o workflow.yaml para pendente e deixa
-    o pipeline reescrever spec.md/design.md/tasks.md por cima.
+    o pipeline reescrever PRD.md/TECHSPEC.md/tasks.md por cima.
     """
     existing = next(
         (item for item in list_feature_workflows(workspace) if item.feature_slug == spec_slug),
@@ -274,7 +274,7 @@ def _print_header(
     user_prompt: str,
 ) -> None:
     print_workflow_banner(
-        title="New issue — Specify pipeline",
+        title="New issue — PRD pipeline",
         lines=[
             "Skill: pulse-spec-driven",
             f"Workspace: {workspace}",
@@ -366,7 +366,7 @@ def _run_pipeline(
         if not cockpit:
             print()
         if not cockpit:
-            print_workflow_result("✓ Pipeline Specify concluído")
+            print_workflow_result("✓ Pipeline PRD concluído")
         if not cockpit:
             print_workflow_result(f"Estado em {state.workflow_path.as_posix()}")
         return 0
@@ -388,7 +388,7 @@ def _activate_phase_agent(
     phase: str,
     fallback_model: str | None,
 ) -> str | None:
-    agent_id = _PHASE_AGENTS.get(phase, "specify")
+    agent_id = _PHASE_AGENTS.get(phase, "prd")
     resolved = resolve_config(workspace=workspace, pulse_agent=agent_id)
     policies: dict[str, PermissionPolicy] = {
         "ask": "ask",
@@ -1246,8 +1246,8 @@ def _sync_workflow_tasks(target: WorkflowState, source: WorkflowState) -> None:
 
 def _phase_prompt_builder(phase: str) -> Callable[..., str]:
     builders = {
-        "specify": build_specify_prompt,
-        "design": build_design_prompt,
+        "prd": build_prd_prompt,
+        "techspec": build_techspec_prompt,
         "tasks": build_tasks_prompt,
     }
     if phase not in builders:

@@ -31,7 +31,7 @@ def test_should_not_add_other_option_migration_gate():
     assert not should_add_other_option(
         prompt="1. Este pedido excede o escopo do Quick mode. Como deseja prosseguir?",
         option_labels=[
-            "Migrar para o pipeline completo (Specify → Design → Tasks → Execute)",
+            "Migrar para o pipeline completo (PRD → Techspec → Tasks → Execute)",
             "Quick fix: reutilizar TokenResponseAdapter no interceptor",
             "Quick fix: adicionar testes do RefreshTokenInterceptor",
             "Cancelar",
@@ -53,7 +53,7 @@ def test_classify_quick_questionnaire_outcome():
     migration = (
         "Respostas coletadas via questionário interativo do Pulse:\n\n"
         "1. Como prosseguir?\n"
-        "→ A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute)\n"
+        "→ A) Migrar para o pipeline completo (PRD → Techspec → Tasks → Execute)\n"
     )
     reduce = (
         "Respostas coletadas via questionário interativo do Pulse:\n\n"

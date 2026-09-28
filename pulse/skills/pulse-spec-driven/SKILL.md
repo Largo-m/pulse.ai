@@ -1,6 +1,6 @@
 ---
 name: pulse-spec-driven
-description: Project and feature planning with 4 adaptive phases - Specify, Design, Tasks, Execute. Auto-sizes depth by complexity. EARS requirements, ambiguity ledger, spec-change protocol, independent Verifier (author != verifier), evidence-or-zero, discrimination sensor, review rounds, grounded lessons, and deterministic Python gates. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "specify feature", "discuss feature", "design", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
+description: Project and feature planning with 4 adaptive phases - PRD, Techspec, Tasks, Execute. Auto-sizes depth by complexity. EARS requirements, ambiguity ledger, spec-change protocol, independent Verifier (author != verifier), evidence-or-zero, discrimination sensor, review rounds, grounded lessons, and deterministic Python gates. Does not commit or suggest commit messages — the user controls git. Quick mode checks scope eligibility first; if out of scope, asks whether to migrate to full pipeline before creating quick spec files. Requires explicit approval before implementing quick tasks. CLI user-input protocol for all blocking questions. Use when (1) Starting new projects (initialize vision, goals, roadmap), (2) Working with existing codebases (map stack, architecture, conventions), (3) Planning features (requirements, design, task breakdown), (4) Implementing with verification, (5) Quick ad-hoc tasks (bug fixes, config changes), (6) Tracking decisions/blockers/deferred ideas across sessions, (7) Pausing/resuming work. Triggers on "initialize project", "map codebase", "write prd", "discuss feature", "techspec", "tasks", "implement", "validate", "verify work", "UAT", "quick fix", "quick task", "pause work", "resume work". Do NOT use for architecture decomposition analysis (use architecture skills) or technical design docs (use create-technical-design-doc).
 license: CC-BY-4.0
 metadata:
   author: Pulse
@@ -15,7 +15,7 @@ Read [invariants.md](references/invariants.md) before acting: spec-first, contra
 
 ```
 ┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐   ┌──────────┐
-│ SPECIFY  │ → │  DESIGN  │ → │  TASKS  │ → │ EXECUTE │ → │ VERIFY / │
+│   PRD    │ → │ TECHSPEC │ → │  TASKS  │ → │ EXECUTE │ → │ VERIFY / │
 └──────────┘   └──────────┘   └─────────┘   └─────────┘   │ REVIEW*  │
    required      optional*      optional*     required     └──────────┘
 
@@ -26,19 +26,19 @@ Read [invariants.md](references/invariants.md) before acting: spec-first, contra
 
 **The complexity determines the depth, not a fixed pipeline.** Before starting any feature, assess its scope and apply only what's needed:
 
-| Scope       | What                     | Specify                                                 | Design                                          | Tasks                         | Execute                                               |
+| Scope       | What                     | PRD                                                 | Techspec                                          | Tasks                         | Execute                                               |
 | ----------- | ------------------------ | ------------------------------------------------------- | ----------------------------------------------- | ----------------------------- | ----------------------------------------------------- |
 | **Small**   | ≤3 files, one sentence   | **Quick mode** — skip pipeline entirely                 | -                                               | -                             | -                                                     |
 | **Medium**  | Clear feature, <10 tasks | Spec (brief)                                            | Skip — design inline                            | Skip — tasks implicit         | Implement + verify                                    |
 | **Large**   | Multi-component feature  | Full spec + requirement IDs                             | Architecture + components                       | Full breakdown + dependencies | Implement + verify per task                           |
-| **Complex** | Ambiguity, new domain    | Full spec + [discuss gray areas](references/discuss.md) | [Research](references/design.md) + architecture | Breakdown + parallel plan     | Implement + [interactive UAT](references/validate.md) |
+| **Complex** | Ambiguity, new domain    | Full spec + [discuss gray areas](references/discuss.md) | [Research](references/techspec.md) + architecture | Breakdown + parallel plan     | Implement + [interactive UAT](references/validate.md) |
 
 **Rules:**
 
-- **Specify and Execute are always required** — you always need to know WHAT and DO it
-- **Design is skipped** when the change is straightforward (no architectural decisions, no new patterns)
+- **PRD and Execute are always required** — you always need to know WHAT and DO it
+- **Techspec is skipped** when the change is straightforward (no architectural decisions, no new patterns)
 - **Tasks is skipped** when there are ≤3 obvious steps (they become implicit in Execute)
-- **Discuss is triggered within Specify** only when the agent detects ambiguous gray areas that need user input
+- **Discuss is triggered within PRD** only when the agent detects ambiguous gray areas that need user input
 - **Interactive UAT is triggered within Execute** only for user-facing features with complex behavior
 - **Quick mode** is the express lane — for bug fixes, config changes, and small tweaks
 - **Threat model** is written only when a trigger fires (auth, payments, PII, trust boundaries) — see [threat-model.md](references/threat-model.md)
@@ -66,11 +66,11 @@ Read [invariants.md](references/invariants.md) before acting: spec-first, contra
 │   └── CONCERNS.md
 ├── features/           # Feature specifications
 │   └── [feature]/
-│       ├── spec.md         # Requirements, EARS ACs, ledger, traceability
+│       ├── PRD.md         # Requirements, EARS ACs, ledger, traceability
 │       ├── context.md      # User decisions for gray areas (only when discuss is triggered)
 │       ├── surface.md      # Public CLI/API/UI contract (only if public surface)
 │       ├── tests.md        # Test catalog with stable IDs (Large/Complex)
-│       ├── design.md       # Architecture & components (only for Large/Complex)
+│       ├── TECHSPEC.md       # Architecture & components (only for Large/Complex)
 │       ├── threat-model.md # Only when a security trigger fires
 │       ├── tasks.md        # Outcomes + parseable graph (only for Large/Complex)
 │       ├── validation.md   # Verifier report (Feature Done)
@@ -86,7 +86,7 @@ Read [invariants.md](references/invariants.md) before acting: spec-first, contra
 **New project:**
 
 1. Initialize project → PROJECT.md + ROADMAP.md
-2. For each feature → Specify → (Design) → (Tasks) → Execute → Verifier → (Review)
+2. For each feature → PRD → (Techspec) → (Tasks) → Execute → Verifier → (Review)
 
 **Existing codebase:**
 
@@ -127,7 +127,7 @@ See [quick-mode.md](references/quick-mode.md) for the full process and approval 
 
 Scripts live under this skill's `scripts/` directory. Resolve `<skill-dir>` from this `SKILL.md`. See [gates.md](references/gates.md).
 
-- Before confirming a spec: `python3 <skill-dir>/scripts/validate_spec.py <feature>`
+- Before confirming a spec: `python3 <skill-dir>/scripts/validate_prd.py <feature>`
 - Before presenting tasks: `python3 <skill-dir>/scripts/validate_tasks.py <feature>`
 - Before Feature Done: `python3 <skill-dir>/scripts/validate_validation.py <feature>`
 - After Feature Done / spec change: `python3 <skill-dir>/scripts/validate_metrics.py <feature>`
@@ -200,7 +200,7 @@ Resposta:
 - Never invent or assume mandatory answers
 - Resume from the exact interruption point after the user replies
 
-All phase references (project-init, specify, discuss, tasks, validate, quick-mode, etc.) defer to this protocol.
+All phase references (project-init, prd, discuss, tasks, validate, quick-mode, etc.) defer to this protocol.
 
 ## Context Loading Strategy
 
@@ -215,13 +215,13 @@ All phase references (project-init, specify, discuss, tasks, validate, quick-mod
 - Codebase docs (when working in existing project)
 - CONCERNS.md (when planning features that touch flagged areas, estimating risk, or modifying fragile components)
 - TESTING.md (when creating tasks or executing — drives test type assignment and gate checks)
-- spec.md (when working on specific feature)
+- PRD.md (when working on specific feature)
 - context.md (when designing or implementing from user decisions)
 - surface.md / tests.md / threat-model.md (when those files exist)
-- design.md (when implementing from design)
+- TECHSPEC.md (when implementing from design)
 - tasks.md (when executing tasks)
 - validation.md (when resuming after Execute)
-- confirmed lessons in STATE.md (Specify and Design)
+- confirmed lessons in STATE.md (PRD and Techspec)
 
 **Never load simultaneously:**
 
@@ -291,10 +291,10 @@ The orchestrating agent uses this to update tasks.md status, traceability, and d
 **Feature-level (auto-sized):**
 | Trigger Pattern | Reference |
 |----------------|-----------|
-| Specify feature, define requirements | [specify.md](references/specify.md) |
+| PRD feature, define requirements | [prd.md](references/prd.md) |
 | Discuss feature, capture context, how should this work | [discuss.md](references/discuss.md) |
 | Change the spec, invalidate tasks | [spec-change.md](references/spec-change.md) |
-| Design feature, architecture | [design.md](references/design.md) |
+| Techspec feature, architecture | [techspec.md](references/techspec.md) |
 | Break into tasks, create tasks | [tasks.md](references/tasks.md) |
 | Implement task, build, execute | [implement.md](references/implement.md) |
 | Validate, verify, test, UAT, walk me through it | [validate.md](references/validate.md) |

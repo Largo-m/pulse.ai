@@ -1,14 +1,14 @@
 ---
-name: design
-description: Escreve design.md
+name: techspec
+description: Escreve TECHSPEC.md
 runtime: cursor
 model: Auto
 permission_policy: deny_writes
 ---
 
-# design.md
+# techspec.md
 
-# Design
+# Techspec
 
 **Goal**: Define HOW to build it. Architecture, components, what to reuse.
 
@@ -18,11 +18,11 @@ permission_policy: deny_writes
 
 ### 1. Load Context
 
-Read `.pulse/specs/features/[feature]/spec.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
+Read `.pulse/specs/features/[feature]/PRD.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
 
 Read STATE.md active AD-NNN entries and **confirmed** lessons. Conform or supersede (new AD-NNN). Silently ignoring an active decision is not allowed.
 
-If `surface.md` exists, Design serves that frozen surface — do not invent a different public API.
+If `surface.md` exists, Techspec serves that frozen surface — do not invent a different public API.
 
 If a [threat-model.md](threat-model.md) trigger is present, write `threat-model.md` in this phase and map each TM-ID to a spec SHALL or an explicit deferral.
 
@@ -39,6 +39,34 @@ Codebase → Project docs → Context7 MCP → Web search → Flag as uncertain
 **CRITICAL: NEVER assume or fabricate information.** If you cannot find an answer through the chain, explicitly say "I don't know" or "I couldn't find documentation for this". Inventing an API, a pattern, or a behavior that doesn't exist is far worse than admitting uncertainty. Wrong assumptions propagate through design → tasks → implementation and cause cascading failures.
 
 Good triggers for research: new libraries, unfamiliar APIs, performance-sensitive features, security-sensitive features, patterns you haven't used in this codebase before.
+
+### 1.8. Implicit-requirement sweep (Techspec owns this)
+
+PRD captured what the product team wants. This sweep captures what the system must guarantee to deliver it — the dimensions that have no product-team answer because they are mechanisms, not outcomes.
+
+Bound the sweep to this feature; never invent requirements outside the spec boundary.
+
+| Dimension | What to cover |
+| --------- | ------------- |
+| Input validation & bounds | Limits, formats, sanitization |
+| Failure / partial-failure | Timeouts, partial saves, rollbacks |
+| Idempotency / retry / dedup | Safe retries, duplicate keys |
+| Auth boundaries & rate limits | Who can call what, throttle rules |
+| Concurrency / ordering | Races, ordering guarantees |
+| Data lifecycle / expiry | TTL, archival, deletion |
+| Observability | Logs, metrics, tracing hooks |
+| External-dependency failure | Fallbacks, timeouts |
+| State-transition integrity | Valid transitions, guards |
+
+**Sizing:**
+
+- **Complex / Large:** every dimension → `decided` or `n/a because …`. No blanks.
+- **Medium:** only dimensions obviously present; collapse the rest to one `n/a` row.
+- **Small / Quick:** skip the sweep.
+
+Each dimension lands in the Ambiguity Ledger ([ambiguity.md](ambiguity.md)) as a `decided` or `n/a` row. `assumed` does not exist: when the choice is a real trade-off with no obvious answer in the codebase, ask the technical owner via [user-input.md](user-input.md) instead of picking for them. Here the question may — and should — use technical vocabulary: this is the phase where that vocabulary belongs.
+
+When a dimension's choice is forced by something the product team already decided, say so in the rationale and cite the PRD row: `AL-04 decided (follows AL-02: cancelled orders stay visible for 12 months)`.
 
 ### 2. Define Architecture
 
@@ -60,12 +88,12 @@ If the feature involves data, define models before implementation.
 
 ---
 
-## Template: `.pulse/specs/[feature]/design.md`
+## Template: `.pulse/specs/[feature]/TECHSPEC.md`
 
 ````markdown
-# [Feature] Design
+# [Feature] Techspec
 
-**Spec**: `.pulse/specs/[feature]/spec.md`
+**Spec**: `.pulse/specs/[feature]/PRD.md`
 **Status**: Draft | Approved
 
 ---
@@ -479,7 +507,7 @@ Keep option text short (one line each). If an option needs a sub-prompt (e.g. "d
 These are **deliverables**, not question mechanisms — still create them after answers are received:
 
 - `.pulse/specs/project/PROJECT.md`, `ROADMAP.md`, `STATE.md`
-- `.pulse/specs/features/[feature]/spec.md`, `context.md`, `design.md`, `tasks.md`
+- `.pulse/specs/features/[feature]/PRD.md`, `context.md`, `TECHSPEC.md`, `tasks.md`
 - `.pulse/specs/quick/NNN-slug/TASK.md`, `SUMMARY.md`
 - `.pulse/specs/codebase/*` brownfield docs
 - Validation reports, fix plans, task summaries
@@ -512,7 +540,7 @@ Preciso de algumas informações antes de continuar.
 
 1. Este pedido excede o escopo do Quick mode: [motivo concreto — ex.: 5 arquivos, decisão de arquitetura, escopo vago]. Como deseja prosseguir?
 
-A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute, conforme escopo)
+A) Migrar para o pipeline completo (PRD → Techspec → Tasks → Execute, conforme escopo)
 B) Quick fix: [recorte pré-definido 1 — uma linha, ≤3 arquivos]
 C) Quick fix: [recorte pré-definido 2 — uma linha, ≤3 arquivos]
 D) Cancelar
@@ -520,13 +548,13 @@ D) Cancelar
 Resposta:
 ```
 
-- **A)** Start [specify.md](specify.md) for the feature — do not keep a quick TASK.md
+- **A)** Start [prd.md](prd.md) for the feature — do not keep a quick TASK.md
 - **B/C…)** Re-assess eligibility with that predefined narrowed scope; if it passes, continue Quick mode
 - **Last option (Cancelar)** Stop; no spec files unless the user reopens the request
 
 **Closed choices only:** Do not use "descreva" or free-text options in this block. Do not include "Outro" — Pulse suppresses it for migration gates. List concrete quick-fix alternatives derived from your codebase analysis.
 
-**Never** auto-start Specify, Design, or Tasks without the user selecting **A**.
+**Never** auto-start PRD, Techspec, or Tasks without the user selecting **A**.
 
 ## UAT and verification
 

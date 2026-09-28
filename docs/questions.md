@@ -30,7 +30,7 @@ A skill `user-input.md` manda o agente **terminar** a resposta com um bloco:
 ````text
 ```text
 Preciso de algumas informações antes de continuar.
-1. Aprovar Specify (.pulse/specs/features/x/spec.md) e avançar?
+1. Aprovar PRD (.pulse/specs/features/x/PRD.md) e avançar?
 A) Sim, aprovar e continuar
 B) Não, preciso de ajustes (descreva)
 C) Cancelar workflow

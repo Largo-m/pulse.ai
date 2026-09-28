@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, SpecFlow
 from pulse.plan.new_issue_flow import _apply_spec_decision
-from pulse.plan.specify_state import (
+from pulse.plan.workflow_state import (
     PhaseStatus,
     WorkflowState,
     find_workflow_by_slug,
@@ -41,7 +41,7 @@ def test_offers_choice_when_workflow_is_incomplete(tmp_path: Path):
     assert pending is not None
     slug, summary = pending
     assert slug == "demo"
-    assert "specify" in summary
+    assert "prd" in summary
 
 
 def test_no_choice_when_everything_is_done(tmp_path: Path):
@@ -65,35 +65,35 @@ def test_quick_specs_are_not_resumable(tmp_path: Path):
 
 def test_resume_returns_the_existing_state(tmp_path: Path):
     state = _save_workflow(tmp_path, "demo")
-    state.mark_phase_done("specify")
-    state.mark_phase_in_progress("design")
+    state.mark_phase_done("prd")
+    state.mark_phase_in_progress("techspec")
     state.save(tmp_path)
 
     resumed = _apply_spec_decision(tmp_path, "", "demo", "resume")
 
     assert resumed is not None
-    assert resumed.current_phase == "design"
-    assert resumed.phases["specify"].status == PhaseStatus.DONE
+    assert resumed.current_phase == "techspec"
+    assert resumed.phases["prd"].status == PhaseStatus.DONE
 
 
 def test_restart_resets_the_phases_without_deleting_artifacts(tmp_path: Path):
     state = _save_workflow(tmp_path, "demo")
-    state.mark_phase_done("specify")
-    state.mark_phase_in_progress("design")
+    state.mark_phase_done("prd")
+    state.mark_phase_in_progress("techspec")
     state.save(tmp_path)
-    artifact = tmp_path / state.feature_dir / "spec.md"
+    artifact = tmp_path / state.feature_dir / "PRD.md"
     artifact.write_text("# spec antiga", encoding="utf-8")
 
     restarted = _apply_spec_decision(tmp_path, "", "demo", "restart")
 
     assert restarted is not None
     assert restarted.feature_slug == "demo"
-    assert restarted.current_phase == "specify"
-    assert restarted.phases["specify"].status == PhaseStatus.PENDING
+    assert restarted.current_phase == "prd"
+    assert restarted.phases["prd"].status == PhaseStatus.PENDING
     # refazer não apaga o que já existe: o pipeline reescreve por cima
     assert artifact.read_text(encoding="utf-8") == "# spec antiga"
     # e o estado em disco reflete o reset
-    assert find_workflow_by_slug(tmp_path, "demo").current_phase == "specify"
+    assert find_workflow_by_slug(tmp_path, "demo").current_phase == "prd"
 
 
 def test_restart_keeps_the_original_prompt_when_none_is_given(tmp_path: Path):
@@ -141,7 +141,7 @@ def test_resume_screen_returns_the_chosen_mode():
         app = Harness()
         async with app.run_test() as pilot:
             app.push_screen(
-                ResumeChoiceScreen(slug="demo", summary="design (in_progress)"),
+                ResumeChoiceScreen(slug="demo", summary="techspec (in_progress)"),
                 callback=result.append,
             )
             await pilot.pause()

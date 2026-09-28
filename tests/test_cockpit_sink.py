@@ -25,7 +25,7 @@ def test_cockpit_sink_streams_assistant_and_tools():
     dirty = {"n": 0}
     sink = CockpitSink(state, on_change=lambda: dirty.__setitem__("n", dirty["n"] + 1))
 
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Fase PRD")
     assert state.phases[0].status == PhaseStatus.RUNNING
 
     sink.handle_update(
@@ -58,12 +58,12 @@ def test_cockpit_sink_streams_assistant_and_tools():
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": "call-1",
                 "status": "completed",
-                "rawOutput": {"content": "# Specify\n\n**Goal**: capture requirements"},
+                "rawOutput": {"content": "# PRD\n\n**Goal**: capture requirements"},
             }
         }
     )
     assert state.entries[-1].kind == LogKind.READ
-    assert state.entries[-1].title == "Specify"
+    assert state.entries[-1].title == "PRD"
     assert state.entries[-1].pending is False
     assert dirty["n"] > 0
 
@@ -72,7 +72,7 @@ def test_read_update_prefers_locations_over_body():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -177,7 +177,7 @@ def test_edit_update_fills_path():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -197,7 +197,7 @@ def test_edit_update_fills_path():
                 "content": [
                     {
                         "type": "diff",
-                        "path": "/repo/.pulse/specs/features/demo/spec.md",
+                        "path": "/repo/.pulse/specs/features/demo/PRD.md",
                     }
                 ],
             }
@@ -205,7 +205,7 @@ def test_edit_update_fills_path():
     )
     entry = state.entries[-1]
     assert entry.kind == LogKind.EDIT
-    assert entry.title.endswith("spec.md")
+    assert entry.title.endswith("PRD.md")
     assert "features" in entry.title
 
 
@@ -236,9 +236,9 @@ def test_search_update_shows_query_scope_and_hits():
                 "status": "completed",
                 "rawOutput": {"totalFiles": 4, "truncated": False},
                 "locations": [
-                    "/repo/.pulse/specs/features/a/spec.md",
-                    "/repo/.pulse/specs/features/b/spec.md",
-                    "/repo/.pulse/specs/features/c/spec.md",
+                    "/repo/.pulse/specs/features/a/PRD.md",
+                    "/repo/.pulse/specs/features/b/PRD.md",
+                    "/repo/.pulse/specs/features/c/PRD.md",
                     "/repo/.pulse/specs/project/STATE.md",
                 ],
             }
@@ -316,7 +316,7 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
 
     sink.handle_update(
         {
@@ -362,7 +362,7 @@ def test_cockpit_sink_backfills_vague_search(tmp_path: Path, monkeypatch):
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
 
     tool_id = "call-late\nfc_9"
     sink.handle_update(
@@ -439,7 +439,7 @@ def test_completed_without_path_keeps_spinner_until_backfill(tmp_path: Path, mon
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     tool_id = "call-read\nfc_pending"
 
     sink.handle_update(
@@ -527,7 +527,7 @@ def test_assistant_chunk_backfills_completed_placeholder(tmp_path: Path, monkeyp
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     tool_id = "call-last\nfc_z"
 
     sink.handle_update(
@@ -609,7 +609,7 @@ def test_search_stays_pending_until_completed(tmp_path: Path, monkeypatch):
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -655,7 +655,7 @@ def test_model_info_sets_header_without_duplicate_entry():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     before = len(state.entries)
     sink.handle_update(
         {
@@ -763,7 +763,7 @@ def test_read_and_search_do_not_register_artifacts():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -785,7 +785,7 @@ def test_read_and_search_do_not_register_artifacts():
                 "kind": "search",
                 "status": "completed",
                 "locations": [
-                    "/repo/.pulse/specs/features/a/spec.md",
+                    "/repo/.pulse/specs/features/a/PRD.md",
                     "/repo/.pulse/specs/project/STATE.md",
                 ],
             }
@@ -799,12 +799,12 @@ def test_cockpit_sink_collects_acp_sessions_per_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state)
-    sink.set_session_id("sess-specify")
-    sink.begin_phase("Specify")
-    sink.set_session_id("sess-design")
-    sink.begin_phase("Design")
-    assert state.acp_session_id == "sess-design"
+    sink.set_session_id("sess-prd")
+    sink.begin_phase("PRD")
+    sink.set_session_id("sess-techspec")
+    sink.begin_phase("Techspec")
+    assert state.acp_session_id == "sess-techspec"
     assert state.acp_sessions == [
-        {"session_id": "sess-specify", "phase_id": "specify"},
-        {"session_id": "sess-design", "phase_id": "design"},
+        {"session_id": "sess-prd", "phase_id": "prd"},
+        {"session_id": "sess-techspec", "phase_id": "techspec"},
     ]

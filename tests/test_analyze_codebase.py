@@ -34,7 +34,7 @@ def test_build_analyze_codebase_prompt_includes_exploration_rules():
     assert str(workspace) in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
     assert "ANALYZE_READY" in prompt
-    assert "Isolamento" in prompt
+    assert "## Isolation (mandatory)" in prompt
     assert "autônomo" in prompt.lower() or "autonomo" in prompt.lower()
 
 
@@ -49,7 +49,7 @@ def test_build_analyze_codebase_artifact_prompt_targets_codebase_specs():
     for artifact in CODEBASE_ARTIFACTS:
         assert f".pulse/specs/codebase/{artifact}" in prompt
     assert "Python + FastAPI" in prompt
-    assert "Análise desta execução" in prompt
+    assert "This run's analysis" in prompt
     assert "concerns.md" in prompt
     assert "## concerns.md" not in prompt
 

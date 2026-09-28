@@ -12,8 +12,8 @@ flowchart LR
   end
 
   subgraph phases [Pipeline]
-    S[Specify]
-    D[Design]
+    S[PRD]
+    D[Techspec]
     T[Tasks]
     E[Execute]
     V[Verifier]
@@ -29,14 +29,14 @@ flowchart LR
 ```mermaid
 flowchart TB
   User[User decisions] --> Prec[Contract precedence]
-  Prec --> Spec[spec.md]
+  Prec --> Spec[PRD.md]
   Spec --> Surface[surface.md if public]
   Spec --> Tests[tests.md catalog]
   Spec --> Ledger[Ambiguity Ledger]
-  Surface --> Design[design.md]
+  Surface --> Techspec[TECHSPEC.md]
   Tests --> TaskGraph[tasks.md + Task Graph]
-  Design --> TaskGraph
-  TM[threat-model.md if trigger] --> Design
+  Techspec --> TaskGraph
+  TM[threat-model.md if trigger] --> Techspec
   TaskGraph --> Impl[Implementer worker]
   Impl --> TaskDone[Task layer: gate + file:line]
   TaskDone --> Verifier[Verifier ≠ author]

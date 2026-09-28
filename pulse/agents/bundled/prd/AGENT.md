@@ -1,18 +1,27 @@
 ---
-name: specify
-description: Escreve spec.md
+name: prd
+description: Escreve PRD.md
 runtime: cursor
 model: Auto
 permission_policy: deny_writes
 ---
 
-# specify.md
+# prd.md
 
-# Specify
+# PRD
 
 **Goal**: Capture WHAT to build with testable, traceable requirements.
 
-Read [invariants.md](invariants.md) first. If the feature has ambiguous gray areas, trigger [discuss.md](discuss.md) inside this phase. Write every unresolved item to the [Ambiguity Ledger](ambiguity.md).
+Read [invariants.md](invariants.md) first. If the feature has ambiguous gray areas, trigger [discuss.md](discuss.md) inside this phase. Write every gray area to the [Ambiguity Ledger](ambiguity.md).
+
+**Audience: the product team.** You are talking to whoever owns the product, not
+to an engineer. Every question you ask in this phase must be answerable by
+someone who has never opened the codebase. Technical decisions belong to Techspec
+— see **Product language only** below.
+
+**No open question survives this phase.** There is no "I assumed X". While any
+gray area, doubt, or open question remains, you ask — and you keep asking, one
+CLI batch per turn, until the ledger is clean. See **Clarify loop** below.
 
 ## Process
 
@@ -26,7 +35,7 @@ Thinking partner, not interviewer. Read `.pulse/specs/`, codebase, user message.
 
 Facts you look up (Knowledge Verification Chain). Decisions you ask via [user-input.md](user-input.md).
 
-**Must resolve before writing spec.md:**
+**Must resolve before writing PRD.md:**
 
 - **Motivating Problem** — concrete pain and the simplest end-to-end observable outcome that solves it. Slice 1 of Tasks delivers this outcome.
 - Who it is for
@@ -55,24 +64,39 @@ Every AC uses **EARS** and contains SHALL. One behavior per criterion. Concrete 
 
 If you cannot write it as a test, rewrite it.
 
-### 5. Implicit-requirement sweep + ledger
+### 5. Gray-area sweep + ledger
 
-Follow [ambiguity.md](ambiguity.md). Large/Complex: every dimension. Medium: obvious dimensions only.
+Follow [ambiguity.md](ambiguity.md). Sweep the feature for behavior the product
+team still has to choose. Every gray area becomes a ledger row, and every row
+leaves this phase as `decided` (the product team chose) or `n/a` (the dimension
+does not apply to this feature). Nothing else is a valid closing status.
+
+The implicit-requirement sweep — idempotency, concurrency, retry, rate limits,
+observability, data lifecycle, external-dependency failure, state-transition
+integrity — does **not** run here. Techspec owns it ([techspec.md](techspec.md)). Do
+not ask the product team about those dimensions.
+
+What you do sweep here is the product-visible side of the same feature: what the
+person using it sees, chooses, and is promised. If a technical dimension turns
+out to have a user-visible consequence, ask about the consequence in product
+words, never about the mechanism.
 
 ### 6. Surface and tests (conditional)
 
 If there is a public surface, write [surface.md](surface.md) before internal design. Write [tests.md](tests-catalog.md) for Large/Complex (and Medium with a public surface).
 
-If a [threat-model.md](threat-model.md) trigger is present, note it here; the model itself is written in Design.
+If a [threat-model.md](threat-model.md) trigger is present, note it here; the model itself is written in Techspec.
 
 ### 7. Closure gate
 
 Before presenting the spec:
 
 1. Every AC has one interpretation and a precise expected outcome
-2. Ledger has no `open` rows
+2. Ledger has no `open` rows **and no `assumed` rows** — every row is `decided` or `n/a`
 3. Motivating Problem is stated; P1 delivers it
-4. `python3 <skill-dir>/scripts/validate_spec.py <feature>` exits 0 ([gates.md](gates.md))
+4. `python3 <skill-dir>/scripts/validate_prd.py <feature>` exits 0 ([gates.md](gates.md))
+
+Fail any of these and you are still in the **Clarify loop** — ask, do not present.
 
 Then confirm with the user via CLI. Do not start implementation because the spec file exists.
 
@@ -80,7 +104,79 @@ Changing an approved spec later uses [spec-change.md](spec-change.md).
 
 ---
 
-## Template: `.pulse/specs/features/[feature]/spec.md`
+## Clarify loop (mandatory)
+
+The phase runs as a loop, not a single pass. Each turn:
+
+1. Do every bit of autonomous work you can — read the codebase, read
+   `.pulse/specs/`, draft the spec, fill what the answers already settle
+2. List what is still undecided
+3. If **anything** is undecided, end the turn with one CLI clarify batch
+   ([user-input.md](user-input.md)) and stop. No approval block this turn.
+4. When the answers arrive, fold them into `PRD.md` and the ledger, then go
+   back to step 1
+
+You leave the loop only when the closure gate passes. Then, and only then, the
+turn ends with the approval block instead of a clarify batch.
+
+**A clarify batch and an approval block never appear in the same turn.** Asking
+and asking-for-approval are different states; mixing them lets a doubt slip
+through as approved.
+
+**Forbidden in this loop:**
+
+- Writing `assumed` in the ledger. An agent-chosen default is exactly the doubt
+  this phase exists to remove. If you would have assumed it, ask it.
+- Writing `open` and presenting anyway ("we can decide later", "TBD",
+  "to be confirmed during implementation").
+- Presenting the spec while a question is pending.
+- Silently narrowing scope to avoid a question.
+- Answering your own question with "the codebase already does X" — the codebase
+  shows what *is*, not what the product team wants.
+
+**Batch shape:** follow [user-input.md](user-input.md). At most 2 independent
+questions per batch; dependent questions one at a time. Lead each question with
+a recommended option and a one-line rationale in product terms, so the product
+team can accept it in one keystroke.
+
+There is no cap on the number of rounds. A sixth round of clarification is
+cheaper than a feature built on a guess.
+
+---
+
+## Product language only
+
+Every question in this phase is about the product: what the person using it
+wants, sees, chooses, or is promised. If answering requires knowing the stack,
+it is a Techspec question.
+
+| Ask here (product)                                         | Never ask here (Techspec owns it)              |
+| ---------------------------------------------------------- | -------------------------------------------- |
+| "What should the person see when the payment fails?"        | "Do we retry with exponential backoff?"       |
+| "Can two people edit the same order at once?"               | "Do we use optimistic locking or a mutex?"    |
+| "For how long must a cancelled order stay visible?"         | "What TTL do we set on the cache?"            |
+| "Who is allowed to approve a refund?"                       | "Do we check the role in the middleware?"     |
+| "How fast does this have to feel to be usable?"             | "What is the p95 latency budget per service?" |
+| "What happens to the person mid-flow if the provider is down?" | "Do we add a circuit breaker?"             |
+
+**Banned from the wording of any question in this phase:** API, endpoint,
+schema, migration, index, query, cache, TTL, queue, worker, retry, backoff,
+idempotency, race condition, lock, transaction, rate limit, webhook, token,
+middleware, deploy, latency budget, framework and library names, file paths,
+class and function names.
+
+The rule is about the **question**, not about your thinking. You still read the
+code to know what is possible and what a change would cost — you just never make
+the product team answer for it.
+
+If a technical constraint genuinely limits the product, state it as a
+consequence and let the product team choose: "Keeping the history for 5 years
+would make the search noticeably slower for everyone. Keep 5 years, or 12
+months?"
+
+---
+
+## Template: `.pulse/specs/features/[feature]/PRD.md`
 
 ```markdown
 # [Feature Name] Specification
@@ -108,9 +204,10 @@ Changing an approved spec later uses [spec-change.md](spec-change.md).
 
 | ID | Topic | Status | Resolution | Rationale |
 | -- | ----- | ------ | ---------- | --------- |
-| AL-01 | [gray area] | decided | [what] | [why] |
+| AL-01 | [gray area] | decided | [what] | [why — quote the product team's answer] |
+| AL-02 | [dimension that does not apply] | n/a | — | [why it does not apply] |
 
-Open questions: none — all resolved or assumed.
+Open questions: none — every row is `decided` by the product team or `n/a`.
 
 ## User Stories
 
@@ -137,10 +234,10 @@ Open questions: none — all resolved or assumed.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| [FEAT]-01      | P1    | Design | Pending |
+| [FEAT]-01      | P1    | Techspec | Pending |
 
 **ID format:** `[CATEGORY]-[NUMBER]`
-**Status:** Pending → In Design → In Tasks → Implementing → Verified
+**Status:** Pending → In Techspec → In Tasks → Implementing → Verified
 
 ## Spec Changes
 
@@ -161,32 +258,36 @@ Read-first index for implementers (path + why). Copy a subset into each task.
 
 # discuss.md
 
-# Specify: Discuss Gray Areas
+# PRD: Discuss Gray Areas
 
-**Goal:** Capture HOW the user envisions the feature when the spec has ambiguous areas. This is NOT a separate phase — it's triggered within Specify when the agent detects gray areas that need user input.
+**Goal:** Capture HOW the user envisions the feature when the spec has ambiguous areas. This is NOT a separate phase — it's triggered within PRD when the agent detects gray areas that need user input.
 
 **Trigger:** Automatically when gray areas are detected during spec creation, or explicitly via "discuss feature", "how should this work?", "capture context"
 
 **When to trigger (auto-detect):** The spec contains user-facing behavior that could go multiple ways AND the user hasn't expressed a preference. If the spec is clear and unambiguous, skip this entirely.
 
-**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what". When any [implicit-requirement dimension](ambiguity.md) is present (persistence, external calls, auth, payments, concurrency, state transitions), trigger discuss or convert the dimension to an `assumed` / `n/a` ledger row.
+**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what".
 
-Every discussed or declined gray area is written to the Ambiguity Ledger in spec.md — never dropped. See [ambiguity.md](ambiguity.md) for pace (Quick / Guided / Detailed) and ledger statuses.
+Technical dimensions (persistence, external calls, auth, concurrency, state transitions) do **not** trigger discuss — Techspec owns them ([techspec.md](techspec.md)). What triggers discuss is their product-visible face: not "do we retry the payment", but "what does the person see when the payment does not go through".
+
+Every gray area is written to the Ambiguity Ledger in PRD.md and leaves as `decided` or `n/a` — never `assumed`, never dropped. See [ambiguity.md](ambiguity.md) for pace (Quick / Guided / Detailed) and ledger statuses.
+
+**You are talking to the product team.** Every question here must be answerable by someone who has never opened the codebase. The banned-vocabulary list in [prd.md](prd.md) (**Product language only**) applies to every question in this file.
 
 ## Why This Phase Exists
 
-Specifications capture WHAT to build. Design captures the architecture. But neither captures the user's vision for ambiguous areas — layout preferences, interaction patterns, error handling style, content tone. Without this, the agent guesses. With this, the agent builds what the user actually imagined.
+Specifications capture WHAT to build. Techspec captures the architecture. But neither captures the user's vision for ambiguous areas — layout preferences, interaction patterns, error handling style, content tone. Without this, the agent guesses. With this, the agent builds what the user actually imagined.
 
-The output — `context.md` — feeds directly into Design and Tasks:
+The output — `context.md` — feeds directly into Techspec and Tasks:
 
-- **Design reads it** to know what decisions are locked vs. flexible
+- **Techspec reads it** to know what decisions are locked vs. flexible
 - **Tasks reads it** to include specific behaviors in task definitions
 
 ## Process
 
 ### 1. Analyze the Feature
 
-Read `.pulse/specs/features/[feature]/spec.md` and identify the domain:
+Read `.pulse/specs/features/[feature]/PRD.md` and identify the domain:
 
 | Domain                         | Gray areas to explore                                         |
 | ------------------------------ | ------------------------------------------------------------- |
@@ -200,7 +301,7 @@ Generate 3-4 **feature-specific** gray areas. Not generic categories, but concre
 
 ### 2. Present Gray Areas
 
-Analyze spec.md and identify gray areas autonomously. When user input is required to choose areas or resolve ambiguity, follow [user-input.md](user-input.md) — present the feature boundary and all pending area/decision questions in one CLI batch at the end of the response.
+Analyze PRD.md and identify gray areas autonomously. When user input is required to choose areas or resolve ambiguity, follow [user-input.md](user-input.md) — present the feature boundary and all pending area/decision questions in one CLI batch at the end of the response.
 
 Do NOT include a "skip all" option when the user explicitly invoked discuss.
 
@@ -212,8 +313,9 @@ For each selected area, resolve decisions through CLI batches per [user-input.md
 
 1. Lead with a recommended option and one-line rationale
 2. Guided: at most 2 independent questions per batch; dependent questions one at a time. Never dump 3+ product questions in one batch
-3. After answers, update the Ambiguity Ledger (`decided` / `assumed`) and continue until the next blocking decision
-4. When all areas are resolved, write `context.md` (decisions only — not a questionnaire)
+3. After answers, update the Ambiguity Ledger (`decided`) and continue until the next blocking decision
+4. Keep looping until no area is unresolved. There is no round limit and no "we can settle this later" — an unanswered area means another batch next turn
+5. When all areas are resolved, write `context.md` (decisions only — not a questionnaire)
 
 **Question design** (when forming CLI batches — see [user-input.md](user-input.md)):
 
@@ -223,7 +325,7 @@ For each selected area, resolve decisions through CLI batches per [user-input.md
 
 ### 4. Scope Guardrail (CRITICAL)
 
-The feature boundary from spec.md is **fixed**. Discussion clarifies HOW to implement, never WHETHER to add new capabilities.
+The feature boundary from PRD.md is **fixed**. Discussion clarifies HOW to implement, never WHETHER to add new capabilities.
 
 **Allowed:** "How should posts be displayed?" (clarifying ambiguity)
 **Not allowed:** "Should we also add comments?" (new capability)
@@ -240,14 +342,14 @@ When user suggests scope creep: "That sounds like a separate feature. I'll note 
 # [Feature] Context
 
 **Gathered:** [date]
-**Spec:** `.pulse/specs/features/[feature]/spec.md`
+**Spec:** `.pulse/specs/features/[feature]/PRD.md`
 **Status:** Ready for design
 
 ---
 
 ## Feature Boundary
 
-[Clear statement of what this feature delivers — the scope anchor from spec.md]
+[Clear statement of what this feature delivers — the scope anchor from PRD.md]
 
 ---
 
@@ -294,8 +396,8 @@ When user suggests scope creep: "That sounds like a separate feature. I'll note 
 - **Decisions, not vision** — "Card-based layout with subtle shadows" is a decision. "Should feel modern" is not.
 - **Scope is sacred** — Deferred Ideas captures scope creep without losing ideas
 - **User = visionary, Agent = builder** — Ask about how they imagine it, not about technical implementation
-- **Don't ask about:** Technical architecture, performance, implementation details — that's Design's job
-- **Confirm before Design** — User approves context.md via CLI confirmation per [user-input.md](user-input.md) before moving to design phase
+- **Don't ask about:** Technical architecture, performance, implementation details — that's Techspec's job
+- **Confirm before Techspec** — User approves context.md via CLI confirmation per [user-input.md](user-input.md) before moving to design phase
 
 # state-management.md
 
@@ -585,7 +687,7 @@ Keep option text short (one line each). If an option needs a sub-prompt (e.g. "d
 These are **deliverables**, not question mechanisms — still create them after answers are received:
 
 - `.pulse/specs/project/PROJECT.md`, `ROADMAP.md`, `STATE.md`
-- `.pulse/specs/features/[feature]/spec.md`, `context.md`, `design.md`, `tasks.md`
+- `.pulse/specs/features/[feature]/PRD.md`, `context.md`, `TECHSPEC.md`, `tasks.md`
 - `.pulse/specs/quick/NNN-slug/TASK.md`, `SUMMARY.md`
 - `.pulse/specs/codebase/*` brownfield docs
 - Validation reports, fix plans, task summaries
@@ -618,7 +720,7 @@ Preciso de algumas informações antes de continuar.
 
 1. Este pedido excede o escopo do Quick mode: [motivo concreto — ex.: 5 arquivos, decisão de arquitetura, escopo vago]. Como deseja prosseguir?
 
-A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute, conforme escopo)
+A) Migrar para o pipeline completo (PRD → Techspec → Tasks → Execute, conforme escopo)
 B) Quick fix: [recorte pré-definido 1 — uma linha, ≤3 arquivos]
 C) Quick fix: [recorte pré-definido 2 — uma linha, ≤3 arquivos]
 D) Cancelar
@@ -626,13 +728,13 @@ D) Cancelar
 Resposta:
 ```
 
-- **A)** Start [specify.md](specify.md) for the feature — do not keep a quick TASK.md
+- **A)** Start [prd.md](prd.md) for the feature — do not keep a quick TASK.md
 - **B/C…)** Re-assess eligibility with that predefined narrowed scope; if it passes, continue Quick mode
 - **Last option (Cancelar)** Stop; no spec files unless the user reopens the request
 
 **Closed choices only:** Do not use "descreva" or free-text options in this block. Do not include "Outro" — Pulse suppresses it for migration gates. List concrete quick-fix alternatives derived from your codebase analysis.
 
-**Never** auto-start Specify, Design, or Tasks without the user selecting **A**.
+**Never** auto-start PRD, Techspec, or Tasks without the user selecting **A**.
 
 ## UAT and verification
 

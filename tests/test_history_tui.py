@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("textual")
 
 from pulse.history.catalog import HistoryCatalog
-from pulse.plan.specify_state import WorkflowState
+from pulse.plan.workflow_state import WorkflowState
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus
@@ -19,12 +19,12 @@ from pulse.tui.widgets.phase_sidebar import PhaseSidebar
 
 def _write_issue(workspace: Path) -> None:
     state = WorkflowState.create_new(feature_slug="login-flow", user_prompt="Adicionar login social")
-    for phase in ("specify", "design", "tasks"):
+    for phase in ("prd", "techspec", "tasks"):
         state.approve_phase(phase)
         state.mark_phase_done(phase)
     state.mark_phase_done("execute")
     state.save(workspace)
-    (workspace / ".pulse/specs/features/login-flow/spec.md").write_text("# Spec\n", encoding="utf-8")
+    (workspace / ".pulse/specs/features/login-flow/PRD.md").write_text("# Spec\n", encoding="utf-8")
 
 
 def _write_fix(workspace: Path) -> None:
@@ -90,7 +90,7 @@ def test_history_detail_renders_steps_without_run_log(tmp_path: Path):
             assert screen.state.phases[0].status == PhaseStatus.DONE
             content = str(screen.query_one("#stream-content").render())
             phases = str(screen.query_one("#phase-content").render())
-            assert "Specify" in phases
+            assert "PRD" in phases
             assert "Nenhum log persistido" in content
             assert screen.state.acp_session_id == ""
             assert screen.query_one(PhaseSidebar)

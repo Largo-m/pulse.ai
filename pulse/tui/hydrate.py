@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryStep, SpecFlow
-from pulse.plan.specify_state import WorkflowState
+from pulse.plan.workflow_state import WorkflowState
 from pulse.tui.artifacts import is_spec_artifact
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseStatus
 from pulse.tui.cursor_store import list_session_events, session_task_id
@@ -21,9 +21,9 @@ _STEP_TO_PHASE = {
     "failed": PhaseStatus.FAILED,
 }
 _ARTIFACT_PHASE = {
-    "spec.md": "specify",
-    "context.md": "specify",
-    "design.md": "design",
+    "PRD.md": "prd",
+    "context.md": "prd",
+    "TECHSPEC.md": "techspec",
     "tasks.md": "tasks",
     "task.md": "plan",
     "summary.md": "implement",
@@ -89,13 +89,13 @@ def _stamp_elapsed(state: CockpitState, item: HistoryItem, workspace: Path) -> N
 def _phase_durations(workflow: WorkflowState) -> dict[str, float]:
     cursor = _parse_stamp(workflow.created_at)
     ends = {
-        "specify": _parse_stamp(workflow.phases["specify"].approved_at),
-        "design": _parse_stamp(workflow.phases["design"].approved_at),
+        "prd": _parse_stamp(workflow.phases["prd"].approved_at),
+        "techspec": _parse_stamp(workflow.phases["techspec"].approved_at),
         "tasks": _parse_stamp(workflow.phases["tasks"].approved_at),
         "execute": _parse_stamp(workflow.updated_at),
     }
     durations: dict[str, float] = {}
-    for name in ("specify", "design", "tasks", "execute"):
+    for name in ("prd", "techspec", "tasks", "execute"):
         phase = workflow.phases.get(name)
         end = ends.get(name)
         skipped = phase is not None and (
@@ -270,7 +270,7 @@ def _sessions_for_item(item: HistoryItem, workspace: Path) -> list[dict[str, str
 
 
 def _assign_phase_ids(rows: list[dict[str, str]], flow: SpecFlow) -> list[dict[str, str]]:
-    phases = ["plan", "implement"] if flow == SpecFlow.QUICK else ["specify", "design", "tasks", "execute"]
+    phases = ["plan", "implement"] if flow == SpecFlow.QUICK else ["prd", "techspec", "tasks", "execute"]
     classify = [row for row in rows if row.get("agent_id") == "classify"]
     rest = [row for row in rows if row.get("agent_id") != "classify"]
     assigned: list[dict[str, str]] = []

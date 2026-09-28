@@ -212,7 +212,7 @@ def test_prompt_text_submit_and_confirm_cancel():
 
             def on_mount(self) -> None:
                 sink: CockpitSink = holder["sink"]
-                sink.begin_phase("Fase Specify")
+                sink.begin_phase("Fase PRD")
                 self.query_one(LogStream).sync_from_state(sink._state, force=True)
 
         app = Harness()

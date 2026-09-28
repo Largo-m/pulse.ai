@@ -19,7 +19,7 @@ def test_shorten_path_relative_to_cwd(tmp_path):
 
 
 def test_summarize_content_heading_and_path():
-    assert summarize_content("# Specify\n\nGoal") == "Specify"
+    assert summarize_content("# PRD\n\nGoal") == "PRD"
     assert "dashboard_page.dart" in summarize_content(
         "Veja `lib/features/home/ui/dashboard_page.dart` para contexto"
     )
@@ -30,12 +30,12 @@ def test_extract_tool_target_from_diff_content():
         "content": [
             {
                 "type": "diff",
-                "path": "/Users/me/proj/.pulse/specs/features/demo/spec.md",
+                "path": "/Users/me/proj/.pulse/specs/features/demo/PRD.md",
             }
         ]
     }
     target = extract_tool_target(update, cwd="/Users/me/proj")
-    assert target.endswith("spec.md")
+    assert target.endswith("PRD.md")
     assert "features" in target
 
 
@@ -58,12 +58,12 @@ def test_build_tool_labels_avoids_generic_duplication():
         {
             "title": "Edit File",
             "kind": "edit",
-            "content": [{"type": "diff", "path": "/repo/a/b/spec.md"}],
+            "content": [{"type": "diff", "path": "/repo/a/b/PRD.md"}],
         },
         cwd="/repo",
     )
     assert kind == LogKind.EDIT
-    assert title.endswith("spec.md")
+    assert title.endswith("PRD.md")
     assert detail == ""
 
 
@@ -72,12 +72,12 @@ def test_build_tool_labels_rejects_yaml_key_only():
         {
             "title": "Read File",
             "kind": "read",
-            "rawOutput": {"content": "phases:\n  - specify\n"},
+            "rawOutput": {"content": "phases:\n  - prd\n"},
         }
     )
     assert kind == LogKind.READ
     assert title != "phases:"
-    assert title == "…" or "specify" in title.lower() or title.startswith("-")
+    assert title == "…" or "prd" in title.lower() or title.startswith("-")
 
 
 def test_build_tool_labels_read_prefers_path():
@@ -113,12 +113,12 @@ def test_build_tool_labels_read_from_locations():
         {
             "title": "Read File",
             "kind": "read",
-            "locations": [{"path": "/repo/.pulse/specs/features/demo/spec.md"}],
+            "locations": [{"path": "/repo/.pulse/specs/features/demo/PRD.md"}],
         },
         cwd="/repo",
     )
     assert kind == LogKind.READ
-    assert title.endswith("spec.md")
+    assert title.endswith("PRD.md")
 
 
 def test_build_tool_labels_read_from_nested_content_text():
@@ -131,14 +131,14 @@ def test_build_tool_labels_read_from_nested_content_text():
                     "type": "content",
                     "content": {
                         "type": "text",
-                        "text": "# Specify\n\nGoal",
+                        "text": "# PRD\n\nGoal",
                     },
                 }
             ],
         }
     )
     assert kind == LogKind.READ
-    assert title == "Specify"
+    assert title == "PRD"
 
 
 def test_format_search_labels_with_hits():
@@ -148,8 +148,8 @@ def test_format_search_labels_with_hits():
             "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
             "rawOutput": {"totalFiles": 4},
             "locations": [
-                "/repo/.pulse/specs/features/build-dashboard-home/spec.md",
-                "/repo/.pulse/specs/skills/pulse-spec-driven/prompts/specify.md",
+                "/repo/.pulse/specs/features/build-dashboard-home/PRD.md",
+                "/repo/.pulse/specs/skills/pulse-spec-driven/prompts/PRD.md",
                 "/repo/.pulse/specs/skills/pulse-spec-driven/workflow.yaml",
                 "/repo/.pulse/specs/project/STATE.md",
             ],
@@ -159,7 +159,7 @@ def test_format_search_labels_with_hits():
     assert title == "“dashboard”"
     assert "in .pulse/specs" in detail
     assert "4 files" in detail
-    assert "spec.md" in detail
+    assert "PRD.md" in detail
     assert "(+1)" in detail
 
 

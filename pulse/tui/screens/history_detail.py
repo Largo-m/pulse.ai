@@ -8,7 +8,7 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 
 from pulse.history.models import HistoryItem, SpecFlow
-from pulse.plan.specify_state import (
+from pulse.plan.workflow_state import (
     find_workflow_by_slug,
     resume_summary,
     workflow_is_incomplete,

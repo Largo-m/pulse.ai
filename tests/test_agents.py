@@ -32,33 +32,33 @@ def test_extend_prompt_injects_agent_body(tmp_path: Path):
         sections,
         skill_dir=skill_dir,
         skill_name="pulse-spec-driven",
-        workflow="Specify",
-        agent_id="specify",
+        workflow="PRD",
+        agent_id="prd",
         workspace=tmp_path,
     )
     joined = "\n".join(sections)
-    assert "Agent `specify`" in joined
+    assert "Agent `prd`" in joined
     assert "Capture WHAT to build" in joined
 
 
 def test_load_bundled_agent():
-    agent = load_agent("specify")
+    agent = load_agent("prd")
     assert agent is not None
     assert agent.origin == "bundled"
     assert agent.permission_policy == "deny_writes"
-    assert "Specify" in agent.body or "WHAT to build" in agent.body
+    assert "PRD" in agent.body or "WHAT to build" in agent.body
 
 
 def test_global_agent_overrides_bundled(tmp_path: Path):
     from pulse.config.paths import global_agents_dir
 
-    dest = global_agents_dir() / "specify"
+    dest = global_agents_dir() / "prd"
     dest.mkdir(parents=True)
     (dest / "AGENT.md").write_text(
-        "---\nname: specify\nmodel: gpt-5.5\nruntime: claude\npermission_policy: ask\n---\ncustom body\n",
+        "---\nname: prd\nmodel: gpt-5.5\nruntime: claude\npermission_policy: ask\n---\ncustom body\n",
         encoding="utf-8",
     )
-    agent = load_agent("specify", workspace=tmp_path)
+    agent = load_agent("prd", workspace=tmp_path)
     assert agent is not None
     assert agent.origin == "global"
     assert agent.model == "gpt-5.5"
@@ -67,14 +67,14 @@ def test_global_agent_overrides_bundled(tmp_path: Path):
 
 
 def test_project_and_editor_agents_are_ignored(tmp_path: Path):
-    project = tmp_path / ".pulse" / "agents" / "specify"
+    project = tmp_path / ".pulse" / "agents" / "prd"
     project.mkdir(parents=True)
     (project / "AGENT.md").write_text("---\nmodel: nope\n---\nfrom project\n", encoding="utf-8")
     for dirname in (".cursor", ".claude", ".codex"):
         dest = tmp_path / dirname / "agents"
         dest.mkdir(parents=True)
         (dest / "reviewer.md").write_text("---\nname: reviewer\n---\nextra\n", encoding="utf-8")
-    agent = load_agent("specify", workspace=tmp_path)
+    agent = load_agent("prd", workspace=tmp_path)
     assert agent is not None
     assert agent.origin == "bundled"
     assert "from project" not in agent.body
@@ -101,14 +101,14 @@ def test_compose_spec_flows():
     assert compose_workflow_agents("spec") == ("classify",)
     assert expand_spec_flow("quick")[0] == "classify"
     assert "quick-plan" in expand_spec_flow("quick")
-    assert "specify" in expand_spec_flow("full")
+    assert "prd" in expand_spec_flow("full")
 
 
 def test_init_copies_bundled_agents_into_home(tmp_path: Path):
     from pulse.config.paths import global_agents_dir
 
     init_project_config(tmp_path)
-    assert (global_agents_dir() / "specify" / "AGENT.md").is_file()
+    assert (global_agents_dir() / "prd" / "AGENT.md").is_file()
     assert not (tmp_path / ".pulse" / "agents").exists()
 
 
@@ -121,10 +121,10 @@ def test_apply_agent_settings_uses_sqlite_override(tmp_path: Path):
 
     project = load_project_config(tmp_path)
     assert project is not None
-    loaded = load_agent("specify", workspace=tmp_path)
+    loaded = load_agent("prd", workspace=tmp_path)
     assert loaded is not None
     original_model = loaded.model
-    upsert_agent_settings(project.project_id, "specify", model="composer-2.5")
+    upsert_agent_settings(project.project_id, "prd", model="composer-2.5")
     view = apply_agent_settings(loaded, project.project_id)
     assert view.model == "composer-2.5"
     assert loaded.model == original_model

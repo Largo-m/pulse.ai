@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from pulse.plan import new_issue_flow
 from pulse.plan.new_issue_flow import _offer_gate_failure
-from pulse.plan.specify_state import PhaseStatus, TaskState, WorkflowState
+from pulse.plan.workflow_state import PhaseStatus, TaskState, WorkflowState
 from pulse.plan.task_waves import GateResult, TaskSpec
 
 

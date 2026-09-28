@@ -52,9 +52,9 @@ def test_build_setup_project_prompt_uses_skill_reference_not_inline_content():
     assert "App de trading" in prompt
     assert str(workspace) in prompt
     assert "SETUP_READY" in prompt
-    assert "Isolamento" in prompt
+    assert "## Isolation (mandatory)" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
-    assert "bloco de texto" in prompt
+    assert "as a **text block**" in prompt
     assert "```text" in prompt
 
 
@@ -70,7 +70,7 @@ def test_build_setup_project_artifact_prompt_targets_specs():
     assert ".pulse/specs/project/ROADMAP.md" in prompt
     assert ".pulse/specs/project/STATE.md" in prompt
     assert "Vue + Node" in prompt
-    assert "Análise desta execução" in prompt
+    assert "This run's analysis" in prompt
     assert "sessão anterior" not in prompt.lower()
     assert "## state-management.md" not in prompt
 

@@ -455,7 +455,7 @@ Keep option text short (one line each). If an option needs a sub-prompt (e.g. "d
 These are **deliverables**, not question mechanisms — still create them after answers are received:
 
 - `.pulse/specs/project/PROJECT.md`, `ROADMAP.md`, `STATE.md`
-- `.pulse/specs/features/[feature]/spec.md`, `context.md`, `design.md`, `tasks.md`
+- `.pulse/specs/features/[feature]/PRD.md`, `context.md`, `TECHSPEC.md`, `tasks.md`
 - `.pulse/specs/quick/NNN-slug/TASK.md`, `SUMMARY.md`
 - `.pulse/specs/codebase/*` brownfield docs
 - Validation reports, fix plans, task summaries
@@ -488,7 +488,7 @@ Preciso de algumas informações antes de continuar.
 
 1. Este pedido excede o escopo do Quick mode: [motivo concreto — ex.: 5 arquivos, decisão de arquitetura, escopo vago]. Como deseja prosseguir?
 
-A) Migrar para o pipeline completo (Specify → Design → Tasks → Execute, conforme escopo)
+A) Migrar para o pipeline completo (PRD → Techspec → Tasks → Execute, conforme escopo)
 B) Quick fix: [recorte pré-definido 1 — uma linha, ≤3 arquivos]
 C) Quick fix: [recorte pré-definido 2 — uma linha, ≤3 arquivos]
 D) Cancelar
@@ -496,13 +496,13 @@ D) Cancelar
 Resposta:
 ```
 
-- **A)** Start [specify.md](specify.md) for the feature — do not keep a quick TASK.md
+- **A)** Start [prd.md](prd.md) for the feature — do not keep a quick TASK.md
 - **B/C…)** Re-assess eligibility with that predefined narrowed scope; if it passes, continue Quick mode
 - **Last option (Cancelar)** Stop; no spec files unless the user reopens the request
 
 **Closed choices only:** Do not use "descreva" or free-text options in this block. Do not include "Outro" — Pulse suppresses it for migration gates. List concrete quick-fix alternatives derived from your codebase analysis.
 
-**Never** auto-start Specify, Design, or Tasks without the user selecting **A**.
+**Never** auto-start PRD, Techspec, or Tasks without the user selecting **A**.
 
 ## UAT and verification
 

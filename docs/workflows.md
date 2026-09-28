@@ -71,7 +71,7 @@ Antes do ACP subir, o cockpit já sabe a forma:
 ```103:122:pulse/tui/state.py
 WORKFLOW_PHASES = {
     "spec": (("classify", "Classificar"),),
-    "new-issue": (("specify", "Specify"), ("design", "Design"), ...),
+    "new-issue": (("prd", "PRD"), ("techspec", "Techspec"), ...),
     "fix-bug": (("plan", "Planejar"), ("implement", "Implementar")),
     "setup-project": (("phase1", "Análise do projeto"), ("phase2", "Gerando specs")),
     "analyze-codebase": (("phase1", "Explorando codebase"), ("phase2", "Gerando docs")),
@@ -80,7 +80,7 @@ WORKFLOW_PHASES = {
 
 `configure_workflow(id)` cria a lista de `PhaseItem`. Depois da classificação, `apply_routed_flow` acrescenta as fases do flow escolhido sem apagar o log. O stream (`CockpitSink.begin_phase`) marca RUNNING / DONE. Tasks aninhadas (só `new-issue` Execute) vêm de `workflow.yaml` / `tasks.md` via `set_tasks`.
 
-**Importante:** a sidebar e o `workflow.yaml` usam nomes parecidos, mas são camadas diferentes. A UI pode mostrar “Specify” enquanto o YAML ainda diz `awaiting_approval`.
+**Importante:** a sidebar e o `workflow.yaml` usam nomes parecidos, mas são camadas diferentes. A UI pode mostrar “PRD” enquanto o YAML ainda diz `awaiting_approval`.
 
 ## 4. Resolução de config por workflow
 
@@ -128,15 +128,15 @@ O arquivo `workflow.yaml` é a fonte da verdade do orquestrador:
 | --- | --- |
 | `current_phase` | de onde retomar o loop (`_phase_start_index`) |
 | `phases.<name>.status` | skip se `approved`/`done`; espera se `awaiting_approval` |
-| `phases.design.skip` / `tasks.skip` | não roda Design/Tasks |
+| `phases.techspec.skip` / `tasks.skip` | não roda Techspec/Tasks |
 | `tasks[].id/status` | o que falta no Execute; sync a partir de `tasks.md` |
 
-Ordem fixa: `specify` → `design` → `tasks` → `execute` (`PHASE_ORDER`).
+Ordem fixa: `prd` → `techspec` → `tasks` → `execute` (`PHASE_ORDER`).
 
 Por fase de planejamento:
 
 1. Marca `in_progress`, grava YAML.
-2. Monta prompt (`build_specify_prompt`, …) com a skill empacotada + tarefa.
+2. Monta prompt (`build_prd_prompt`, …) com a skill empacotada + tarefa.
 3. `run_isolated_phase` — sessão ACP isolada + questionário de aprovação.
 4. Classifica outcome (`approve` / `adjust` / `cancel` / `skip`) — ver [questions.md](questions.md).
 5. Se aprovou: `approve_phase` + `save`. Em Tasks: `sync_tasks_from_markdown`.
@@ -150,7 +150,7 @@ No Execute:
 4. Cada wave: prompt da skill + gates (`Done when` / `Verify` / `Gate check passes`).
 5. Só depois do gate o Pulse marca a task `done` no YAML.
 
-O agente **escreve** `spec.md`, `design.md`, `tasks.md` e atualiza o YAML. O Pulse **lê** o YAML para decidir o próximo passo.
+O agente **escreve** `PRD.md`, `TECHSPEC.md`, `tasks.md` e atualiza o YAML. O Pulse **lê** o YAML para decidir o próximo passo.
 
 ### `fix-bug` — estado no Markdown, não no YAML
 
@@ -203,7 +203,7 @@ UI: `phase1`, `phase2`.
 | Artefato | `new-issue` | `fix-bug` | `setup` / `analyze` |
 | --- | --- | --- | --- |
 | `workflow.yaml` | Pulse lê/escreve e decide fases | — | — |
-| `spec.md` / `design.md` / `tasks.md` | Agente escreve; Pulse synca tasks e mostra no painel | — | — |
+| `PRD.md` / `TECHSPEC.md` / `tasks.md` | Agente escreve; Pulse synca tasks e mostra no painel | — | — |
 | `TASK.md` / `SUMMARY.md` | — | Agente; histórico lê status | — |
 | `project/*` / `codebase/*` | Agente (contexto) | Agente | Agente gera |
 | bloco ` ```text ` | Pulse classifica aprovação | Pulse classifica aprovação | Pulse injeta no prompt fase 2 |

@@ -1,6 +1,6 @@
 # Grounded Lessons
 
-Lessons change future Specify/Design behavior. Opinions about the SDD process itself do not belong here.
+Lessons change future PRD/Techspec behavior. Opinions about the SDD process itself do not belong here.
 
 ## Grounding gate
 
@@ -38,10 +38,10 @@ Phrase the **title** as a reusable rule, not the incident.
 ## Promotion
 
 - `candidate` — recorded, not loaded as guidance
-- `confirmed` — same rule grounded on **two distinct features** → load at Specify and Design
+- `confirmed` — same rule grounded on **two distinct features** → load at PRD and Techspec
 - `quarantined` — confirmed lesson was loaded and the same failure recurred; stop loading it
 
-On Specify and Design, read only `confirmed` lessons relevant to this feature. Keep the set small (context budget).
+On PRD and Techspec, read only `confirmed` lessons relevant to this feature. Keep the set small (context budget).
 
 ## Scope
 

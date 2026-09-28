@@ -4,7 +4,7 @@ import threading
 import time
 
 from pulse.plan.new_issue_flow import _hold_for_pause
-from pulse.plan.specify_state import PhaseStatus, WorkflowState
+from pulse.plan.workflow_state import PhaseStatus, WorkflowState
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.tui.state import CockpitState
 
@@ -31,7 +31,7 @@ class _FakeRunner:
 
 def _state(tmp_path) -> WorkflowState:
     state = WorkflowState(feature_slug="minha-feature", user_prompt="fazer algo")
-    state.mark_phase_in_progress("specify")
+    state.mark_phase_in_progress("prd")
     return state
 
 
@@ -41,7 +41,7 @@ def test_pausa_devolve_o_step_cortado_para_pendente(tmp_path):
     control.pause()
     runner = _FakeRunner(control)
     state = _state(tmp_path)
-    assert state.phases["specify"].status == PhaseStatus.IN_PROGRESS
+    assert state.phases["prd"].status == PhaseStatus.IN_PROGRESS
 
     released: list[bool] = []
     thread = threading.Thread(
@@ -50,15 +50,15 @@ def test_pausa_devolve_o_step_cortado_para_pendente(tmp_path):
                 runner,
                 workspace=tmp_path,
                 state=state,
-                phase="specify",
-                label="fase Specify",
+                phase="prd",
+                label="fase PRD",
             )
         )
     )
     thread.start()
     time.sleep(0.15)
 
-    assert state.phases["specify"].status == PhaseStatus.PENDING
+    assert state.phases["prd"].status == PhaseStatus.PENDING
     assert released == [], "a barreira segura enquanto pausado"
 
     control.resume()
@@ -67,7 +67,7 @@ def test_pausa_devolve_o_step_cortado_para_pendente(tmp_path):
 
     # E o que voltou para pendente foi gravado, para sobreviver a um stop depois.
     reloaded = WorkflowState.load(tmp_path / state.workflow_path)
-    assert reloaded.phases["specify"].status == PhaseStatus.PENDING
+    assert reloaded.phases["prd"].status == PhaseStatus.PENDING
 
 
 def test_parar_na_barreira_encerra_a_run(tmp_path):
@@ -81,12 +81,12 @@ def test_parar_na_barreira_encerra_a_run(tmp_path):
             runner,
             workspace=tmp_path,
             state=state,
-            phase="specify",
-            label="fase Specify",
+            phase="prd",
+            label="fase PRD",
         )
         is False
     )
-    assert state.phases["specify"].status == PhaseStatus.PENDING
+    assert state.phases["prd"].status == PhaseStatus.PENDING
 
 
 def test_barreira_de_task_nao_mexe_nas_fases(tmp_path):
@@ -105,7 +105,7 @@ def test_barreira_de_task_nao_mexe_nas_fases(tmp_path):
 def test_cockpit_congela_o_relogio_ao_pausar():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
     running = state.phases[0]
     assert running.status.value == "running"
     assert running.elapsed_label() != ""
@@ -120,7 +120,7 @@ def test_cockpit_congela_o_relogio_ao_pausar():
 def test_parar_nao_marca_falha_na_sidebar():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
 
     state.mark_finished(RUN_STOPPED)
 
@@ -132,7 +132,7 @@ def test_parar_nao_marca_falha_na_sidebar():
 def test_falha_de_verdade_continua_marcando_falha():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
 
     state.mark_finished(1)
 

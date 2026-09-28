@@ -11,15 +11,15 @@ from pulse.tui.artifacts import (
 
 def test_is_spec_artifact_accepts_pulse_specs_markdown():
     assert is_spec_artifact(".pulse/specs/project/PROJECT.md")
-    assert is_spec_artifact("/repo/.pulse/specs/features/demo/spec.md")
+    assert is_spec_artifact("/repo/.pulse/specs/features/demo/PRD.md")
     assert is_spec_artifact("file:///tmp/.pulse/specs/quick/001-x/TASK.md")
 
 
 def test_is_spec_artifact_rejects_skills_and_non_markdown():
     assert not is_spec_artifact(".pulse/skills/pulse-spec-driven/SKILL.md")
-    assert not is_spec_artifact(".pulse/specs/skills/pulse-spec-driven/prompts/specify.md")
+    assert not is_spec_artifact(".pulse/specs/skills/pulse-spec-driven/prompts/PRD.md")
     assert not is_spec_artifact(".pulse/specs/project/STATE.yaml")
-    assert not is_spec_artifact("spec.md")
+    assert not is_spec_artifact("PRD.md")
     assert not is_spec_artifact("pulse/cli.py")
 
 
@@ -29,9 +29,9 @@ def test_artifact_key_normalizes_absolute_paths():
 
 
 def test_extract_spec_artifacts_from_prompt_text():
-    text = "1. Aprovar Specify (`.pulse/specs/features/demo/spec.md`) e avançar?"
+    text = "1. Aprovar PRD (`.pulse/specs/features/demo/PRD.md`) e avançar?"
     assert extract_spec_artifacts_from_text(text) == [
-        ".pulse/specs/features/demo/spec.md"
+        ".pulse/specs/features/demo/PRD.md"
     ]
     mixed = "veja .pulse/specs/skills/foo.md e .pulse/specs/codebase/STACK.md"
     assert extract_spec_artifacts_from_text(mixed) == [".pulse/specs/codebase/STACK.md"]

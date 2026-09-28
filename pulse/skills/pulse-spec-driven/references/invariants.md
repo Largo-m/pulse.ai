@@ -18,10 +18,10 @@ Always-on rules. Auto-sizing changes which artifacts exist; it does not waive th
 When sources disagree, resolve in this order. Record the resolution in the Ambiguity Ledger or an AD-NNN.
 
 1. Current explicit user decision (this session, written to ledger / STATE)
-2. Approved `spec.md` (and `surface.md` / `tests.md` when they exist)
+2. Approved `PRD.md` (and `surface.md` / `tests.md` when they exist)
 3. Approved `context.md` decisions
 4. Active AD-NNN in STATE.md
-5. `design.md` / `tasks.md`
+5. `TECHSPEC.md` / `tasks.md`
 6. Current code and tests
 7. Workflow memory (STATE.md notes, handoff, lessons)
 
@@ -46,11 +46,11 @@ Create a file only when the cell requires it. Absence means the phase was skippe
 | Artifact | Quick | Medium | Large | Complex |
 | -------- | ----- | ------ | ----- | ------- |
 | `TASK.md` / `SUMMARY.md` | required | — | — | — |
-| `spec.md` | — | brief | full | full + discuss |
+| `PRD.md` | — | brief | full | full + discuss |
 | Ambiguity Ledger | — | section in spec | section in spec | section in spec |
 | `surface.md` | — | if public surface | if public surface | if public surface |
 | `tests.md` | — | IDs in spec or brief catalog | catalog | catalog |
-| `design.md` | — | skip (inline) | required | required + research |
+| `TECHSPEC.md` | — | skip (inline) | required | required + research |
 | `threat-model.md` | — | if trigger | if trigger | if trigger |
 | `tasks.md` + graph | — | skip (inline) | required | required |
 | `validation.md` | SUMMARY | author report | Verifier | Verifier + UAT |

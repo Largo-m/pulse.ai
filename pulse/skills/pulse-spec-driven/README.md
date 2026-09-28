@@ -16,7 +16,7 @@
 
 ```
 ┌──────────┐   ┌──────────┐   ┌─────────┐   ┌─────────┐
-│ SPECIFY  │ → │  DESIGN  │ → │  TASKS  │ → │ EXECUTE │
+│   PRD    │ → │ TECHSPEC │ → │  TASKS  │ → │ EXECUTE │
 └──────────┘   └──────────┘   └─────────┘   └─────────┘
    required      optional*      optional*     required
 
@@ -28,7 +28,7 @@
 | Scope                               | What happens                                                      |
 | ----------------------------------- | ----------------------------------------------------------------- |
 | **Small** (≤3 files)                | Quick mode — describe → plan → spec files → **approve** → implement → verify → track |
-| **Medium** (clear feature)          | Specify → Execute (design and tasks inline)                       |
+| **Medium** (clear feature)          | PRD → Execute (design and tasks inline)                       |
 | **Large** (multi-component)         | Full pipeline with formal design and task breakdown               |
 | **Complex** (ambiguity, new domain) | Full pipeline + gray area discussion + research + interactive UAT |
 
@@ -40,7 +40,7 @@
 | ----------------------- | --------------------------------------------- |
 | Start a new project     | `"Initialize project"` or `"Setup project"`   |
 | Work with existing code | `"Map codebase"` or `"Analyze existing code"` |
-| Plan a feature          | `"Specify feature [name]"`                    |
+| Plan a feature          | `"PRD feature [name]"`                    |
 | Quick bug fix           | `"Quick fix: [description]"`                  |
 | Resume previous work    | `"Resume work"` or `"Continue"`               |
 
@@ -71,11 +71,11 @@ The skill creates a `.pulse/specs/` directory to organize all project documentat
 │
 ├── features/           # Feature specifications
 │   └── [feature-name]/
-│       ├── spec.md         # EARS ACs, ledger, motivating problem, traceability
+│       ├── PRD.md         # EARS ACs, ledger, motivating problem, traceability
 │       ├── context.md      # User decisions for gray areas (only when needed)
 │       ├── surface.md      # Public CLI/API/UI contract (only if public surface)
 │       ├── tests.md        # Test catalog with stable IDs (Large/Complex)
-│       ├── design.md       # Architecture and components (only for large/complex)
+│       ├── TECHSPEC.md       # Architecture and components (only for large/complex)
 │       ├── threat-model.md # Only when a security trigger fires
 │       ├── tasks.md        # Outcomes + parseable graph
 │       ├── validation.md   # Independent Verifier report
@@ -89,7 +89,7 @@ The skill creates a `.pulse/specs/` directory to organize all project documentat
 
 ## The Four Adaptive Phases
 
-### Specify (always)
+### PRD (always)
 
 **Goal:** Capture WHAT to build with testable, traceable requirements.
 
@@ -107,9 +107,9 @@ The agent acts as a thinking partner. When user input is required, it follows [u
 | AUTH-03        | WHEN user is already logged in THEN system SHALL redirect to dashboard         |
 ```
 
-**Discuss gray areas (auto-triggered):** When the spec has ambiguous, user-facing decisions, the agent stops and presents CLI questions per [user-input.md](references/user-input.md), then writes `context.md` with locked decisions. This is NOT a separate phase — it only happens within Specify when ambiguity is detected.
+**Discuss gray areas (auto-triggered):** When the spec has ambiguous, user-facing decisions, the agent stops and presents CLI questions per [user-input.md](references/user-input.md), then writes `context.md` with locked decisions. This is NOT a separate phase — it only happens within PRD when ambiguity is detected.
 
-### Design (when needed)
+### Techspec (when needed)
 
 **Goal:** Define HOW to build it. Architecture, components, what to reuse.
 
@@ -117,7 +117,7 @@ The agent acts as a thinking partner. When user input is required, it follows [u
 
 **Includes research:** Before designing with unfamiliar tech, the agent follows the **Knowledge Verification Chain** (codebase → project docs → Context7 MCP → web search → flag uncertain). It **never assumes or fabricates** — if it can't find documentation, it says so.
 
-**Output:** `design.md` with architecture diagrams, component definitions, and integration points.
+**Output:** `TECHSPEC.md` with architecture diagrams, component definitions, and integration points.
 
 ### Tasks (when needed)
 
@@ -210,9 +210,9 @@ These trigger patterns help the agent recognize your intent, but you don't need 
 
 | Trigger Pattern                           | Description                             |
 | ----------------------------------------- | --------------------------------------- |
-| `Specify feature`, `Define requirements`  | Create spec.md with requirement IDs     |
+| `PRD feature`, `Define requirements`  | Create PRD.md with requirement IDs     |
 | `Discuss feature`, `How should this work` | Capture user decisions for gray areas   |
-| `Design feature`, `Architecture`          | Create design.md with architecture      |
+| `Techspec feature`, `Architecture`          | Create TECHSPEC.md with architecture      |
 | `Break into tasks`, `Create tasks`        | Create tasks.md with atomic breakdown   |
 | `Implement task`, `Build`, `Execute`      | Execute specific task with verification |
 | `Validate`, `Verify work`, `UAT`          | Feature validation and testing          |
@@ -274,14 +274,14 @@ Agent: I'll analyze your existing codebase and document:
 ### Implementing a Feature (auto-sized)
 
 ```
-You: Specify feature user-authentication
+You: PRD feature user-authentication
 
 Agent: [Drafts spec from context; if gray areas remain, presents CLI batch per user-input.md]
-       [Creates spec.md with requirement IDs; creates context.md when discuss resolves decisions]
+       [Creates PRD.md with requirement IDs; creates context.md when discuss resolves decisions]
 
-You: Design the feature
+You: Techspec the feature
 
-Agent: [Researches JWT best practices via Context7, creates design.md]
+Agent: [Researches JWT best practices via Context7, creates TECHSPEC.md]
 
 You: Break into tasks
 
@@ -380,13 +380,13 @@ The skill includes detailed reference documentation loaded on-demand:
 | `brownfield-mapping.md` | Comprehensive codebase analysis (7 docs)                               |
 | `concerns.md`           | Tech debt, risks, and fragile area documentation                       |
 | `invariants.md`         | Precedence, Definition of Done, artifact matrix                        |
-| `specify.md`            | EARS requirements, motivating problem, ledger                          |
+| `prd.md`            | EARS requirements, motivating problem, ledger                          |
 | `ambiguity.md`          | Ambiguity ledger and implicit-requirement sweep                        |
 | `spec-change.md`        | Change protocol after a spec is approved                               |
 | `discuss.md`            | Gray area discussion and context capture                               |
 | `surface.md`            | Conditional public-surface contract                                    |
 | `tests-catalog.md`      | Stable test IDs and coverage matrix                                    |
-| `design.md`             | Architecture, research, and component design                           |
+| `techspec.md`             | Architecture, research, and component design                           |
 | `threat-model.md`       | Threat model when a security trigger fires                             |
 | `tasks.md`              | Outcome tasks and parseable graph                                      |
 | `implement.md`          | Execute: implementation + task-layer verification                      |
@@ -450,7 +450,7 @@ This skill works with **any AI coding agent** that supports skills or custom ins
 ## FAQ
 
 **Q: Can I skip phases?**
-A: Yes! The skill auto-sizes. Design and Tasks are skipped for simple features. Quick mode skips the entire pipeline for small changes. You only get ceremony when scope demands it.
+A: Yes! The skill auto-sizes. Techspec and Tasks are skipped for simple features. Quick mode skips the entire pipeline for small changes. You only get ceremony when scope demands it.
 
 **Q: What if my project already has code?**
 A: Use `"Map codebase"` first. This creates 7 documents analyzing your existing architecture, conventions, stack, and concerns before you start adding features.
@@ -459,7 +459,7 @@ A: Use `"Map codebase"` first. This creates 7 documents analyzing your existing 
 A: Three layers. **Task** — gate + assigned tests with `file:line` evidence. **Feature** — independent Verifier PASS in `validation.md`. **Merge** — review has no open critical/high issues (when review is required). A checkbox in `tasks.md` is not Feature Done.
 
 **Q: How does requirement traceability work?**
-A: Each requirement gets a unique ID (e.g., `AUTH-01`) in spec.md. Tasks reference these IDs, and validation checks which requirements are verified. You get a clear trail from spec → design → task → verification.
+A: Each requirement gets a unique ID (e.g., `AUTH-01`) in PRD.md. Tasks reference these IDs, and validation checks which requirements are verified. You get a clear trail from spec → design → task → verification.
 
 **Q: Does the skill handle git commits?**
 A: No. The agent does not commit and does not suggest commit messages. You control git history entirely.
@@ -471,7 +471,7 @@ A: Yes! Say `"Quick fix: [description]"` for bug fixes, config changes, or small
 A: No. Quick mode creates spec files first, presents the plan, and ends with a CLI approval question. Application code changes only after you confirm.
 
 **Q: What if my request is too big for Quick mode?**
-A: The agent explains why (e.g. too many files, needs design) and asks whether you want to **migrate to the full pipeline** (Specify → … → Execute), **narrow the scope**, or **cancel**. It never auto-escalates without your choice.
+A: The agent explains why (e.g. too many files, needs design) and asks whether you want to **migrate to the full pipeline** (PRD → … → Execute), **narrow the scope**, or **cancel**. It never auto-escalates without your choice.
 
 **Q: What happens if I close my session mid-task?**
 A: Say `"Pause work"` before ending your session. This creates a handoff document. Next session, say `"Resume work"` to continue exactly where you left off.

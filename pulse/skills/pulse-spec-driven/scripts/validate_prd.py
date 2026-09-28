@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""validate_spec.py — closure-gate for .pulse/specs/features/<feature>/spec.md"""
+"""validate_prd.py — closure-gate for .pulse/specs/features/<feature>/PRD.md"""
 
 import argparse
 import os
@@ -24,11 +24,11 @@ def resolve_spec(target, root):
         if os.path.isfile(target):
             return target
         if os.path.isdir(target):
-            cand = os.path.join(target, "spec.md")
+            cand = os.path.join(target, "PRD.md")
             if os.path.isfile(cand):
                 return cand
             return _autodetect(target)
-        cand = os.path.join(root, ".pulse", "specs", "features", target, "spec.md")
+        cand = os.path.join(root, ".pulse", "specs", "features", target, "PRD.md")
         if os.path.isfile(cand):
             return cand
         return None
@@ -42,15 +42,15 @@ def _autodetect(root):
     features = [
         d
         for d in sorted(os.listdir(base))
-        if os.path.isfile(os.path.join(base, d, "spec.md"))
+        if os.path.isfile(os.path.join(base, d, "PRD.md"))
     ]
     if len(features) == 1:
-        return os.path.join(base, features[0], "spec.md")
+        return os.path.join(base, features[0], "PRD.md")
     if len(features) == 0:
         return None
     raise SystemExit(
-        "validate_spec: multiple features found; pass one explicitly:\n  "
-        + "\n  ".join(os.path.join(base, f, "spec.md") for f in features)
+        "validate_prd: multiple features found; pass one explicitly:\n  "
+        + "\n  ".join(os.path.join(base, f, "PRD.md") for f in features)
     )
 
 
@@ -154,6 +154,7 @@ def check(spec_path):
         if data:
             data = data[1:]
         open_rows = 0
+        assumed_rows = 0
         real = 0
         for r in data:
             cells = split_row(r)
@@ -167,10 +168,18 @@ def check(spec_path):
                 errors.append(f"ledger row '{cells[0][:40]}' has invalid status '{cells[2]}'")
             elif status == "open":
                 open_rows += 1
+            elif status == "assumed":
+                assumed_rows += 1
         if real == 0:
             warnings.append("Ambiguity Ledger has no real rows")
         if open_rows:
             errors.append(f"Ambiguity Ledger has {open_rows} open row(s); resolve before confirm")
+        # `assumed` is the agent answering its own question. Ask the human instead.
+        if assumed_rows:
+            errors.append(
+                f"Ambiguity Ledger has {assumed_rows} assumed row(s); ask the product team "
+                "and record the answer as decided (or n/a when the dimension does not apply)"
+            )
 
     b = section_bounds(lines, "Requirement Traceability")
     if b:
@@ -199,7 +208,7 @@ def check(spec_path):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="validate_spec.py")
+    p = argparse.ArgumentParser(prog="validate_prd.py")
     p.add_argument("target", nargs="?", default=None)
     p.add_argument("--root", default=".")
     p.add_argument("--strict", action="store_true")
@@ -208,7 +217,7 @@ def main(argv=None):
     spec = resolve_spec(args.target, args.root)
     if not spec:
         print(
-            "validate_spec: could not locate a spec.md under .pulse/specs/features/.",
+            "validate_prd: could not locate a PRD.md under .pulse/specs/features/.",
             file=sys.stderr,
         )
         return 2
@@ -219,7 +228,7 @@ def main(argv=None):
     for e in errors:
         print(f"  ERROR {e}")
     fail = errors or (warnings and args.strict)
-    print(f"\nvalidate_spec: {len(errors)} error(s), {len(warnings)} warning(s) in {spec}")
+    print(f"\nvalidate_prd: {len(errors)} error(s), {len(warnings)} warning(s) in {spec}")
     return 1 if fail else 0
 
 

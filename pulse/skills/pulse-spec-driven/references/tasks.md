@@ -42,24 +42,28 @@ Slice 1 is the task (or consecutive tasks) that delivers the spec's Motivating P
 
 ## Process
 
-### 1. Review Design
+### 1. Review Techspec
 
-Read `.pulse/specs/[feature]/design.md` before creating tasks.
+Read `.pulse/specs/[feature]/TECHSPEC.md` before creating tasks.
 
 ### 1.5. Load Test Coverage Matrix
 
 Read `.pulse/specs/codebase/TESTING.md` (if it exists) before creating tasks. The Test Coverage Matrix
 and Parallelism Assessment drive two critical decisions:
 
-**Co-located tests:** Every task that creates or modifies a code layer with a required test type
-MUST include writing/updating those tests in the same task. Tests are NOT separate tasks.
+**Co-located unit tests:** Every task that creates or modifies a code layer with a required
+unit-test type MUST include writing/updating those unit tests in the same task. Unit tests are
+NOT separate tasks.
 
-| Task creates...                           | Done When must include...                   |
-| ----------------------------------------- | ------------------------------------------- |
-| Code layer with "unit" requirement        | Unit test written + quick gate passes       |
-| Code layer with "e2e" requirement         | E2E test written + full gate passes         |
-| Code layer with "integration" requirement | Integration test written + full gate passes |
-| Code layer with "none" requirement        | Gate check at appropriate level             |
+**Integration and e2e are out of scope for Execute.** They are written in a later step, not by
+the task that creates the code. A task never carries `Tests: integration` or `Tests: e2e`.
+
+| Task creates...                           | Done When must include...                        |
+| ----------------------------------------- | ------------------------------------------------ |
+| Code layer with "unit" requirement        | Unit test written + quick gate passes            |
+| Code layer with "e2e" requirement         | Unit coverage possible + row in Deferred test coverage |
+| Code layer with "integration" requirement | Unit coverage possible + row in Deferred test coverage |
+| Code layer with "none" requirement        | Gate check at appropriate level                  |
 
 **Parallelism flags:** Cross-reference the Parallelism Assessment when marking tasks `[P]`:
 
@@ -67,7 +71,7 @@ MUST include writing/updating those tests in the same task. Tests are NOT separa
 - If a task's required test type is marked "Parallel-Safe: Yes" → `[P]` is allowed
 - If a task has no tests → `[P]` depends only on code dependencies
 
-Co-locate tests with the code task. Tests are not a separate task. Assign every live `tests.md` ID to exactly one task.
+Co-locate unit tests with the code task. Assign every live `tests.md` ID that is a unit test to exactly one task; integration and e2e IDs go to **Deferred test coverage** instead, still traceable, just not executed in this phase.
 
 If TESTING.md does not exist (greenfield project), ask the user what test types and commands
 the project will use before creating tasks. Infer commands from the repo when they exist — do not invent ecosystems.
@@ -115,7 +119,7 @@ Run `python3 <skill-dir>/scripts/validate_tasks.py <feature>` before presenting 
 ```markdown
 # [Feature] Tasks
 
-**Design**: `.pulse/specs/[feature]/design.md`
+**Techspec**: `.pulse/specs/[feature]/TECHSPEC.md`
 **Status**: Draft | Approved | In Progress | Done
 
 ---
@@ -197,7 +201,7 @@ T8 → T9
 - [ ] No TypeScript errors
 
 **Tests**: UT-001, UT-002
-**Gate**: [quick/full/build — from gate check commands]
+**Gate**: [quick/build — from gate check commands]
 
 ---
 
@@ -265,11 +269,12 @@ T8 → T9
 **Done when**:
 
 - [ ] Feature works per acceptance criteria
-- [ ] Gate check passes: `[full gate command from TESTING.md]`
+- [ ] Gate check passes: `[build gate command from TESTING.md]`
 - [ ] Test count: [N] tests pass (no silent deletions)
 
-**Tests**: integration
-**Gate**: full
+**Tests**: unit
+**Gate**: build
+**Deferred**: IT-003 (integration) — see Deferred test coverage
 
 ---
 
@@ -372,19 +377,48 @@ For each task, check: does the task create or modify a code layer that has a req
 
 **Rules:**
 
-- "Tested in another task" is NOT a valid justification for `Tests: none`. That is test deferral — the exact anti-pattern this validation prevents.
-- `Tests: none` is only valid when the coverage matrix says "none" for that code layer.
-- If a task creates MULTIPLE code layers (e.g., service + controller), use the HIGHEST test type required by any of them.
-- Any ❌ VIOLATION → restructure the task to include its required tests before proceeding.
+- "Tested in another task" is NOT a valid justification for `Tests: none`. That is test deferral between implementation tasks — the exact anti-pattern this validation prevents.
+- `Tests: none` is only valid when the coverage matrix says "none" for that code layer, or when the layer's only required coverage is integration/e2e (then the task carries a **Deferred test coverage** row instead).
+- If a task creates MULTIPLE code layers (e.g., service + controller), use the HIGHEST *unit* requirement among them.
+- `Tests: integration` and `Tests: e2e` are never valid on a task. Convert to unit coverage where possible and defer the rest.
+- Any ❌ VIOLATION → restructure the task to include its required unit tests before proceeding.
 
 **Resolving compilation dependencies:**
 
-When a task creates code that can't be tested until a later task completes (e.g., a controller that needs module wiring before its e2e tests can run), do NOT defer the tests to a separate task. Instead, restructure:
+When a task creates code whose unit tests can't run until a later task completes, do NOT defer those unit tests to a separate task. Instead, restructure:
 
-1. **Merge forward:** Move the untestable task's tests into the earliest task where they become runnable (e.g., the wiring task includes wiring + e2e tests for the controller it enables).
+1. **Merge forward:** Move the untestable task's unit tests into the earliest task where they become runnable.
 2. **Merge backward:** Absorb the blocking dependency into the current task so it becomes self-testable (e.g., controller task includes its own module registration).
 
-Pick whichever option keeps tasks atomic and cohesive. The goal: no task produces unverified code. If code can't be tested in the task that creates it, the task boundaries are wrong.
+Pick whichever option keeps tasks atomic and cohesive. The goal: no task produces code without the unit coverage it can support. If a unit test can't run in the task that creates the code, the task boundaries are wrong.
+
+This no longer applies to e2e tests waiting on wiring — those are deferred by design, not merged.
+
+---
+
+## Deferred test coverage
+
+Integration and e2e tests are not written during Execute ([implement.md](implement.md)). They are not forgotten either: every layer that needs them gets a row here, so the gap is visible and traceable instead of being discovered later as silence.
+
+Put this section in `tasks.md`, after the task breakdown:
+
+```markdown
+## Deferred test coverage
+
+Not written in Execute — implementation tasks cover unit level only.
+
+| Test ID | Type | Covers | Why unit tests are not enough |
+| ------- | ---- | ------ | ----------------------------- |
+| IT-003 | integration | `OrderService` → payment provider | crosses a process boundary; needs the provider sandbox |
+| E2E-001 | e2e | checkout, from cart to confirmation | spans 4 layers and a real browser session |
+```
+
+**Rules:**
+
+- One row per uncovered behavior, not one row per file
+- Reference the `tests.md` ID when the catalog exists; invent a stable ID when it does not
+- "Why unit tests are not enough" must name the boundary being crossed — process, network, browser, database, external service. "It is complex" is not a reason
+- The Verifier reads this section: an AC covered only by a deferred row is a gap, not a pass ([validate.md](validate.md))
 
 ---
 
@@ -423,8 +457,8 @@ Every task MUST include:
 
 **What:** [Deliverable]
 **Where:** [File path]
-**Tests**: [unit/e2e/integration/none]
-**Gate**: [quick/full/build]
+**Tests**: [unit/none]
+**Gate**: [quick/build]
 
 **Done when:**
 

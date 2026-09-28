@@ -61,11 +61,11 @@ When disqualified:
 4. Ask whether to migrate to the full pipeline via [user-input.md](user-input.md) (see **Pipeline migration**)
 5. **Stop** and wait for the user's choice
 
-**Never auto-migrate.** Never start Specify/Design/Tasks without explicit user confirmation.
+**Never auto-migrate.** Never start PRD/Techspec/Tasks without explicit user confirmation.
 
 If the user chooses **reduce scope**, re-run eligibility with the narrowed request. Only create quick spec files when the reduced scope passes all checks.
 
-If the user chooses **full pipeline**, begin at [specify.md](specify.md) → `.pulse/specs/features/[feature]/spec.md` (auto-size Design and Tasks per SKILL.md).
+If the user chooses **full pipeline**, begin at [prd.md](prd.md) → `.pulse/specs/features/[feature]/PRD.md` (auto-size Techspec and Tasks per SKILL.md).
 
 ## Process
 

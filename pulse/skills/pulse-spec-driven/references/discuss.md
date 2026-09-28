@@ -1,29 +1,33 @@
-# Specify: Discuss Gray Areas
+# PRD: Discuss Gray Areas
 
-**Goal:** Capture HOW the user envisions the feature when the spec has ambiguous areas. This is NOT a separate phase — it's triggered within Specify when the agent detects gray areas that need user input.
+**Goal:** Capture HOW the user envisions the feature when the spec has ambiguous areas. This is NOT a separate phase — it's triggered within PRD when the agent detects gray areas that need user input.
 
 **Trigger:** Automatically when gray areas are detected during spec creation, or explicitly via "discuss feature", "how should this work?", "capture context"
 
 **When to trigger (auto-detect):** The spec contains user-facing behavior that could go multiple ways AND the user hasn't expressed a preference. If the spec is clear and unambiguous, skip this entirely.
 
-**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what". When any [implicit-requirement dimension](ambiguity.md) is present (persistence, external calls, auth, payments, concurrency, state transitions), trigger discuss or convert the dimension to an `assumed` / `n/a` ledger row.
+**When NOT to trigger:** Infrastructure work, CRUD operations, well-defined API contracts, anything where the "how" is obvious from the "what".
 
-Every discussed or declined gray area is written to the Ambiguity Ledger in spec.md — never dropped. See [ambiguity.md](ambiguity.md) for pace (Quick / Guided / Detailed) and ledger statuses.
+Technical dimensions (persistence, external calls, auth, concurrency, state transitions) do **not** trigger discuss — Techspec owns them ([techspec.md](techspec.md)). What triggers discuss is their product-visible face: not "do we retry the payment", but "what does the person see when the payment does not go through".
+
+Every gray area is written to the Ambiguity Ledger in PRD.md and leaves as `decided` or `n/a` — never `assumed`, never dropped. See [ambiguity.md](ambiguity.md) for pace (Quick / Guided / Detailed) and ledger statuses.
+
+**You are talking to the product team.** Every question here must be answerable by someone who has never opened the codebase. The banned-vocabulary list in [prd.md](prd.md) (**Product language only**) applies to every question in this file.
 
 ## Why This Phase Exists
 
-Specifications capture WHAT to build. Design captures the architecture. But neither captures the user's vision for ambiguous areas — layout preferences, interaction patterns, error handling style, content tone. Without this, the agent guesses. With this, the agent builds what the user actually imagined.
+Specifications capture WHAT to build. Techspec captures the architecture. But neither captures the user's vision for ambiguous areas — layout preferences, interaction patterns, error handling style, content tone. Without this, the agent guesses. With this, the agent builds what the user actually imagined.
 
-The output — `context.md` — feeds directly into Design and Tasks:
+The output — `context.md` — feeds directly into Techspec and Tasks:
 
-- **Design reads it** to know what decisions are locked vs. flexible
+- **Techspec reads it** to know what decisions are locked vs. flexible
 - **Tasks reads it** to include specific behaviors in task definitions
 
 ## Process
 
 ### 1. Analyze the Feature
 
-Read `.pulse/specs/features/[feature]/spec.md` and identify the domain:
+Read `.pulse/specs/features/[feature]/PRD.md` and identify the domain:
 
 | Domain                         | Gray areas to explore                                         |
 | ------------------------------ | ------------------------------------------------------------- |
@@ -37,7 +41,7 @@ Generate 3-4 **feature-specific** gray areas. Not generic categories, but concre
 
 ### 2. Present Gray Areas
 
-Analyze spec.md and identify gray areas autonomously. When user input is required to choose areas or resolve ambiguity, follow [user-input.md](user-input.md) — present the feature boundary and all pending area/decision questions in one CLI batch at the end of the response.
+Analyze PRD.md and identify gray areas autonomously. When user input is required to choose areas or resolve ambiguity, follow [user-input.md](user-input.md) — present the feature boundary and all pending area/decision questions in one CLI batch at the end of the response.
 
 Do NOT include a "skip all" option when the user explicitly invoked discuss.
 
@@ -49,8 +53,9 @@ For each selected area, resolve decisions through CLI batches per [user-input.md
 
 1. Lead with a recommended option and one-line rationale
 2. Guided: at most 2 independent questions per batch; dependent questions one at a time. Never dump 3+ product questions in one batch
-3. After answers, update the Ambiguity Ledger (`decided` / `assumed`) and continue until the next blocking decision
-4. When all areas are resolved, write `context.md` (decisions only — not a questionnaire)
+3. After answers, update the Ambiguity Ledger (`decided`) and continue until the next blocking decision
+4. Keep looping until no area is unresolved. There is no round limit and no "we can settle this later" — an unanswered area means another batch next turn
+5. When all areas are resolved, write `context.md` (decisions only — not a questionnaire)
 
 **Question design** (when forming CLI batches — see [user-input.md](user-input.md)):
 
@@ -60,7 +65,7 @@ For each selected area, resolve decisions through CLI batches per [user-input.md
 
 ### 4. Scope Guardrail (CRITICAL)
 
-The feature boundary from spec.md is **fixed**. Discussion clarifies HOW to implement, never WHETHER to add new capabilities.
+The feature boundary from PRD.md is **fixed**. Discussion clarifies HOW to implement, never WHETHER to add new capabilities.
 
 **Allowed:** "How should posts be displayed?" (clarifying ambiguity)
 **Not allowed:** "Should we also add comments?" (new capability)
@@ -77,14 +82,14 @@ When user suggests scope creep: "That sounds like a separate feature. I'll note 
 # [Feature] Context
 
 **Gathered:** [date]
-**Spec:** `.pulse/specs/features/[feature]/spec.md`
+**Spec:** `.pulse/specs/features/[feature]/PRD.md`
 **Status:** Ready for design
 
 ---
 
 ## Feature Boundary
 
-[Clear statement of what this feature delivers — the scope anchor from spec.md]
+[Clear statement of what this feature delivers — the scope anchor from PRD.md]
 
 ---
 
@@ -131,5 +136,5 @@ When user suggests scope creep: "That sounds like a separate feature. I'll note 
 - **Decisions, not vision** — "Card-based layout with subtle shadows" is a decision. "Should feel modern" is not.
 - **Scope is sacred** — Deferred Ideas captures scope creep without losing ideas
 - **User = visionary, Agent = builder** — Ask about how they imagine it, not about technical implementation
-- **Don't ask about:** Technical architecture, performance, implementation details — that's Design's job
-- **Confirm before Design** — User approves context.md via CLI confirmation per [user-input.md](user-input.md) before moving to design phase
+- **Don't ask about:** Technical architecture, performance, implementation details — that's Techspec's job
+- **Confirm before Techspec** — User approves context.md via CLI confirmation per [user-input.md](user-input.md) before moving to design phase

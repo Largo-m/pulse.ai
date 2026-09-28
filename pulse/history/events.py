@@ -109,8 +109,8 @@ class ArtifactItem:
 WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
     "spec": (("classify", "Classificar"),),
     "new-issue": (
-        ("specify", "Specify"),
-        ("design", "Design"),
+        ("prd", "PRD"),
+        ("techspec", "Techspec"),
         ("tasks", "Tasks"),
         ("execute", "Execute"),
     ),

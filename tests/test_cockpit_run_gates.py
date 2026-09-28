@@ -76,7 +76,7 @@ def test_cockpit_bypasses_interactive_gate(module, runner_name, workflow, monkey
     )
 
     if workflow == "new-issue":
-        from pulse.plan.specify_state import WorkflowState
+        from pulse.plan.workflow_state import WorkflowState
 
         state = WorkflowState.create_new(feature_slug="demo", user_prompt="x")
         monkeypatch.setattr(f"{module.__name__}.resolve_new_issue_skill", lambda: tmp_path)

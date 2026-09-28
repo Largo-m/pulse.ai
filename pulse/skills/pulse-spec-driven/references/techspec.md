@@ -1,4 +1,4 @@
-# Design
+# Techspec
 
 **Goal**: Define HOW to build it. Architecture, components, what to reuse.
 
@@ -8,11 +8,11 @@
 
 ### 1. Load Context
 
-Read `.pulse/specs/features/[feature]/spec.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
+Read `.pulse/specs/features/[feature]/PRD.md` before designing. If `.pulse/specs/features/[feature]/context.md` exists, load it too — it contains implementation decisions that constrain the design (layout choices, behavior preferences, interaction patterns). Decisions marked as "Agent's Discretion" are yours to decide.
 
 Read STATE.md active AD-NNN entries and **confirmed** lessons. Conform or supersede (new AD-NNN). Silently ignoring an active decision is not allowed.
 
-If `surface.md` exists, Design serves that frozen surface — do not invent a different public API.
+If `surface.md` exists, Techspec serves that frozen surface — do not invent a different public API.
 
 If a [threat-model.md](threat-model.md) trigger is present, write `threat-model.md` in this phase and map each TM-ID to a spec SHALL or an explicit deferral.
 
@@ -29,6 +29,34 @@ Codebase → Project docs → Context7 MCP → Web search → Flag as uncertain
 **CRITICAL: NEVER assume or fabricate information.** If you cannot find an answer through the chain, explicitly say "I don't know" or "I couldn't find documentation for this". Inventing an API, a pattern, or a behavior that doesn't exist is far worse than admitting uncertainty. Wrong assumptions propagate through design → tasks → implementation and cause cascading failures.
 
 Good triggers for research: new libraries, unfamiliar APIs, performance-sensitive features, security-sensitive features, patterns you haven't used in this codebase before.
+
+### 1.8. Implicit-requirement sweep (Techspec owns this)
+
+PRD captured what the product team wants. This sweep captures what the system must guarantee to deliver it — the dimensions that have no product-team answer because they are mechanisms, not outcomes.
+
+Bound the sweep to this feature; never invent requirements outside the spec boundary.
+
+| Dimension | What to cover |
+| --------- | ------------- |
+| Input validation & bounds | Limits, formats, sanitization |
+| Failure / partial-failure | Timeouts, partial saves, rollbacks |
+| Idempotency / retry / dedup | Safe retries, duplicate keys |
+| Auth boundaries & rate limits | Who can call what, throttle rules |
+| Concurrency / ordering | Races, ordering guarantees |
+| Data lifecycle / expiry | TTL, archival, deletion |
+| Observability | Logs, metrics, tracing hooks |
+| External-dependency failure | Fallbacks, timeouts |
+| State-transition integrity | Valid transitions, guards |
+
+**Sizing:**
+
+- **Complex / Large:** every dimension → `decided` or `n/a because …`. No blanks.
+- **Medium:** only dimensions obviously present; collapse the rest to one `n/a` row.
+- **Small / Quick:** skip the sweep.
+
+Each dimension lands in the Ambiguity Ledger ([ambiguity.md](ambiguity.md)) as a `decided` or `n/a` row. `assumed` does not exist: when the choice is a real trade-off with no obvious answer in the codebase, ask the technical owner via [user-input.md](user-input.md) instead of picking for them. Here the question may — and should — use technical vocabulary: this is the phase where that vocabulary belongs.
+
+When a dimension's choice is forced by something the product team already decided, say so in the rationale and cite the PRD row: `AL-04 decided (follows AL-02: cancelled orders stay visible for 12 months)`.
 
 ### 2. Define Architecture
 
@@ -50,12 +78,12 @@ If the feature involves data, define models before implementation.
 
 ---
 
-## Template: `.pulse/specs/[feature]/design.md`
+## Template: `.pulse/specs/[feature]/TECHSPEC.md`
 
 ````markdown
-# [Feature] Design
+# [Feature] Techspec
 
-**Spec**: `.pulse/specs/[feature]/spec.md`
+**Spec**: `.pulse/specs/[feature]/PRD.md`
 **Status**: Draft | Approved
 
 ---

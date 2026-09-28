@@ -4,6 +4,14 @@
 
 This is where code gets written. Every task follows the same cycle: plan → implement → verify. Verification is built into every task, not a separate phase.
 
+**Unit tests only.** Execute writes implementation code and the unit tests that
+prove it. Integration and end-to-end tests are **not** written here — they
+belong to a later step, and writing them mid-implementation stretches a task
+into wiring, fixtures and environment work that has nothing to do with the
+deliverable. If a task cannot be proven by unit tests alone, say so, implement
+it, and record the gap ([tasks.md](tasks.md), **Deferred test coverage**) instead
+of reaching for an e2e suite.
+
 **Git policy:** Do not commit and do not suggest commit messages unless the user explicitly asks for git help.
 
 ---
@@ -67,9 +75,9 @@ Approach: [brief description]
 Success: [how to verify]
 ```
 
-### 4. Write Tests First (RED)
+### 4. Write Unit Tests First (RED)
 
-If the task includes tests (per the Tests field in tasks.md or TESTING.md coverage matrix):
+If the task includes tests (per the Tests field in tasks.md or TESTING.md coverage matrix), those tests are **unit tests**. A task whose `Tests` field says `integration` or `e2e` was built under the old rule — treat it as `unit` for the parts you can cover that way and record the rest as deferred coverage.
 
 1. Write the test file(s) BEFORE writing any implementation
 2. Tests must encode the expected behavior from the task's "Done when" criteria
@@ -82,7 +90,7 @@ Tests MUST be derived from spec ACs / assigned test IDs — **not** from reading
 
 - Tests define correct behavior independently of implementation
 - Each acceptance criterion from "Done when" maps to at least one test assertion
-- Edge cases from spec.md that apply to this task get test cases too
+- Edge cases from PRD.md that apply to this task get test cases too
 
 If the task does NOT include tests (e.g., entity-only, config-only), skip to Step 4b.
 
@@ -110,7 +118,7 @@ Follow [coding-principles.md](coding-principles.md):
 
 Run the gate check command from the task definition. This is MANDATORY — not "if applicable."
 
-1. Look up the command for the task's Gate level (quick/full/build) in TESTING.md's Gate Check Commands section, then run it
+1. Look up the command for the task's Gate level (quick/build) in TESTING.md's Gate Check Commands section, then run it
 2. Non-zero exit code = STOP. Fix the failure. Re-run. Do not proceed until green.
 3. Confirm the test count matches expectations (no tests were silently deleted or skipped)
 
@@ -118,10 +126,14 @@ Run the gate check command from the task definition. This is MANDATORY — not "
 
 | Task includes                    | Gate level | What runs                |
 | -------------------------------- | ---------- | ------------------------ |
-| Unit tests only                  | Quick      | Unit test command        |
-| E2E or integration tests         | Full       | Unit + E2E commands      |
+| Unit tests                       | Quick      | Unit test command        |
 | Last task in a phase             | Build      | Build + lint + all tests |
 | No tests (config, entities, etc) | Build      | Build + lint only        |
+
+There is no Full gate in Execute: it existed to run the e2e suite a task had
+just written, and tasks no longer write one. The Build gate still runs whatever
+integration and e2e tests already exist in the repo — you just do not add to
+them here.
 
 The gate check is deterministic. The test runner decides if the code is correct,
 not the agent's self-assessment.
@@ -160,7 +172,7 @@ During implementation, you will notice things that could be improved, refactored
 
 ### 8. Update Task Status
 
-Mark task complete in tasks.md. Update requirement traceability in spec.md if requirement IDs are used.
+Mark task complete in tasks.md. Update requirement traceability in PRD.md if requirement IDs are used.
 
 ### 9. Feature-level validation (after the LAST task)
 
@@ -175,8 +187,8 @@ When every task is complete, Execute is not done. Dispatch a **fresh Verifier** 
 
 **Reading**: task definition from tasks.md
 **Dependencies**: [All done? ✅ | Blocked by: TY]
-**Tests**: [unit/e2e/integration/none]
-**Gate**: [quick/full/build]
+**Tests**: [unit/none]
+**Gate**: [quick/build]
 
 ### Pre-Implementation (MANDATORY)
 

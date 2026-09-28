@@ -2,7 +2,7 @@ from pathlib import Path
 
 from pulse.config.project_config import init_project_config
 from pulse.history.catalog import HistoryCatalog
-from pulse.plan.specify_state import TaskState, WorkflowState
+from pulse.plan.workflow_state import TaskState, WorkflowState
 from pulse.store.sessions import persist_runtime_session
 from pulse.store.spec_sessions import record_spec_session
 from pulse.tui.hydrate import hydrate_history_item
@@ -10,11 +10,11 @@ from pulse.tui.hydrate import hydrate_history_item
 
 def _feature(workspace: Path) -> WorkflowState:
     state = WorkflowState.create_new(feature_slug="login-flow", user_prompt="Adicionar login")
-    state.approve_phase("specify")
+    state.approve_phase("prd")
     state.tasks = [TaskState(task_id="T1", title="Criar login", status="done")]
     state.mark_phase_done("execute")
     state.save(workspace)
-    (workspace / state.feature_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (workspace / state.feature_dir / "PRD.md").write_text("# Spec\n", encoding="utf-8")
     return state
 
 
@@ -58,18 +58,18 @@ def test_history_replays_agent_sessions_inside_spec_window(tmp_path: Path, monke
     persist_runtime_session(
         str(tmp_path),
         pulse_session_id="run-1",
-        acp_session_id="sess-specify",
-        agent_id="specify",
+        acp_session_id="sess-prd",
+        agent_id="prd",
     )
 
     def fake_events(session_id: str) -> list[dict[str, str]]:
-        if session_id != "sess-specify":
+        if session_id != "sess-prd":
             return []
         return [
             {
                 "kind": "Tool",
                 "title": "Read",
-                "detail": "spec.md",
+                "detail": "PRD.md",
                 "tool_id": "call-1",
             }
         ]
@@ -78,16 +78,16 @@ def test_history_replays_agent_sessions_inside_spec_window(tmp_path: Path, monke
     item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
     assert item is not None
     hydrated = hydrate_history_item(item, tmp_path)
-    assert any(entry.title == "Read" and entry.phase_id == "specify" for entry in hydrated.entries)
+    assert any(entry.title == "Read" and entry.phase_id == "prd" for entry in hydrated.entries)
 
 
 def test_history_shows_elapsed_for_phases_and_tasks(tmp_path: Path):
     state = WorkflowState.create_new(feature_slug="login-flow", user_prompt="Adicionar login")
     state.created_at = "2026-09-22T21:00:00+00:00"
-    state.approve_phase("specify")
-    state.phases["specify"].approved_at = "2026-09-22T21:04:30+00:00"
-    state.approve_phase("design")
-    state.phases["design"].approved_at = "2026-09-22T21:06:00+00:00"
+    state.approve_phase("prd")
+    state.phases["prd"].approved_at = "2026-09-22T21:04:30+00:00"
+    state.approve_phase("techspec")
+    state.phases["techspec"].approved_at = "2026-09-22T21:06:00+00:00"
     state.approve_phase("tasks")
     state.phases["tasks"].approved_at = "2026-09-22T21:10:00+00:00"
     state.tasks = [
@@ -101,13 +101,13 @@ def test_history_shows_elapsed_for_phases_and_tasks(tmp_path: Path):
     state.mark_phase_done("execute")
     state.updated_at = "2026-09-22T21:12:30+00:00"
     state.save(tmp_path)
-    (tmp_path / state.feature_dir / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (tmp_path / state.feature_dir / "PRD.md").write_text("# Spec\n", encoding="utf-8")
     item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
     assert item is not None
     hydrated = hydrate_history_item(item, tmp_path)
     labels = {phase.id: phase.elapsed_label() for phase in hydrated.phases}
-    assert labels["specify"] == "04:30"
-    assert labels["design"] == "01:30"
+    assert labels["prd"] == "04:30"
+    assert labels["techspec"] == "01:30"
     assert labels["tasks"] == "04:00"
     assert labels["execute"] == "02:30"
     assert hydrated.tasks[0].elapsed_label() == "02:30"

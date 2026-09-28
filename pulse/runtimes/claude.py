@@ -37,7 +37,7 @@ class ClaudeRuntime(AgentRuntime):
     login_command = ("claude", "/login")
     login_label = "Executar `claude /login`"
     # NÃO usar o modo `plan` aqui: as fases de "planejamento" do Pulse
-    # (specify/design/tasks) são justamente as que escrevem os artefatos. Em
+    # (prd/techspec/tasks) são justamente as que escrevem os artefatos. Em
     # `plan` o Claude não escreve o arquivo pedido — ele grava um plano em
     # ~/.claude/plans e espera aprovação, e o artefato nunca aparece na sessão.
     # Quem limita escrita é a permission_policy do Pulse, como no Cursor.

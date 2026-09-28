@@ -20,7 +20,7 @@ This is a first-class flow. Do not silently edit frozen contracts.
 ## Process
 
 1. **Stop expanding implementation** of the disputed contract. Finish or revert in-flight edits that would encode the old meaning.
-2. **Write a Spec Change record** in `spec.md` under `## Spec Changes` (create the section if missing):
+2. **Write a Spec Change record** in `PRD.md` under `## Spec Changes` (create the section if missing):
 
 ```markdown
 ### SC-NNN — [one-line change]
@@ -38,7 +38,7 @@ This is a first-class flow. Do not silently edit frozen contracts.
 5. **Invalidate downstream artifacts:**
    - `tests.md`: withdraw or replace assigned cases; do not renumber live IDs
    - `tasks.md`: set invalidated tasks back to pending or add fix tasks; update the graph
-   - `design.md` / `surface.md` / `threat-model.md`: patch the owning section or note N/A
+   - `TECHSPEC.md` / `surface.md` / `threat-model.md`: patch the owning section or note N/A
    - `validation.md`: treat prior PASS as stale until the Verifier re-runs
 6. **Do not claim Feature Done** until the Verifier runs again on the new contract.
 

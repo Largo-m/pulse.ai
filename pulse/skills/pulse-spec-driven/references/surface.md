@@ -1,8 +1,8 @@
 # Surface Contracts
 
-Write `.pulse/specs/features/[feature]/surface.md` only when the feature has a **public surface**: CLI, HTTP/API, SDK, or UI. Internal-only work records a one-line "no public surface" note in spec.md Part/Design and skips this file.
+Write `.pulse/specs/features/[feature]/surface.md` only when the feature has a **public surface**: CLI, HTTP/API, SDK, or UI. Internal-only work records a one-line "no public surface" note in PRD.md Part/Techspec and skips this file.
 
-Surface freezes WHAT the consumer types and sees **before** internal design. Part of Design serves this file; it does not invent a different API.
+Surface freezes WHAT the consumer types and sees **before** internal design. Part of Techspec serves this file; it does not invent a different API.
 
 ## Rules
 
@@ -17,7 +17,7 @@ Surface freezes WHAT the consumer types and sees **before** internal design. Par
 ```markdown
 # Surface: [Feature]
 
-Public contract. Companion to spec.md. tests.md E2E cases copy these examples verbatim.
+Public contract. Companion to PRD.md. tests.md E2E cases copy these examples verbatim.
 
 ## Golden Path
 

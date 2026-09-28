@@ -2,14 +2,14 @@ from pathlib import Path
 
 from pulse.plan.new_issue_prompt import (
     approval_is_positive,
-    build_design_prompt,
+    build_techspec_prompt,
     build_execute_task_prompt,
-    build_specify_prompt,
+    build_prd_prompt,
     classify_phase_questionnaire_outcome,
     resolve_new_issue_skill,
 )
 from pulse.plan.runner import run_plan
-from pulse.plan.specify_state import (
+from pulse.plan.workflow_state import (
     TaskState,
     WorkflowState,
     find_resumable_workflows,
@@ -46,11 +46,11 @@ def test_parse_tasks_from_markdown_accepts_h2_and_table():
 
 
 def test_resumable_workflow_reads_tasks_written_as_headings(tmp_path: Path):
-    from pulse.plan.specify_state import PhaseStatus, find_resumable_workflows
+    from pulse.plan.workflow_state import PhaseStatus, find_resumable_workflows
 
     state = WorkflowState.create_new(feature_slug="todoist", user_prompt="app")
-    state.approve_phase("specify")
-    state.approve_phase("design")
+    state.approve_phase("prd")
+    state.approve_phase("techspec")
     state.approve_phase("tasks")
     state.mark_phase_done("execute")
     state.save(tmp_path)
@@ -87,15 +87,15 @@ def test_workflow_state_roundtrip(tmp_path: Path):
         feature_slug="auth-login",
         user_prompt="Implementar login",
     )
-    state.phases["design"].skip = True
-    state.phases["design"].skip_reason = "Escopo direto"
+    state.phases["techspec"].skip = True
+    state.phases["techspec"].skip_reason = "Escopo direto"
     path = state.save(tmp_path)
 
     loaded = WorkflowState.load(path)
     assert loaded.feature_slug == "auth-login"
     assert loaded.user_prompt == "Implementar login"
-    assert loaded.phases["design"].skip is True
-    assert loaded.phases["design"].skip_reason == "Escopo direto"
+    assert loaded.phases["techspec"].skip is True
+    assert loaded.phases["techspec"].skip_reason == "Escopo direto"
 
 
 def test_workflow_state_sync_tasks(tmp_path: Path):
@@ -114,7 +114,7 @@ def test_workflow_state_sync_tasks(tmp_path: Path):
 
 def test_find_resumable_workflows(tmp_path: Path):
     state = WorkflowState.create_new(feature_slug="wip", user_prompt="WIP")
-    state.mark_phase_awaiting_approval("specify")
+    state.mark_phase_awaiting_approval("prd")
     state.save(tmp_path)
 
     found = find_resumable_workflows(tmp_path)
@@ -122,34 +122,34 @@ def test_find_resumable_workflows(tmp_path: Path):
     assert found[0].feature_slug == "wip"
 
 
-def test_build_specify_prompt_enforces_isolation_and_approval():
+def test_build_prd_prompt_enforces_isolation_and_approval():
     skill_dir = resolve_new_issue_skill()
     workspace = Path("/tmp/my-project")
     state = WorkflowState.create_new(feature_slug="auth", user_prompt="Login OAuth")
-    prompt = build_specify_prompt(
+    prompt = build_prd_prompt(
         workspace=workspace,
         user_prompt="Login OAuth",
         skill_dir=skill_dir,
         state=state,
     )
-    assert "Isolamento" in prompt
-    assert "specify.md" in prompt
+    assert "## Isolation (mandatory)" in prompt
+    assert "PRD.md" in prompt
     assert "workflow.yaml" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
     assert "Login OAuth" in prompt
 
 
-def test_build_design_prompt_references_spec():
+def test_build_techspec_prompt_references_spec():
     skill_dir = resolve_new_issue_skill()
     state = WorkflowState.create_new(feature_slug="auth", user_prompt="Login")
-    prompt = build_design_prompt(
+    prompt = build_techspec_prompt(
         workspace=Path("/tmp/proj"),
         user_prompt="Login",
         skill_dir=skill_dir,
         state=state,
     )
-    assert "design.md" in prompt
-    assert "spec.md" in prompt
+    assert "TECHSPEC.md" in prompt
+    assert "PRD.md" in prompt
 
 
 def test_build_execute_task_prompt_single_task():
@@ -165,10 +165,10 @@ def test_build_execute_task_prompt_single_task():
         tasks_skipped=False,
     )
     assert "**T1**" in prompt
-    assert "somente" in prompt
+    assert "implement **only** this task" in prompt
     assert "T1" in prompt
     assert "desta wave" not in prompt
-    assert "outras tasks" in prompt
+    assert "Do not implement other tasks" in prompt
 
 
 def test_build_execute_wave_prompt_lists_task():
@@ -189,9 +189,9 @@ def test_build_execute_wave_prompt_lists_task():
     )
     assert "Task T1" in prompt
     assert "T1" in prompt
-    assert "Não implemente outras tasks." in prompt
+    assert "Do not implement other tasks." in prompt
     assert "status: done" in prompt
-    assert "valida os gates" in prompt
+    assert "Pulse validates the gates" in prompt
 
 def test_classify_phase_questionnaire_outcome():
     assert classify_phase_questionnaire_outcome("→ Sim, aprovar e continuar") == "approve"
@@ -208,6 +208,7 @@ def test_approval_is_positive():
     assert not approval_is_positive("→ A) Sim, usar só unit tests")
 
 
+
 def test_run_plan_rejects_legacy_ids(monkeypatch):
     monkeypatch.setattr("pulse.plan.runner.run_spec", lambda **_k: 0)
     assert run_plan(spec_type_id="new-issue", user_prompt="Nova feature") == 2
@@ -216,15 +217,15 @@ def test_run_plan_rejects_legacy_ids(monkeypatch):
 
 def test_should_run_phase_respects_skip():
     state = WorkflowState.create_new(feature_slug="f", user_prompt="x")
-    state.phases["design"].skip = True
-    assert state.should_run_phase("design") is False
-    assert state.should_run_phase("specify") is True
+    state.phases["techspec"].skip = True
+    assert state.should_run_phase("techspec") is False
+    assert state.should_run_phase("prd") is True
 
 
-def test_next_phase_after_skipped_design():
+def test_next_phase_after_skipped_techspec():
     state = WorkflowState.create_new(feature_slug="f", user_prompt="x")
-    state.phases["design"].skip = True
-    assert state.next_phase_after("specify") == "tasks"
+    state.phases["techspec"].skip = True
+    assert state.next_phase_after("prd") == "tasks"
 
 
 def test_mark_task_done():
@@ -385,8 +386,8 @@ def test_sync_stream_phases_marks_completed_and_skipped():
     from pulse.plan import new_issue_flow
 
     state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")
-    state.approve_phase("specify")
-    state.mark_phase_skipped("design", "não necessário")
+    state.approve_phase("prd")
+    state.mark_phase_skipped("techspec", "não necessário")
     state.approve_phase("tasks")
     state.current_phase = "execute"
 
@@ -403,8 +404,8 @@ def test_sync_stream_phases_marks_completed_and_skipped():
     new_issue_flow._sync_stream_phases(FakeRunner(), state)
     assert calls == [
         {
-            "done_ids": ["specify", "tasks"],
-            "skipped_ids": ["design"],
+            "done_ids": ["prd", "tasks"],
+            "skipped_ids": ["techspec"],
             "failed_ids": [],
         }
     ]

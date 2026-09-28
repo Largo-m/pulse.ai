@@ -1,9 +1,18 @@
+"""Monta os prompts do pipeline PRD → Techspec → Tasks → Execute.
+
+O texto vive em `PHASE.md` / `CONTINUATION-*.md` dentro da pasta de cada agente
+([pulse.prompts.templates]) — editável pelo usuário. O que fica aqui é regra do
+Pulse: qual template a fase usa, que valores ele recebe, e como ler o que o
+agente respondeu (aprovou, pediu ajuste, cancelou).
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Callable
 
-from pulse.plan.specify_state import WorkflowState
+from pulse.plan.workflow_state import WorkflowState
+from pulse.prompts.templates import render_shared, render_template
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
 
@@ -11,14 +20,14 @@ PULSE_SPEC_SKILL = "pulse-spec-driven"
 _SUMMARY_MAX_CHARS = 8_000
 
 PHASE_REFERENCES: dict[str, tuple[str, ...]] = {
-    "specify": (
-        "specify.md",
+    "prd": (
+        "prd.md",
         "discuss.md",
         "state-management.md",
         "user-input.md",
     ),
-    "design": (
-        "design.md",
+    "techspec": (
+        "techspec.md",
         "state-management.md",
         "user-input.md",
     ),
@@ -35,6 +44,21 @@ PHASE_REFERENCES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: Agente responsável por cada fase. Os templates moram na pasta dele.
+PHASE_AGENTS = {
+    "prd": "prd",
+    "techspec": "techspec",
+    "tasks": "tasks",
+    "execute": "implement",
+}
+
+_PHASE_LABELS = {"prd": "PRD", "techspec": "Techspec", "tasks": "Tasks"}
+_PHASE_ARTIFACTS = {"prd": "PRD.md", "techspec": "TECHSPEC.md", "tasks": "tasks.md"}
+
+#: O PRD só pode fechar com aprovação quando o ledger estiver limpo.
+_PRD_APPROVAL_CONDITION = "nothing is left open: the ledger has no `open` and no `assumed` row"
+
+
 def resolve_new_issue_skill() -> Path:
     return resolve_bundled_skill(PULSE_SPEC_SKILL)
 
@@ -45,7 +69,7 @@ def format_phase_summary(text: str) -> str:
         return ""
     if len(cleaned) <= _SUMMARY_MAX_CHARS:
         return cleaned
-    return cleaned[:_SUMMARY_MAX_CHARS].rstrip() + "\n\n[… resumo truncado …]"
+    return cleaned[:_SUMMARY_MAX_CHARS].rstrip() + "\n\n[… summary truncated …]"
 
 
 def first_questionnaire_answer(answers_text: str) -> str:
@@ -92,158 +116,119 @@ def classify_phase_questionnaire_outcome(answers_text: str) -> str:
     return "continue"
 
 
-def _isolation_block(workspace: Path) -> list[str]:
-    return [
-        "## Isolamento (obrigatório)",
-        "",
-        "Esta é uma execução **nova e isolada** do Pulse.",
-        f"Analise **somente** o workspace `{workspace}`.",
-        "Ignore conversas anteriores do Cursor, outros projetos e execuções passadas do Pulse.",
-        "Você não tem histórico de fases anteriores — use apenas os artefatos em disco listados abaixo.",
-        "",
-    ]
+def _agent_block(
+    *,
+    skill_dir: Path,
+    workflow: str,
+    references: tuple[str, ...],
+    agent_id: str,
+    workspace: Path,
+) -> str:
+    """Playbook do agente (AGENT.md) ou, sem ele, a lista de references."""
+    sections: list[str] = []
+    extend_prompt_with_bundled_skill(
+        sections,
+        skill_dir=skill_dir,
+        skill_name=PULSE_SPEC_SKILL,
+        workflow=workflow,
+        references=references,
+        agent_id=agent_id,
+        workspace=workspace,
+    )
+    return "\n".join(sections).rstrip()
 
 
-def _approval_block(phase_label: str, artifact_path: str) -> list[str]:
-    return [
-        f"### Bloco de aprovação — {phase_label} (formato obrigatório)",
-        "",
-        "Você **não** tem ferramentas externas para perguntar. Termine a resposta com um **bloco",
-        "de texto** que o Pulse renderiza no terminal, exatamente neste formato:",
-        "",
-        "```text",
-        "Preciso de algumas informações antes de continuar.",
-        f"1. Aprovar {phase_label} ({artifact_path}) e avançar?",
-        "A) Sim, aprovar e continuar",
-        "B) Não, preciso de ajustes (descreva)",
-        "C) Cancelar workflow",
-        "```",
-        "",
-        "PROIBIDO nesta fase:",
-        "- Editar código de aplicação (apenas arquivos `.pulse/specs/` são permitidos).",
-        "- Enviar qualquer texto fora do bloco ```text quando for perguntar/aprovar.",
-        "- Avançar para a próxima fase sem aprovação explícita.",
-        "",
-    ]
+def _base_context(
+    *,
+    workspace: Path,
+    user_prompt: str,
+    state: WorkflowState,
+) -> dict[str, str]:
+    workspace_text = str(workspace)
+    return {
+        "workspace": workspace_text,
+        "user_prompt": user_prompt.strip(),
+        "feature_slug": state.feature_slug,
+        "feature_dir": (workspace / state.feature_dir).as_posix(),
+        "workflow_path": state.workflow_path.as_posix(),
+        "isolation": render_shared("isolation", {"workspace": workspace_text}),
+        "workflow_state": render_shared(
+            "workflow-state",
+            {"feature_slug": state.feature_slug, "workflow_path": state.workflow_path.as_posix()},
+        ),
+        # Instruções em inglês, artefatos em pt-BR: a regra precisa viajar com
+        # todo prompt, porque é o texto que o agente vai escrever no disco.
+        "output_language": render_shared("output-language"),
+    }
 
 
-def _workflow_state_instructions(state: WorkflowState) -> list[str]:
-    workflow_rel = state.workflow_path.as_posix()
-    return [
-        "## Estado do workflow (obrigatório)",
-        "",
-        f"Atualize `{workflow_rel}` após concluir esta fase:",
-        "",
-        f"- `feature_slug`: `{state.feature_slug}`",
-        f"- `complexity`: avalie (small/medium/large/complex)",
-        f"- `current_phase`: fase atual",
-        "- `phases.<fase>.status`: `awaiting_approval` ao terminar",
-        "- `phases.design.skip`: `true` somente quando Design não for necessário",
-        "- `phases.tasks.skip`: sempre `false` — o pipeline completo sempre cria `tasks.md`",
-        "- `phases.design.skip_reason`: motivo quando Design for pulado",
-        "",
-        "O Pulse lê este arquivo para decidir a próxima fase. Mantenha-o consistente.",
-        "",
-    ]
+def _approval(phase: str, artifact_path: str, *, condition: str = "") -> str:
+    label = _PHASE_LABELS.get(phase, phase.capitalize())
+    values = {"phase_label": label, "artifact_path": artifact_path}
+    if condition:
+        return render_shared("approval-conditional", {**values, "condition": condition})
+    return render_shared("approval", values)
 
 
-def build_specify_prompt(
+def _phase_context(
+    *,
+    workspace: Path,
+    user_prompt: str,
+    skill_dir: Path,
+    state: WorkflowState,
+    phase: str,
+) -> dict[str, str]:
+    agent_id = PHASE_AGENTS[phase]
+    feature_dir = (workspace / state.feature_dir).as_posix()
+    artifact = _PHASE_ARTIFACTS.get(phase, "")
+    context = _base_context(workspace=workspace, user_prompt=user_prompt, state=state)
+    context["agent"] = _agent_block(
+        skill_dir=skill_dir,
+        workflow=_PHASE_LABELS.get(phase, phase.capitalize()),
+        references=PHASE_REFERENCES[phase],
+        agent_id=agent_id,
+        workspace=workspace,
+    )
+    if artifact:
+        condition = _PRD_APPROVAL_CONDITION if phase == "prd" else ""
+        context["approval"] = _approval(phase, f"{feature_dir}/{artifact}", condition=condition)
+    if phase == "prd":
+        context["clarify"] = render_shared("clarify")
+    return context
+
+
+def build_prd_prompt(
     *,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
     state: WorkflowState,
 ) -> str:
-    feature_dir = (workspace / state.feature_dir).as_posix()
-    sections = [
-        f"Workspace: `{workspace}`",
-        f"Feature slug: `{state.feature_slug}`",
-        f"Diretório da feature: `{feature_dir}`",
-        f"Tarefa do usuário: {user_prompt.strip() or 'Nova funcionalidade'}",
-        "",
-    ]
-    sections.extend(_isolation_block(workspace))
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow="Specify",
-        references=PHASE_REFERENCES["specify"],
-        agent_id="specify",
+    context = _phase_context(
         workspace=workspace,
+        user_prompt=user_prompt or "New feature",
+        skill_dir=skill_dir,
+        state=state,
+        phase="prd",
     )
-    sections.extend(_workflow_state_instructions(state))
-    sections.extend(
-        [
-            "## Fase Specify — capturar O QUÊ construir (SEM implementar)",
-            "",
-            "Siga `specify.md` e `SKILL.md` (auto-sizing por complexidade).",
-            "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
-            "",
-            "1. Garanta que `.pulse/specs/project/STATE.md` exista.",
-            f"2. Crie `{feature_dir}/spec.md` com requirements rastreáveis.",
-            "3. Se houver áreas cinzentas, crie `context.md` conforme `discuss.md`.",
-            f"4. Atualize `{state.workflow_path.as_posix()}`:",
-            "   - Defina `complexity`",
-            "   - Marque `phases.specify.status: awaiting_approval`",
-            "   - Se Design não for necessário: `phases.design.skip: true` + `skip_reason`",
-            "   - Mantenha `phases.tasks.skip: false`. Tasks é obrigatória neste pipeline.",
-            "5. Atualize `STATE.md` → Current Work com esta feature.",
-            "",
-            "Apresente resumo curto: problema, escopo, complexidade, fases que serão puladas.",
-            "",
-        ]
-    )
-    sections.extend(_approval_block("Specify", f"{feature_dir}/spec.md"))
-    sections.append("Responda em português.")
-    sections.append("")
-    return "\n".join(sections)
+    return render_template("prd", context)
 
 
-def build_design_prompt(
+def build_techspec_prompt(
     *,
     workspace: Path,
     user_prompt: str,
     skill_dir: Path,
     state: WorkflowState,
 ) -> str:
-    feature_dir = (workspace / state.feature_dir).as_posix()
-    sections = [
-        f"Workspace: `{workspace}`",
-        f"Feature: `{state.feature_slug}`",
-        f"Tarefa original: {user_prompt.strip()}",
-        "",
-    ]
-    sections.extend(_isolation_block(workspace))
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow="Design",
-        references=PHASE_REFERENCES["design"],
-        agent_id="design",
+    context = _phase_context(
         workspace=workspace,
+        user_prompt=user_prompt,
+        skill_dir=skill_dir,
+        state=state,
+        phase="techspec",
     )
-    sections.extend(_workflow_state_instructions(state))
-    sections.extend(
-        [
-            "## Fase Design — definir COMO construir (SEM implementar)",
-            "",
-            f"Leia `{feature_dir}/spec.md` (e `context.md` se existir).",
-            f"Crie `{feature_dir}/design.md` conforme `design.md`.",
-            "Leia rules/conventions no disco só se forem necessárias para decisões de arquitetura.",
-            f"Atualize `{state.workflow_path.as_posix()}`:",
-            "   - `phases.design.status: awaiting_approval`",
-            "   - `current_phase: design`",
-            "",
-            "Apresente resumo: arquitetura, componentes, reuso de código existente.",
-            "",
-        ]
-    )
-    sections.extend(_approval_block("Design", f"{feature_dir}/design.md"))
-    sections.append("Responda em português.")
-    sections.append("")
-    return "\n".join(sections)
+    return render_template("techspec", context)
 
 
 def build_tasks_prompt(
@@ -253,47 +238,14 @@ def build_tasks_prompt(
     skill_dir: Path,
     state: WorkflowState,
 ) -> str:
-    feature_dir = (workspace / state.feature_dir).as_posix()
-    sections = [
-        f"Workspace: `{workspace}`",
-        f"Feature: `{state.feature_slug}`",
-        f"Tarefa original: {user_prompt.strip()}",
-        "",
-    ]
-    sections.extend(_isolation_block(workspace))
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow="Tasks",
-        references=PHASE_REFERENCES["tasks"],
-        agent_id="tasks",
+    context = _phase_context(
         workspace=workspace,
+        user_prompt=user_prompt,
+        skill_dir=skill_dir,
+        state=state,
+        phase="tasks",
     )
-    sections.extend(_workflow_state_instructions(state))
-    sections.extend(
-        [
-            "## Fase Tasks — quebrar em tarefas atômicas (SEM implementar)",
-            "",
-            f"Leia `{feature_dir}/spec.md`",
-            f"Leia `{feature_dir}/design.md` se existir",
-            f"Crie `{feature_dir}/tasks.md` com um heading por task (`### T1: …`, `### T2: …`).",
-            "Não encerre esta fase sem esse arquivo. Uma pergunta de esclarecimento não aprova a fase.",
-            "O ACP já carrega rules/skills do workspace; não reler o conjunto por rotina.",
-            f"Atualize `{state.workflow_path.as_posix()}`:",
-            "   - `phases.tasks.status: awaiting_approval`",
-            "   - `current_phase: tasks`",
-            "   - Popule `tasks` com lista `[{id: T1, title: ...}, ...]` na ordem de execução",
-            "",
-            "Execute os 3 checks obrigatórios de `tasks.md` antes de apresentar.",
-            "Apresente resumo: contagem de tasks, fases de execução, dependências críticas.",
-            "",
-        ]
-    )
-    sections.extend(_approval_block("Tasks", f"{feature_dir}/tasks.md"))
-    sections.append("Responda em português.")
-    sections.append("")
-    return "\n".join(sections)
+    return render_template("tasks", context)
 
 
 def build_execute_task_prompt(
@@ -331,68 +283,28 @@ def build_execute_wave_prompt(
     parallel: bool = False,
     tasks_skipped: bool,
 ) -> str:
-    feature_dir = (workspace / state.feature_dir).as_posix()
-    ids_joined = ", ".join(task_ids)
-    sections = [
-        f"Workspace: `{workspace}`",
-        f"Feature: `{state.feature_slug}`",
-        f"Tarefa original: {user_prompt.strip()}",
-        f"Task atual: **{wave_label}**",
-        f"Task: {ids_joined}",
-        "",
-    ]
-    sections.extend(_isolation_block(workspace))
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow="Execute",
-        references=PHASE_REFERENCES["execute"],
-        agent_id="implement",
+    context = _phase_context(
         workspace=workspace,
+        user_prompt=user_prompt,
+        skill_dir=skill_dir,
+        state=state,
+        phase="execute",
     )
-    sections.extend(
-        [
-            "## Fase Execute — implementar task",
-            "",
-            f"Leia `{feature_dir}/spec.md`",
-        ]
+    context.update(
+        {
+            "wave_label": wave_label,
+            "task_ids": ", ".join(task_ids),
+            "task_list": "\n".join(task_lines),
+            "techspec_line": (
+                ""
+                if state.phases["techspec"].skip
+                else f"Read `{context['feature_dir']}/TECHSPEC.md` if it exists"
+            ),
+        }
     )
-    if not state.phases["design"].skip:
-        sections.append(f"Leia `{feature_dir}/design.md` se existir")
-    if not tasks_skipped:
-        sections.extend(
-            [
-                f"Leia `{feature_dir}/tasks.md` — implemente **somente** esta task:",
-                "",
-                *task_lines,
-                "",
-                "Plano → implementar → verificar o Done when da task.",
-                "Marque a task concluída em `tasks.md` após a verificação.",
-                "",
-            ]
-        )
-    else:
-        sections.extend(
-            [
-                "Não há `tasks.md` — siga o plano inline de `implement.md` para esta execução.",
-                "",
-            ]
-        )
-    sections.extend(
-        [
-            f"Atualize `{state.workflow_path.as_posix()}`:",
-            "   - `current_task_id`: esta task",
-            "   - **Não** marque `status: done` nas tasks — o Pulse valida os gates e marca done depois",
-            "",
-            "Siga `implement.md` para esta task.",
-            "Não implemente outras tasks.",
-            "Não execute operações de git.",
-            "Responda em português.",
-            "",
-        ]
-    )
-    return "\n".join(sections)
+    # Sem tasks.md não há task a citar: o agente segue o plano inline.
+    name = "PHASE-INLINE.md" if tasks_skipped else "PHASE.md"
+    return render_template("implement", context, name=name)
 
 
 def build_execute_inline_prompt(
@@ -402,43 +314,14 @@ def build_execute_inline_prompt(
     skill_dir: Path,
     state: WorkflowState,
 ) -> str:
-    feature_dir = (workspace / state.feature_dir).as_posix()
-    sections = [
-        f"Workspace: `{workspace}`",
-        f"Feature: `{state.feature_slug}`",
-        f"Tarefa original: {user_prompt.strip()}",
-        "",
-    ]
-    sections.extend(_isolation_block(workspace))
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow="Execute",
-        references=PHASE_REFERENCES["execute"],
-        agent_id="implement",
+    context = _phase_context(
         workspace=workspace,
+        user_prompt=user_prompt,
+        skill_dir=skill_dir,
+        state=state,
+        phase="execute",
     )
-    sections.extend(
-        [
-            "## Fase Execute — implementação (tasks implícitas)",
-            "",
-            f"Leia `{feature_dir}/spec.md`",
-            f"Leia `{feature_dir}/design.md` se existir",
-            "",
-            "A fase Tasks foi pulada — liste passos atômicos inline conforme `implement.md`",
-            "antes de escrever código. Se >5 passos, pare e documente que tasks.md é necessário.",
-            "",
-            f"Atualize `{state.workflow_path.as_posix()}`:",
-            "   - `phases.execute.status: done` ao concluir",
-            "",
-            "Implemente, verifique e atualize STATE.md.",
-            "Não execute operações de git.",
-            "Responda em português.",
-            "",
-        ]
-    )
-    return "\n".join(sections)
+    return render_template("implement", context, name="PHASE-INLINE.md")
 
 
 def build_phase_continuation_prompt(
@@ -453,54 +336,24 @@ def build_phase_continuation_prompt(
     outcome: str,
     prompt_builder: Callable[..., str],
 ) -> str:
-    summary = format_phase_summary(phase_summary)
-    sections = [
-        f"Continue a fase **{phase}** com base na escolha do usuário.",
-        f"Workspace: `{workspace}`",
-        f"Feature: `{state.feature_slug}`",
-        f"Tarefa original: {user_prompt.strip()}",
-        "",
-        "## Resposta do usuário (autoritativa)",
-        "",
-        questionnaire_answers.strip(),
-        "",
-        "## Análise anterior",
-        "",
-        summary or "(Sem resumo anterior.)",
-        "",
-    ]
-    extend_prompt_with_bundled_skill(
-        sections,
-        skill_dir=skill_dir,
-        skill_name=PULSE_SPEC_SKILL,
-        workflow=phase.capitalize(),
-        references=PHASE_REFERENCES.get(phase, ()),
-        agent_id={"specify": "specify", "design": "design", "tasks": "tasks"}.get(phase, "implement"),
-        workspace=workspace,
+    agent_id = PHASE_AGENTS.get(phase, "implement")
+    context = _base_context(workspace=workspace, user_prompt=user_prompt, state=state)
+    context.update(
+        {
+            "phase": phase,
+            "summary": format_phase_summary(phase_summary) or "(No previous summary.)",
+            "answers": questionnaire_answers.strip(),
+            "agent": _agent_block(
+                skill_dir=skill_dir,
+                workflow=phase.capitalize(),
+                references=PHASE_REFERENCES.get(phase, ()),
+                agent_id=agent_id,
+                workspace=workspace,
+            ),
+        }
     )
-
-    if outcome == "adjust":
-        sections.extend(
-            [
-                "O usuário pediu **ajustes** antes de aprovar.",
-                "Atualize os artefatos da fase e reapresente o resumo com novo bloco de aprovação.",
-                "Não avance para a próxima fase.",
-                "Responda em português.",
-                "",
-            ]
-        )
-    else:
-        sections.extend(
-            [
-                "Prossiga conforme a escolha do usuário e as regras da fase.",
-                "Responda em português.",
-                "",
-            ]
-        )
-
-    sections.append(
-        "Relembre: ao terminar, atualize workflow.yaml e termine com bloco de aprovação CLI."
-    )
-    sections.append("")
+    # `adjust` e `continue` pedem coisas diferentes do agente; os demais desfechos
+    # (approve/cancel/skip) nunca chegam aqui — o flow trata antes.
+    name = "CONTINUATION-adjust.md" if outcome == "adjust" else "CONTINUATION-continue.md"
     _ = prompt_builder
-    return "\n".join(sections)
+    return render_template(agent_id, context, name=name)

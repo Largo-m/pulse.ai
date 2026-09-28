@@ -188,7 +188,7 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
 def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
     specs = tmp_path / ".pulse" / "specs" / "features" / "demo"
     specs.mkdir(parents=True)
-    (specs / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (specs / "PRD.md").write_text("# Spec\n", encoding="utf-8")
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -208,8 +208,8 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
 
             def on_mount(self) -> None:
                 state = holder["state"]
-                state.begin_phase("Fase Specify")
-                state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
+                state.begin_phase("Fase PRD")
+                state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
                 state.close_artifact_pane()
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
@@ -221,7 +221,7 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
             assert pane.display is True
             assert pane.has_class("-collapsed") is True
             assert app.query_one("#artifact-open").display is True
-            state.begin_phase("Fase Design")
+            state.begin_phase("Fase Techspec")
             state.close_artifact_pane()
             pane.sync_from_state(state, force=True)
             await pilot.pause()

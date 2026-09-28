@@ -264,7 +264,7 @@ class CockpitScreen(Screen[None]):
         )
 
     def _resumable_workflow(self) -> tuple[str, str] | None:
-        from pulse.plan.specify_state import (
+        from pulse.plan.workflow_state import (
             find_resumable_workflows,
             find_workflow_by_slug,
             resume_summary,

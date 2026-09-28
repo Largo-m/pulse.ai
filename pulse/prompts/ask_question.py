@@ -81,6 +81,7 @@ def option_requires_description(label: str) -> bool:
     return bool(_DESCRIBE_PATTERN.search(label.strip()))
 
 
+
 def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
     prompt_lower = prompt.lower()
     labels_lower = [label.lower() for label in option_labels]

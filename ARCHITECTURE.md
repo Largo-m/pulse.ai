@@ -168,7 +168,7 @@ Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow
 | [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `spec`, `setup-project`, `analyze-codebase` |
 | [`pulse/plan/*_flow.py`](pulse/plan/) | Passo a passo de cada workflow |
 | [`pulse/plan/*_prompt.py`](pulse/plan/) | Textos enviados ao agente |
-| [`pulse/plan/specify_state.py`](pulse/plan/specify_state.py) | Estado Specify → Design → Tasks → Execute |
+| [`pulse/plan/workflow_state.py`](pulse/plan/workflow_state.py) | Estado PRD → Techspec → Tasks → Execute |
 | [`pulse/plan/task_waves.py`](pulse/plan/task_waves.py) | Ondas de tasks no Execute |
 
 #### ACP

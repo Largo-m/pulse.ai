@@ -91,7 +91,7 @@ Agents do projeto podem sobrescrever ou estender os da máquina (binary, models,
 Workflows disponíveis: `spec`, `setup-project`, `analyze-codebase`.
 
 O workflow `spec` classifica o pedido (auto-sizing da skill) e dispara o pipeline
-Specify → Design → Tasks → Execute **ou** o Quick Mode. O usuário não escolhe feat vs fix.
+PRD → Techspec → Tasks → Execute **ou** o Quick Mode. O usuário não escolhe feat vs fix.
 
 O pipeline completo aponta a skill empacotada `pulse-spec-driven` (paths, sem inline). Rules,
 skills e `AGENTS.md` do workspace são carregados pelo ACP a partir do `cwd`.

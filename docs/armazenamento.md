@@ -56,7 +56,7 @@ A config efetiva por workflow é: `projeto.workflows[id]` → `global.workflows[
 .pulse/specs/
 ├── project/          PROJECT.md, ROADMAP.md, STATE.md
 ├── codebase/         STACK, ARCHITECTURE, CONVENTIONS, STRUCTURE, TESTING, INTEGRATIONS, CONCERNS
-├── features/<slug>/  spec.md, context.md, design.md, tasks.md, workflow.yaml
+├── features/<slug>/  PRD.md, context.md, TECHSPEC.md, tasks.md, workflow.yaml
 ├── quick/NNN-slug/   TASK.md, SUMMARY.md
 ├── .route.yaml       última classificação de Nova spec (full | quick)
 └── HANDOFF.md        checkpoint de sessão (escrito pelo agente)

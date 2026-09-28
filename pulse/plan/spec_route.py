@@ -7,7 +7,7 @@ import yaml
 
 from pulse.plan.spec_prompt import route_file
 
-_FULL_ALIASES = frozenset({"full", "feature", "new-issue", "pipeline", "specify"})
+_FULL_ALIASES = frozenset({"full", "feature", "new-issue", "pipeline", "prd"})
 _QUICK_ALIASES = frozenset({"quick", "fix", "fix-bug", "small", "quick-mode"})
 
 

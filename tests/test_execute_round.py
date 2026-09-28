@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from pulse.plan import new_issue_flow
 from pulse.plan.new_issue_flow import _offer_failed_round, _run_task_round
-from pulse.plan.specify_state import WorkflowState
+from pulse.plan.workflow_state import WorkflowState
 from pulse.plan.task_waves import TaskSpec
 
 SPECS = [
@@ -107,7 +107,7 @@ def test_failed_round_without_a_way_to_ask_stops():
 
 def _execute_phase(monkeypatch, tmp_path, *, rounds: list[int], handler) -> int:
     """Execute com as tasks vindas de um `tasks.md` de verdade."""
-    from pulse.plan.specify_state import PhaseStatus, TaskState
+    from pulse.plan.workflow_state import PhaseStatus, TaskState
 
     state = WorkflowState.create_new(feature_slug="demo", user_prompt="x")
     feature_dir = tmp_path / state.feature_dir

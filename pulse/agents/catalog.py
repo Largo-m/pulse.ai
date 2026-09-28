@@ -21,21 +21,21 @@ BUNDLED_AGENTS: tuple[AgentDefinition, ...] = (
         description="Escolhe flow full ou quick",
         model="Auto",
         permission_policy="deny_writes",
-        source_files=("quick-mode.md", "specify.md", "user-input.md"),
+        source_files=("quick-mode.md", "prd.md", "user-input.md"),
     ),
     AgentDefinition(
-        id="specify",
-        label="Specify",
-        description="Escreve spec.md",
+        id="prd",
+        label="PRD",
+        description="Escreve PRD.md",
         permission_policy="deny_writes",
-        source_files=("specify.md", "discuss.md", "state-management.md", "user-input.md"),
+        source_files=("prd.md", "discuss.md", "state-management.md", "user-input.md"),
     ),
     AgentDefinition(
-        id="design",
-        label="Design",
-        description="Escreve design.md",
+        id="techspec",
+        label="Techspec",
+        description="Escreve TECHSPEC.md",
         permission_policy="deny_writes",
-        source_files=("design.md", "state-management.md", "user-input.md"),
+        source_files=("techspec.md", "state-management.md", "user-input.md"),
     ),
     AgentDefinition(
         id="tasks",
@@ -104,7 +104,7 @@ BUNDLED_AGENTS: tuple[AgentDefinition, ...] = (
 
 AGENT_BY_ID = {item.id: item for item in BUNDLED_AGENTS}
 
-SPEC_FULL_AGENTS = ("specify", "design", "tasks", "implement")
+SPEC_FULL_AGENTS = ("prd", "techspec", "tasks", "implement")
 SPEC_QUICK_AGENTS = ("quick-plan", "quick-implement")
 SETUP_AGENTS = ("setup-interview", "setup-artifacts")
 ANALYZE_AGENTS = ("codebase-explore", "codebase-docs")

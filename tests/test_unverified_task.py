@@ -6,7 +6,7 @@ import pytest
 
 from pulse.plan import new_issue_flow
 from pulse.plan.new_issue_flow import _offer_unverified
-from pulse.plan.specify_state import PhaseStatus, WorkflowState
+from pulse.plan.workflow_state import PhaseStatus, WorkflowState
 from pulse.plan.task_waves import TaskSpec, parse_task_specs
 
 TASKS_MD = """\
@@ -176,7 +176,7 @@ def test_guidance_retries_once_then_stops(monkeypatch, tmp_path):
 
 def test_accepted_task_is_actually_marked_done(monkeypatch, tmp_path):
     """Aceitar sem verificação precisa gravar `done`, não só sair do laço."""
-    from pulse.plan.specify_state import TaskState
+    from pulse.plan.workflow_state import TaskState
 
     attempts: list[int] = []
     handler = _Handler(["accept"])

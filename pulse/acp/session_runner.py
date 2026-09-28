@@ -33,7 +33,12 @@ from pulse.prompts.text_questionnaire import parse_text_questionnaire
 from pulse.runcontrol import RunControl
 
 MAX_QUICK_PLAN_TURNS = 4
-MAX_PHASE_APPROVAL_TURNS = 4
+
+#: Teto de rodadas de pergunta/resposta dentro de uma fase. O PRD pergunta
+#: até não sobrar dúvida, então 4 turnos cortavam o clarify no meio e a fase
+#: terminava sem aprovação. O teto continua existindo só para não deixar um
+#: agente em loop infinito — ao estourar, a fase cai no retry com o usuário.
+MAX_PHASE_APPROVAL_TURNS = 12
 
 #: Depois de pedir `session/cancel`, quanto esperamos o agente fechar o turno
 #: por conta própria antes de considerar cancelado mesmo assim.

@@ -1,8 +1,8 @@
 # Test Catalog
 
-`.pulse/specs/features/[feature]/tests.md` is the test contract. Specify writes it for Large/Complex (and for Medium when there is a public surface). `cy`-style IDs stay stable: implementers write exactly the assigned cases; the Verifier and review check the suite against this file.
+`.pulse/specs/features/[feature]/tests.md` is the test contract. PRD writes it for Large/Complex (and for Medium when there is a public surface). `cy`-style IDs stay stable: implementers write exactly the assigned cases; the Verifier and review check the suite against this file.
 
-Medium with no public surface may keep cases inline in spec.md ACs; still assign IDs when tasks exist.
+Medium with no public surface may keep cases inline in PRD.md ACs; still assign IDs when tasks exist.
 
 ## ID rules
 
@@ -16,7 +16,7 @@ Medium with no public surface may keep cases inline in spec.md ACs; still assign
 ```markdown
 # Test Specification: [Feature]
 
-Companion to spec.md. Derived from stories, surface.md (if present), and design.
+Companion to PRD.md. Derived from stories, surface.md (if present), and design.
 
 ## Strategy
 

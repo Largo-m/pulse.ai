@@ -113,7 +113,7 @@ def test_guidance_block_is_empty_without_guidance():
 def test_guidance_reaches_the_prompt_of_the_next_attempt(tmp_path, monkeypatch):
     """O texto escrito pelo usuário entra no prompt do agente na 2ª tentativa."""
     from pulse.plan import new_issue_flow
-    from pulse.plan.specify_state import WorkflowState
+    from pulse.plan.workflow_state import WorkflowState
     from pulse.plan.task_waves import TaskSpec
 
     prompts: list[str] = []

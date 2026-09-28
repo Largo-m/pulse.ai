@@ -140,7 +140,7 @@ def run_quick(
     if not approved:
         if outcome == "migrate":
             print_workflow_result("Migração para pipeline completo registrada.")
-            print_workflow_result("Siga as orientações do agente acima para iniciar Specify.")
+            print_workflow_result("Siga as orientações do agente acima para iniciar o PRD.")
         elif outcome in {"reduce_scope", "adjust", "continue"}:
             print_workflow_result("Escolha registrada — aguardando próximo passo do agente.")
             print_workflow_result("Se o plano exigir nova aprovação, responda no terminal.")

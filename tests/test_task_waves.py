@@ -236,7 +236,7 @@ def test_parse_gate_field_accepts_shell_command():
 def test_run_execute_phase_continues_all_waves(monkeypatch, tmp_path: Path):
 
     from pulse.plan import new_issue_flow
-    from pulse.plan.specify_state import TaskState, WorkflowState
+    from pulse.plan.workflow_state import TaskState, WorkflowState
     from pulse.plan.task_waves import GateResult
 
     state = WorkflowState.create_new(feature_slug="feat", user_prompt="x")

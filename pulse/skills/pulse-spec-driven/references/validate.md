@@ -10,7 +10,7 @@
 
 3. **Merge (when the artifact matrix requires review):** [review.md](review.md) after Verifier PASS. Interactive UAT is extra for complex user-facing behavior.
 
-**Author ≠ verifier:** the agent that wrote the code must not be the Feature-layer judge. If the harness cannot spawn a sub-agent, re-read spec.md and the diff from scratch, ignore prior adequacy notes, and say so in `validation.md` (`Verifier: same-session fresh-eyes — harness had no sub-agent`). That fallback is weaker; do not pretend it is process isolation.
+**Author ≠ verifier:** the agent that wrote the code must not be the Feature-layer judge. If the harness cannot spawn a sub-agent, re-read PRD.md and the diff from scratch, ignore prior adequacy notes, and say so in `validation.md` (`Verifier: same-session fresh-eyes — harness had no sub-agent`). That fallback is weaker; do not pretend it is process isolation.
 
 **Git policy:** Do not commit or suggest commit messages unless the user explicitly asks for git help.
 
@@ -29,7 +29,7 @@ Go through tasks.md:
 
 ### 2. Spec-anchored acceptance criteria (evidence-or-zero)
 
-For each AC in spec.md, the Verifier re-derives the spec-defined expected outcome:
+For each AC in PRD.md, the Verifier re-derives the spec-defined expected outcome:
 
 ```markdown
 | Criterion | Spec-defined outcome | `file:line` + assertion | Result |
@@ -41,10 +41,11 @@ For each AC in spec.md, the Verifier re-derives the spec-defined expected outcom
 - No `file:line` → NOT covered
 - Vague spec outcome → spec-precision gap, not a silent PASS
 - Shallow patterns fail: tautologies, mock call counts instead of state, happy-path only when edges are listed
+- An AC whose only coverage is a **Deferred test coverage** row in `tasks.md` is a GAP, not a PASS. Execute writes unit tests only ([implement.md](implement.md)); record the AC as uncovered and name the deferred ID, so the gap is counted rather than assumed away
 
 ### 3. Check Edge Cases
 
-From spec.md edge cases:
+From PRD.md edge cases:
 
 - [ ] [Edge case 1] handled correctly
 - [ ] [Edge case 2] handled correctly
@@ -163,7 +164,7 @@ Return a compact chat summary: PASS/FAIL, AC coverage, sensor killed/survived/fa
 # [Feature] Validation
 
 **Date**: [YYYY-MM-DD]
-**Spec**: `.pulse/specs/features/[feature]/spec.md`
+**Spec**: `.pulse/specs/features/[feature]/PRD.md`
 **Diff range**: [commits or branch..HEAD]
 **Verifier**: independent sub-agent | same-session fresh-eyes (harness had no sub-agent)
 **Verdict**: PASS | FAIL
@@ -251,7 +252,7 @@ Return a compact chat summary: PASS/FAIL, AC coverage, sensor killed/survived/fa
 
 ## Requirement Traceability Update
 
-Update spec.md requirement statuses:
+Update PRD.md requirement statuses:
 
 | Requirement | Previous Status | New Status   |
 | ----------- | --------------- | ------------ |
@@ -285,7 +286,7 @@ Update spec.md requirement statuses:
 - **Quality check is mandatory** — Not optional
 - **Infer severity** — Never ask the user "how bad is this?"
 - **Max 3 diagnostic iterations** — Prevents infinite investigation loops
-- **Update traceability** — Every verified requirement updates spec.md status
+- **Update traceability** — Every verified requirement updates PRD.md status
 - **Always write validation.md** — Feature Done is a file, not a chat claim
 - **Sensor in scratch only** — never stash; fallback must be labeled
 - **Review after PASS** — Verifier does not replace code review when the matrix requires it

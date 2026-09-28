@@ -43,16 +43,16 @@ O agente é instruído a ler no filesystem:
 
 ```
 Use a skill instalada: `pulse-spec-driven`
-Siga o workflow **Specify**.
+Siga o workflow **PRD**.
 - `<site-packages>/pulse/skills/pulse-spec-driven/SKILL.md`
-- `.../references/specify.md`
+- `.../references/prd.md`
 ```
 
 Cada fase manda um **subconjunto** de referências:
 
 | Workflow / fase | Referências apontadas |
 | --- | --- |
-| new-issue / specify | specify, discuss, state-management, user-input |
+| new-issue / prd | prd, discuss, state-management, user-input |
 | new-issue / design | design, state-management, user-input |
 | new-issue / tasks | tasks, state-management, user-input |
 | new-issue / execute | implement, validate, coding-principles, state-management |
@@ -91,7 +91,7 @@ Se o binário `agent acp` carregar skills globais do Cursor por conta própria, 
 
 1. Limpa legado `.pulse/skills/.../questions`.
 2. Resume `workflow.yaml` incompleto ou cria `.pulse/specs/features/<slug>/workflow.yaml`.
-3. Fases `specify` → `design` → `tasks` → `execute`. Design/Tasks podem ser `skip`.
+3. Fases `prd` → `techspec` → `tasks` → `execute`. Techspec/Tasks podem ser `skip`.
 4. Cada fase de planejamento: sessão isolada + aprovação no terminal (`Aprovar / ajustes / cancelar`).
 5. Execute: lê `tasks.md`, agrupa **waves** (até 5 tasks prontas). `[P]` pode ir em batch. O Pulse só marca `done` depois dos gates (`Done when` / `Verify`).
 6. Sem `tasks.md` (fase pulada): um prompt inline de `implement.md`.
@@ -123,7 +123,7 @@ Mesmo desenho em duas fases: exploração → sete docs em `.pulse/specs/codebas
 | Pulse | Agente |
 | --- | --- |
 | Qual workflow rodou, ordem das fases, resume | Conteúdo de spec/design/tasks |
-| Aprovação no terminal | Decidir skip de Design/Tasks |
+| Aprovação no terminal | Decidir skip de Techspec/Tasks |
 | Gates de wave no Execute | Implementar e verificar a task |
 | Gravar run + logs do cockpit | Atualizar Markdowns e, no new-issue, `workflow.yaml` |
 

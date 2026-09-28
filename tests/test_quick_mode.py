@@ -32,11 +32,11 @@ def test_build_quick_plan_prompt_enforces_scope_and_approval():
     assert "Agent `quick-plan`" in prompt
     assert "Corrigir botão de login" in prompt
     assert str(workspace) in prompt
-    assert "Isolamento" in prompt
+    assert "## Isolation (mandatory)" in prompt
     assert "Awaiting Approval" in prompt
     assert "Preciso de algumas informações antes de continuar." in prompt
-    assert "Não edite código de aplicação" in prompt
-    assert "quick fixes **pré-definidos**" in prompt
+    assert "Do not edit application code" in prompt
+    assert "**predefined** quick fixes" in prompt
     assert "Outro" in prompt
     assert "```text" in prompt
 

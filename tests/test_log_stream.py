@@ -6,7 +6,7 @@ from pulse.tui.widgets.log_stream import LogStream, _assistant_line, format_assi
 
 def test_format_assistant_lines_wraps_and_keeps_paragraphs():
     body = (
-        "Vou seguir o workflow Specify do `pulse-spec-driven`: ler as referencias "
+        "Vou seguir o workflow PRD do `pulse-spec-driven`: ler as referencias "
         "da skill e os artefatos do projeto para capturar o escopo sem implementar.\n\n"
         "**Problema:** a home mostra KPIs hardcoded."
     )
@@ -59,14 +59,14 @@ def test_elapsed_label_only_runs_while_the_step_runs():
 
     now = time.monotonic()
 
-    running = PhaseItem(id="specify", label="Specify", status=PhaseStatus.RUNNING, started_at=100.0)
+    running = PhaseItem(id="prd", label="PRD", status=PhaseStatus.RUNNING, started_at=100.0)
     assert running.elapsed_label(163.0) == "01:03"
 
     # Spec aberta pelo histórico: a fase vem como `running`, mas com a duração
     # já fechada — a coluna não pode voltar a contar contra o relógio de agora.
     hydrated = PhaseItem(
-        id="specify",
-        label="Specify",
+        id="prd",
+        label="PRD",
         status=PhaseStatus.RUNNING,
         started_at=0.0,
         ended_at=150.0,

@@ -27,37 +27,37 @@ def _project_id(tmp_path: Path) -> str:
 
 def test_global_overwrites_the_agents_that_already_had_a_value(tmp_path: Path):
     project_id = _project_id(tmp_path)
-    upsert_agent_settings(project_id, "specify", model="composer-2.5")
+    upsert_agent_settings(project_id, "prd", model="composer-2.5")
 
     apply_setting_to_all_agents(
-        project_id, field="model", value="opus[1m]", agent_ids=["specify", "design"]
+        project_id, field="model", value="opus[1m]", agent_ids=["prd", "techspec"]
     )
 
-    assert load_agent_settings(project_id, "specify")["model"] == "opus[1m]"
-    assert load_agent_settings(project_id, "design")["model"] == "opus[1m]"
+    assert load_agent_settings(project_id, "prd")["model"] == "opus[1m]"
+    assert load_agent_settings(project_id, "techspec")["model"] == "opus[1m]"
 
 
 def test_a_specific_change_after_the_global_wins(tmp_path: Path):
     project_id = _project_id(tmp_path)
     apply_setting_to_all_agents(
-        project_id, field="runtime", value="claude", agent_ids=["specify", "design"]
+        project_id, field="runtime", value="claude", agent_ids=["prd", "techspec"]
     )
 
-    upsert_agent_settings(project_id, "specify", runtime="cursor")
+    upsert_agent_settings(project_id, "prd", runtime="cursor")
 
-    assert load_agent_settings(project_id, "specify")["runtime"] == "cursor"
-    assert load_agent_settings(project_id, "design")["runtime"] == "claude"
+    assert load_agent_settings(project_id, "prd")["runtime"] == "cursor"
+    assert load_agent_settings(project_id, "techspec")["runtime"] == "claude"
 
 
 def test_global_does_not_touch_the_other_fields(tmp_path: Path):
     project_id = _project_id(tmp_path)
-    upsert_agent_settings(project_id, "specify", model="composer-2.5", runtime="cursor")
+    upsert_agent_settings(project_id, "prd", model="composer-2.5", runtime="cursor")
 
     apply_setting_to_all_agents(
-        project_id, field="permission_policy", value="auto_approve", agent_ids=["specify"]
+        project_id, field="permission_policy", value="auto_approve", agent_ids=["prd"]
     )
 
-    stored = load_agent_settings(project_id, "specify")
+    stored = load_agent_settings(project_id, "prd")
     assert stored["permission_policy"] == "auto_approve"
     assert stored["model"] == "composer-2.5"
     assert stored["runtime"] == "cursor"
@@ -65,13 +65,13 @@ def test_global_does_not_touch_the_other_fields(tmp_path: Path):
 
 def test_unknown_field_is_ignored(tmp_path: Path):
     project_id = _project_id(tmp_path)
-    upsert_agent_settings(project_id, "specify", model="composer-2.5")
+    upsert_agent_settings(project_id, "prd", model="composer-2.5")
 
     apply_setting_to_all_agents(
-        project_id, field="binary; DROP TABLE agent_settings", value="x", agent_ids=["specify"]
+        project_id, field="binary; DROP TABLE agent_settings", value="x", agent_ids=["prd"]
     )
 
-    assert load_agent_settings(project_id, "specify")["model"] == "composer-2.5"
+    assert load_agent_settings(project_id, "prd")["model"] == "composer-2.5"
 
 
 # ------------------------------------------------------- pela tela de settings
@@ -88,7 +88,7 @@ def test_saving_global_reaches_the_agent_used_by_the_run(tmp_path: Path):
 
     project = load_project_config(tmp_path)
     assert project is not None and project.model == "opus[1m]"
-    loaded = load_agent("specify", workspace=tmp_path)
+    loaded = load_agent("prd", workspace=tmp_path)
     assert loaded is not None
     assert apply_agent_settings(loaded, project.project_id).model == "opus[1m]"
     assert calls == ["back"]

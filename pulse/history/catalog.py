@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, HistoryStep, SpecFlow
 from pulse.history.quick_index import list_quick_tasks
-from pulse.plan.specify_state import (
+from pulse.plan.workflow_state import (
     PHASE_ORDER,
     PhaseStatus,
     WorkflowState,
@@ -13,8 +13,8 @@ from pulse.plan.specify_state import (
 )
 
 _ISSUE_STEPS = (
-    ("specify", "Specify"),
-    ("design", "Design"),
+    ("prd", "PRD"),
+    ("techspec", "Techspec"),
     ("tasks", "Tasks"),
     ("execute", "Execute"),
 )

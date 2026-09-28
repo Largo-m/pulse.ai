@@ -18,7 +18,7 @@ SPEC_DIR = ".pulse/specs/features/demo"
 def _runner(tmp_path: Path) -> AcpSessionRunner:
     runner = AcpSessionRunner(command=["true"], cwd=str(tmp_path))
     runner.bind_spec(SPEC_DIR)
-    runner._phase_id = "design"
+    runner._phase_id = "techspec"
     runner._task_id = ""
     runner._session_id = "sess-1"
     return runner
@@ -40,7 +40,7 @@ def test_tool_and_text_updates_become_log_entries(tmp_path: Path):
                 "sessionUpdate": "tool_call",
                 "toolCallId": "call-1",
                 "title": "Read",
-                "rawInput": {"path": "design.md"},
+                "rawInput": {"path": "TECHSPEC.md"},
             }
         }
     )
@@ -51,15 +51,15 @@ def test_tool_and_text_updates_become_log_entries(tmp_path: Path):
         ("Assistant", "Vou ler o design."),
         ("Tool", "Read"),
     ]
-    assert rows[1]["detail"] == "design.md"
-    assert rows[0]["phase_id"] == "design"
+    assert rows[1]["detail"] == "TECHSPEC.md"
+    assert rows[0]["phase_id"] == "techspec"
 
 
 def test_tool_update_refreshes_the_same_entry(tmp_path: Path):
     init_project_config(tmp_path)
     runner = _runner(tmp_path)
 
-    for title in ("Read", "Read design.md"):
+    for title in ("Read", "Read TECHSPEC.md"):
         runner._record_spec_event(
             {"update": {"sessionUpdate": "tool_call_update", "toolCallId": "call-1", "title": title}}
         )
@@ -67,7 +67,7 @@ def test_tool_update_refreshes_the_same_entry(tmp_path: Path):
     rows = list_spec_events(tmp_path, SPEC_DIR)
 
     assert len(rows) == 1
-    assert rows[0]["title"] == "Read design.md"
+    assert rows[0]["title"] == "Read TECHSPEC.md"
 
 
 def test_nothing_is_recorded_without_a_spec(tmp_path: Path):
@@ -107,8 +107,8 @@ def test_hydrate_reads_the_pulse_store(tmp_path: Path):
         spec_dir=SPEC_DIR,
         kind="Tool",
         title="Write",
-        detail="spec.md",
-        phase_id="specify",
+        detail="PRD.md",
+        phase_id="prd",
         task_id="T1",
         tool_id="call-9",
     )
@@ -128,6 +128,6 @@ def test_hydrate_reads_the_pulse_store(tmp_path: Path):
 
     assert len(entries) == 1
     assert entries[0].title == "Write"
-    assert entries[0].detail == "spec.md"
-    assert entries[0].phase_id == "specify"
+    assert entries[0].detail == "PRD.md"
+    assert entries[0].phase_id == "prd"
     assert entries[0].task_id == "T1"

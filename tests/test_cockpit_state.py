@@ -6,7 +6,7 @@ from pulse.tui.state import CockpitState, LogKind, PhaseStatus, progress_bar
 def test_configure_workflow_sets_phases():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    assert [phase.id for phase in state.phases] == ["specify", "design", "tasks", "execute"]
+    assert [phase.id for phase in state.phases] == ["prd", "techspec", "tasks", "execute"]
     assert state.workflow_label == "NEW ISSUE"
     assert state.done_count() == 0
     assert state.total_count() == 4
@@ -42,18 +42,18 @@ def test_begin_phase_marks_prior_pending_when_resuming_mid_flow():
 def test_begin_phase_preserves_timer_across_same_phase_tasks():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
-    specify_started = state.phases[0].started_at
-    assert specify_started is not None
+    state.begin_phase("Fase PRD")
+    prd_started = state.phases[0].started_at
+    assert prd_started is not None
 
-    state.begin_phase("Fase Specify — continuação (2)")
+    state.begin_phase("Fase PRD — continuação (2)")
     assert state.phases[0].status == PhaseStatus.RUNNING
-    assert state.phases[0].started_at == specify_started
+    assert state.phases[0].started_at == prd_started
 
     state.begin_phase("Execute — Task T1: One")
     execute_started = state.phases[3].started_at
     assert execute_started is not None
-    assert execute_started != specify_started
+    assert execute_started != prd_started
     assert state.phases[0].status == PhaseStatus.DONE
 
     state.begin_phase("Execute — Task T2: Two")
@@ -64,7 +64,7 @@ def test_begin_phase_preserves_timer_across_same_phase_tasks():
 def test_apply_phase_statuses_hydrates_resume_state():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.apply_phase_statuses(done_ids=("specify", "tasks"), skipped_ids=("design",))
+    state.apply_phase_statuses(done_ids=("prd", "tasks"), skipped_ids=("techspec",))
     assert state.phases[0].status == PhaseStatus.DONE
     assert state.phases[1].status == PhaseStatus.SKIPPED
     assert state.phases[2].status == PhaseStatus.DONE
@@ -136,7 +136,7 @@ def test_mark_finished():
 def test_mark_finished_on_error_marks_failed():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
     state.mark_finished(1)
     assert state.running is False
     assert state.exit_code == 1
@@ -148,13 +148,13 @@ def test_mark_finished_on_error_marks_failed():
 def test_entries_are_scoped_to_selected_step():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
     state.append_assistant("spec draft")
-    state.add_tool_entry(LogKind.WRITE, "spec.md", "spec.md")
-    assert {entry.phase_id for entry in state.entries} == {"specify"}
-    assert [entry.title for entry in state.visible_entries()] == ["Assistant", "spec.md"]
+    state.add_tool_entry(LogKind.WRITE, "PRD.md", "PRD.md")
+    assert {entry.phase_id for entry in state.entries} == {"prd"}
+    assert [entry.title for entry in state.visible_entries()] == ["Assistant", "PRD.md"]
 
-    state.begin_phase("Fase Design")
+    state.begin_phase("Fase Techspec")
     state.append_assistant("design draft")
     assert state.selected_phase_index == 1
     assert [entry.body for entry in state.visible_entries() if entry.kind == LogKind.ASSISTANT] == [
@@ -164,7 +164,7 @@ def test_entries_are_scoped_to_selected_step():
 
     state.select_phase(0)
     visible = state.visible_entries()
-    assert [entry.phase_id for entry in visible] == ["specify", "specify"]
+    assert [entry.phase_id for entry in visible] == ["prd", "prd"]
     assert visible[0].body == "spec draft"
     assert "design draft" not in [entry.body for entry in visible]
 
@@ -172,16 +172,16 @@ def test_entries_are_scoped_to_selected_step():
 def test_browsing_a_past_step_does_not_follow_new_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
+    state.begin_phase("Fase PRD")
     state.append_assistant("spec")
-    state.begin_phase("Fase Design")
+    state.begin_phase("Fase Techspec")
     state.select_phase(0)
     assert state.selected_phase_index == 0
 
     state.begin_phase("Fase Tasks")
     assert state.selected_phase_index == 0
     assert state.phases[2].status == PhaseStatus.RUNNING
-    assert [entry.phase_id for entry in state.visible_entries()] == ["specify"]
+    assert [entry.phase_id for entry in state.visible_entries()] == ["prd"]
 
 
 def test_following_live_stays_on_running_step():
@@ -236,23 +236,23 @@ def test_manual_artifact_select_disables_follow():
 def test_visible_artifacts_are_scoped_to_selected_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
-    state.begin_phase("Fase Design")
-    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True, has_content=True)
+    state.begin_phase("Fase PRD")
+    state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
+    state.begin_phase("Fase Techspec")
+    state.upsert_artifact(".pulse/specs/features/demo/TECHSPEC.md", ready=True, has_content=True)
     assert [item.path for item in state.visible_artifacts()] == [
-        ".pulse/specs/features/demo/design.md"
+        ".pulse/specs/features/demo/TECHSPEC.md"
     ]
     state.select_phase(0)
     assert [item.path for item in state.visible_artifacts()] == [
-        ".pulse/specs/features/demo/spec.md"
+        ".pulse/specs/features/demo/PRD.md"
     ]
 
 
 def test_upsert_ignores_non_spec_paths():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Specify")
+    state.begin_phase("PRD")
     assert state.upsert_artifact("pulse/cli.py", ready=True, has_content=True) is None
     assert state.upsert_artifact(".pulse/skills/pulse-spec-driven/SKILL.md", ready=True, has_content=True) is None
     assert state.artifacts == []
@@ -262,16 +262,16 @@ def test_upsert_ignores_non_spec_paths():
 def test_reveal_artifact_from_prompt_opens_matching_file():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
+    state.begin_phase("PRD")
+    state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
     state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True, has_content=True)
     assert state.artifact_pane_open is False
     opened = state.reveal_artifact_from_prompt(
-        "Aprovar Specify (.pulse/specs/features/demo/spec.md) e avançar?"
+        "Aprovar PRD (.pulse/specs/features/demo/PRD.md) e avançar?"
     )
     assert opened is True
     assert state.artifact_pane_open is True
-    assert state.selected_artifact_path == ".pulse/specs/features/demo/spec.md"
+    assert state.selected_artifact_path == ".pulse/specs/features/demo/PRD.md"
     assert state.follow_artifact is False
 
 
@@ -331,10 +331,10 @@ def test_open_artifact_pane_shows_again():
 def test_phase_has_artifacts_follows_selected_phase():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=True, has_content=True)
+    state.begin_phase("Fase PRD")
+    state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
     assert state.phase_has_artifacts() is True
-    state.begin_phase("Fase Design")
+    state.begin_phase("Fase Techspec")
     assert state.phase_has_artifacts() is False
     state.select_phase(0)
     assert state.phase_has_artifacts() is True
@@ -390,12 +390,12 @@ def test_live_task_does_not_steal_browsed_step():
     state.begin_phase("Execute — Task T1: One")
     state.begin_task("T1", "One")
     state.select_phase(0)
-    assert state.selected_phase().id == "specify"
+    assert state.selected_phase().id == "prd"
     state.append_assistant("ainda no t1")
     state.begin_phase("Execute — Task T2: Two")
     state.begin_task("T2", "Two")
     assert state.selected_nav_kind == "phase"
-    assert state.selected_phase().id == "specify"
+    assert state.selected_phase().id == "prd"
     assert state.tasks[1].status == PhaseStatus.RUNNING
 
 
@@ -456,8 +456,8 @@ def test_apply_routed_flow_full_appends_pipeline():
     state.apply_routed_flow("full")
     assert [phase.id for phase in state.phases] == [
         "classify",
-        "specify",
-        "design",
+        "prd",
+        "techspec",
         "tasks",
         "execute",
     ]
@@ -468,15 +468,15 @@ def test_pane_stays_closed_while_artifact_has_no_content():
     """Write anunciado mas ainda sem arquivo em disco não deve abrir a aba."""
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Design")
-    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=False)
+    state.begin_phase("Fase Techspec")
+    state.upsert_artifact(".pulse/specs/features/demo/TECHSPEC.md", ready=False)
 
     assert state.artifact_pane_open is False
     assert state.phase_has_artifacts() is False
     assert state.displayable_artifacts() == []
     # o artefato existe na coleção — a aba, se aberta à mão, mostra "escrevendo…"
     assert [item.path for item in state.visible_artifacts()] == [
-        ".pulse/specs/features/demo/design.md"
+        ".pulse/specs/features/demo/TECHSPEC.md"
     ]
 
 
@@ -484,8 +484,8 @@ def test_artifact_with_content_is_offered_but_never_opens_alone():
     """Abrir sozinho roubava a tela do stream no meio da spec."""
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Design")
-    path = ".pulse/specs/features/demo/design.md"
+    state.begin_phase("Fase Techspec")
+    path = ".pulse/specs/features/demo/TECHSPEC.md"
     state.upsert_artifact(path, ready=False)
     assert state.artifact_pane_open is False
 
@@ -502,8 +502,8 @@ def test_write_that_never_lands_never_opens_the_pane():
     """Escrita negada/falha conclui sem arquivo: nada a exibir, nada a abrir."""
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Design")
-    path = ".pulse/specs/features/demo/design.md"
+    state.begin_phase("Fase Techspec")
+    path = ".pulse/specs/features/demo/TECHSPEC.md"
     state.upsert_artifact(path, ready=False)
     state.upsert_artifact(path, ready=True)  # concluiu, mas sem conteúdo
 
@@ -514,8 +514,8 @@ def test_write_that_never_lands_never_opens_the_pane():
 def test_pane_does_not_reopen_after_the_user_closes_it():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Design")
-    state.upsert_artifact(".pulse/specs/features/demo/design.md", ready=True, has_content=True)
+    state.begin_phase("Fase Techspec")
+    state.upsert_artifact(".pulse/specs/features/demo/TECHSPEC.md", ready=True, has_content=True)
     state.open_artifact_pane()
     assert state.artifact_pane_open is True
 
@@ -529,11 +529,11 @@ def test_pane_does_not_reopen_after_the_user_closes_it():
 def test_reveal_from_prompt_ignores_artifacts_without_content():
     state = CockpitState()
     state.configure_workflow("new-issue")
-    state.begin_phase("Fase Specify")
-    state.upsert_artifact(".pulse/specs/features/demo/spec.md", ready=False)
+    state.begin_phase("Fase PRD")
+    state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=False)
 
     opened = state.reveal_artifact_from_prompt(
-        "Aprovar Specify (.pulse/specs/features/demo/spec.md) e avançar?"
+        "Aprovar PRD (.pulse/specs/features/demo/PRD.md) e avançar?"
     )
 
     assert opened is False

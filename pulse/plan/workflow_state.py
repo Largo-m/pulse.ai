@@ -12,8 +12,8 @@ import yaml
 from pulse.status_labels import status_label
 
 WORKFLOW_VERSION = 1
-PHASE_ORDER = ("specify", "design", "tasks", "execute")
-OPTIONAL_PHASES = frozenset({"design"})
+PHASE_ORDER = ("prd", "techspec", "tasks", "execute")
+OPTIONAL_PHASES = frozenset({"techspec"})
 
 
 class PhaseStatus(str, Enum):
@@ -89,7 +89,7 @@ class WorkflowState:
     feature_slug: str
     user_prompt: str
     complexity: str = "large"
-    current_phase: str = "specify"
+    current_phase: str = "prd"
     phases: dict[str, PhaseState] = field(default_factory=dict)
     tasks: list[TaskState] = field(default_factory=list)
     current_task_id: str | None = None
@@ -250,7 +250,7 @@ class WorkflowState:
             feature_slug=str(data.get("feature_slug", "")),
             user_prompt=str(data.get("user_prompt", "")),
             complexity=str(data.get("complexity", "large")),
-            current_phase=str(data.get("current_phase", "specify")),
+            current_phase=str(data.get("current_phase", "prd")),
             phases=phases,
             tasks=tasks,
             current_task_id=data.get("current_task_id"),
@@ -374,8 +374,8 @@ def _is_workflow_incomplete(state: WorkflowState) -> bool:
 
 def _default_artifact(phase: str) -> str:
     mapping = {
-        "specify": "spec.md",
-        "design": "design.md",
+        "prd": "PRD.md",
+        "techspec": "TECHSPEC.md",
         "tasks": "tasks.md",
         "execute": "",
     }

@@ -16,7 +16,7 @@ WORKFLOWS = tuple(WORKFLOW_PHASES.keys())
 
 PHASE_TITLES: dict[str, tuple[str, ...]] = {
     "spec": ("Classificar spec",),
-    "new-issue": ("Fase Specify", "Fase Design", "Fase Tasks", "Fase Execute"),
+    "new-issue": ("Fase PRD", "Fase Techspec", "Fase Tasks", "Fase Execute"),
     "fix-bug": ("Fase 1 — Planejando quick task", "Fase 2 — Implementando quick task"),
     "setup-project": (
         "Fase 1 — Análise do projeto",
@@ -50,10 +50,10 @@ TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
             "title": "Edit File",
             "kind": "edit",
             "status": "pending",
-            "rawInput": {"path": "/repo/.pulse/specs/features/demo/spec.md"},
+            "rawInput": {"path": "/repo/.pulse/specs/features/demo/PRD.md"},
         },
         LogKind.EDIT,
-        "spec.md",
+        "PRD.md",
     ),
     (
         "write",
@@ -136,7 +136,7 @@ def test_resume_jump_to_last_phase_marks_prior_done():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.apply_phase_statuses(done_ids=("specify",), skipped_ids=("design", "tasks"))
+    sink.apply_phase_statuses(done_ids=("prd",), skipped_ids=("techspec", "tasks"))
     sink.begin_phase("Fase Execute")
     assert [phase.status for phase in state.phases] == [
         PhaseStatus.DONE,
@@ -217,7 +217,7 @@ def test_assistant_gutter_across_workflows(workflow_id: str):
                 "sessionUpdate": "agent_message_chunk",
                 "content": {
                     "type": "text",
-                    "text": "Vou usar `Specify` e marcar **large** no STATE.",
+                    "text": "Vou usar `PRD` e marcar **large** no STATE.",
                 },
             }
         }
@@ -225,7 +225,7 @@ def test_assistant_gutter_across_workflows(workflow_id: str):
     plain = _render_plain(state)
     assert "Assistente" in plain
     assert "│" in plain
-    assert "Specify" in plain
+    assert "PRD" in plain
     assert "large" in plain
     assert "**" not in plain
     assert "`" not in plain
@@ -386,7 +386,7 @@ def test_search_detail_gray_block_layout():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Fase PRD")
     sink.handle_update(
         {
             "update": {
@@ -431,7 +431,7 @@ def test_log_stream_renders_only_selected_step():
     state = CockpitState()
     state.configure_workflow("new-issue")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Fase PRD")
     sink.handle_update(
         {
             "update": {
@@ -440,7 +440,7 @@ def test_log_stream_renders_only_selected_step():
             }
         }
     )
-    sink.begin_phase("Fase Design")
+    sink.begin_phase("Fase Techspec")
     sink.handle_update(
         {
             "update": {

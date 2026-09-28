@@ -10,7 +10,7 @@ Do not fix during review. Produce issue files; remediate in a second pass.
 
 ## Scope
 
-Read spec.md, tests.md (if present), tasks.md, threat-model.md (if present), and the feature diff. Partition by task when the diff is large. Do not silently sample.
+Read PRD.md, tests.md (if present), tasks.md, threat-model.md (if present), and the feature diff. Partition by task when the diff is large. Do not silently sample.
 
 ## Severity
 
