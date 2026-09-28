@@ -40,14 +40,28 @@ def parse_agent_markdown(text: str, fallback: AgentDefinition) -> tuple[dict[str
 
 
 def install_global_agents() -> Path:
+    """Copia os arquivos de fábrica do agente para o diretório global.
+
+    Copia todo `.md` da pasta — o playbook (`AGENT.md`) e os templates de fase
+    (`PHASE.md`, `CONTINUATION-*.md`), que é o que o usuário edita. Nunca
+    sobrescreve: arquivo que já existe é edição dele; arquivo apagado volta ao
+    padrão de fábrica na próxima instalação.
+    """
+    from pulse.prompts.templates import install_global_templates
+
     source_root = bundled_agents_dir()
     dest_root = global_agents_dir()
     for agent in BUNDLED_AGENTS:
-        source = source_root / agent.id / "AGENT.md"
-        dest = dest_root / agent.id / "AGENT.md"
-        if source.is_file() and not dest.is_file():
+        source_dir = source_root / agent.id
+        if not source_dir.is_dir():
+            continue
+        for source in sorted(source_dir.glob("*.md")):
+            dest = dest_root / agent.id / source.name
+            if dest.is_file():
+                continue
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, dest)
+    install_global_templates()
     return dest_root
 
 

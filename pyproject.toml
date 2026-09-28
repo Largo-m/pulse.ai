@@ -32,7 +32,11 @@ where = ["."]
 include = ["pulse*"]
 
 [tool.setuptools.package-data]
-pulse = ["skills/pulse-spec-driven/**/*", "agents/bundled/**/*"]
+pulse = [
+    "skills/pulse-spec-driven/**/*",
+    "agents/bundled/**/*",
+    "prompts/templates/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
