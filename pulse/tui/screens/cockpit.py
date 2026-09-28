@@ -161,7 +161,7 @@ class CockpitScreen(Screen[None]):
         if request is None:
             return
         self._prompt_open = True
-        self.state.reveal_artifact_from_prompt(f"{request.prompt}\n{request.title}")
+        self.state.select_artifact_from_prompt(f"{request.prompt}\n{request.title}")
         self._sync_ui(force=True)
 
         def _finish(result: object | None) -> None:

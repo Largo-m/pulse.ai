@@ -725,7 +725,17 @@ class CockpitState:
         self.artifact_pane_open = True
         self.notify()
 
-    def reveal_artifact_from_prompt(self, text: str) -> bool:
+    def select_artifact_from_prompt(self, text: str) -> bool:
+        """Deixa a aba apontando para o artefato que a pergunta cita.
+
+        Só a seleção — abrir é do usuário, pela tecla `a`. A aba abrindo sozinha
+        a cada pergunta cobria o stream bem na hora em que o agente pedia uma
+        decisão, que é justamente o que precisa estar visível.
+
+        Pergunta que não cita artefato nenhum não mexe em nada: um palpite aqui
+        desligava o `follow_artifact` e a aba parava de acompanhar o artefato
+        vivo por causa de uma pergunta sem relação com arquivo.
+        """
         keys = extract_spec_artifacts_from_text(text)
         candidates = [item for item in self.artifacts if item.has_content]
         matched: ArtifactItem | None = None
@@ -736,14 +746,10 @@ class CockpitState:
                     break
             if matched is not None:
                 break
-        if matched is None and candidates:
-            visible = self.displayable_artifacts()
-            matched = visible[-1] if visible else candidates[-1]
         if matched is None:
             return False
         self.selected_artifact_path = matched.path
         self.follow_artifact = False
-        self.artifact_pane_open = True
         self.notify()
         return True
 

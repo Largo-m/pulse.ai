@@ -259,20 +259,34 @@ def test_upsert_ignores_non_spec_paths():
     assert state.artifact_pane_open is False
 
 
-def test_reveal_artifact_from_prompt_opens_matching_file():
+def test_select_artifact_from_prompt_points_at_matching_file_without_opening():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("PRD")
     state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
     state.upsert_artifact(".pulse/specs/features/demo/context.md", ready=True, has_content=True)
     assert state.artifact_pane_open is False
-    opened = state.reveal_artifact_from_prompt(
+    selected = state.select_artifact_from_prompt(
         "Aprovar PRD (.pulse/specs/features/demo/PRD.md) e avançar?"
     )
-    assert opened is True
-    assert state.artifact_pane_open is True
+    assert selected is True
     assert state.selected_artifact_path == ".pulse/specs/features/demo/PRD.md"
     assert state.follow_artifact is False
+    # A aba fica apontada, mas quem abre é o usuário com `a`.
+    assert state.artifact_pane_open is False
+
+
+def test_prompt_without_artifact_leaves_the_selection_alone():
+    state = CockpitState()
+    state.configure_workflow("new-issue")
+    state.begin_phase("PRD")
+    state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
+
+    selected = state.select_artifact_from_prompt("Qual banco usar para a fila?")
+
+    assert selected is False
+    assert state.artifact_pane_open is False
+    assert state.follow_artifact is True
 
 
 def test_toggle_focus_cycles_artifact_when_pane_open():
@@ -526,15 +540,15 @@ def test_pane_does_not_reopen_after_the_user_closes_it():
     assert state.phase_has_artifacts() is True
 
 
-def test_reveal_from_prompt_ignores_artifacts_without_content():
+def test_select_from_prompt_ignores_artifacts_without_content():
     state = CockpitState()
     state.configure_workflow("new-issue")
     state.begin_phase("Fase PRD")
     state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=False)
 
-    opened = state.reveal_artifact_from_prompt(
+    selected = state.select_artifact_from_prompt(
         "Aprovar PRD (.pulse/specs/features/demo/PRD.md) e avançar?"
     )
 
-    assert opened is False
+    assert selected is False
     assert state.artifact_pane_open is False
