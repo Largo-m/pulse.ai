@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from pulse.plan.workflow_state import WorkflowState
+from pulse.prompts.ask_question import is_free_text_answer
 from pulse.prompts.templates import render_shared, render_template
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
@@ -90,10 +91,15 @@ def _questionnaire_answers(answers_text: str) -> list[str]:
 
 
 def approval_is_positive(answers_text: str) -> bool:
-    answers = [answer.lower() for answer in _questionnaire_answers(answers_text)]
+    answers = _questionnaire_answers(answers_text)
     if not answers:
         return False
-    for answer in answers:
+    for raw in answers:
+        # Texto livre é orientação, não escolha: "revise o fluxo de aprovação"
+        # não pode aprovar a fase só porque contém "aprov".
+        if is_free_text_answer(raw):
+            continue
+        answer = raw.lower()
         if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "pular")):
             continue
         if "aprov" in answer:

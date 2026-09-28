@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse.prompts.ask_question import is_free_text_answer
 from pulse.prompts.templates import render_shared, render_template
 from pulse.skills.loader import resolve_bundled_skill
 from pulse.skills.prompt import extend_prompt_with_bundled_skill
@@ -51,10 +52,14 @@ def format_plan_summary(text: str) -> str:
 
 
 def approval_is_positive(answers_text: str) -> bool:
-    answers = [answer.lower() for answer in _quick_answers(answers_text)]
+    answers = _quick_answers(answers_text)
     if not answers:
         return False
-    for answer in answers:
+    for raw in answers:
+        # Ver a nota em `pulse.plan.new_issue_prompt.approval_is_positive`.
+        if is_free_text_answer(raw):
+            continue
+        answer = raw.lower()
         if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "migrar", "reduzir", "pular")):
             continue
         if "aprov" in answer:

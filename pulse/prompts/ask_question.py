@@ -81,6 +81,16 @@ def option_requires_description(label: str) -> bool:
     return bool(_DESCRIBE_PATTERN.search(label.strip()))
 
 
+#: Prefixo da resposta digitada à mão em "Outro". O que vem depois é frase do
+#: usuário, não rótulo de opção — sem essa marca os classificadores de fase
+#: fazem match de substring no texto livre e uma orientação que só menciona
+#: "aprovação" é lida como aprovação da fase.
+FREE_TEXT_ANSWER_PREFIX = "Outro — "
+
+
+def is_free_text_answer(answer: str) -> bool:
+    return answer.strip().lower().startswith(FREE_TEXT_ANSWER_PREFIX.strip().lower())
+
 
 def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
     prompt_lower = prompt.lower()
@@ -98,6 +108,9 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
         return False
 
     closed_prompt_markers = (
+        # Aprovação de fase é decisão fechada: sim, ajuste ou cancelar. Um
+        # "Outro" aqui vira texto livre onde o flow espera uma das três.
+        "e avançar?",
         "aprovar quick task",
         "excede o escopo do quick mode",
         "excede o quick mode",

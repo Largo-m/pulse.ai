@@ -9,6 +9,7 @@ from pulse.plan.new_issue_prompt import (
     resolve_new_issue_skill,
 )
 from pulse.plan.runner import run_plan
+from pulse.prompts.ask_question import FREE_TEXT_ANSWER_PREFIX, should_add_other_option
 from pulse.plan.workflow_state import (
     TaskState,
     WorkflowState,
@@ -207,6 +208,36 @@ def test_approval_is_positive():
     assert not approval_is_positive("→ A) Unit (JUnit JVM)")
     assert not approval_is_positive("→ A) Sim, usar só unit tests")
 
+
+def test_free_text_answer_never_approves_the_phase():
+    """O que o usuário digita em "Outro" é orientação, não aprovação.
+
+    Antes, o texto livre caía no mesmo match de substring dos rótulos fechados:
+    uma instrução que só mencionasse "aprovação" aprovava a fase e o pipeline
+    seguia para a próxima etapa sem ninguém ter aprovado nada.
+    """
+    for text in (
+        "pode aprovar",
+        "aprovar só depois de revisar a seção de retry",
+        "o fluxo de aprovação precisa ficar no techspec",
+    ):
+        answers = f"→ {FREE_TEXT_ANSWER_PREFIX}{text}"
+        assert not approval_is_positive(answers), text
+        assert classify_phase_questionnaire_outcome(answers) == "continue", text
+
+
+def test_phase_approval_question_does_not_get_an_other_option():
+    """Aprovar fase é decisão fechada: sim, ajuste ou cancelar.
+
+    O "Outro" era injetado quando o agente reformulava o bloco e deixava de
+    citar "Cancelar workflow" — e aí a resposta livre chegava onde o flow
+    espera uma das três escolhas.
+    """
+    prompt = "Aprovar Techspec (.pulse/specs/features/x/TECHSPEC.md) e avançar?"
+    assert not should_add_other_option(
+        prompt=prompt,
+        option_labels=["Sim, aprovar e continuar", "Não, preciso de ajustes (descreva)"],
+    )
 
 
 def test_run_plan_rejects_legacy_ids(monkeypatch):

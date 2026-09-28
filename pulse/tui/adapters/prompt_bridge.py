@@ -8,6 +8,7 @@ from typing import Any
 
 from pulse.prompts.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
+    FREE_TEXT_ANSWER_PREFIX,
     OTHER_OPTION_ID,
     build_ask_question_answers,
     build_ask_question_cancelled,
@@ -279,7 +280,9 @@ class TextualPromptHandler:
         for letter, label in question.options:
             if value == letter:
                 return f"{letter}) {label}"
-        return value
+        # Não casou com nenhuma letra: é o texto que o usuário escreveu em
+        # "Outro". Marcado para não ser confundido com rótulo de opção.
+        return f"{FREE_TEXT_ANSWER_PREFIX}{value}"
 
     def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
         name = str(params.get("name") or "Plano").strip()
