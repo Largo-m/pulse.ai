@@ -51,4 +51,14 @@ class HistoryItem:
 
     @property
     def is_incomplete(self) -> bool:
-        return self.status in {HistoryStatus.PENDING, HistoryStatus.IN_PROGRESS}
+        """Sobrou step por fazer — é o que decide se dá para retomar.
+
+        Quem manda é o step, não o status da run: `failed` e `stopped` também
+        têm o que retomar, e era por olhar só o status que uma run que caiu no
+        meio voltava do histórico sem oferecer nem retomar nem refazer.
+        """
+        if self.status is HistoryStatus.DONE:
+            return False
+        if not self.steps:
+            return self.status in {HistoryStatus.PENDING, HistoryStatus.IN_PROGRESS}
+        return any(step.status not in {"done", "skipped"} for step in self.steps)

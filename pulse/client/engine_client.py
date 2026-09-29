@@ -13,10 +13,12 @@ from typing import Any
 import httpx
 
 from pulse.daemon.paths import (
+    DAEMON_LOG_FILE,
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
     clear_daemon_meta,
+    ensure_global_dir,
     read_daemon_meta,
 )
 from pulse.daemon.protocol import ENGINE_PROTOCOL
@@ -154,13 +156,25 @@ class EngineClient:
 
     def _start_daemon(self) -> None:
         cmd = [sys.executable, "-m", "pulse.daemon", "serve"]
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            env=os.environ.copy(),
-        )
+        # stderr vai para arquivo, não para /dev/null: o daemon roda destacado
+        # do terminal, e era ali que sumia o traceback de uma run que morria
+        # sem passar pelo menu de retry.
+        try:
+            ensure_global_dir()
+            stderr: Any = DAEMON_LOG_FILE.open("a", encoding="utf-8")
+        except OSError:
+            stderr = subprocess.DEVNULL
+        try:
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
+                start_new_session=True,
+                env=os.environ.copy(),
+            )
+        finally:
+            if stderr is not subprocess.DEVNULL:
+                stderr.close()
 
     def _http(self) -> httpx.Client:
         if self._client is not None:

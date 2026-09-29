@@ -214,3 +214,96 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
 
     record = run_store.list_runs(tmp_path)[0]
     assert [step.step_id for step in record.steps] == ["plan"] + [f"run:{item}" for item in ids]
+
+
+def test_every_item_is_recorded_before_the_first_one_runs(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Os N filhos vão para o banco na expansão, não quando cada um começa.
+
+    Filho que só existia na memória sumia se a run caísse no meio do fan-out:
+    o histórico reabria com as tasks que já tinham rodado e mais nenhuma.
+    """
+    make_workflow(
+        "demo",
+        steps=[("plan", "Planejar"), ("run", "Implementar")],
+        fan_out=("run",),
+    )
+    ids = [f"T{index}" for index in range(1, 11)]
+    # O bloco enumera dez; a segunda task derruba a sessão e o usuário para.
+    runner = _Runner(
+        [
+            _approved(_block(*(f"{item} — Task {item}" for item in ids))),
+            _approved(),
+            RuntimeError("o processo do agente encerrou"),
+        ]
+    )
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 1
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["plan"] + [f"run:{item}" for item in ids]
+    assert [step.status for step in record.steps[:3]] == ["done", "done", "failed"]
+    assert {step.status for step in record.steps[3:]} == {"pending"}
+
+
+def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
+    wired, monkeypatch, tmp_path: Path
+):
+    """O pai não volta: ao retomar, o bloco de itens ainda é o do step anterior.
+
+    A busca pelo resumo anterior parava no step pai — que o fan-out apagou. Sem
+    ele, a varredura ia até o fim e pegava o resumo da última task, que não tem
+    bloco `pulse:items`: o fan-out desmontava e `run` rodava como step único.
+    """
+    make_workflow(
+        "demo",
+        steps=[("plan", "Planejar"), ("run", "Implementar")],
+        fan_out=("run",),
+    )
+    first = _Runner(
+        [
+            _approved(_block("T1 — Um", "T2 — Dois")),
+            _approved("terminei a T1, sem bloco de itens"),
+            RuntimeError("o processo do agente encerrou"),
+        ]
+    )
+    first._prompt_handler.choice = "stop"
+    _install(monkeypatch, first)
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=first._stream,
+        prompt_handler=first._prompt_handler,
+        render_header=False,
+    )
+    run_id = run_store.list_runs(tmp_path)[0].id
+
+    resumed = _Runner([_approved()])
+    _install(monkeypatch, resumed)
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=resumed._stream,
+        prompt_handler=resumed._prompt_handler,
+        render_header=False,
+        resume_run_id=run_id,
+    )
+
+    assert code == 0
+    record = run_store.load_run(run_id)
+    assert record is not None
+    assert [(step.step_id, step.status) for step in record.steps] == [
+        ("plan", "done"),
+        ("run:T1", "done"),
+        ("run:T2", "done"),
+    ]

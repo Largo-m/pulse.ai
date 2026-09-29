@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -153,6 +154,10 @@ class RunManager:
                 control=state.control,
             )
         except Exception as error:
+            # O traceback vai para o stderr do daemon (`~/.pulse/daemon.log`):
+            # daqui para cima só sobrevive a mensagem, e uma run que morre por
+            # um tipo de exceção inesperado precisa deixar onde olhar.
+            traceback.print_exc()
             state.status = "failed"
             state.exit_code = 1
             state.bus.publish(

@@ -136,7 +136,11 @@ def run_workflow(
             workspace=workspace_root,
             fallback_model=resolved.model,
         )
-    except (RuntimeError, TimeoutError, OSError) as error:
+    except Exception as error:  # noqa: BLE001
+        # Rede de segurança: o que passa por aqui já escapou do menu de retry,
+        # então o mínimo é não deixar o step gravado como "executando" — é esse
+        # estado que fazia a run voltar do histórico sem retomar nem refazer.
+        _fail_running_steps(run)
         run_store.update_run(run.id, status=FAILED)
         if cockpit:
             raise
@@ -300,23 +304,33 @@ def _units(
             )
         )
         if run.step(step_id) is None:
-            run.steps.insert(
-                at + index - 1,
-                StepRecord(
-                    step_id=step_id,
-                    position=position,
-                    label=label,
-                    agent_id=step.agent_id,
-                ),
+            child = StepRecord(
+                step_id=step_id,
+                position=position,
+                label=label,
+                agent_id=step.agent_id,
             )
+            run.steps.insert(at + index - 1, child)
+            # Grava os N na hora, não quando cada um começar. Filho que só
+            # existe na memória some se a run cair no meio do fan-out: o
+            # histórico reabria com as tasks que já tinham rodado e mais
+            # nenhuma, como se o agente tivesse enumerado menos do que enumerou.
+            run_store.save_step(run.id, child)
     return units
 
 
 def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
-    """Resumo do último step com resposta antes deste."""
+    """Resumo do último step com resposta antes deste.
+
+    A parada também acontece no primeiro filho de fan-out (`run:T1` para
+    `run`): ao retomar, o step pai já não existe na run, e sem isto a varredura
+    ia até o fim e devolvia o resumo da última task — o bloco `pulse:items`
+    sumia, o fan-out desmontava e a run voltava a rodar o step pai inteiro.
+    """
+    child = f"{step_id}:"
     previous = ""
     for record in run.steps:
-        if record.step_id == step_id:
+        if record.step_id == step_id or record.step_id.startswith(child):
             break
         if record.summary:
             previous = record.summary
@@ -359,9 +373,6 @@ def _run_step(
 
         choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if choice != "retry":
-            record.status = FAILED
-            record.ended_at = run_store.utc_now()
-            run_store.save_step(run.id, record)
             return 1
         _revive_session(runner)
         if guidance:
@@ -390,6 +401,7 @@ def _attempt_step(
     try:
         prompt_text = render(step.prompt_template, _context(run, step, workspace, item))
     except TemplateError as error:
+        _fail(run, record)
         return FAILED, str(error)
     if instructions:
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
@@ -420,12 +432,17 @@ def _attempt_step(
                 preferred_model=model,
                 phase_id=step.step_id,
             )
-    except (TimeoutError, RuntimeError, OSError) as error:
+    except Exception as error:  # noqa: BLE001
         # A sessão caiu: timeout, processo morto, protocolo quebrado. Isto
         # subia até `run_workflow` e matava a run inteira calada — logo a falha
         # que mais vale refazer, porque quase nunca é do step. Vira desfecho de
         # tentativa, e quem decide é o usuário no menu de retry.
-        run_store.save_step(run.id, record)
+        #
+        # `Exception` e não uma lista de tipos: a lista era (Timeout, Runtime,
+        # OSError), e bastava um `ValueError` vindo de um stdin já fechado para
+        # a run morrer sem menu nenhum. Nada que aconteça dentro de um step
+        # justifica derrubar a run sem perguntar.
+        _fail(run, record)
         return FAILED, _session_error(error)
 
     record.acp_session_id = runner.last_session_id or record.acp_session_id
@@ -433,7 +450,7 @@ def _attempt_step(
 
     outcome = str(result.get("outcome", ""))
     if outcome in {CANCEL, "cancelled"} or result.get("stopReason") == "cancelled":
-        run_store.save_step(run.id, record)
+        _fail(run, record)
         return FAILED, "step cancelado"
 
     if outcome == SKIP:
@@ -445,11 +462,11 @@ def _attempt_step(
         return SKIPPED, ""
 
     if step.requires_approval and not bool(result.get("approved")):
-        run_store.save_step(run.id, record)
+        _fail(run, record)
         return FAILED, "step não aprovado"
 
     if not step.requires_approval and not _prompt_succeeded(result):
-        run_store.save_step(run.id, record)
+        _fail(run, record)
         return FAILED, str(result.get("stopReason") or "o agente não concluiu o step")
 
     record.status = DONE
@@ -458,6 +475,25 @@ def _attempt_step(
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
     return DONE, ""
+
+
+def _fail_running_steps(run: run_store.RunRecord) -> None:
+    for record in run.steps:
+        if record.status == RUNNING:
+            _fail(run, record)
+
+
+def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
+    """Grava a tentativa como falha antes de perguntar o que fazer.
+
+    Antes o step ficava `running` no banco enquanto o menu de retry estava na
+    tela, e uma queda ali (processo morto, cockpit fechado) deixava no histórico
+    um step eternamente "executando" — que o Pulse então não sabia retomar nem
+    refazer. Refazer volta o status para `running` em `_attempt_step`.
+    """
+    record.status = FAILED
+    record.ended_at = run_store.utc_now()
+    run_store.save_step(run.id, record)
 
 
 def _context(
@@ -537,8 +573,9 @@ def _hold_for_pause(
     O step que foi cortado volta para pendente: ele não terminou, então será
     refeito inteiro ao retomar. Devolve `False` quando a run foi parada.
     """
-    if record.status == RUNNING:
+    if record.status in {RUNNING, FAILED}:
         record.status = PENDING
+        record.ended_at = ""
         run_store.save_step(run.id, record)
         _sync_steps(runner, run)
     if _control(runner).stopped:
@@ -587,7 +624,11 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str
 def _session_error(error: BaseException) -> str:
     if isinstance(error, TimeoutError):
         return f"o agente parou de responder — {error}"
-    return f"a sessão do agente caiu — {error}"
+    if isinstance(error, RuntimeError | OSError):
+        return f"a sessão do agente caiu — {error}"
+    # Falha que não é de sessão: o tipo é a única pista que o usuário tem para
+    # decidir entre refazer e parar.
+    return f"o step quebrou — {type(error).__name__}: {error}"
 
 
 def _revive_session(runner: AcpSessionRunner) -> None:

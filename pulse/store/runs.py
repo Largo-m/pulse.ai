@@ -154,8 +154,11 @@ def create_run(
               (run_id, step_id, position, label, agent_id, status)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
+            # A posição vem do registro, não do índice: o motor espaça os steps
+            # (1000, 2000, …) justamente para o fan-out caber entre dois deles.
+            # Renumerar aqui punha as tasks do step 2 depois do step 3.
             [
-                (run_id, item.step_id, index, item.label, item.agent_id, PENDING)
+                (run_id, item.step_id, item.position or index, item.label, item.agent_id, PENDING)
                 for index, item in enumerate(steps, start=1)
             ],
         )
@@ -204,11 +207,17 @@ def list_runs(
 
 
 def find_resumable(workspace: str | Path, *, db_path: Path | None = None) -> list[RunRecord]:
-    """Runs que pararam no meio — dá para retomar do step onde ficaram."""
+    """Runs que pararam no meio — dá para retomar do step onde ficaram.
+
+    Falha entra na lista: é o caso em que mais se quer voltar. Uma run que caiu
+    no quinto de dez steps guarda os quatro primeiros em `run_steps`, e retomar
+    roda só o que faltou. Só `completed` fica de fora, e ainda assim só quando
+    não sobrou step nenhum por fazer.
+    """
     return [
         run
         for run in list_runs(workspace, db_path=db_path)
-        if run.status not in {"completed", "failed"} and run.is_incomplete()
+        if run.status != "completed" and run.is_incomplete()
     ]
 
 

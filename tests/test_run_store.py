@@ -137,3 +137,32 @@ def test_deleting_a_run_takes_its_steps_events_and_artifacts_along(tmp_path: Pat
 
 def test_deleting_a_run_that_is_not_there_says_so(tmp_path: Path):
     assert run_store.delete_run("run-que-nunca-existiu") is False
+
+
+def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
+    """Falha é o caso em que mais se quer voltar: o que já fechou está gravado."""
+    record = _create(tmp_path)
+    first = record.steps[0]
+    first.status = DONE
+    run_store.save_step(record.id, first)
+    run_store.update_run(record.id, status="failed")
+
+    pending = run_store.find_resumable(tmp_path)
+    assert [item.id for item in pending] == [record.id]
+
+
+def test_the_step_position_comes_from_the_record(tmp_path: Path):
+    """O motor espaça as posições para o fan-out caber entre dois steps."""
+    record = run_store.create_run(
+        run_id="run-spaced",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="x",
+        steps=[
+            StepRecord(step_id="one", position=1000, label="Um"),
+            StepRecord(step_id="two", position=2000, label="Dois"),
+        ],
+    )
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert [step.position for step in loaded.steps] == [1000, 2000]

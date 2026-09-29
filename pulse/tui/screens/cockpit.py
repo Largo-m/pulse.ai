@@ -211,11 +211,20 @@ class CockpitScreen(Screen[None]):
             self._sync_ui(force=True)
             self._offer_restart()
             return
-        elif not self.state.has_error():
-            self.state.add_error(
-                "Workflow falhou",
-                f"O fluxo encerrou com código {code}.",
-            )
+        else:
+            if not self.state.has_error():
+                self.state.add_error(
+                    "Workflow falhou",
+                    f"O fluxo encerrou com código {code}.",
+                )
+            # Falha também é run pela metade: o que já rodou está em
+            # `run_steps`, então oferecer retomar aqui evita mandar o usuário
+            # ao histórico só para descobrir que dá para continuar.
+            if self._resumable_run() is not None:
+                self.state.add_info("Dá para retomar do step que falhou")
+            self._sync_ui(force=True)
+            self._offer_restart()
+            return
         self._sync_ui(force=True)
 
     def action_toggle_pause(self) -> None:

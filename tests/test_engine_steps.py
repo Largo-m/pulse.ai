@@ -428,3 +428,53 @@ def test_a_broken_template_fails_the_step_instead_of_prompting_a_hole(
 
     assert code == 1
     assert runner.prompts == []
+
+
+def test_an_unexpected_error_also_offers_retry(wired, monkeypatch, tmp_path: Path):
+    """Não é só timeout e processo morto: qualquer queda dentro do step pergunta.
+
+    A lista de tipos capturados era (Timeout, Runtime, OSError) — bastava um
+    `ValueError` vindo de um stdin já fechado para a run morrer sem menu nenhum
+    e deixar o step gravado como "executando".
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    runner = _Runner([ValueError("I/O operation on closed file"), _approved(), _approved()])
+    runner._prompt_handler.choice = "retry"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner._prompt_handler.asked == ["Step Um falhou"]
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["done", "done"]
+
+
+def test_a_step_that_failed_is_never_left_as_running(wired, monkeypatch, tmp_path: Path):
+    """O banco não pode guardar "executando" depois que a run acabou.
+
+    Era esse estado que fazia a run voltar do histórico sem oferecer retomar
+    nem refazer: nenhum step estava pendente, só um parado no meio.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["failed", "pending"]
+    assert record.step("one").ended_at, "falha também fecha o relógio do step"

@@ -124,6 +124,11 @@ step `implement` (fan_out)          →   run_steps
 - A posição usa passo de 1000 (`POSITION_STRIDE`), então o step 4 vira
   4001, 4002… e continua antes do step 5. Sem isso `T10` cairia entre `T1` e
   `T2`, que é como o `step_id` ordena.
+- Os N vão para `run_steps` **na expansão**, não quando cada um começa. Filho
+  que só existisse na memória sumiria se a run caísse no meio do fan-out, e o
+  histórico reabriria com as tasks que já rodaram e mais nenhuma.
+- Ao retomar, o bloco relido é o do step **anterior** ao fan-out — o pai já não
+  existe na run, e a busca pelo resumo para no primeiro filho.
 
 O motor continua sem ler artefato: ele não abre `tasks.md` nem conhece `### T1`.
 Trocar `tasks.md` por outra coisa não muda uma linha do orquestrador.

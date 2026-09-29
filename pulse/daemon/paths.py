@@ -8,6 +8,9 @@ GLOBAL_DIR = Path.home() / ".pulse"
 DAEMON_SOCKET = GLOBAL_DIR / "daemon.sock"
 DAEMON_PID_FILE = GLOBAL_DIR / "daemon.pid"
 DAEMON_META_FILE = GLOBAL_DIR / "daemon.json"
+#: Traceback do daemon. Ele roda destacado do terminal: sem isto, uma run que
+#: morre por uma exceção inesperada não deixa pista nenhuma em lugar nenhum.
+DAEMON_LOG_FILE = GLOBAL_DIR / "daemon.log"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8787
 

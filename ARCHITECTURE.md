@@ -185,6 +185,11 @@ que não é falha: o cockpit oferece retomar.
 Retomar = rodar o primeiro step que não está `done`/`skipped`.
 Refazer (`restart=True`) zera `run_steps` mantendo a run.
 
+Run que **falhou** também é retomável, e é o caso em que mais se quer voltar: o
+que já fechou está em `run_steps`, então retomar roda só o que faltou. Quem
+decide é o step, não o status da run — por isso um step que não fecha é gravado
+como `failed` na hora, e nunca fica `running` no banco depois que a run acabou.
+
 Contrato completo: [`pulse/runcontrol.py`](pulse/runcontrol.py).
 
 ### Valores disponíveis no `prompt_template`

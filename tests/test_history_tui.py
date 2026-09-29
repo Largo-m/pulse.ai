@@ -224,3 +224,35 @@ def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
 
     assert "em andamento" in warning
     assert "Os arquivos no workspace ficam." in warning
+
+
+def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
+    """Falhou não é terminou: o que sobrou de step é o que dá para retomar.
+
+    O histórico olhava só o status da run, então uma run que caiu no meio
+    voltava sem retomar nem refazer — e as tasks que faltavam pareciam nunca
+    ter existido.
+    """
+    from pulse.tui.screens.history_detail import _pending_run
+
+    make_workflow("demo", steps=[("plan", "Planejar"), ("build", "Construir")])
+    record = run_store.create_run(
+        run_id="run-broke",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="Subir a API",
+        steps=[
+            StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester"),
+            StepRecord(step_id="build", position=2, label="Construir", agent_id="tester"),
+        ],
+    )
+    plan = record.steps[0]
+    plan.status = DONE
+    run_store.save_step(record.id, plan)
+    run_store.update_run(record.id, status="failed")
+
+    item = HistoryCatalog(tmp_path).get(record.id)
+    assert item is not None
+    assert item.status_label == "falhou"
+    assert item.is_incomplete
+    assert _pending_run(item) == (record.id, "Construir · steps 1/2")
