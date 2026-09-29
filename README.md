@@ -1,7 +1,11 @@
 # Pulse
 
-Orquestrador terminal-first de workflows com agentes de IA via ACP. Suporta
-**Cursor** (`agent` CLI) e **Claude Code** (`claude` CLI).
+Orquestrador de agentes de IA via ACP, terminal-first. Suporta **Cursor**
+(`agent` CLI) e **Claude Code** (`claude` CLI).
+
+A responsabilidade do Pulse é uma só: **apontar qual agente roda agora e
+quando**. Ele não sabe o que o agente faz. Workflows, steps e agentes são dado
+em SQLite — o pacote não traz pipeline, prompt de domínio nem skill embutida.
 
 Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
@@ -11,7 +15,7 @@ Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`]
 CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (Cursor | Claude Code)
 ```
 
-- **Engine** (`pulse-engine`): composition root; dono do estado e dos workflows
+- **Engine** (`pulse-engine`): composition root; dono do estado e das definições
 - **CLI** (`pulse`): cliente fino + TUI; fala com o daemon em `~/.pulse/daemon.sock`
 - Contrato: [`contracts/openapi.yaml`](contracts/openapi.yaml)
 
@@ -75,36 +79,33 @@ Cada projeto tem um `project_id` no SQLite da máquina. A resolução segue:
 defaults do código → machine (SQLite) → project_* (mesmo SQLite, por root_path)
 ```
 
-`pulse init` e `pulse config init` cadastram o projeto com defaults: agent `cursor`, model `claude-sonnet-4-6`, `permission_policy` `deny_writes`, e workflows `spec` / `setup-project` / `analyze-codebase`.
+`pulse init` e `pulse config init` cadastram o projeto com defaults: agent
+`cursor`, model `claude-sonnet-4-6`, `permission_policy` `deny_writes`.
 
-Campos por projeto: agent, model, permission_policy, workspace e `workflows.*`.
+Campos por projeto: agent, model, permission_policy, workspace e `workflows.*`
+(override de agent/model por id de workflow — não definem pipeline).
 
-Agents do projeto podem sobrescrever ou estender os da máquina (binary, models, acp_command).
+Agents do projeto podem sobrescrever ou estender os da máquina (binary, models,
+acp_command).
 
-### Agentes e workflows
+### Workflows
 
-- `agents` define cada backend ACP (binário e modelos disponíveis). O comando ACP
-  vem do runtime registrado; use `acp_command` apenas para sobrescrever.
-- `defaults.agent` / `defaults.model` definem o agente e modelo padrão.
-- `workflows.<id>` permite que cada workflow use um agente e modelo próprios.
+Um workflow é uma linha em `workflow_defs` mais N em `workflow_steps`, no
+`~/.pulse/pulse.db`. Cada step diz **qual agente** roda, **qual prompt** ele
+recebe e se o Pulse deve **esperar aprovação** antes de seguir.
 
-Workflows disponíveis: `spec`, `setup-project`, `analyze-codebase`.
+O banco nasce com um workflow `default` de um step, semeado na primeira abertura.
+Não há tela para editar workflows ainda: quem quiser outro pipeline escreve no
+banco via `pulse.store.workflow_defs`.
 
-O workflow `spec` classifica o pedido (auto-sizing da skill) e dispara o pipeline
-PRD → Techspec → Tasks → Execute **ou** o Quick Mode. O usuário não escolhe feat vs fix.
+O Pulse abre uma sessão ACP **isolada por step** — o agente seguinte recebe só o
+resumo do anterior, não o contexto. É o que permite trocar de runtime entre steps
+e retomar uma run refazendo um step só.
 
-O pipeline completo aponta a skill empacotada `pulse-spec-driven` (paths, sem inline). Rules,
-skills e `AGENTS.md` do workspace são carregados pelo ACP a partir do `cwd`.
-No Execute, `coding-principles.md` entra nas referências da skill. As tasks do
-`tasks.md` são agrupadas em **waves** (até 5 tasks prontas por sessão):
-sequenciais quando compartilham dependências resolvidas, e em batch quando
-marcadas `[P]`. O Pulse só marca a wave como `done` depois de rodar os
-comandos de gate extraídos do `Done when` / `Verify`.
+O que o agente escreve fica onde o prompt do step mandar; o Pulse descobre pelos
+tool-calls do ACP e guarda só o caminho. Não há convenção de pasta.
 
-O Quick Mode (quando o `spec` classifica o pedido como Small) descreve →
-plano + `.pulse/specs/quick/NNN-slug/TASK.md` → aprovação no terminal → implementa →
-verifica → `SUMMARY.md`. Nada de código de aplicação é alterado sem aprovação
-explícita.
+Modelo completo: [`docs/workflows.md`](docs/workflows.md).
 
 A resolução por workflow segue: `projeto.workflows[id]` → `global.workflows[id]` →
 `projeto.defaults` → `global.defaults` → padrões do código.
@@ -113,7 +114,7 @@ Veja a config efetiva (inclusive por workflow):
 
 ```bash
 pulse config show
-pulse config show --workflow setup-project
+pulse config show --workflow default
 ```
 
 ## Documentação interna
@@ -121,14 +122,14 @@ pulse config show --workflow setup-project
 Como o Pulse funciona hoje (código atual):
 
 - [Armazenamento](docs/armazenamento.md) — o que é persistido e onde
-- [Workflows — carga e interpretação](docs/workflows.md) — como cada workflow é carregado e interpretado
-- [Workflows e skills](docs/workflows-e-skills.md) — skills empacotadas vs do projeto no prompt
+- [Mapa interativo da arquitetura](docs/arquitetura.html) — camadas, modelo e fluxo, clicável
+- [Workflows](docs/workflows.md) — workflow como dado: definição, motor e retomada
 - [Logs](docs/logs.md) — ACP bruto vs stream do cockpit
 - [Questions](docs/questions.md) — questionário ` ```text `, `ask_question` e MCP
 
 ## Comandos
 
-Todos os workflows são iniciados pelo menu interativo do `pulse` — não há subcomando `plan`.
+Toda run é iniciada pelo menu interativo do `pulse` — não há subcomando de workflow.
 
 ```bash
 pulse                  Welcome + menu interativo (ou wizard no primeiro uso)

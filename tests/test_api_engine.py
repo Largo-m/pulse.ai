@@ -23,9 +23,8 @@ def test_status_and_workflows():
     workflows = client.get("/api/workflows")
     assert workflows.status_code == 200
     ids = {item["id"] for item in workflows.json()["workflows"]}
-    assert "spec" in ids
-    assert "new-issue" not in ids
-    assert "fix-bug" not in ids
+    # Só o que está no banco: o Pulse não tem catálogo em código.
+    assert ids == {"default"}
 
 
 def test_doctor_endpoint():
@@ -42,7 +41,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
     client = TestClient(app)
     captured: dict[str, object] = {}
 
-    def fake_run_plan(**kwargs):
+    def fake_run_workflow(**kwargs):
         captured["workspace"] = kwargs.get("workspace")
         stream = kwargs["stream"]
         prompt_handler = kwargs["prompt_handler"]
@@ -69,10 +68,10 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         assert answer["outcome"]["outcome"] == "selected"
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
 
     created = client.post(
-        "/api/workflows/spec/runs",
+        "/api/workflows/default/runs",
         json={"prompt": "x", "workspace": "/tmp"},
     )
     assert created.status_code == 200
@@ -115,9 +114,6 @@ def test_unknown_workflow_returns_404():
     client = TestClient(app)
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
-    for workflow_id in ("new-issue", "fix-bug"):
-        rejected = client.post(f"/api/workflows/{workflow_id}/runs", json={"prompt": "x"})
-        assert rejected.status_code == 404
 
 
 def test_pause_resume_and_stop_reach_the_running_flow(monkeypatch):
@@ -129,7 +125,7 @@ def test_pause_resume_and_stop_reach_the_running_flow(monkeypatch):
     entered = threading.Event()
     release = threading.Event()
 
-    def fake_run_plan(**kwargs):
+    def fake_run_workflow(**kwargs):
         control = kwargs["control"]
         seen["control"] = control
         entered.set()
@@ -140,10 +136,10 @@ def test_pause_resume_and_stop_reach_the_running_flow(monkeypatch):
             time.sleep(0.01)
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
 
     run_id = client.post(
-        "/api/workflows/spec/runs",
+        "/api/workflows/default/runs",
         json={"prompt": "x", "workspace": "/tmp"},
     ).json()["id"]
     assert entered.wait(timeout=5)
@@ -175,7 +171,7 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
     client = TestClient(app)
     entered = threading.Event()
 
-    def fake_run_plan(**kwargs):
+    def fake_run_workflow(**kwargs):
         control = kwargs["control"]
         entered.set()
         # Só sai quando o usuário parar: é o cancel que encerra esta run.
@@ -184,10 +180,10 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
                 return RUN_STOPPED
             time.sleep(0.01)
 
-    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
 
     run_id = client.post(
-        "/api/workflows/spec/runs",
+        "/api/workflows/default/runs",
         json={"prompt": "x", "workspace": "/tmp"},
     ).json()["id"]
     assert entered.wait(timeout=5)

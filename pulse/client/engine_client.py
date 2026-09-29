@@ -110,15 +110,15 @@ class EngineClient:
         *,
         prompt: str,
         workspace: str | None = None,
-        spec_slug: str | None = None,
-        spec_mode: str | None = None,
+        resume_run_id: str | None = None,
+        restart: bool = False,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt}
         if workspace is not None:
             body["workspace"] = workspace
-        if spec_slug and spec_mode:
-            body["spec_slug"] = spec_slug
-            body["spec_mode"] = spec_mode
+        if resume_run_id:
+            body["resume_run_id"] = resume_run_id
+            body["restart"] = restart
         return self.post(f"/api/workflows/{workflow_id}/runs", body)
 
     def doctor(self) -> dict[str, Any]:

@@ -6,13 +6,17 @@ import pytest
 
 pytest.importorskip("textual")
 
+from tests.conftest import make_workflow
+
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.artifact_pane import ArtifactPane, ArtifactPaneClosed, ArtifactPaneOpened
 
+FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
+
 
 def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
-    specs = tmp_path / ".pulse" / "specs" / "project"
+    specs = tmp_path / "docs"
     specs.mkdir(parents=True)
     (specs / "PROJECT.md").write_text("# Visão\n\nProduto novo.\n", encoding="utf-8")
     (specs / "ROADMAP.md").write_text("# Roadmap\n\n- v1\n", encoding="utf-8")
@@ -28,17 +32,18 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
 
             def compose(self) -> ComposeResult:
                 state = CockpitState()
-                state.configure_workflow("setup-project")
+                make_workflow("demo", steps=FOUR)
+                state.configure_workflow("demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
 
             def on_mount(self) -> None:
                 state = holder["state"]
-                state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
-                state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
-                state.select_artifact(".pulse/specs/project/PROJECT.md")
+                state.begin_phase("Dois")
+                state.upsert_artifact("docs/PROJECT.md", ready=True, has_content=True)
+                state.upsert_artifact("docs/ROADMAP.md", ready=True, has_content=True)
+                state.select_artifact("docs/PROJECT.md")
                 state.open_artifact_pane()  # a aba não abre sozinha
                 pane = self.query_one(ArtifactPane)
                 pane.sync_from_state(state, force=True)
@@ -60,7 +65,7 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
             source = getattr(md, "_markdown", "") or ""
             assert "Visão" in source
             assert "Produto" in source
-            state.select_artifact(".pulse/specs/project/ROADMAP.md")
+            state.select_artifact("docs/ROADMAP.md")
             pane.sync_from_state(state, force=True)
             await pilot.pause()
             source = getattr(md, "_markdown", "") or ""
@@ -71,7 +76,7 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
 
 
 def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
-    specs = tmp_path / ".pulse" / "specs" / "project"
+    specs = tmp_path / "docs"
     specs.mkdir(parents=True)
     (specs / "PROJECT.md").write_text("# Visão\n", encoding="utf-8")
     (specs / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
@@ -87,15 +92,16 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
 
             def compose(self) -> ComposeResult:
                 state = CockpitState()
-                state.configure_workflow("setup-project")
+                make_workflow("demo", steps=FOUR)
+                state.configure_workflow("demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
 
             def on_mount(self) -> None:
                 state = holder["state"]
-                state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+                state.begin_phase("Dois")
+                state.upsert_artifact("docs/PROJECT.md", ready=True, has_content=True)
                 state.open_artifact_pane()  # a aba não abre sozinha
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
@@ -106,22 +112,22 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
             pane = app.query_one(ArtifactPane)
             tabs = app.query_one("#artifact-tabs")
             assert [child.name for child in tabs.children] == [
-                ".pulse/specs/project/PROJECT.md"
+                "docs/PROJECT.md"
             ]
-            state.upsert_artifact(".pulse/specs/project/ROADMAP.md", ready=True, has_content=True)
+            state.upsert_artifact("docs/ROADMAP.md", ready=True, has_content=True)
             pane.sync_from_state(state, force=True)
             await pilot.pause()
             names = [child.name for child in tabs.children]
             assert names == [
-                ".pulse/specs/project/PROJECT.md",
-                ".pulse/specs/project/ROADMAP.md",
+                "docs/PROJECT.md",
+                "docs/ROADMAP.md",
             ]
 
     asyncio.run(run())
 
 
 def test_artifact_pane_close_control_hides_pane(tmp_path):
-    specs = tmp_path / ".pulse" / "specs" / "project"
+    specs = tmp_path / "docs"
     specs.mkdir(parents=True)
     (specs / "PROJECT.md").write_text("# Visão\n", encoding="utf-8")
 
@@ -136,15 +142,16 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
 
             def compose(self) -> ComposeResult:
                 state = CockpitState()
-                state.configure_workflow("setup-project")
+                make_workflow("demo", steps=FOUR)
+                state.configure_workflow("demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
 
             def on_mount(self) -> None:
                 state = holder["state"]
-                state.begin_phase("Fase 2 — Gerando specs")
-                state.upsert_artifact(".pulse/specs/project/PROJECT.md", ready=True, has_content=True)
+                state.begin_phase("Dois")
+                state.upsert_artifact("docs/PROJECT.md", ready=True, has_content=True)
                 state.open_artifact_pane()  # a aba não abre sozinha
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
@@ -186,7 +193,7 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
 
 
 def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
-    specs = tmp_path / ".pulse" / "specs" / "features" / "demo"
+    specs = tmp_path / "docs" / "features" / "demo"
     specs.mkdir(parents=True)
     (specs / "PRD.md").write_text("# Spec\n", encoding="utf-8")
 
@@ -201,15 +208,16 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
 
             def compose(self) -> ComposeResult:
                 state = CockpitState()
-                state.configure_workflow("new-issue")
+                make_workflow("demo", steps=FOUR)
+                state.configure_workflow("demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
 
             def on_mount(self) -> None:
                 state = holder["state"]
-                state.begin_phase("Fase PRD")
-                state.upsert_artifact(".pulse/specs/features/demo/PRD.md", ready=True, has_content=True)
+                state.begin_phase("Um")
+                state.upsert_artifact("docs/PRD.md", ready=True, has_content=True)
                 state.close_artifact_pane()
                 self.query_one(ArtifactPane).sync_from_state(state, force=True)
 
@@ -221,7 +229,7 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
             assert pane.display is True
             assert pane.has_class("-collapsed") is True
             assert app.query_one("#artifact-open").display is True
-            state.begin_phase("Fase Techspec")
+            state.begin_phase("Dois")
             state.close_artifact_pane()
             pane.sync_from_state(state, force=True)
             await pilot.pause()

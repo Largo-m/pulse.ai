@@ -27,11 +27,11 @@ def test_parser_accepts_config_init():
 
 def test_parser_accepts_config_show_workflow():
     args = _build_parser().parse_args(
-        ["config", "show", "--workflow", "setup-project"],
+        ["config", "show", "--workflow", "fluxo-a"],
     )
     assert args.command == "config"
     assert args.config_action == "show"
-    assert args.workflow == "setup-project"
+    assert args.workflow == "fluxo-a"
 
 
 def test_main_dispatches_init(monkeypatch):

@@ -30,17 +30,6 @@ def pick_permission_option(options: list[Any], *, prefer: str) -> str | None:
     return None
 
 
-def is_pulse_artifact_path(path: str) -> bool:
-    normalized = str(path or "").replace("\\", "/").lower()
-    if not normalized:
-        return False
-    if normalized.startswith("file:"):
-        normalized = normalized.split(":", 1)[1]
-        if normalized.startswith("//"):
-            normalized = normalized[2:]
-    return "/.pulse/specs/" in f"/{normalized}" or normalized.startswith(".pulse/specs/")
-
-
 def permission_target_paths(params: dict[str, Any]) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
@@ -72,5 +61,3 @@ def permission_target_paths(params: dict[str, Any]) -> list[str]:
     return found
 
 
-def deny_writes_allows_write(params: dict[str, Any]) -> bool:
-    return any(is_pulse_artifact_path(path) for path in permission_target_paths(params))

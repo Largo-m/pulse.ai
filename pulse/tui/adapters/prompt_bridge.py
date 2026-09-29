@@ -22,7 +22,6 @@ from pulse.prompts.ask_question import (
 )
 from pulse.prompts.permission import (
     PermissionPolicy,
-    deny_writes_allows_write,
     permission_cancelled,
     permission_selected,
     pick_permission_option,
@@ -331,8 +330,9 @@ class TextualPromptHandler:
             return permission_selected(option_id)
 
         if policy == "deny_writes":
-            writing = "write" in kind or "edit" in kind
-            if writing and not deny_writes_allows_write(params):
+            # Sem exceção por caminho: o Pulse não sabe qual pasta é "dele".
+            # Step que precisa escrever é step com `ask` ou `auto_approve`.
+            if "write" in kind or "edit" in kind:
                 option_id = pick_permission_option(options, prefer="reject") or "reject-once"
                 return permission_selected(option_id)
             option_id = pick_permission_option(options, prefer="allow") or "allow-once"

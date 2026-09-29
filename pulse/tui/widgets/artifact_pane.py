@@ -209,7 +209,5 @@ class ArtifactPane(Widget):
             selected.path if selected is not None else "",
             state.follow_artifact,
             state.selected_phase_index,
-            state.selected_task_index,
-            state.selected_nav_kind,
             state.focus_target,
         )

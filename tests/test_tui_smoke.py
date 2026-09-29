@@ -8,7 +8,9 @@ pytest.importorskip("textual")
 
 from pulse.tui.app import PulseApp
 from pulse.tui.screens.cockpit import CockpitScreen
-from pulse.tui.screens.home import HomeScreen, default_prompt
+from tests.conftest import make_workflow
+
+from pulse.tui.screens.home import HomeScreen
 from pulse.tui.state import LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
@@ -25,10 +27,11 @@ def test_pulse_app_has_cockpit_theme():
 
 
 def test_cockpit_screen_initial_state():
-    screen = CockpitScreen("new-issue", "demo feature")
+    make_workflow("demo", steps=[("a", "A"), ("b", "B"), ("c", "C"), ("d", "D")])
+    screen = CockpitScreen("demo", "demo feature")
     assert len(screen.state.phases) == 4
     assert all(phase.status == PhaseStatus.PENDING for phase in screen.state.phases)
-    assert screen.workflow_id == "new-issue"
+    assert screen.workflow_id == "demo"
     assert screen.sink.cockpit is True
     assert screen.state.entries == []
 
@@ -68,7 +71,8 @@ def test_log_stream_and_sidebar_render_text():
             CSS = COCKPIT_CSS
 
             def compose(self) -> ComposeResult:
-                screen = CockpitScreen("fix-bug", "demo")
+                make_workflow("quick", steps=[("plan", "Planejar"), ("run", "Implementar")])
+                screen = CockpitScreen("quick", "demo")
                 state_holder["screen"] = screen
                 with Horizontal(id="cockpit-body"):
                     yield PhaseSidebar(screen.state, id="phase-sidebar")
@@ -76,7 +80,7 @@ def test_log_stream_and_sidebar_render_text():
 
             def on_mount(self) -> None:
                 screen = state_holder["screen"]
-                screen.sink.begin_phase("Fase 1 — Planejando quick task")
+                screen.sink.begin_phase("Planejar")
                 screen.sink.handle_update(
                     {
                         "update": {
@@ -131,9 +135,9 @@ def test_cockpit_layout_keeps_header_and_body_sizes():
         from pulse.tui.widgets.app_footer import AppFooter
         from pulse.tui.widgets.app_header import AppHeader
 
+        make_workflow("demo", steps=[("a", "A"), ("b", "B"), ("c", "C"), ("d", "D")])
         state = CockpitState()
-        state.configure_workflow("new-issue")
-        state.set_tasks([("T1", "One", "pending"), ("T2", "Two", "pending")])
+        state.configure_workflow("demo")
 
         class Harness(App[None]):
             CSS = COCKPIT_CSS
@@ -167,6 +171,6 @@ def test_cockpit_layout_keeps_header_and_body_sizes():
             assert stream.size.height >= 24
             assert sidebar.size.width >= 20
             assert stream.size.width > sidebar.size.width
-            assert "[............] 0/2" in str(app.query_one("#run-status").render())
+            assert "0/4" in str(app.query_one("#run-status").render())
 
     asyncio.run(run())

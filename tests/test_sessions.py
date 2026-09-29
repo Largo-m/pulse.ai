@@ -11,8 +11,8 @@ def test_start_agent_session_inserts_row(tmp_path: Path):
     assert project is not None
     session_id = start_agent_session(
         project_id=project.project_id,
-        agent_id="prd",
-        workflow_id="new-issue",
+        agent_id="tester",
+        workflow_id="demo",
     )
     connection = connect(default_db_path())
     row = connection.execute(
@@ -21,7 +21,7 @@ def test_start_agent_session_inserts_row(tmp_path: Path):
     ).fetchone()
     connection.close()
     assert row["project_id"] == project.project_id
-    assert row["agent_id"] == "prd"
+    assert row["agent_id"] == "tester"
     assert row["acp_session_id"] is None
     assert row["status"] == "running"
 
@@ -32,7 +32,7 @@ def test_persist_runtime_session_creates_and_keeps_each_session(tmp_path: Path):
         str(tmp_path),
         pulse_session_id="pulse-sess",
         acp_session_id="acp-sess",
-        agent_id="prd",
+        agent_id="tester",
     )
     persist_runtime_session(
         str(tmp_path),
@@ -46,5 +46,5 @@ def test_persist_runtime_session_creates_and_keeps_each_session(tmp_path: Path):
     ).fetchall()
     connection.close()
     assert [row["acp_session_id"] for row in rows] == ["acp-sess", "acp-sess-2"]
-    assert rows[0]["agent_id"] == "prd"
+    assert rows[0]["agent_id"] == "tester"
     assert rows[1]["agent_id"] is None

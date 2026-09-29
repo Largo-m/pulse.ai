@@ -198,16 +198,28 @@ def _resolve_pulse_agent(
     project_cfg: ProjectConfig | None,
     global_cfg: GlobalConfig | None,
 ) -> tuple[str, str, str, str, str, str]:
-    from pulse.agents.loader import load_agent
-    from pulse.store.agent_settings import load_agent_settings
+    """Runtime, model e policy de um agente do banco.
 
-    loaded = load_agent(pulse_agent, workspace=workspace_dir)
-    runtime = loaded.runtime if loaded else DEFAULT_RUNTIME_ID
-    model = loaded.model if loaded else DEFAULT_MODEL
-    policy = loaded.permission_policy if loaded else DEFAULT_PERMISSION_POLICY
-    agent_source = "agent.file"
-    model_source = "agent.file"
-    policy_source = "agent.file"
+    Campo vazio na definição significa "use o padrão" — e não o default do
+    código, mas o que a máquina/projeto já resolveram. Gravar um runtime
+    concreto na semente congelaria a escolha feita no `pulse init`.
+    """
+    from pulse.store.agent_settings import load_agent_settings
+    from pulse.store.workflow_defs import get_agent
+
+    definition = get_agent(pulse_agent)
+    default_runtime, default_runtime_source = _resolve_agent_name(global_cfg, project_cfg, None)
+    default_model, default_model_source = _resolve_model(global_cfg, project_cfg, None)
+    default_policy, default_policy_source = _resolve_permission_policy(global_cfg, project_cfg)
+
+    runtime = (definition.runtime if definition else "") or default_runtime
+    model = (definition.model if definition else "") or default_model
+    policy = (definition.permission_policy if definition else "") or default_policy
+    agent_source = "agent" if definition and definition.runtime else default_runtime_source
+    model_source = "agent" if definition and definition.model else default_model_source
+    policy_source = (
+        "agent" if definition and definition.permission_policy else default_policy_source
+    )
     if project_cfg is not None:
         stored = load_agent_settings(project_cfg.project_id, pulse_agent)
         if stored.get("runtime"):

@@ -8,9 +8,9 @@ from typing import Any
 
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.plan.runner import run_plan
-from pulse.plan.spec_types import SPEC_TYPES, get_spec_type
+from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
+from pulse.store.workflow_defs import get_workflow, list_workflows
 
 
 @dataclass
@@ -25,9 +25,9 @@ class RunState:
     correlator: PromptCorrelator | None = None
     cancel_requested: bool = False
     control: RunControl | None = None
-    #: Spec conhecido a retomar/refazer (escolhido no histórico).
-    spec_slug: str | None = None
-    spec_mode: str | None = None
+    #: Run anterior a retomar (`restart=True` refaz do primeiro step).
+    resume_run_id: str | None = None
+    restart: bool = False
 
 
 class RunManager:
@@ -35,10 +35,19 @@ class RunManager:
         self._runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
 
-    def list_workflows(self) -> list[dict[str, str]]:
+    def list_workflows(self) -> list[dict[str, Any]]:
         return [
-            {"id": item.id, "label": item.label, "description": item.description}
-            for item in SPEC_TYPES
+            {
+                "id": item.id,
+                "label": item.label,
+                "description": item.description,
+                "is_default": item.is_default,
+                "steps": [
+                    {"id": step.step_id, "label": step.label, "agent": step.agent_id}
+                    for step in item.steps
+                ],
+            }
+            for item in list_workflows()
         ]
 
     def start_run(
@@ -47,10 +56,10 @@ class RunManager:
         workflow_id: str,
         prompt: str,
         workspace: str | None = None,
-        spec_slug: str | None = None,
-        spec_mode: str | None = None,
+        resume_run_id: str | None = None,
+        restart: bool = False,
     ) -> RunState:
-        if get_spec_type(workflow_id) is None:
+        if get_workflow(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
         run_id = str(uuid.uuid4())
         bus = EventBus()
@@ -67,8 +76,8 @@ class RunManager:
             bus=bus,
             correlator=correlator,
             control=RunControl(on_change=_publish_control),
-            spec_slug=spec_slug,
-            spec_mode=spec_mode,
+            resume_run_id=resume_run_id,
+            restart=restart,
         )
         with self._lock:
             self._runs[run_id] = state
@@ -132,15 +141,15 @@ class RunManager:
             }
         )
         try:
-            exit_code = run_plan(
-                spec_type_id=state.workflow_id,
+            exit_code = run_workflow(
+                workflow_id=state.workflow_id,
                 user_prompt=state.prompt,
                 workspace=Path(state.workspace) if state.workspace else None,
                 stream=stream,
                 prompt_handler=prompt_handler,
                 render_header=False,
-                spec_slug=state.spec_slug,
-                spec_mode=state.spec_mode,
+                resume_run_id=state.resume_run_id,
+                restart=state.restart,
                 control=state.control,
             )
         except Exception as error:

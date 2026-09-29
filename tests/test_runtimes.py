@@ -92,7 +92,7 @@ def test_claude_uses_its_own_mode_ids():
 
 
 def test_claude_never_uses_plan_mode():
-    """As fases de planejamento do Pulse escrevem PRD.md/TECHSPEC.md/tasks.md.
+    """Um step que "só planeja" costuma ser justamente o que escreve o artefato.
 
     No modo `plan` o Claude não escreve o arquivo pedido: grava um plano em
     ~/.claude/plans e espera aprovação. O artefato nunca chega na sessão e a

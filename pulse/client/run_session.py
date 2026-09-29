@@ -29,16 +29,16 @@ class EngineRunSession:
         workflow_id: str,
         user_prompt: str,
         workspace: str | Path | None = None,
-        spec_slug: str | None = None,
-        spec_mode: str | None = None,
+        resume_run_id: str | None = None,
+        restart: bool = False,
     ) -> int:
         self._client.ensure_daemon()
         created = self._client.start_run(
             workflow_id,
             prompt=user_prompt,
             workspace=str(workspace) if workspace is not None else None,
-            spec_slug=spec_slug,
-            spec_mode=spec_mode,
+            resume_run_id=resume_run_id,
+            restart=restart,
         )
         run_id = str(created["id"])
         self.run_id = run_id
@@ -99,23 +99,6 @@ class EngineRunSession:
             if callable(apply):
                 payload = {key: value for key, value in event.items() if key != "type"}
                 apply(**payload)
-            return
-        if kind == "workflow.route":
-            apply = getattr(self._stream, "apply_routed_flow", None)
-            if callable(apply):
-                apply(str(event.get("flow", "")))
-            return
-        if kind == "tasks.sync":
-            setter = getattr(self._stream, "set_tasks", None)
-            if callable(setter):
-                items = event.get("items") or []
-                setter(
-                    [
-                        (str(item.get("id", "")), str(item.get("title", "")), str(item.get("status", "")))
-                        for item in items
-                        if isinstance(item, dict)
-                    ]
-                )
             return
         if kind == "session.id":
             setter = getattr(self._stream, "set_session_id", None)

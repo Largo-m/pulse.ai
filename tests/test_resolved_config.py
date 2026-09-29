@@ -124,13 +124,13 @@ def test_global_workflow_selects_agent_and_model(monkeypatch, tmp_path: Path):
             ),
         },
         workflows={
-            "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+            "fluxo-a": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
         },
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
 
-    resolved = resolve_config(tmp_path, workflow="setup-project")
+    resolved = resolve_config(tmp_path, workflow="fluxo-a")
 
     assert resolved.agent_name == "claude"
     assert resolved.agent_binary == "claude-code"
@@ -154,7 +154,7 @@ def test_global_workflow_falls_back_to_default_agent(monkeypatch, tmp_path: Path
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
 
-    resolved = resolve_config(tmp_path, workflow="analyze-codebase")
+    resolved = resolve_config(tmp_path, workflow="fluxo-b")
 
     assert resolved.agent_name == "cursor"
     assert resolved.sources["agent"] == "global.default"
@@ -176,19 +176,19 @@ def test_project_workflow_overrides_global_workflow(monkeypatch, tmp_path: Path)
                 models=["claude-opus-4.8"],
             ),
         },
-        workflows={"setup-project": WorkflowConfig(agent="cursor", model="Auto")},
+        workflows={"fluxo-a": WorkflowConfig(agent="cursor", model="Auto")},
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
     init_project_config(tmp_path)
     update_project_workflow(
         tmp_path,
-        "setup-project",
+        "fluxo-a",
         agent="claude",
         model="claude-opus-4.8",
     )
 
-    resolved = resolve_config(tmp_path, workflow="setup-project")
+    resolved = resolve_config(tmp_path, workflow="fluxo-a")
 
     assert resolved.agent_name == "claude"
     assert resolved.model == "claude-opus-4.8"

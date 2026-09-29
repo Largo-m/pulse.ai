@@ -23,9 +23,9 @@ from pulse.history.catalog import HistoryCatalog
 class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
-    #: "resume" | "restart" para um spec já existente em `spec_slug`.
-    spec_slug: str | None = None
-    spec_mode: str | None = None
+    #: Run anterior a retomar; `restart` refaz do primeiro step.
+    resume_run_id: str | None = None
+    restart: bool = False
 
 
 class PromptAnswerBody(BaseModel):
@@ -68,6 +68,24 @@ def _project_to_dict(config: Any) -> dict[str, Any] | None:
         "permission_policy": config.permission_policy,
         "workspace": str(config.workspace) if config.workspace else None,
         "default_agent": config.default_agent,
+    }
+
+
+def _history_to_dict(item: Any) -> dict[str, Any]:
+    return {
+        "id": item.item_id,
+        "run_id": item.run_id,
+        "workflow_id": item.workflow_id,
+        "workflow_label": item.workflow_label,
+        "title": item.title,
+        "prompt": item.prompt,
+        "status": item.status.value,
+        "updated_at": item.updated_at,
+        "artifacts": list(item.artifacts),
+        "steps": [
+            {"id": step.id, "label": step.label, "status": step.status}
+            for step in item.steps
+        ],
     }
 
 
@@ -166,8 +184,8 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 workflow_id=workflow_id,
                 prompt=body.prompt,
                 workspace=body.workspace,
-                spec_slug=body.spec_slug,
-                spec_mode=body.spec_mode,
+                resume_run_id=body.resume_run_id,
+                restart=body.restart,
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -236,31 +254,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         root = Path(workspace).resolve() if workspace else Path.cwd()
         catalog = HistoryCatalog(root)
         items = catalog.search(query) if query else catalog.list_items()
-        return {
-            "items": [
-                {
-                    "id": item.item_id,
-                    "kind": item.kind.value,
-                    "slug": item.slug,
-                    "title": item.title,
-                    "prompt": item.prompt,
-                    "status": item.status.value,
-                    "updated_at": item.updated_at,
-                    "spec_dir": item.spec_dir,
-                    "run_id": item.run_id,
-                    "steps": [
-                        {
-                            "id": step.id,
-                            "label": step.label,
-                            "status": step.status,
-                            "artifact": step.artifact,
-                        }
-                        for step in item.steps
-                    ],
-                }
-                for item in items
-            ]
-        }
+        return {"items": [_history_to_dict(item) for item in items]}
 
     @app.get("/api/history/{item_id}")
     def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
@@ -268,26 +262,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         item = HistoryCatalog(root).get(item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="item não encontrado")
-        return {
-            "id": item.item_id,
-            "kind": item.kind.value,
-            "slug": item.slug,
-            "title": item.title,
-            "prompt": item.prompt,
-            "status": item.status.value,
-            "updated_at": item.updated_at,
-            "spec_dir": item.spec_dir,
-            "run_id": item.run_id,
-            "steps": [
-                {
-                    "id": step.id,
-                    "label": step.label,
-                    "status": step.status,
-                    "artifact": step.artifact,
-                }
-                for step in item.steps
-            ],
-        }
+        return _history_to_dict(item)
 
     @app.exception_handler(Exception)
     async def on_error(_request: Request, exc: Exception) -> JSONResponse:

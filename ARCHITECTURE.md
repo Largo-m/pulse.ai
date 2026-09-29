@@ -2,22 +2,34 @@
 
 Documento para quem está chegando no projeto (incluindo quem ainda não domina Python).
 
+> **Prefere navegar?** [`docs/arquitetura.html`](docs/arquitetura.html) é o mesmo
+> conteúdo como mapa clicável — camadas, modelo de dados e o fluxo de uma run.
+> Abra o arquivo no navegador.
+
 ## O que é o Pulse
 
-O **Pulse** orquestra workflows com agentes de IA (via Cursor Agent).
+O **Pulse é um orquestrador de agentes de IA**. A responsabilidade dele é uma só:
 
-Você interage pela **TUI** (interface no terminal, feita com Textual).  
-Quem executa de verdade é o **Engine** (processo em background, o *daemon*).
+> **apontar qual agente roda agora e quando.**
+
+Ele não sabe o que o agente faz. Não lê o que o agente produziu, não valida
+formato, não espera arquivo com nome conhecido. Workflows, steps e agentes são
+**dado em SQLite**, não código — e é por isso que o pacote Python não contém
+nenhum `.md`, `.yaml` ou prompt de domínio.
+
+Você interage pela **TUI** (terminal, feita com Textual). Quem executa é o
+**Engine** (processo em background, o *daemon*).
 
 ```
 Você digita `pulse`
         │
         ▼
-   CLI / TUI  ──────►  Engine (daemon)  ──────►  Cursor Agent
-   (só UI)              (cérebro)                (quem age no código)
-        │                     │
-   HTTP over UDS         plan / acp
-   (~/.pulse/daemon.sock)
+   CLI / TUI  ───HTTP/UDS──►  Engine (daemon)  ───ACP──►  runtime
+   (só tela)                  (orquestrador)              (cursor | claude)
+                                    │                          │
+                                    ▼                          ▼
+                              ~/.pulse/pulse.db          arquivos no workspace
+                              (tudo do Pulse)            (só o agente escreve)
 ```
 
 ### Analogia rápida
@@ -27,64 +39,171 @@ Você digita `pulse`
 | CLI / TUI | App no celular |
 | Engine | Servidor / backend |
 | Contrato HTTP | API REST entre app e servidor |
-| ACP | Canal de conversa com o Cursor Agent |
-| `~/.pulse/` e `.pulse/` | Dados de config e do projeto |
+| ACP | Canal de conversa com o agente |
+| `~/.pulse/pulse.db` | Banco de dados da aplicação |
+| Workflow | Uma receita gravada no banco, não um recurso do código |
 
 ---
 
 ## Princípios
 
-1. **Daemon = verdade única** — runs, config efetiva e estado de workflow vivem no Engine.
-2. **CLI é cliente fino** — a TUI não importa `plan/` nem `acp/` para executar workflow; fala com a API.
-3. **Um contrato, dois transportes** — mesmas rotas `/api/*` em:
-   - **UDS** (`~/.pulse/daemon.sock`) — CLI local
-   - **TCP** (`127.0.0.1:8787`) — tooling e clientes futuros (ex.: Desktop)
-4. **Ports & Adapters** — o domínio depende de interfaces (`StreamSink`, `PromptPort`), não de Textual.
-5. **Sem UI legada de terminal** — não há mais menus questionary/Rich; tudo passa pela TUI.
+1. **Agnóstico ao agente** — nenhum workflow, step ou prompt de domínio no
+   pacote. O Pulse sequencia steps e lê um desfecho de aprovação; o resto é dado.
+2. **Nada em arquivo, exceto artefato** — config, definições e estado vivem em
+   `~/.pulse/pulse.db`. O único conteúdo em disco é o que o **agente** escreve, e
+   desse o Pulse guarda só o caminho.
+3. **Daemon = verdade única** — runs, config efetiva e estado vivem no Engine.
+4. **CLI é cliente fino** — a TUI não importa `orchestrator/` nem `acp/` para
+   executar; fala com a API.
+5. **Um contrato, dois transportes** — mesmas rotas `/api/*` em **UDS**
+   (`~/.pulse/daemon.sock`, CLI local) e **TCP** (`127.0.0.1:8787`, tooling e
+   clientes futuros).
+6. **Ports & Adapters** — o domínio depende de interfaces (`StreamSink`,
+   `PromptPort`), não de Textual.
 
 Contrato OpenAPI: [`contracts/openapi.yaml`](contracts/openapi.yaml).
 
 ---
 
-## Layout do repositório
+## 1. O modelo: workflow é dado
+
+Esta é a mudança que define a arquitetura atual. Um workflow **não existe no
+código** — existe como linhas em três tabelas de definição, e uma run gera linhas
+em quatro tabelas de estado.
 
 ```
-pulse.ai/
-├── README.md                 # uso rápido
-├── ARCHITECTURE.md           # este arquivo
-├── pyproject.toml            # pacote Python + entry points
-├── contracts/openapi.yaml    # contrato HTTP da API
-├── engine/README.md          # notas do Engine
-├── cli/README.md             # notas da CLI
-├── tests/                    # testes
-└── pulse/                    # código principal
-    ├── cli.py                # entrada dos comandos
-    ├── cli_daemon.py         # start/stop/status do daemon
-    ├── brand.py              # banner ASCII
-    ├── ports.py              # interfaces Stream/Prompt
-    ├── client/               # cliente HTTP do Engine
-    ├── daemon/               # boot do daemon
-    ├── api/                  # rotas FastAPI
-    ├── tui/                  # interface Textual
-    ├── plan/                 # workflows
-    ├── acp/                  # protocolo com o Agent
-    ├── config/               # configuração
-    ├── history/              # runs persistidos
-    ├── prompts/              # parse de perguntas (sem UI)
-    ├── doctor/               # checks de ambiente
-    ├── mcp/                  # ponte AskQuestion
-    ├── skills/               # skill TLC embutida
-    ├── context/              # rules/skills do workspace
-    └── runtime/              # TTY, “pulse ready”
+  DEFINIÇÃO (o que existe)              ESTADO (o que aconteceu)
+  ────────────────────────              ────────────────────────
+  workflow_defs                         runs
+    id, label, description                id, workflow_id, workspace_root
+    is_default                            user_prompt, status, current_step
+        │ 1..N                                │ 1..N
+        ▼                                     ▼
+  workflow_steps                        run_steps
+    workflow_id, step_id                  run_id, step_id, position, label
+    position, label                       agent_id, status, summary
+    agent_id ──────┐                      acp_session_id, started_at, ended_at
+    prompt_template│                          │
+    requires_approval                         ├──► run_events
+        ┌──────────┘                          │      kind, title, detail, tool_id
+        ▼                                     │
+  agent_defs                                  └──► run_artifacts
+    id, label, runtime                               path, step_id
+    model, permission_policy
+    instructions
 ```
 
-Hoje o código ainda vive no pacote único `pulse/`. A separação lógica é **CLI (cliente) × Engine (daemon) × domínio**.
+**Definição** é editável e vale para todas as runs futuras.
+**Estado** é imutável depois do fato: `run_steps` copia `label` e `position` da
+definição quando a run começa, para que editar o workflow depois não reescreva o
+que já aconteceu.
+
+### A configuração de fábrica é semente do banco
+
+O pacote não traz arquivo de defaults. O `SEED` em
+[`pulse/store/db.py`](pulse/store/db.py) roda com `INSERT OR IGNORE` na primeira
+abertura do banco e cria um workflow `default` de um step só, com um agente
+`default` sem runtime fixo (vazio = "use o padrão da máquina").
+
+`INSERT OR IGNORE` é o detalhe que importa: quem já editou não perde nada no
+upgrade.
+
+### Id desconhecido não existe
+
+Não há catálogo em código, nem fallback. `get_workflow(id)` devolve `None`, o
+motor levanta `UnknownWorkflow` e a API responde `404`.
+
+Detalhe completo do modelo: [`docs/workflows.md`](docs/workflows.md).
 
 ---
 
-## Camadas (de fora para dentro)
+## 2. O motor
 
-### 1. Entrada — CLI
+[`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) — uma função
+pública, `run_workflow`, e nenhum `if workflow_id == ...`:
+
+```
+run_workflow(workflow_id, user_prompt, …)
+  │
+  ├─ get_workflow(id)                  definição + steps, do banco
+  ├─ resolve_config(workflow=id)       runtime, model, policy, cwd
+  ├─ check_runtime_ready(runtime)      binário e auth antes de gastar sessão
+  ├─ create_run | load_run             `runs` + N em `run_steps`
+  └─ para cada step ainda pendente:
+       │
+       ├─ control.checkpoint()         ◄── barreira de pausa/parada
+       ├─ resolve_config(pulse_agent=step.agent_id)
+       ├─ runner.use_agent(…)          o agente DESTE step
+       ├─ render(step.prompt_template) com os valores da run
+       ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
+       ├─ classify_outcome(…)          approve | adjust | skip | cancel
+       └─ save_step(status, summary)   desfecho no banco
+```
+
+### Sessão ACP isolada por step
+
+Cada step abre e fecha a própria sessão. O agente do step seguinte **não herda o
+contexto** do anterior — recebe só o resumo que o Pulse repassa em
+`{{previous_summary}}`.
+
+É isso que permite três coisas: trocar de runtime entre steps (um step no Cursor,
+o próximo no Claude), retomar uma run refazendo um step só, e manter o contexto
+pequeno num pipeline longo.
+
+### O que o motor interpreta da resposta
+
+Só o desfecho do questionário de aprovação
+([`pulse/prompts/approval.py`](pulse/prompts/approval.py)):
+
+| Desfecho | Efeito |
+|----------|--------|
+| `approve` | step vira `done`, segue |
+| `adjust` / `continue` | devolve a conversa ao agente com as respostas |
+| `skip` | step vira `skipped` — não é falha |
+| `cancel` | step não fechou; cai no menu de retry |
+
+Step sem aprovação só precisa que o agente feche o turno (`stopReason`).
+
+Falha ou não-aprovação abre **Refazer / Outro — dizer o que fazer / Parar**.
+"Outro" injeta a orientação do usuário no prompt da tentativa seguinte.
+
+O **conteúdo** do que o agente produziu nunca é lido.
+
+### Pausar, parar e retomar
+
+Pausar corta o turno em voo (`session/cancel`) e devolve o step em curso para
+`pending`: ele não terminou, então é refeito inteiro. Step já fechado nunca é
+refeito. Parar faz o mesmo e encerra a run com exit code `RUN_STOPPED` (130) —
+que não é falha: o cockpit oferece retomar.
+
+Retomar = rodar o primeiro step que não está `done`/`skipped`.
+Refazer (`restart=True`) zera `run_steps` mantendo a run.
+
+Contrato completo: [`pulse/runcontrol.py`](pulse/runcontrol.py).
+
+### Valores disponíveis no `prompt_template`
+
+`{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
+([`pulse/prompts/render.py`](pulse/prompts/render.py)). Chave sem valor é
+**erro**, não buraco — instrução truncada sairia silenciosa e ninguém notaria até
+a run sair errada.
+
+| Chave | Conteúdo |
+|-------|----------|
+| `user_prompt` | o que o usuário pediu |
+| `workspace` | diretório da run |
+| `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
+| `previous_summary` | resposta do último step que produziu resumo |
+| `artifacts` | arquivos que a run já escreveu, um por linha |
+
+Note o que **não** existe: nenhuma chave com nome de artefato ou de fase. O motor
+não tem nenhum para oferecer.
+
+---
+
+## 3. Camadas (de fora para dentro)
+
+### 3.1 Entrada — CLI
 
 | Arquivo | Função |
 |---------|--------|
@@ -92,152 +211,200 @@ Hoje o código ainda vive no pacote único `pulse/`. A separação lógica é **
 | [`pulse/cli_daemon.py`](pulse/cli_daemon.py) | `pulse daemon start \| stop \| status` |
 | [`pulse/__main__.py`](pulse/__main__.py) | Permite `python -m pulse` |
 
-Entry points (`pyproject.toml`):
+Entry points: `pulse` → CLI, `pulse-engine` → daemon em foreground,
+`pulse-mcp-ask` → servidor MCP de perguntas.
 
-- `pulse` → CLI
-- `pulse-engine` → daemon em foreground
-- `pulse-mcp-ask` → servidor MCP de perguntas
+### 3.2 Interface — TUI Textual
 
-### 2. Interface — TUI Textual
-
-Só existe tela e interação. Não executa workflow no mesmo processo via `run_plan`.
+Só tela e interação. Não executa workflow no próprio processo.
 
 | Caminho | Função |
 |---------|--------|
 | [`pulse/tui/app.py`](pulse/tui/app.py) | App Textual; abre home, cockpit, settings, onboarding, history |
-| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu principal |
-| [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (fases, logs, prompts) |
-| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Modelo, permissões, workflows, doctor |
-| [`pulse/tui/screens/onboarding.py`](pulse/tui/screens/onboarding.py) | Wizard do `pulse init` |
-| [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Histórico |
-| [`pulse/tui/state.py`](pulse/tui/state.py) | Estado visual do cockpit |
+| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows vindos do banco |
+| [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
+| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor |
+| [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe |
+| [`pulse/tui/state.py`](pulse/tui/state.py) | `CockpitState` — estado visual, só memória |
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
-| [`pulse/tui/widgets/`](pulse/tui/widgets/) | Sidebar, log, header, artifacts… |
-| [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói tela a partir de run salvo |
+| [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir de uma run gravada |
 
-### 3. Cliente do Engine
+A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
+**mesmo caminho do motor**. Não há mapa de fases na UI.
+
+### 3.3 Cliente do Engine
 
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (UDS preferido; TCP fallback); pode auto-iniciar o daemon |
 | [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria run → escuta SSE → responde `prompt.request` → devolve exit code |
 
-### 4. Engine — daemon (composition root)
+### 3.4 Engine — daemon (composition root)
 
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS |
-| [`pulse/daemon/paths.py`](pulse/daemon/paths.py) | `daemon.sock`, `daemon.json`, PID |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | Gerencia runs (start, status, cancel) |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run; pause/resume/cancel |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
-| [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | Stream/Prompt do domínio → eventos da API |
+| [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
 
-#### API mínima (`/api`)
+#### API (`/api`)
 
-| Recurso | Exemplos |
-|---------|----------|
+| Recurso | Rotas |
+|---------|-------|
 | Runtime | `GET /status`, `GET /doctor`, `POST /doctor/acp-probe` |
 | Config | `GET /config`, `GET /config/resolved`, `PATCH /config/global`, `POST /config/project` |
-| Workflows | `GET /workflows`, `POST /workflows/{id}/runs` |
-| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE) |
+| Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
+| Runs | `GET /runs/{id}`, `POST /runs/{id}/pause\|resume\|cancel`, `GET /runs/{id}/events` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
 | History | `GET /history`, `GET /history/{id}` |
 
-Persistência:
+#### Eventos no SSE
 
-- Global: `~/.pulse/` (`pulse.db`, `daemon.sock`, …)
-- Projeto: linhas em `pulse.db` por `project_id`; artefatos em `<workspace>/.pulse/` (`specs/`, `runs/`)
+`run.started` · `run.paused` · `run.resumed` · `run.stopped` ·
+`run.cancel_requested` · `run.finished` · `phase.begin` · `phase.info` ·
+`phase.error` · `phases.sync` · `session.update` · `session.id` ·
+`stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered`
 
-### 5. Domínio (regras de negócio)
+### 3.5 Domínio
 
-Usado pelo Engine. A TUI **não** deve chamar isso direto para executar workflow.
-
-#### Ports
-
-| Arquivo | Função |
-|---------|--------|
-| [`pulse/ports.py`](pulse/ports.py) | `StreamSink`, `PromptPort`, `NullStreamSink`, `NullPromptPort` |
-
-#### Plan (workflows)
+Usado pelo Engine. A TUI **não** chama isso direto para executar.
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/plan/runner.py`](pulse/plan/runner.py) | Fachada: “roda este workflow” |
-| [`pulse/plan/spec_types.py`](pulse/plan/spec_types.py) | Catálogo: `spec`, `setup-project`, `analyze-codebase` |
-| [`pulse/plan/*_flow.py`](pulse/plan/) | Passo a passo de cada workflow |
-| [`pulse/plan/*_prompt.py`](pulse/plan/) | Textos enviados ao agente |
-| [`pulse/plan/workflow_state.py`](pulse/plan/workflow_state.py) | Estado PRD → Techspec → Tasks → Execute |
-| [`pulse/plan/task_waves.py`](pulse/plan/task_waves.py) | Ondas de tasks no Execute |
+| [`pulse/ports.py`](pulse/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
+| [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e pausa |
+| [`pulse/orchestrator/prompts.py`](pulse/orchestrator/prompts.py) | Os dois textos que o próprio Pulse escreve |
+| [`pulse/prompts/render.py`](pulse/prompts/render.py) | Engine `{{placeholder}}` |
+| [`pulse/prompts/approval.py`](pulse/prompts/approval.py) | Lê o desfecho do questionário |
+| [`pulse/runcontrol.py`](pulse/runcontrol.py) | Pausar/retomar/parar, seguro entre threads |
 
-#### ACP
+### 3.6 ACP e runtimes
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Processo do agent, prompts, updates |
-| [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe |
-| [`pulse/acp/models.py`](pulse/acp/models.py) | Helpers de modelo |
-| [`pulse/acp/capabilities.py`](pulse/acp/capabilities.py) | Capacidades declaradas pelo Pulse |
+| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Processo do agente, sessões, prompts, updates, artefatos |
+| [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
+| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude` |
 
-#### Config, history, prompts, doctor, mcp, skills
+Adicionar um agente novo é escrever um módulo com a subclasse de `AgentRuntime` e
+registrá-lo em `RUNTIMES`. Config, doctor, onboarding e session runner passam a
+enxergá-lo sem mudanças.
+
+### 3.7 Store, config, history
 
 | Pasta | Função |
 |-------|--------|
-| [`pulse/config/`](pulse/config/) | Global TOML, projeto YAML, resolve efetivo, catálogo de models |
-| [`pulse/history/`](pulse/history/) | Catálogo das specs em `.pulse/specs/` |
-| [`pulse/prompts/`](pulse/prompts/) | Parse de ask-question / questionnaires (sem UI) |
-| [`pulse/doctor/`](pulse/doctor/) | Checks de agent/auth/ambiente |
+| [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Definições de workflow, step e agente |
+| [`pulse/store/runs.py`](pulse/store/runs.py) | Estado da run, log e artefatos |
+| [`pulse/store/db.py`](pulse/store/db.py) | Schema + semente da config de fábrica |
+| [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |
+| [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
+| [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
-| [`pulse/skills/`](pulse/skills/) | Skill `pulse-spec-driven` |
-| [`pulse/context/`](pulse/context/) | Descobre rules/skills do workspace |
-| [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` |
+| [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` (não confundir com `runtimes/`) |
 
 ---
 
-## Fluxo completo (ex.: Nova spec na TUI)
+## 4. Como um agente é resolvido
+
+Duas cascatas diferentes, e é fácil confundi-las.
+
+**Por workflow** (qual backend a run usa por padrão):
 
 ```
-1. Usuário: pulse
-2. cli.py garante Engine up → abre PulseApp (HomeScreen)
-3. Usuário escolhe "Nova spec" e descreve a spec
-4. CockpitScreen → EngineRunSession
-5. client: POST /api/workflows/spec/runs
-6. daemon/runs.py → plan/runner.py → spec_flow.py
-7. Classificar → `.pulse/specs/.route.yaml` → despacha new-issue ou quick
-8. flow → acp/session_runner.py → processo `agent acp`
-9. Agent responde → eventos SSE → CockpitSink → tela atualiza
-10. Agent pergunta → prompt.request → TUI responde
-   → POST /prompts/{id}/answer
-11. run.finished → a spec em `.pulse/specs/` é o que permanece |
+projeto.workflows[id] → global.workflows[id] → projeto.defaults
+                     → global.defaults → defaults do código
 ```
+
+**Por agente de step** (quem roda *este* step):
+
+```
+agent_defs[step.agent_id]       runtime/model/policy declarados
+  → agent_settings              o que o usuário ajustou na TUI (por projeto)
+  → cascata de defaults acima
+  → fallback de disponibilidade  runtime declarado não instalado nesta máquina
+```
+
+Campo vazio em `agent_defs` significa "use o padrão da máquina". Gravar um
+runtime concreto na semente congelaria a escolha feita no `pulse init`.
+
+`machine_workflows` e `project_workflows` guardam **override de agent/model por
+id de workflow** — não definem pipeline, e nascem vazios.
+
+Código: [`pulse/config/resolved.py`](pulse/config/resolved.py).
 
 ---
 
-## O que pode / não pode misturar
+## 5. Artefatos
+
+O Pulse **não gera arquivo nenhum**. O agente escreve onde o `prompt_template` do
+step mandar.
+
+A descoberta é pelos **tool-calls do ACP**: um `write`/`edit`/`create` faz o
+`AcpSessionRunner` gravar o caminho em `run_artifacts`
+([`_record_artifacts`](pulse/acp/session_runner.py)). O caminho vem de
+`locations[].path` ou do `rawInput` — cada runtime reporta de um jeito.
+
+Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
+tão artefato quanto `docs/PLANO.md`.
+
+---
+
+## 6. Fluxo completo (uma run na TUI)
+
+```
+ 1. Usuário: pulse
+ 2. cli.py garante o Engine up → abre PulseApp (HomeScreen)
+ 3. Home lista os workflows de `workflow_defs`; usuário escolhe e descreve a tarefa
+ 4. CockpitScreen monta a sidebar a partir de `workflow_steps` → EngineRunSession
+ 5. client: POST /api/workflows/{id}/runs
+ 6. daemon/runs.py abre uma thread → orchestrator/engine.py
+ 7. Cria a run (`runs` + `run_steps`) e entra no laço de steps
+ 8. Por step: resolve o agente, renderiza o prompt, abre sessão ACP isolada
+ 9. Agente responde → session/update → SSE → CockpitSink → tela;
+    write/edit → run_artifacts; tudo → run_events
+10. Agente pergunta → prompt.request → dock na TUI → POST /prompts/{id}/answer
+11. Fim do turno → questionário de aprovação → step vira `done` → próximo step
+12. run.finished → o que permanece são os arquivos que o agente escreveu
+```
+
+Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
+`run_events` dá o stream, `run_artifacts` dá o painel — sem ler o store do
+runtime nem varrer pasta.
+
+---
+
+## 7. O que pode / não pode misturar
 
 | Pode | Não deve |
 |------|----------|
-| TUI chamar `pulse/client/` | TUI importar `plan/` ou `acp/` para executar workflow |
-| Engine chamar `plan/`, `acp/`, `config/` | Domínio importar Textual / widgets |
-| CLI renderizar doctor/config em texto | CLI reimplementar a lógica dos flows |
-| `prompts/` parsear perguntas | `prompts/` depender de UI |
+| TUI chamar `pulse/client/` | TUI importar `orchestrator/` ou `acp/` para executar |
+| Engine chamar `orchestrator/`, `acp/`, `config/` | Domínio importar Textual / widgets |
+| Motor sequenciar steps | Motor interpretar o que o agente produziu |
+| Motor ler o desfecho da aprovação | Motor esperar artefato com nome conhecido |
+| Definição vir do banco | Definição vir de arquivo do pacote |
+| `prompts/` parsear respostas | `prompts/` depender de UI |
 
 ---
 
-## Design patterns usados
+## 8. Design patterns usados
 
 | Pattern | Onde | Para quê |
 |---------|------|----------|
 | Composition Root | `daemon/` | Só o daemon monta o grafo de serviços |
-| Ports & Adapters | `ports.py` + TUI/API adapters | Domínio independente da UI |
-| Facade | `plan/runner.py` | Uma entrada estável para workflows |
-| Transport parity | UDS + TCP | Mesmo contrato para CLI e futuros clients |
+| Ports & Adapters | `ports.py` + adapters TUI/API | Domínio independente da UI |
+| Facade | `orchestrator/engine.py` | Uma entrada estável: `run_workflow` |
+| Data-driven pipeline | `workflow_defs`/`workflow_steps` | Trocar o pipeline é `INSERT`, não release |
+| Transport parity | UDS + TCP | Mesmo contrato para CLI e clients futuros |
 | Correlated request/response | `prompt.request` + `POST /prompts/{id}/answer` | Aprovações sobre HTTP/SSE |
+| Event sourcing (leve) | `run_events` | Reabrir uma run sem depender do runtime |
 
 ---
 
-## Comandos úteis
+## 9. Comandos úteis
 
 ```bash
 pip install -e ".[dev]"
@@ -246,12 +413,21 @@ pulse                  # TUI
 pulse init             # onboarding (tela Textual)
 pulse doctor           # via Engine (use --local para checks locais)
 pulse config show
-pulse daemon start
-pulse daemon status
-pulse daemon stop
+pulse config show --workflow default
+pulse daemon start | status | stop
 pulse-engine           # daemon em foreground
 
 pytest
+```
+
+Duas invariantes que valem checar depois de mexer no pacote:
+
+```bash
+# nenhum arquivo não-Python no pacote (a config de fábrica é semente do banco)
+find pulse -type f ! -name "*.py" -not -path "*__pycache__*"
+
+# nenhum vocabulário de domínio: o Pulse não conhece pipeline nenhum
+grep -rniE "\bprd\b|techspec|new-issue|fix-bug|setup-project|analyze-codebase" pulse/
 ```
 
 ---
@@ -260,30 +436,40 @@ pytest
 
 | Termo | Significado |
 |-------|-------------|
+| **Workflow** | Lista ordenada de steps, definida no banco |
+| **Step** | Um passo: um agente, um prompt, uma sessão ACP isolada |
+| **Run** | Uma execução concreta de um workflow |
+| **Agente** | Linha em `agent_defs`: runtime + model + política + instruções |
+| **Runtime** | O backend que executa um agente (`cursor`, `claude`) |
+| **Artefato** | Arquivo que o agente escreveu, descoberto por tool-call |
 | **Daemon** | Processo em background (o Engine) |
 | **UDS** | Unix Domain Socket — arquivo local (`daemon.sock`); HTTP por cima |
-| **SSE** | Server-Sent Events — stream HTTP de eventos do run |
-| **ACP** | Agent Client Protocol — JSON-RPC com o Cursor Agent |
+| **SSE** | Server-Sent Events — stream HTTP de eventos da run |
+| **ACP** | Agent Client Protocol — JSON-RPC com o agente |
 | **Port** | Interface (contrato) que o domínio espera |
 | **Adapter** | Implementação da port (TUI, API, Null…) |
-| **Composition root** | Único lugar que “liga” todas as peças |
-| **Workflow** | Pipeline tipado (`spec`, `setup-project`, …) |
-| **Run** | Uma execução concreta de um workflow |
+| **Composition root** | Único lugar que "liga" todas as peças |
 
 ---
 
 ## Fora de escopo atual
 
-- App Desktop (será feito do zero no futuro; consumirá a mesma API HTTP)
-- Gateway remoto / pairing
-- Monorepo físico total (`engine/pulse_engine` vs `cli/pulse_cli` como packages separados)
+- **Tela de edição de workflow** — hoje o único caminho para criar um pipeline é
+  `pulse.store.workflow_defs.save_workflow()`. É a lacuna mais visível do desenho.
+- **Fan-out de sub-tasks** — um step é um prompt, um turno. Não há step que gere N
+  sub-execuções.
+- **Gates de shell** — o Pulse não roda comando de verificação entre steps.
+- App Desktop (consumirá a mesma API HTTP), gateway remoto / pairing.
+- Monorepo físico (`engine/` e `cli/` como packages separados).
 
 ---
 
 ## Referências rápidas
 
+- Mapa interativo: [`docs/arquitetura.html`](docs/arquitetura.html)
 - Uso do produto: [`README.md`](README.md)
+- Modelo de workflow: [`docs/workflows.md`](docs/workflows.md)
+- Armazenamento: [`docs/armazenamento.md`](docs/armazenamento.md)
+- Perguntas e aprovação: [`docs/questions.md`](docs/questions.md)
+- Logs: [`docs/logs.md`](docs/logs.md)
 - OpenAPI: [`contracts/openapi.yaml`](contracts/openapi.yaml)
-- Engine: [`engine/README.md`](engine/README.md)
-- CLI: [`cli/README.md`](cli/README.md)
-- Skill de processo: [`pulse/skills/pulse-spec-driven/`](pulse/skills/pulse-spec-driven/)

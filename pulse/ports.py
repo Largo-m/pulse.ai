@@ -78,12 +78,6 @@ class NullStreamSink:
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         return None
 
-    def apply_routed_flow(self, flow: str) -> None:
-        return None
-
-    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
-        return None
-
     def set_session_id(self, session_id: str) -> None:
         return None
 

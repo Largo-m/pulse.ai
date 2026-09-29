@@ -34,9 +34,9 @@ class HistoryListScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-content"):
-            yield Static("MINHAS SPECS", classes="history-title")
+            yield Static("HISTÓRICO", classes="history-title")
             yield Static(self._hint_text(), id="history-hint", classes="history-hint")
-            yield Input(placeholder="Buscar specs…", id="history-search")
+            yield Input(placeholder="Buscar runs…", id="history-search")
             yield OptionList(id="history-options")
             yield Static("", id="history-empty", classes="history-empty")
         yield Footer()
@@ -57,7 +57,7 @@ class HistoryListScreen(Screen[None]):
         hint = self.query_one("#history-hint", Static)
         hint.update(self._hint_text())
         if not items:
-            empty.update("Nenhuma spec encontrada")
+            empty.update("Nenhuma run encontrada")
             empty.display = True
             return
         empty.update("")
@@ -92,10 +92,10 @@ class HistoryListScreen(Screen[None]):
 
 
 def _format_item(item: HistoryItem) -> Text:
-    title = item.title.replace("\n", " ").strip() or item.slug
+    title = item.title.replace("\n", " ").strip() or item.workflow_id
     if len(title) > 48:
         title = title[:47] + "…"
-    line = Text(f"{item.kind_label:<5}  {item.flow_label:<5}  ")
+    line = Text(f"{item.workflow_label[:12]:<12}  ")
     line.append(f"{item.status_label:<{LABEL_WIDTH}}", style=status_color(item.status))
     line.append(f"  {title}")
     return line

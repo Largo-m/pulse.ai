@@ -30,19 +30,19 @@ def test_extract_tool_target_from_diff_content():
         "content": [
             {
                 "type": "diff",
-                "path": "/Users/me/proj/.pulse/specs/features/demo/PRD.md",
+                "path": "/Users/me/proj/docs/PRD.md",
             }
         ]
     }
     target = extract_tool_target(update, cwd="/Users/me/proj")
     assert target.endswith("PRD.md")
-    assert "features" in target
+    assert "docs" in target
 
 
 def test_extract_tool_target_from_search_output():
     assert extract_tool_target({"rawOutput": {"totalFiles": 4}}) == "4 files"
-    assert ".pulse/specs/codebase" in extract_tool_target(
-        {"rawOutput": {"error": "Path does not exist: /tmp/proj/.pulse/specs/codebase"}}
+    assert "docs/codebase" in extract_tool_target(
+        {"rawOutput": {"error": "Path does not exist: /tmp/proj/docs/codebase"}}
     )
 
 
@@ -85,13 +85,13 @@ def test_build_tool_labels_read_prefers_path():
         {
             "title": "Read File",
             "kind": "read",
-            "rawInput": {"path": "/repo/.pulse/skills/pulse-spec-driven/workflow.yaml"},
+            "rawInput": {"path": "/repo/vendor/config.yaml"},
             "rawOutput": {"content": "version: 1\n"},
         },
         cwd="/repo",
     )
     assert kind == LogKind.READ
-    assert title.endswith("workflow.yaml")
+    assert title.endswith("config.yaml")
     assert "version" not in title
     assert detail == ""
 
@@ -99,7 +99,7 @@ def test_build_tool_labels_read_prefers_path():
 def test_build_tool_labels_read_from_title_path():
     kind, title, detail = build_tool_labels(
         {
-            "title": "Reading .pulse/specs/project/STATE.md",
+            "title": "Reading docs/STATE.md",
             "kind": "read",
         }
     )
@@ -113,7 +113,7 @@ def test_build_tool_labels_read_from_locations():
         {
             "title": "Read File",
             "kind": "read",
-            "locations": [{"path": "/repo/.pulse/specs/features/demo/PRD.md"}],
+            "locations": [{"path": "/repo/docs/PRD.md"}],
         },
         cwd="/repo",
     )
@@ -145,19 +145,19 @@ def test_format_search_labels_with_hits():
     title, detail = format_search_labels(
         {
             "kind": "search",
-            "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+            "rawInput": {"pattern": "dashboard", "path": "/repo/docs"},
             "rawOutput": {"totalFiles": 4},
             "locations": [
-                "/repo/.pulse/specs/features/build-dashboard-home/PRD.md",
-                "/repo/.pulse/specs/skills/pulse-spec-driven/prompts/PRD.md",
-                "/repo/.pulse/specs/skills/pulse-spec-driven/workflow.yaml",
-                "/repo/.pulse/specs/project/STATE.md",
+                "/repo/docs/PRD.md",
+                "/repo/vendor/PRD.md",
+                "/repo/vendor/config.yaml",
+                "/repo/docs/STATE.md",
             ],
         },
         cwd="/repo",
     )
     assert title == "“dashboard”"
-    assert "in .pulse/specs" in detail
+    assert "in docs" in detail
     assert "4 files" in detail
     assert "PRD.md" in detail
     assert "(+1)" in detail
@@ -169,7 +169,7 @@ def test_format_search_labels_target_directory_and_generic_glob():
             "kind": "search",
             "rawInput": {
                 "glob_pattern": "**/*",
-                "target_directory": "/repo/.pulse/specs/features/demo",
+                "target_directory": "/repo/docs/features/demo",
             },
             "rawOutput": {"totalFiles": 1},
         },

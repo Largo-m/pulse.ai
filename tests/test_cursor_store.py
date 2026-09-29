@@ -9,7 +9,6 @@ from pulse.tui.cursor_store import (
     find_session_store,
     list_session_events,
     normalize_tool_args,
-    session_task_id,
 )
 
 
@@ -32,13 +31,13 @@ def test_cursor_store_lookup_args(tmp_path: Path, monkeypatch):
                 "type": "tool-call",
                 "toolCallId": "call-1\nfc_1",
                 "toolName": "Read",
-                "args": {"path": "/repo/.pulse/specs/project/STATE.md"},
+                "args": {"path": "/repo/docs/STATE.md"},
             },
             {
                 "type": "tool-call",
                 "toolCallId": "call-2\nfc_2",
                 "toolName": "Glob",
-                "args": {"glob_pattern": ".pulse/specs/**/*"},
+                "args": {"glob_pattern": "docs/**/*"},
             },
         ],
     }
@@ -59,18 +58,6 @@ def test_cursor_store_lookup_args(tmp_path: Path, monkeypatch):
     assert read_args["path"].endswith("STATE.md")
     glob_args = index.lookup_args("call-2\nfc_2")
     assert glob_args is not None
-    assert glob_args["glob"] == ".pulse/specs/**/*"
+    assert glob_args["glob"] == "docs/**/*"
     events = list_session_events(session_id)
     assert any(event["kind"] == "Tool" and "call-1" in event["tool_id"] for event in events)
-    user = {
-        "role": "user",
-        "content": [{"type": "text", "text": "Task atual: **Task T3**\nTask: T3\n"}],
-    }
-    con = sqlite3.connect(db)
-    con.execute(
-        "INSERT INTO blobs(id, data) VALUES (?, ?)",
-        ("2", json.dumps(user).encode("utf-8")),
-    )
-    con.commit()
-    con.close()
-    assert session_task_id(session_id) == "T3"

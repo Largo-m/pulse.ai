@@ -35,13 +35,9 @@ class AppHeader(Widget):
             pass
 
     def sync_from_state(self, state: CockpitState) -> None:
-        if state.tasks:
-            done = state.task_done_count()
-            total = state.task_total_count()
-            bar = progress_bar(done, total, width=12)
-            label = f"[{bar}] {done}/{total}"
-        else:
-            label = f"RUN {state.done_count()}/{state.total_count()}"
+        done, total = state.done_count(), state.total_count()
+        bar = progress_bar(done, total, width=12)
+        label = f"[{bar}] {done}/{total}" if total else "RUN 0/0"
         if state.paused:
             label = f"{label} · {status_label('paused').upper()}"
         elif state.stopped:

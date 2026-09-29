@@ -6,31 +6,20 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from pulse.history.events import (
-    ROUTED_FLOW_WORKFLOWS,
-    WORKFLOW_LABELS,
-    WORKFLOW_PHASES,
     ArtifactItem,
     LogEntry,
     LogKind,
     PhaseItem,
     PhaseStatus,
+    workflow_label,
+    workflow_steps,
 )
 from pulse.runcontrol import RUN_STOPPED
-from pulse.tui.artifacts import (
-    artifact_key,
-    extract_spec_artifacts_from_text,
-    is_spec_artifact,
-)
+from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
-NAV_TASK = "task"
-
-#: Flows com barreira entre steps: pausar segura e retomar segue do ponto certo.
-PAUSABLE_WORKFLOWS = frozenset({"spec", "new-issue"})
-#: Parar corta o turno em voo; vale também para quem não tem barreira.
-STOPPABLE_WORKFLOWS = frozenset({"spec", "new-issue", "fix-bug"})
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -48,12 +37,9 @@ class CockpitState:
     agent_label: str = "Agent"
     model_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
-    tasks: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
     artifacts: list[ArtifactItem] = field(default_factory=list)
     selected_phase_index: int = 0
-    selected_task_index: int = 0
-    selected_nav_kind: str = NAV_PHASE
     selected_artifact_path: str = ""
     follow_artifact: bool = True
     artifact_pane_open: bool = False
@@ -62,8 +48,7 @@ class CockpitState:
     #: Run viva, mas segurada pelo usuário. `running` continua True.
     paused: bool = False
     stopped: bool = False
-    #: Nem todo flow tem barreira entre steps: sem ela, pausar viraria parar.
-    #: Melhor não oferecer a tecla do que quebrar a promessa de retomar.
+    #: Ligados por `configure_workflow`: fora de uma run não há o que pausar.
     can_pause: bool = False
     can_stop: bool = False
     exit_code: int | None = None
@@ -87,13 +72,11 @@ class CockpitState:
 
     def configure_workflow(self, workflow_id: str) -> None:
         self.workflow_id = workflow_id
-        self.workflow_label = WORKFLOW_LABELS.get(workflow_id, workflow_id.upper())
-        defs = WORKFLOW_PHASES.get(workflow_id, (("phase1", "Phase 1"),))
-        self.phases = [PhaseItem(id=pid, label=label) for pid, label in defs]
-        self.tasks = []
+        self.workflow_label = workflow_label(workflow_id)
+        self.phases = [
+            PhaseItem(id=step_id, label=label) for step_id, label in workflow_steps(workflow_id)
+        ]
         self.selected_phase_index = 0
-        self.selected_task_index = 0
-        self.selected_nav_kind = NAV_PHASE
         self.entries = []
         self.artifacts = []
         self.selected_artifact_path = ""
@@ -106,8 +89,10 @@ class CockpitState:
         self.running = False
         self.paused = False
         self.stopped = False
-        self.can_pause = workflow_id in PAUSABLE_WORKFLOWS
-        self.can_stop = workflow_id in STOPPABLE_WORKFLOWS
+        # Todo workflow tem barreira entre steps: a sessão ACP é isolada por
+        # step, então pausar sempre tem onde segurar e retomar tem onde voltar.
+        self.can_pause = True
+        self.can_stop = True
         self.exit_code = None
         self.notify()
 
@@ -132,9 +117,7 @@ class CockpitState:
                 matched.started_at = now
                 matched.ended_at = None
             matched.status = PhaseStatus.RUNNING
-            skip_select = matched.id == "execute" and bool(self.tasks)
-            if matched_index is not None and self._follow_live and not skip_select:
-                self.selected_nav_kind = NAV_PHASE
+            if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
                 self.follow_artifact = True
         self.surface_title = title.upper()
@@ -165,37 +148,11 @@ class CockpitState:
                 phase.status = PhaseStatus.DONE
         self.notify()
 
-    def apply_routed_flow(self, flow: str) -> None:
-        routed_id = ROUTED_FLOW_WORKFLOWS.get(str(flow).strip().lower())
-        if routed_id is None:
-            return
-        # Só agora se sabe onde a spec caiu: quick roda num fôlego só e não tem
-        # onde segurar, então lá a pausa deixa de ser oferecida.
-        self.can_pause = routed_id in PAUSABLE_WORKFLOWS
-        self.can_stop = routed_id in STOPPABLE_WORKFLOWS
-        now = time.monotonic()
-        for phase in self.phases:
-            if phase.id == "classify":
-                if phase.status == PhaseStatus.RUNNING:
-                    phase.finish(now)
-                else:
-                    phase.status = PhaseStatus.DONE
-                    if phase.ended_at is None:
-                        phase.ended_at = now
-        existing_ids = {phase.id for phase in self.phases}
-        for pid, label in WORKFLOW_PHASES.get(routed_id, ()):
-            if pid not in existing_ids:
-                self.phases.append(PhaseItem(id=pid, label=label))
-        self.notify()
-
     def complete_active_phase(self) -> None:
         now = time.monotonic()
         for phase in self.phases:
             if phase.status == PhaseStatus.RUNNING:
                 phase.finish(now)
-        for task in self.tasks:
-            if task.status == PhaseStatus.RUNNING:
-                task.finish(now)
         self.notify()
 
     def fail_active(self) -> None:
@@ -205,11 +162,6 @@ class CockpitState:
                 if phase.started_at is not None:
                     phase.ended_at = now
                 phase.status = PhaseStatus.FAILED
-        for task in self.tasks:
-            if task.status == PhaseStatus.RUNNING:
-                if task.started_at is not None:
-                    task.ended_at = now
-                task.status = PhaseStatus.FAILED
         self.notify()
 
     def mark_paused(self) -> None:
@@ -220,7 +172,7 @@ class CockpitState:
         não conta para nada.
         """
         self.paused = True
-        for item in [*self.phases, *self.tasks]:
+        for item in self.phases:
             if item.status != PhaseStatus.RUNNING:
                 continue
             item.status = PhaseStatus.PENDING
@@ -235,7 +187,7 @@ class CockpitState:
     def mark_stopped(self) -> None:
         self.paused = False
         self.stopped = True
-        for item in [*self.phases, *self.tasks]:
+        for item in self.phases:
             if item.status != PhaseStatus.RUNNING:
                 continue
             item.status = PhaseStatus.PENDING
@@ -284,7 +236,6 @@ class CockpitState:
             entry_id=self._next_entry_id,
             tool_id=tool_id,
             phase_id=self._entry_phase_id(),
-            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -292,7 +243,8 @@ class CockpitState:
         return entry
 
     def record_files(self, paths: list[str] | tuple[str, ...]) -> bool:
-        targets = [item for item in (self._active_phase(), self._active_task()) if item is not None]
+        active = self._active_phase()
+        targets = [active] if active is not None else []
         if not targets:
             return False
         changed = False
@@ -311,7 +263,8 @@ class CockpitState:
         return changed
 
     def record_issue(self, key: str) -> bool:
-        targets = [item for item in (self._active_phase(), self._active_task()) if item is not None]
+        active = self._active_phase()
+        targets = [active] if active is not None else []
         if not targets:
             return False
         token = str(key or "").strip()
@@ -367,7 +320,6 @@ class CockpitState:
             active=True,
             entry_id=self._next_entry_id,
             phase_id=self._entry_phase_id(),
-            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -385,7 +337,6 @@ class CockpitState:
             active=True,
             entry_id=self._next_entry_id,
             phase_id=self._entry_phase_id(),
-            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self.entries.append(entry)
@@ -412,7 +363,6 @@ class CockpitState:
             active=True,
             entry_id=self._next_entry_id,
             phase_id=self._entry_phase_id(),
-            task_id=self._entry_task_id(),
         )
         self._next_entry_id += 1
         self._active_assistant_id = entry.entry_id
@@ -439,7 +389,6 @@ class CockpitState:
                 active=False,
                 entry_id=self._next_entry_id,
                 phase_id=self._entry_phase_id(),
-                task_id=self._entry_task_id(),
             )
         )
         self._next_entry_id += 1
@@ -451,7 +400,6 @@ class CockpitState:
                 active=True,
                 entry_id=self._next_entry_id,
                 phase_id=self._entry_phase_id(),
-                task_id=self._entry_task_id(),
             )
         )
         self._next_entry_id += 1
@@ -463,91 +411,10 @@ class CockpitState:
         index = max(0, min(self.selected_phase_index, len(self.phases) - 1))
         return self.phases[index]
 
-    def selected_task(self) -> PhaseItem | None:
-        if not self.tasks:
-            return None
-        index = max(0, min(self.selected_task_index, len(self.tasks) - 1))
-        return self.tasks[index]
-
     def selected_nav_item(self) -> PhaseItem | None:
-        if self.selected_nav_kind == NAV_TASK:
-            return self.selected_task()
         return self.selected_phase()
 
-    def task_done_count(self) -> int:
-        return sum(1 for task in self.tasks if task.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
-
-    def task_total_count(self) -> int:
-        return len(self.tasks)
-
-    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
-        existing = {task.id: task for task in self.tasks}
-        merged: list[PhaseItem] = []
-        now = time.monotonic()
-        for task_id, title, status in items:
-            key = str(task_id or "").strip()
-            if not key:
-                continue
-            label = str(title or "").strip() or key
-            prior = existing.get(key)
-            if prior is None:
-                item = PhaseItem(id=key, label=label)
-            else:
-                item = prior
-                item.label = label
-            mapped = _task_status_from_name(status)
-            if mapped == PhaseStatus.FAILED:
-                if item.status == PhaseStatus.RUNNING and item.started_at is not None:
-                    item.ended_at = now
-                item.status = PhaseStatus.FAILED
-            elif item.status == PhaseStatus.RUNNING and mapped == PhaseStatus.DONE:
-                item.finish(now)
-            elif item.status != PhaseStatus.RUNNING:
-                item.status = mapped
-            merged.append(item)
-        self.tasks = merged
-        if self.selected_task_index >= len(self.tasks):
-            self.selected_task_index = max(0, len(self.tasks) - 1)
-        if not self.tasks and self.selected_nav_kind == NAV_TASK:
-            self.selected_nav_kind = NAV_PHASE
-        self.notify()
-
-    def begin_task(self, task_id: str, title: str = "") -> None:
-        key = str(task_id or "").strip()
-        if not key:
-            return
-        self.finish_assistant()
-        now = time.monotonic()
-        found: PhaseItem | None = None
-        for task in self.tasks:
-            if task.id == key:
-                found = task
-                continue
-            if task.status == PhaseStatus.RUNNING:
-                task.finish(now)
-        label = str(title or "").strip() or key
-        if found is None:
-            found = PhaseItem(id=key, label=label)
-            self.tasks.append(found)
-        elif title.strip():
-            found.label = label
-        if found.status != PhaseStatus.RUNNING or found.started_at is None:
-            found.started_at = now
-            found.ended_at = None
-        found.status = PhaseStatus.RUNNING
-        index = self.tasks.index(found)
-        if self._follow_live:
-            self.selected_nav_kind = NAV_TASK
-            self.selected_task_index = index
-            self.follow_artifact = True
-        self.notify()
-
     def visible_entries(self) -> list[LogEntry]:
-        if self.selected_nav_kind == NAV_TASK:
-            task = self.selected_task()
-            if task is None:
-                return []
-            return [entry for entry in self.entries if entry.task_id == task.id]
         phase = self.selected_phase()
         if phase is None:
             return list(self.entries)
@@ -557,15 +424,7 @@ class CockpitState:
     def select_phase(self, index: int) -> None:
         if not self.phases:
             return
-        self.selected_nav_kind = NAV_PHASE
         self.selected_phase_index = max(0, min(index, len(self.phases) - 1))
-        self._sync_follow_and_artifact()
-
-    def select_task(self, index: int) -> None:
-        if not self.tasks:
-            return
-        self.selected_nav_kind = NAV_TASK
-        self.selected_task_index = max(0, min(index, len(self.tasks) - 1))
         self._sync_follow_and_artifact()
 
     def move_phase(self, delta: int) -> None:
@@ -575,36 +434,21 @@ class CockpitState:
         items = self.nav_items()
         if not items:
             return
-        current = (self.selected_nav_kind, self._selected_nav_index())
+        current = (NAV_PHASE, self._selected_nav_index())
         try:
             position = items.index(current)
         except ValueError:
             position = 0
         position = max(0, min(position + delta, len(items) - 1))
-        kind, index = items[position]
-        if kind == NAV_TASK:
-            self.select_task(index)
-            return
+        _kind, index = items[position]
         self.select_phase(index)
 
     def nav_items(self) -> list[tuple[str, int]]:
-        items: list[tuple[str, int]] = []
-        has_execute = False
-        for index, phase in enumerate(self.phases):
-            items.append((NAV_PHASE, index))
-            if phase.id == "execute":
-                has_execute = True
-                items.extend((NAV_TASK, task_index) for task_index in range(len(self.tasks)))
-        if self.tasks and not has_execute:
-            items.extend((NAV_TASK, task_index) for task_index in range(len(self.tasks)))
-        return items
+        return [(NAV_PHASE, index) for index in range(len(self.phases))]
 
     def _sync_follow_and_artifact(self) -> None:
         live = self._live_target()
-        self._follow_live = live is None or live == (
-            self.selected_nav_kind,
-            self._selected_nav_index(),
-        )
+        self._follow_live = live is None or live == (NAV_PHASE, self._selected_nav_index())
         visible = self.visible_artifacts()
         if self._follow_live:
             self.follow_artifact = True
@@ -624,7 +468,7 @@ class CockpitState:
         has_content: bool = False,
     ) -> ArtifactItem | None:
         key = artifact_key(path)
-        if not is_spec_artifact(key):
+        if not key:
             return None
         phase_id = self._entry_phase_id()
         for item in self.artifacts:
@@ -653,8 +497,6 @@ class CockpitState:
         return item
 
     def visible_artifacts(self) -> list[ArtifactItem]:
-        if self.selected_nav_kind == NAV_TASK:
-            return [item for item in self.artifacts if item.phase_id == "execute"]
         phase = self.selected_phase()
         if phase is None:
             return list(self.artifacts)
@@ -736,7 +578,7 @@ class CockpitState:
         desligava o `follow_artifact` e a aba parava de acompanhar o artefato
         vivo por causa de uma pergunta sem relação com arquivo.
         """
-        keys = extract_spec_artifacts_from_text(text)
+        keys = artifact_paths_in_text(text, [item.path for item in self.artifacts])
         candidates = [item for item in self.artifacts if item.has_content]
         matched: ArtifactItem | None = None
         for key in keys:
@@ -783,24 +625,13 @@ class CockpitState:
                 return index
         return None
 
-    def _running_task_index(self) -> int | None:
-        for index, task in enumerate(self.tasks):
-            if task.status == PhaseStatus.RUNNING:
-                return index
-        return None
-
     def _live_target(self) -> tuple[str, int] | None:
-        task_index = self._running_task_index()
-        if task_index is not None:
-            return (NAV_TASK, task_index)
         phase_index = self._running_index()
         if phase_index is not None:
             return (NAV_PHASE, phase_index)
         return None
 
     def _selected_nav_index(self) -> int:
-        if self.selected_nav_kind == NAV_TASK:
-            return self.selected_task_index
         return self.selected_phase_index
 
     def _active_phase(self) -> PhaseItem | None:
@@ -808,12 +639,6 @@ class CockpitState:
         if index is None:
             return None
         return self.phases[index]
-
-    def _active_task(self) -> PhaseItem | None:
-        index = self._running_task_index()
-        if index is None:
-            return None
-        return self.tasks[index]
 
     def _entry_phase_id(self) -> str:
         active = self._active_phase()
@@ -825,12 +650,6 @@ class CockpitState:
         selected = self.selected_phase()
         if selected is not None:
             return selected.id
-        return ""
-
-    def _entry_task_id(self) -> str:
-        active = self._active_task()
-        if active is not None:
-            return active.id
         return ""
 
     def _clear_active_flags(self) -> None:
@@ -848,14 +667,3 @@ class CockpitState:
         return None
 
 
-def _task_status_from_name(status: str) -> PhaseStatus:
-    raw = str(status or "").strip().lower()
-    if raw in {"done", "completed"}:
-        return PhaseStatus.DONE
-    if raw in {"skipped", "skip"}:
-        return PhaseStatus.SKIPPED
-    if raw in {"running", "in_progress", "in-progress"}:
-        return PhaseStatus.RUNNING
-    if raw in {"failed", "error", "falhou"}:
-        return PhaseStatus.FAILED
-    return PhaseStatus.PENDING

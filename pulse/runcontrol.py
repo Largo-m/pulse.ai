@@ -1,14 +1,14 @@
 """Pausar, retomar e parar uma run em andamento.
 
 O workflow roda numa thread do daemon e conversa com o agente por uma sessão
-ACP isolada por step (fase ou task). Não dá para congelar um turno do agente no
+ACP isolada por step. Não dá para congelar um turno do agente no
 meio: ou ele termina, ou é descartado. Então o contrato aqui é:
 
 * **pausar** corta o turno em voo (`session/cancel`) e segura o fluxo na
   barreira. O step interrompido volta para pendente — ao retomar ele é refeito
   do começo. Step já concluído e salvo nunca é refeito.
 * **parar** corta do mesmo jeito, mas encerra a run. O que já foi salvo continua
-  no `workflow.yaml`, então dá para retomar ou refazer depois pelo histórico.
+  em `run_steps`, então dá para retomar ou refazer depois pelo histórico.
 
 `RunControl` é compartilhado entre a thread da run e quem manda os comandos
 (daemon/API), por isso todo estado passa pelo lock.

@@ -209,22 +209,19 @@ class SettingsScreen(Screen[None]):
     def _show_pulse_agents(self) -> None:
         ensure_project_workflows(self._cwd)
         init_project_config(self._cwd)
-        from pulse.agents.loader import apply_agent_settings, load_agents
+        from pulse.store.workflow_defs import list_agents
 
         self._target = "agent"
         self._mode = "pick_workflow"
         self._set_report("")
         self._set_status("Escolha o agent")
-        project_id = self._project_id()
         options: list[tuple[str, str]] = []
-        for agent in load_agents(workspace=self._cwd):
-            view = apply_agent_settings(agent, project_id)
-            options.append(
-                (
-                    f"workflow:{view.definition.id}",
-                    f"{view.definition.label} — {view.runtime} · {view.model}",
-                )
-            )
+        saved = self._workflow_id
+        for agent in list_agents():
+            self._workflow_id = agent.id
+            runtime, model, _policy = self._effective_agent_fields()
+            options.append((f"workflow:{agent.id}", f"{agent.label} — {runtime} · {model}"))
+        self._workflow_id = saved
         self._set_options(options)
 
     def _show_workflow_fields(self) -> None:
@@ -248,12 +245,10 @@ class SettingsScreen(Screen[None]):
         return project.project_id
 
     def _agent_label(self) -> str:
-        from pulse.agents.loader import load_agent
+        from pulse.store.workflow_defs import get_agent
 
-        loaded = load_agent(self._workflow_id or "", workspace=self._cwd)
-        if loaded is None:
-            return self._workflow_id or "Agent"
-        return loaded.definition.label
+        agent = get_agent(self._workflow_id or "")
+        return agent.label if agent is not None else (self._workflow_id or "Agent")
 
     def _current_fields(self) -> tuple[str, str, str]:
         """Runtime, modelo e política do alvo em edição."""
@@ -277,8 +272,8 @@ class SettingsScreen(Screen[None]):
         )
 
     def _save_global(self, *, field: str, value: str) -> None:
-        from pulse.agents.loader import load_agents
         from pulse.config.project_config import update_project_defaults
+        from pulse.store.workflow_defs import list_agents
         from pulse.store.agent_settings import apply_setting_to_all_agents
 
         kwargs = {
@@ -293,19 +288,33 @@ class SettingsScreen(Screen[None]):
                 project_id,
                 field=field,
                 value=value,
-                agent_ids=[agent.definition.id for agent in load_agents(workspace=self._cwd)],
+                agent_ids=[agent.id for agent in list_agents()],
             )
         self._show_global_fields()
 
     def _effective_agent_fields(self) -> tuple[str, str, str]:
-        from pulse.agents.loader import apply_agent_settings, load_agent
+        """O que está guardado para este agente: settings do projeto → definição.
+
+        Aqui não vale a resolução completa: ela troca um runtime indisponível
+        pelo que a máquina tem, e a tela mostraria de volta um valor diferente
+        do que o usuário acabou de escolher.
+        """
+        from pulse.store.agent_settings import load_agent_settings
+        from pulse.store.workflow_defs import get_agent
 
         agent_id = self._workflow_id or ""
-        loaded = load_agent(agent_id, workspace=self._cwd)
-        if loaded is None:
-            return "cursor", "Auto", "ask"
-        view = apply_agent_settings(loaded, self._project_id())
-        return view.runtime, view.model, view.permission_policy
+        definition = get_agent(agent_id)
+        runtime = definition.runtime if definition else ""
+        model = definition.model if definition else ""
+        policy = definition.permission_policy if definition else ""
+        project_id = self._project_id()
+        if project_id:
+            stored = load_agent_settings(project_id, agent_id)
+            runtime = str(stored.get("runtime") or runtime)
+            model = str(stored.get("model") or model)
+            policy = str(stored.get("permission_policy") or policy)
+        fallback = self._effective_global_fields()
+        return runtime or fallback[0], model or fallback[1], policy or fallback[2]
 
     def _show_agents(self) -> None:
         resolved = resolve_config(self._cwd, workflow=self._workflow_id)

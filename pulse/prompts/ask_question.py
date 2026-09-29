@@ -100,20 +100,13 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
         return False
     if any("cancelar" in label for label in labels_lower):
         return False
-    if any("aprovar e implementar" in label for label in labels_lower):
-        return False
-    if any("migrar para" in label and "pipeline" in label for label in labels_lower):
-        return False
-    if any(label.startswith("quick fix:") for label in labels_lower):
+    if any("aprovar" in label for label in labels_lower):
         return False
 
     closed_prompt_markers = (
-        # Aprovação de fase é decisão fechada: sim, ajuste ou cancelar. Um
-        # "Outro" aqui vira texto livre onde o flow espera uma das três.
+        # Aprovação de step é decisão fechada: seguir, ajustar ou cancelar. Um
+        # "Outro" aqui vira texto livre onde o motor espera uma das três.
         "e avançar?",
-        "aprovar quick task",
-        "excede o escopo do quick mode",
-        "excede o quick mode",
         "como deseja prosseguir",
         "funciona como esperado",
         "não funciona (descreva",

@@ -11,7 +11,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from pulse.status_labels import status_color, status_icon, status_label
-from pulse.tui.state import NAV_PHASE, NAV_TASK, CockpitState, PhaseItem, PhaseStatus
+from pulse.tui.state import NAV_PHASE, CockpitState, PhaseItem, PhaseStatus
 
 
 class NavSelected(Message):
@@ -50,7 +50,7 @@ class PhaseSidebar(Widget):
         self.refresh_phases()
 
     def on_click(self, event: Click) -> None:
-        if not self._state.phases and not self._state.tasks:
+        if not self._state.phases:
             return
         try:
             content = self.query_one("#phase-content", Static)
@@ -75,38 +75,17 @@ class PhaseSidebar(Widget):
             return output
 
         for index, phase in enumerate(state.phases):
-            nested = phase.id == "execute" and bool(state.tasks)
-            height = 2 if nested else 3
-            self._slots.append((line, line + height - 1, NAV_PHASE, index))
-            selected = state.selected_nav_kind == NAV_PHASE and index == state.selected_phase_index
+            self._slots.append((line, line + 2, NAV_PHASE, index))
             output.append_text(
                 self._render_item(
                     state,
                     phase,
-                    selected=selected,
+                    selected=index == state.selected_phase_index,
                     now=now,
-                    trailing_blank=not nested,
+                    trailing_blank=True,
                 )
             )
-            line += height
-            if not nested:
-                continue
-            for task_index, task in enumerate(state.tasks):
-                self._slots.append((line, line + 1, NAV_TASK, task_index))
-                selected = (
-                    state.selected_nav_kind == NAV_TASK and task_index == state.selected_task_index
-                )
-                output.append_text(
-                    self._render_item(
-                        state,
-                        task,
-                        selected=selected,
-                        now=now,
-                        nested=True,
-                        trailing_blank=False,
-                    )
-                )
-                line += 2
+            line += 3
         return output
 
     def _render_item(

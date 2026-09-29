@@ -64,14 +64,14 @@ class CockpitScreen(Screen[None]):
         user_prompt: str,
         *,
         workspace: Path | None = None,
-        spec_slug: str | None = None,
-        spec_mode: str | None = None,
+        resume_run_id: str | None = None,
+        restart: bool = False,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
-        self.spec_slug = spec_slug
-        self.spec_mode = spec_mode
+        self.resume_run_id = resume_run_id
+        self.restart = restart
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
@@ -189,8 +189,8 @@ class CockpitScreen(Screen[None]):
                 workflow_id=self.workflow_id,
                 user_prompt=self.user_prompt,
                 workspace=self._cwd,
-                spec_slug=self.spec_slug,
-                spec_mode=self.spec_mode,
+                resume_run_id=self.resume_run_id,
+                restart=self.restart,
             )
         except Exception as error:
             self.state.add_error("Workflow falhou", str(error))
@@ -242,10 +242,10 @@ class CockpitScreen(Screen[None]):
 
     def _offer_restart(self) -> None:
         """Depois de parar, oferece o mesmo retomar/refazer do histórico."""
-        pending = self._resumable_workflow()
+        pending = self._resumable_run()
         if pending is None:
             return
-        slug, summary = pending
+        run_id, summary = pending
 
         def _chosen(mode: str | None) -> None:
             if mode not in {RESUME, RESTART}:
@@ -254,39 +254,31 @@ class CockpitScreen(Screen[None]):
             self.app.open_cockpit(
                 self.workflow_id,
                 self.user_prompt,
-                spec_slug=slug,
-                spec_mode=mode,
+                resume_run_id=run_id,
+                restart=mode == RESTART,
             )
 
         self.app.push_screen(
-            ResumeChoiceScreen(slug=slug, summary=summary),
+            ResumeChoiceScreen(slug=summary, summary=summary),
             callback=_chosen,
         )
 
-    def _resumable_workflow(self) -> tuple[str, str] | None:
-        from pulse.plan.workflow_state import (
-            find_resumable_workflows,
-            find_workflow_by_slug,
-            resume_summary,
-            workflow_is_incomplete,
-        )
+    def _resumable_run(self) -> tuple[str, str] | None:
+        """Run parada que dá para retomar: a desta tela, ou a mais recente."""
+        from pulse.store import runs as run_store
 
-        workspace = Path(self._cwd)
         try:
-            if self.spec_slug:
-                state = find_workflow_by_slug(workspace, self.spec_slug)
-                if state is None or not workflow_is_incomplete(state):
-                    return None
-                return state.feature_slug, resume_summary(state)
-            # Spec nova: o slug só existe depois que o agente criou a pasta, então
-            # a run parada é a incompleta mais recente.
-            pending = find_resumable_workflows(workspace)
+            if self.resume_run_id:
+                record = run_store.load_run(self.resume_run_id)
+                pending = [record] if record is not None and record.is_incomplete() else []
+            else:
+                pending = run_store.find_resumable(Path(self._cwd))
         except (OSError, ValueError):
             return None
         if not pending:
             return None
         newest = max(pending, key=lambda item: item.updated_at or item.created_at)
-        return newest.feature_slug, resume_summary(newest)
+        return newest.id, _run_summary(newest)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":
@@ -368,10 +360,7 @@ class CockpitScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def on_nav_selected(self, event: NavSelected) -> None:
-        if event.kind == "task":
-            self.state.select_task(event.index)
-        else:
-            self.state.select_phase(event.index)
+        self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 
@@ -385,3 +374,10 @@ class CockpitScreen(Screen[None]):
         if self.state.running:
             self.bridge.close()
         self.app.pop_screen()
+
+
+def _run_summary(record) -> str:
+    """Onde a run parou, para a tela de escolha."""
+    done = sum(1 for step in record.steps if step.status in {"done", "skipped"})
+    current = record.current_step or (record.steps[0].step_id if record.steps else "—")
+    return f"{current} · steps {done}/{len(record.steps)}"

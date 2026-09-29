@@ -86,8 +86,9 @@ def default_global_agents() -> dict[str, AgentConfig]:
 
 
 def default_global_workflows() -> dict[str, WorkflowConfig]:
-    return {
-        "setup-project": WorkflowConfig(agent="claude", model="opus[1m]"),
-        "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
-        "spec": WorkflowConfig(agent="cursor", model="gpt-5.5"),
-    }
+    """Nenhum. Um workflow só existe se estiver em `workflow_defs`, no banco.
+
+    Esta tabela é override de agent/model por id de workflow; semear um id aqui
+    faria o Pulse afirmar conhecer um pipeline que ele não define.
+    """
+    return {}

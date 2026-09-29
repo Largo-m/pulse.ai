@@ -9,7 +9,6 @@ description = "Orquestrador terminal-first de workflows com agentes de IA"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pyyaml>=6.0",
     "textual>=1.0",
     "fastapi>=0.115",
     "uvicorn>=0.30",
@@ -30,13 +29,6 @@ pulse-mcp-ask = "pulse.mcp.ask_stdio:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["pulse*"]
-
-[tool.setuptools.package-data]
-pulse = [
-    "skills/pulse-spec-driven/**/*",
-    "agents/bundled/**/*",
-    "prompts/templates/**/*",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

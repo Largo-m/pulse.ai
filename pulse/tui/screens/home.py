@@ -10,7 +10,7 @@ from textual.widgets.option_list import Option
 from pulse import __version__
 from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.config import global_config_exists
-from pulse.plan.spec_types import SPEC_TYPES
+from pulse.store.workflow_defs import list_workflows
 from pulse.runtime.ready import is_pulse_ready
 
 
@@ -40,7 +40,7 @@ class HomeScreen(Screen[None]):
             yield OptionList(id="home-options")
             yield Static("Enter seleciona · Q sai", classes="home-hint")
             yield Input(
-                placeholder="Descreva a spec…",
+                placeholder="Descreva a tarefa…",
                 id="workflow-prompt",
                 classes="-hidden",
             )
@@ -60,11 +60,12 @@ class HomeScreen(Screen[None]):
             options.add_option(Option("Sair", id="exit"))
             return
         if ready:
-            for spec in SPEC_TYPES:
-                label = spec.label if not spec.description else f"{spec.label} — {spec.description}"
-                options.add_option(Option(label, id=f"workflow:{spec.id}"))
-                if spec.id == "spec":
-                    options.add_option(Option("Minhas specs", id="history"))
+            for workflow in list_workflows():
+                label = workflow.label
+                if workflow.description:
+                    label = f"{label} — {workflow.description}"
+                options.add_option(Option(label, id=f"workflow:{workflow.id}"))
+            options.add_option(Option("Histórico", id="history"))
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
         options.add_option(Option("Configurações", id="settings"))
@@ -89,15 +90,11 @@ class HomeScreen(Screen[None]):
             self.app.open_history()
             return
         if action.startswith("workflow:"):
-            workflow_id = action.split(":", 1)[1]
-            if workflow_id in {"setup-project", "analyze-codebase"}:
-                self.app.open_cockpit(workflow_id, default_prompt(workflow_id))
-                return
-            self._pending_workflow = workflow_id
+            self._pending_workflow = action.split(":", 1)[1]
             prompt_input = self.query_one("#workflow-prompt", Input)
             prompt_input.display = True
             prompt_input.focus()
-            prompt_input.placeholder = "Descreva a spec…"
+            prompt_input.placeholder = "Descreva a tarefa…"
 
     @on(Input.Submitted, "#workflow-prompt")
     def on_prompt_submitted(self, event: Input.Submitted) -> None:
@@ -115,11 +112,3 @@ class HomeScreen(Screen[None]):
 
     def on_screen_resume(self) -> None:
         self._refresh_options()
-
-
-def default_prompt(workflow_id: str) -> str:
-    if workflow_id == "setup-project":
-        return "Novo projeto"
-    if workflow_id == "analyze-codebase":
-        return "Mapear codebase existente"
-    return ""

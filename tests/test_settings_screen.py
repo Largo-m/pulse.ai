@@ -37,16 +37,12 @@ def test_settings_shows_saved_model_after_select(tmp_path: Path):
             assert "CONFIGURAÇÕES" in str(title.render())
             screen._show_pulse_agents()
             await pilot.pause()
-            prd = next(
-                agent_id
-                for agent_id, _ in [
-                    (opt.id, str(opt.prompt))
-                    for opt in screen.query_one(OptionList)._options
-                    if opt.id and str(opt.id).startswith("workflow:")
-                ]
-                if agent_id.endswith("prd")
+            picked = next(
+                str(opt.id)
+                for opt in screen.query_one(OptionList)._options
+                if opt.id and str(opt.id).startswith("workflow:")
             )
-            screen._workflow_id = prd.split(":", 1)[1]
+            screen._workflow_id = picked.split(":", 1)[1]
             upsert_agent_settings(project.project_id, screen._workflow_id, model="composer-2.5")
             screen._show_workflow_fields()
             await pilot.pause()
@@ -55,7 +51,7 @@ def test_settings_shows_saved_model_after_select(tmp_path: Path):
             screen._show_pulse_agents()
             await pilot.pause()
             labels = [str(opt.prompt) for opt in screen.query_one(OptionList)._options]
-            assert any("composer-2.5" in label and "PRD" in label for label in labels)
+            assert any("composer-2.5" in label for label in labels)
 
     asyncio.run(run())
 
@@ -89,8 +85,8 @@ def test_settings_model_picker_uses_runtime(tmp_path: Path, monkeypatch: pytest.
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, SettingsScreen)
-            upsert_agent_settings(project.project_id, "prd", runtime="claude")
-            screen._workflow_id = "prd"
+            upsert_agent_settings(project.project_id, "default", runtime="claude")
+            screen._workflow_id = "default"
             screen._load_models(for_workflow=True)
             for _ in range(20):
                 await pilot.pause(0.05)

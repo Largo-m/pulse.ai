@@ -7,8 +7,11 @@ import pytest
 
 pytest.importorskip("textual")
 
+from tests.conftest import make_workflow
+
 from pulse.history.catalog import HistoryCatalog
-from pulse.plan.workflow_state import WorkflowState
+from pulse.store import runs as run_store
+from pulse.store.runs import DONE, StepRecord
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus
@@ -17,28 +20,28 @@ from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
 
 
-def _write_issue(workspace: Path) -> None:
-    state = WorkflowState.create_new(feature_slug="login-flow", user_prompt="Adicionar login social")
-    for phase in ("prd", "techspec", "tasks"):
-        state.approve_phase(phase)
-        state.mark_phase_done(phase)
-    state.mark_phase_done("execute")
-    state.save(workspace)
-    (workspace / ".pulse/specs/features/login-flow/PRD.md").write_text("# Spec\n", encoding="utf-8")
-
-
-def _write_fix(workspace: Path) -> None:
-    path = workspace / ".pulse/specs/quick/001-token-refresh/TASK.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "# Quick Task 001: Corrigir refresh token\n\n**Status:** Done\n",
-        encoding="utf-8",
+def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
+    make_workflow("demo", steps=[("plan", "Planejar"), ("build", "Construir")])
+    record = run_store.create_run(
+        run_id=run_id,
+        workflow_id="demo",
+        workspace=workspace,
+        user_prompt=prompt,
+        steps=[
+            StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester"),
+            StepRecord(step_id="build", position=2, label="Construir", agent_id="tester"),
+        ],
     )
+    for step in record.steps:
+        step.status = DONE
+        run_store.save_step(record.id, step)
+    run_store.update_run(record.id, status="completed")
+    return record.id
 
 
 def test_history_list_filters_items(tmp_path: Path):
-    _write_issue(tmp_path)
-    _write_fix(tmp_path)
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+    _finished_run(tmp_path, "run-token", "Corrigir refresh token")
 
     async def run() -> None:
         from textual.app import App
@@ -54,24 +57,20 @@ def test_history_list_filters_items(tmp_path: Path):
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, HistoryListScreen)
-            assert set(screen._items) == {
-                "spec:features/login-flow",
-                "spec:quick/001-token-refresh",
-            }
+            assert set(screen._items) == {"run-login", "run-token"}
 
             screen._query = "token"
             screen._refresh()
             await pilot.pause()
-            assert set(screen._items) == {"spec:quick/001-token-refresh"}
+            assert set(screen._items) == {"run-token"}
 
     asyncio.run(run())
 
 
 def test_history_detail_renders_steps_without_run_log(tmp_path: Path):
-    _write_issue(tmp_path)
-    item = HistoryCatalog(tmp_path).get("spec:features/login-flow")
+    run_id = _finished_run(tmp_path, "run-login", "Adicionar login social")
+    item = HistoryCatalog(tmp_path).get(run_id)
     assert item is not None
-    assert item.run_id is None
 
     async def run() -> None:
         from textual.app import App
@@ -90,10 +89,41 @@ def test_history_detail_renders_steps_without_run_log(tmp_path: Path):
             assert screen.state.phases[0].status == PhaseStatus.DONE
             content = str(screen.query_one("#stream-content").render())
             phases = str(screen.query_one("#phase-content").render())
-            assert "PRD" in phases
+            assert "Planejar" in phases
             assert "Nenhum log persistido" in content
             assert screen.state.acp_session_id == ""
             assert screen.query_one(PhaseSidebar)
             assert screen.query_one(LogStream)
+
+    asyncio.run(run())
+
+
+def test_history_detail_replays_the_log_from_the_database(tmp_path: Path):
+    """Log é do Pulse: uma run feita em qualquer runtime reabre com o stream."""
+    run_id = _finished_run(tmp_path, "run-login", "Adicionar login social")
+    run_store.record_event(
+        run_id,
+        step_id="plan",
+        kind="Assistant",
+        title="Plano pronto",
+        detail="Plano pronto",
+    )
+    item = HistoryCatalog(tmp_path).get(run_id)
+    assert item is not None
+
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryDetailScreen(item, workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            content = str(app.screen.query_one("#stream-content").render())
+            assert "Plano pronto" in content
 
     asyncio.run(run())

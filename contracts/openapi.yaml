@@ -17,10 +17,10 @@ paths:
           description: Check results
   /api/workflows:
     get:
-      summary: List workflows
+      summary: List workflows defined in the database
       responses:
         "200":
-          description: Workflow catalog
+          description: Workflow definitions, each with its ordered steps
   /api/workflows/{workflow_id}/runs:
     post:
       summary: Start a workflow run
@@ -30,9 +30,30 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+                workspace:
+                  type: string
+                  nullable: true
+                resume_run_id:
+                  type: string
+                  nullable: true
+                  description: Resume a previous run instead of creating one
+                restart:
+                  type: boolean
+                  default: false
+                  description: With resume_run_id, redo every step from the first
       responses:
         "200":
           description: Run created
+        "404":
+          description: Unknown workflow id
   /api/runs/{run_id}:
     get:
       summary: Get run status

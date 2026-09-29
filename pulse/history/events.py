@@ -93,7 +93,6 @@ class LogEntry:
     entry_id: int = 0
     tool_id: str = ""
     phase_id: str = ""
-    task_id: str = ""
 
 
 @dataclass
@@ -106,37 +105,23 @@ class ArtifactItem:
     has_content: bool = False
 
 
-WORKFLOW_PHASES: dict[str, tuple[tuple[str, str], ...]] = {
-    "spec": (("classify", "Classificar"),),
-    "new-issue": (
-        ("prd", "PRD"),
-        ("techspec", "Techspec"),
-        ("tasks", "Tasks"),
-        ("execute", "Execute"),
-    ),
-    "fix-bug": (
-        ("plan", "Planejar"),
-        ("implement", "Implementar"),
-    ),
-    "setup-project": (
-        ("phase1", "Análise do projeto"),
-        ("phase2", "Gerando specs"),
-    ),
-    "analyze-codebase": (
-        ("phase1", "Explorando codebase"),
-        ("phase2", "Gerando docs"),
-    ),
-}
+def workflow_steps(workflow_id: str) -> tuple[tuple[str, str], ...]:
+    """Steps de um workflow, para a sidebar montar antes de o ACP subir.
 
-WORKFLOW_LABELS: dict[str, str] = {
-    "spec": "SPEC",
-    "new-issue": "NEW ISSUE",
-    "fix-bug": "QUICK",
-    "setup-project": "SETUP PROJECT",
-    "analyze-codebase": "ANALYZE CODEBASE",
-}
+    Não há mapa hardcoded: a forma do workflow vem do banco, igual à do motor.
+    Workflow desconhecido devolve vazio — a sidebar preenche conforme os steps
+    forem começando.
+    """
+    from pulse.store.workflow_defs import get_workflow
 
-ROUTED_FLOW_WORKFLOWS = {
-    "full": "new-issue",
-    "quick": "fix-bug",
-}
+    definition = get_workflow(workflow_id)
+    if definition is None:
+        return ()
+    return tuple((step.step_id, step.label or step.step_id) for step in definition.steps)
+
+
+def workflow_label(workflow_id: str) -> str:
+    from pulse.store.workflow_defs import get_workflow
+
+    definition = get_workflow(workflow_id)
+    return (definition.label if definition else workflow_id).upper()

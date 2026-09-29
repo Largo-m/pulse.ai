@@ -7,12 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.history.models import HistoryItem, SpecFlow
-from pulse.plan.workflow_state import (
-    find_workflow_by_slug,
-    resume_summary,
-    workflow_is_incomplete,
-)
+from pulse.history.models import HistoryItem
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.resume_choice import RESTART, RESUME, ResumeChoiceScreen
 from pulse.tui.widgets.app_footer import AppFooter
@@ -50,7 +45,7 @@ class HistoryDetailScreen(Screen[None]):
         self.item = item
         self._cwd = str(workspace or Path.cwd())
         self.state = hydrate_history_item(item, Path(self._cwd))
-        self._pending = _pending_workflow(item, Path(self._cwd))
+        self._pending = _pending_run(item)
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -68,20 +63,20 @@ class HistoryDetailScreen(Screen[None]):
     def action_resume_workflow(self) -> None:
         if self._pending is None:
             return
-        slug, summary = self._pending
+        run_id, summary = self._pending
 
         def _chosen(mode: str | None) -> None:
             if mode not in {RESUME, RESTART}:
                 return
             self.app.open_cockpit(
-                "spec",
+                self.item.workflow_id,
                 self.item.prompt,
-                spec_slug=slug,
-                spec_mode=mode,
+                resume_run_id=run_id,
+                restart=mode == RESTART,
             )
 
         self.app.push_screen(
-            ResumeChoiceScreen(slug=slug, summary=summary),
+            ResumeChoiceScreen(slug=self.item.title, summary=summary),
             callback=_chosen,
         )
 
@@ -192,10 +187,7 @@ class HistoryDetailScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def on_nav_selected(self, event: NavSelected) -> None:
-        if event.kind == "task":
-            self.state.select_task(event.index)
-        else:
-            self.state.select_phase(event.index)
+        self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 
@@ -208,20 +200,17 @@ class HistoryDetailScreen(Screen[None]):
         self.app.pop_screen()
 
 
-def _pending_workflow(item: HistoryItem, workspace: Path) -> tuple[str, str] | None:
-    """Slug e resumo do workflow desta spec, quando ainda há o que fazer.
+def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
+    """Id e resumo da run, quando ainda há step por fazer.
 
-    Só o flow completo tem `workflow.yaml` com estado por fase; quick mode não
-    é retomável hoje, então não oferecemos a escolha lá.
+    Qualquer workflow é retomável: a sessão ACP é isolada por step, então
+    retomar é rodar o primeiro step que não terminou.
     """
-    if item.flow != SpecFlow.FULL:
+    if not item.is_incomplete:
         return None
-    state = find_workflow_by_slug(workspace, item.slug)
-    if state is None:
-        return None
-    tasks_path = workspace / state.feature_dir / "tasks.md"
-    if tasks_path.is_file():
-        state.sync_tasks_from_markdown(tasks_path)
-    if not workflow_is_incomplete(state):
-        return None
-    return state.feature_slug, resume_summary(state)
+    done = sum(1 for step in item.steps if step.status in {"done", "skipped"})
+    current = next(
+        (step.label for step in item.steps if step.status not in {"done", "skipped"}),
+        "—",
+    )
+    return item.run_id, f"{current} · steps {done}/{len(item.steps)}"

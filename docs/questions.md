@@ -1,6 +1,6 @@
 # Questions
 
-O Pulse **não deixa o agente perguntar em arquivo**. A skill proíbe `.pulse/skills/.../questions` e qualquer rascunho de pergunta. O único canal é o terminal / TUI.
+O Pulse **não lê pergunta em arquivo**. O único canal é o terminal / TUI.
 
 Há **dois jeitos** de o agente perguntar, mais um irmão (permissão). Os três caem no mesmo `PromptHandler`.
 
@@ -25,19 +25,21 @@ Pulse classifica o outcome (aprovar / ajustar / cancelar / …)
 
 ## 1. Questionário de texto (o fluxo principal)
 
-A skill `user-input.md` manda o agente **terminar** a resposta com um bloco:
+Um step com `requires_approval` espera que o agente **termine** a resposta com um
+bloco assim. Quem pede isso é o `prompt_template` do step — o Pulse não instrui o
+agente, só sabe ler o resultado:
 
 ````text
 ```text
 Preciso de algumas informações antes de continuar.
-1. Aprovar PRD (.pulse/specs/features/x/PRD.md) e avançar?
+1. Aprovar o plano (docs/PLANO.md) e avançar?
 A) Sim, aprovar e continuar
 B) Não, preciso de ajustes (descreva)
 C) Cancelar workflow
 ```
 ````
 
-Regras que o parser exige (`pulse/presentation/prompt/text_questionnaire.py`):
+Regras que o parser exige (`pulse/prompts/text_questionnaire.py`):
 
 - header `Preciso de algumas informações…` ou `I need some information…`
 - pergunta `N. texto`
@@ -125,65 +127,51 @@ Tipos do dock: `select`, `multi_select`, `text`, `confirm`.
 
 ## 5. O que o Pulse faz com a resposta
 
-### Fases de planejamento (`new-issue`)
+### Steps com aprovação
 
-Até **4 turns** (`MAX_PHASE_APPROVAL_TURNS`). Depois de cada turn, classifica a primeira linha `→ …`:
+Até **12 turns** (`MAX_PHASE_APPROVAL_TURNS`). Depois de cada turn, o Pulse
+classifica as linhas `→ …` (`pulse/prompts/approval.py`):
 
 | Outcome | Gatilho (texto) | Efeito |
 | --- | --- | --- |
-| `approve` | “aprov”, “sim”, `A)` | fase aprovada, segue |
-| `cancel` | “cancelar” | para o workflow |
-| `skip` | “pular” + “fase” | pula a fase |
-| `adjust` | “ajuste” | novo prompt de continuação, sem avançar |
-| `continue` | resto | novo prompt, tenta de novo |
+| `approve` | “aprov” numa opção escolhida | step vira `done`, segue |
+| `cancel` | “cancelar” | step não fechou; cai no menu de retry |
+| `skip` | “pular” | step vira `skipped` — não é falha |
+| `adjust` | “ajuste” | prompt de continuação, sem avançar |
+| `continue` | resto | prompt de continuação, tenta de novo |
 
-Sem bloco de aprovação (`""`): o loop **para sem aprovar**. Se o agente esquecer o ` ```text `, a fase não avança.
+Texto livre (“Outro — …”) **nunca** aprova: é orientação, não escolha. Sem bloco
+de aprovação, o laço para sem aprovar e o step cai no menu de retry.
 
-### Quick (`fix-bug`)
+Esse é o **único** conteúdo da resposta do agente que o Pulse interpreta.
 
-Até **4 turns** no plano (`MAX_QUICK_PLAN_TURNS`):
+### Steps sem aprovação
 
-| Outcome | Efeito |
-| --- | --- |
-| `approve` | entra na implementação |
-| `cancel` | para |
-| `migrate` | não implementa; usuário vai para pipeline completo |
-| `reduce_scope` / `adjust` / `continue` | novo prompt de plano |
-
-Sem aprovação, **nenhum código de aplicação** é alterado.
-
-### Setup / analyze
-
-Depois da fase 1, se houver questionário, as respostas entram no prompt da fase 2 (gerar specs). Se não houver bloco, a fase 2 roda mesmo assim (contexto inferido).
-
-### Execute / implement
-
-`run_isolated_prompt` **não** espera questionário de aprovação. Perguntas no meio do turn ainda funcionam via `ask_question` / MCP.
+`run_isolated_prompt` não espera questionário: basta o agente fechar o turno
+(`stopReason`). Perguntas no meio do turn continuam funcionando via
+`ask_question` / MCP.
 
 ## 6. Irmãos: permissão e plano
 
-Não são “questions” da skill, mas usam o mesmo handler:
+Não são questionário, mas usam o mesmo handler:
 
 - `session/request_permission` / `cursor/request_permission` — política `ask` / `auto_approve` / `deny_writes`
 - `cursor/create_plan` — confirm “Aprovar plano?”
 
-`deny_writes` recusa write/edit automaticamente. Shell sem capability de terminal é recusado.
+`deny_writes` recusa write/edit **sem exceção por caminho**: o Pulse não sabe
+qual pasta é “dele”. Step que precisa escrever é step com `ask` ou
+`auto_approve`. Shell sem capability de terminal é recusado.
 
-## 7. O que **não** existe mais
+## 7. O que **não** é persistido
 
-No start de todo workflow o Pulse apaga:
-
-- `.pulse/skills/<skill>/questions/`
-- `.pulse/handoff/<skill>.md`
-
-Pergunta não é persistida. Só o que sobra é o log do cockpit (`Question` / `Answer`) se a TUI estiver aberta — ver [logs.md](logs.md).
+Pergunta não vira arquivo em lugar nenhum. Só o que sobra é o log do cockpit (`Question` / `Answer`) se a TUI estiver aberta — ver [logs.md](logs.md).
 
 ## Design da escolha
 
-**O que:** terminal como único I/O; bloco ` ```text ` como contrato com o agente; MCP/`ask_question` como atalho no meio do turn.
+**O que:** terminal como único I/O; bloco ` ```text ` como contrato mínimo com o agente; MCP/`ask_question` como atalho no meio do turn.
 
 **Por quê:** o agente ACP não tem TUI. O Pulse precisa **parar o processo** e perguntar no mesmo terminal em que o usuário rodou `pulse`. O bloco de texto é parseável sem tool. O MCP cobre o caso em que o modelo prefere chamar `AskQuestion`.
 
 **Alternativas:** arquivos de pergunta no disco, UI web, sempre tool e nunca texto.
 
-**Trade-off:** se o modelo quebrar o formato (`A) B) C)` na mesma linha), o parser ignora o bloco e a fase de planejamento **não aprova**. Por isso a skill é rígida no layout.
+**Trade-off:** se o modelo quebrar o formato (`A) B) C)` na mesma linha), o parser ignora o bloco e o step **não aprova** — cai no menu de retry. Por isso o `prompt_template` de um step com aprovação precisa ser rígido no layout que pede.

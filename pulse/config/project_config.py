@@ -10,11 +10,10 @@ from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
 
-DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {
-    "spec": WorkflowConfig(agent="cursor", model="Auto"),
-    "setup-project": WorkflowConfig(agent="claude", model="opus[1m]"),
-    "analyze-codebase": WorkflowConfig(agent="cursor", model="gpt-5.5"),
-}
+#: `project_workflows` só guarda override de agent/model por workflow. Não há
+#: default aqui de propósito: o Pulse não conhece nenhum workflow por código —
+#: eles vêm de `workflow_defs`, no banco.
+DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {}
 
 
 @dataclass(frozen=True)
@@ -138,11 +137,9 @@ def render_project_config() -> str:
 
 
 def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
-    from pulse.agents.loader import install_global_agents
     resolved = root.resolve()
     existing = _load_project(resolved, db_path=db_path)
     if existing is not None:
-        install_global_agents()
         return resolved
     project_id = str(uuid.uuid4())
     connection = connect(_db(db_path))
@@ -167,10 +164,11 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
                 """,
                 (project_id, workflow_id, defaults.agent, defaults.model),
             )
-            connection.commit()
+        # Fora do laço: com `DEFAULT_PROJECT_WORKFLOWS` vazio, um commit lá dentro
+        # nunca roda e o projeto inteiro é descartado no `close()`.
+        connection.commit()
     finally:
         connection.close()
-    install_global_agents()
     return resolved
 
 

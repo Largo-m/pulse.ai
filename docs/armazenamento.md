@@ -1,116 +1,96 @@
 # Armazenamento do Pulse
 
-Config operacional vive em SQLite. Specs continuam Markdown no workspace. O Pulse não grava log ACP em arquivo.
+Tudo do Pulse vive em SQLite. O **único** conteúdo em arquivo é o que o agente
+escreve no workspace — e desse o Pulse guarda só o caminho.
 
 ```
-~/.pulse/pulse.db                 config da máquina, projetos e ponteiros de sessão
-~/.pulse/agents/                  prompts dos agents do Pulse (uma cópia na máquina)
-<workspace>/.pulse/specs/         artefatos Markdown
+~/.pulse/pulse.db                 config, definições de workflow e estado das runs
+<workspace>/…                     arquivos que o agente escreveu (onde ele quiser)
 ~/.cursor/                        SQLite do Cursor (Pulse só lê, ao vivo)
 ```
 
-Resolução de config: `defaults do código` → tabela `machine` → tabelas `project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.
+Resolução de config: `defaults do código` → tabela `machine` → tabelas
+`project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.
 
 ## Quem escreve o quê
 
-| Dado | Caminho | Formato | Quem escreve | Quem lê |
+| Dado | Onde | Formato | Quem escreve | Quem lê |
 | --- | --- | --- | --- | --- |
-| Config global | `~/.pulse/pulse.db` (`machine*`) | SQLite | Pulse (`pulse init`, settings) | Pulse |
-| Config do projeto | `~/.pulse/pulse.db` (`projects`, `project_*`) | SQLite | Pulse (`pulse init`, `pulse config`) | Pulse |
-| Estado de feature | `.pulse/specs/features/<slug>/workflow.yaml` | YAML | Pulse (orquestra) e o agente (quando o prompt pede) | Pulse |
-| Specs / artefatos | `.pulse/specs/**/*.md` | Markdown | Agente ACP | Pulse (TUI, histórico) e o próximo prompt |
-| Agents do Pulse | `~/.pulse/agents/<id>/AGENT.md` | Markdown | Pulse (cópia no init) e o usuário | Pulse (`load_agent`) |
-| Ponteiro de sessão | `~/.pulse/pulse.db` (`agent_sessions`) | SQLite | Pulse (`persist_runtime_session`) | diagnóstico |
+| Config global | `pulse.db` (`machine*`) | SQLite | Pulse (`pulse init`, settings) | Pulse |
+| Config do projeto | `pulse.db` (`projects`, `project_*`) | SQLite | Pulse (`pulse init`, `pulse config`) | Pulse |
+| Definição de workflow | `pulse.db` (`workflow_defs`, `workflow_steps`) | SQLite | semente do banco / API | motor e TUI |
+| Definição de agente | `pulse.db` (`agent_defs`) | SQLite | semente do banco / API | motor e TUI |
+| Estado da run | `pulse.db` (`runs`, `run_steps`) | SQLite | Pulse (dono único) | retomada e histórico |
+| Log da run | `pulse.db` (`run_events`) | SQLite | Pulse | cockpit e histórico |
+| Artefatos | caminho em `run_artifacts`; conteúdo no workspace | — / livre | Pulse grava o caminho; o **agente** grava o arquivo | painel de artefatos |
+| Ponteiro de sessão | `pulse.db` (`agent_sessions`) | SQLite | Pulse | diagnóstico |
 | Log da sessão ACP | `~/.cursor/**/store.db` | SQLite | Cursor | Pulse (só leitura) |
 
 ## 1. Config da máquina — `~/.pulse/pulse.db`
 
 Tabelas `machine`, `machine_agents`, `machine_workflows`.
 
-Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace, permission_policy), onboarding, lista de runtimes e overrides por workflow.
+Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace,
+permission_policy), onboarding, lista de runtimes e overrides por workflow.
 
-Escrita em:
+Escrita em `pulse init` (`mark_onboarding_complete`) e no menu de configurações
+(`update_global_defaults`, `update_global_agent`, `update_global_workflow`).
 
-- `pulse init` / `pulse init --force` → `mark_onboarding_complete`
-- menu de configurações → `update_global_defaults`, `update_global_agent`, `update_global_workflow`
-
-Não há mais `config.toml`. Override de testes: variável `PULSE_DB`.
-
-O log da sessão fica no Cursor: ver [logs.md](logs.md).
+Não há `config.toml`. Override de testes: variável `PULSE_DB`.
 
 ## 2. Config do projeto — mesmo SQLite, `project_id`
 
-Descoberta: sobe a partir do CWD até achar um `root_path` cadastrado em `projects`.
+Descoberta: sobe a partir do CWD até achar um `root_path` cadastrado em
+`projects`.
 
-Campos em `project_settings` / `project_workflows` / `project_agents`: agent, model, permission_policy, workspace, workflows.
+Campos em `project_settings` / `project_agents` / `agent_settings`: agent, model,
+permission_policy, workspace.
 
-Criado por `pulse init` (se ainda não existir) e `pulse config init`. Atualizado pelo menu de settings do projeto.
+`machine_workflows` e `project_workflows` são **override de agent/model por id de
+workflow**, e nascem vazios — eles não definem pipeline.
 
-A config efetiva por workflow é: `projeto.workflows[id]` → `global.workflows[id]` → `projeto.defaults` → `global.defaults` → defaults do código (`pulse/config/resolved.py`).
+## 3. Definições — `workflow_defs`, `workflow_steps`, `agent_defs`
 
-## 3. Specs — `.pulse/specs/`
+A configuração de fábrica é semeada no `SCHEMA` do banco
+([`pulse/store/db.py`](../pulse/store/db.py)), com `INSERT OR IGNORE`: um
+workflow `default` de um step e um agente `default` sem runtime fixo. É de
+propósito que isso não seja arquivo — o pacote não carrega nenhum `.md`/`.yaml`
+de domínio.
 
-Árvore esperada pela skill `pulse-spec-driven`:
+Detalhe do modelo: [workflows.md](workflows.md).
 
-```
-.pulse/specs/
-├── project/          PROJECT.md, ROADMAP.md, STATE.md
-├── codebase/         STACK, ARCHITECTURE, CONVENTIONS, STRUCTURE, TESTING, INTEGRATIONS, CONCERNS
-├── features/<slug>/  PRD.md, context.md, TECHSPEC.md, tasks.md, workflow.yaml
-├── quick/NNN-slug/   TASK.md, SUMMARY.md
-├── .route.yaml       última classificação de Nova spec (full | quick)
-└── HANDOFF.md        checkpoint de sessão (escrito pelo agente)
-```
+## 4. Estado das runs — `runs`, `run_steps`, `run_events`, `run_artifacts`
 
-O Pulse **não gera** os Markdowns. O agente os cria porque o prompt aponta os arquivos. O Pulse só:
+Chaveado por `run_id` e por `workspace_root`, **não** por `project_id`:
+registrar o projeto só para satisfazer uma FK marcaria o workspace como
+inicializado e faria o onboarding parar de rodar.
 
-- classifica Nova spec lendo `.pulse/specs/.route.yaml`
-- cria e atualiza `workflow.yaml` no `new-issue` (`WorkflowState.save`)
-- lista specs em `.pulse/specs/features/*/workflow.yaml` e `.pulse/specs/quick/*/TASK.md`
-- mostra `.md` da pasta da spec no painel de artefatos
+`run_steps` copia `label` e `position` da definição no início da run: editar o
+workflow depois não reescreve o que já aconteceu.
 
-`STATE.md` é a memória persistente do projeto (decisões, blockers, quick tasks). Não é um banco: é um Markdown que o agente mantém.
+`run_events` existe porque ler o log do runtime não serve — só o Cursor tem um, e
+o Pulse é agnóstico ao agente.
 
-## 4. Agents — `~/.pulse/agents/`
+## 5. Artefatos
 
-O init copia cada `AGENT.md` empacotado para `~/.pulse/agents/<id>/AGENT.md` se o arquivo ainda não existir. A cópia vale para todos os projetos desta máquina. O Pulse não lê `<projeto>/.pulse/agents/`, `.cursor/agents/`, `.claude/agents/` nem `.codex/agents/`.
-
-Quem ganha o prompt:
-
-1. bundled do pacote, se a cópia da máquina não existir
-2. `~/.pulse/agents/<id>/AGENT.md` (ou `<id>.md`)
-
-Um agent extra, fora do catálogo, só entra se estiver em `~/.pulse/agents/`.
-
-## 5. Histórico
-
-Não há catálogo de runs nem pasta `.pulse/runs`. O cockpit não grava `meta.yaml`. A lista de histórico lê specs em `.pulse/specs/` (`workflow.yaml` e `TASK.md`). Cada fase ACP grava só o id da sessão em `spec_sessions` (`~/.pulse/pulse.db`). Abrir o histórico relê mensagens e tools dessa sessão no `store.db` do Cursor.
+O Pulse **não gera** arquivo nenhum. O agente escreve onde o prompt do step
+mandar, e o Pulse descobre pelos tool-calls do ACP (`write`/`edit`/`create`),
+gravando o caminho em `run_artifacts`. Não há convenção de pasta, de nome nem de
+extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
 
 ## 6. Store do Cursor (externo)
 
-O Pulse **não escreve** em `~/.cursor/`. `CursorStoreIndex` abre em modo leitura:
-
-- `~/.cursor/acp-sessions/<sessionId>/store.db`
-- ou `~/.cursor/chats/<hash>/<sessionId>/store.db`
-
-Usa a tabela `blobs` para recuperar `args` de `tool-call` no cockpit ao vivo.
+O Pulse **não escreve** em `~/.cursor/`. `CursorStoreIndex` abre em modo leitura
+`~/.cursor/acp-sessions/<sessionId>/store.db` (ou `~/.cursor/chats/…`) e usa a
+tabela `blobs` para recuperar `args` de `tool-call` no cockpit ao vivo. É um
+enriquecimento do stream vivo, não fonte de histórico.
 
 ## 7. Só memória (não persiste)
 
-- `CockpitState` (fases, tasks, entries, artefatos selecionados)
+- `CockpitState` (steps, entries, artefatos selecionados)
 - sessão ACP (`sessionId`, processo do agent)
 - `ResolvedConfig` (merge em runtime)
-- questionários e permissões no terminal
+- questionários e permissões
 
-Se o cockpit fechar no meio, o stream da sessão se perde. `workflow.yaml` e os `.md` no disco é que permitem retomar um `new-issue`.
-
-## 8. Legado e leftovers
-
-O código **apaga** no start de workflow:
-
-- `.pulse/skills/<skill>/questions/`
-- `.pulse/handoff/<skill>.md`
-
-O `.gitignore` ainda cita `.pulse/worktrees/` e `.pulse/artifacts/*/acp-events.jsonl`. **Nenhum código Python atual escreve nesses caminhos.**
-
-Skills empacotadas (`pulse/skills/pulse-spec-driven/`) são arquivos do pacote, não armazenamento de workspace. Ver [workflows-e-skills.md](workflows-e-skills.md).
+Se o cockpit fechar no meio, o stream se perde. `runs` / `run_steps` são o que
+permitem retomar.
