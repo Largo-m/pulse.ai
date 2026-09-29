@@ -174,3 +174,245 @@ def test_cockpit_layout_keeps_header_and_body_sizes():
             assert "0/4" in str(app.query_one("#run-status").render())
 
     asyncio.run(run())
+
+
+def _home_option_ids(screen) -> list[str]:
+    from textual.widgets import OptionList
+
+    options = screen.query_one("#home-options", OptionList)
+    return [str(options.get_option_at_index(index).id) for index in range(options.option_count)]
+
+
+def _highlighted(option_id: str):
+    return _selected(option_id)
+
+
+def _selected(option_id: str):
+    """`on_option_selected` só lê `option_id`; montar o evento real pede o widget."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(option_id=option_id)
+
+
+def test_home_hides_the_loops_behind_nova_sessao(monkeypatch):
+    """A raiz não cresce com o banco: os loops moram um nível abaixo."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+            def open_cockpit(self, workflow_id: str, prompt: str) -> None:
+                opened.append((workflow_id, prompt))
+
+        opened: list[tuple[str, str]] = []
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            root = _home_option_ids(screen)
+            assert root == ["session", "history", "settings", "exit"]
+
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+            loops = _home_option_ids(screen)
+            assert "workflow:new-issue" in loops
+            assert "workflow:quick-fix" in loops
+            assert loops[-1] == "back"
+            # O genérico não entra: "Nova sessão" é lista de pipeline.
+            assert "workflow:default" not in loops
+
+            screen.action_back()
+            await pilot.pause()
+            assert _home_option_ids(screen) == root
+
+    asyncio.run(run())
+
+
+def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Input, Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+            def open_cockpit(self, workflow_id: str, prompt: str) -> None:
+                opened.append((workflow_id, prompt))
+
+        opened: list[tuple[str, str]] = []
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+            screen.on_option_selected(_selected("workflow:new-issue"))
+            await pilot.pause()
+
+            prompt_input = screen.query_one("#workflow-prompt", Input)
+            assert prompt_input.display is True
+
+            prompt_input.value = "exportar relatório em csv"
+            screen.on_prompt_submitted(Input.Submitted(prompt_input, prompt_input.value))
+            await pilot.pause()
+
+            assert opened == [("new-issue", "exportar relatório em csv")]
+
+    asyncio.run(run())
+
+
+def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
+    """Esc é um passo de cada vez: fecha o input, depois volta à raiz."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Input, Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            screen.on_option_selected(_selected("workflow:new-issue"))
+            await pilot.pause()
+
+            screen.action_back()
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+            assert "workflow:new-issue" in _home_option_ids(screen)
+
+            screen.action_back()
+            await pilot.pause()
+            assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
+
+    asyncio.run(run())
+
+
+def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatch):
+    """Descrição curta no item; a cadeia de steps, que é longa, na dica."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import OptionList, Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+
+            options = screen.query_one("#home-options", OptionList)
+            labels = [
+                str(options.get_option_at_index(index).prompt)
+                for index in range(options.option_count)
+            ]
+            assert "Nova spec · pipeline completo" in labels
+            # A cadeia de steps é o que não cabe no item: ela vive na dica.
+            assert not any("→" in label for label in labels)
+
+            hint = screen.query_one(".home-hint", Static)
+            screen.on_option_highlighted(_highlighted("workflow:new-issue"))
+            await pilot.pause()
+            assert "PRD → Techspec → Tasks → Implementar" in str(hint.render())
+
+            # "← Voltar" não tem descrição, mas a dica continua com duas linhas:
+            # alternar a altura faria a lista pular a cada item destacado.
+            screen.on_option_highlighted(_highlighted("back"))
+            await pilot.pause()
+            assert str(hint.render()).count("\n") == 1
+
+    asyncio.run(run())
+
+
+def test_the_sidebar_nests_the_fan_out_items_under_the_step_name():
+    """O nome do step de fan-out fica; as tasks vêm indentadas embaixo."""
+    from pulse.tui.state import CockpitState
+
+    make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+    state.apply_phase_statuses(
+        steps=[
+            {"id": "plan", "label": "Planejar"},
+            {"id": "run:T1", "label": "Criar o endpoint"},
+            {"id": "run:T2", "label": "Montar o CSV"},
+        ],
+        done_ids=["plan", "run:T1"],
+    )
+
+    sidebar = PhaseSidebar(state)
+    lines = str(sidebar._render_phases(state)).splitlines()
+
+    assert any(line.strip().endswith("Implementar") for line in lines)
+    assert any("T1 · Criar o endpoint" in line for line in lines)
+    assert any("T2 · Montar o CSV" in line for line in lines)
+    # O cabeçalho conta o progresso do grupo em vez de cronômetro.
+    assert any("1/2" in line for line in lines)
+    # As tasks recuam em relação ao step que as gerou.
+    header = next(line for line in lines if line.endswith("Implementar"))
+    task = next(line for line in lines if "Criar o endpoint" in line)
+    assert _indent(task) > _indent(header)
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def test_new_session_lists_pipelines_and_hides_the_generic_loop():
+    """`is_default` marca o loop genérico — e é o que o menu deixa de fora."""
+    from pulse.store.workflow_defs import list_workflows
+    from pulse.tui.screens.home import _session_workflows
+
+    listed = [item.id for item in _session_workflows()]
+    everything = {item.id for item in list_workflows()}
+
+    assert "default" in everything, "o loop genérico continua no banco"
+    assert "default" not in listed
+    assert {"new-issue", "quick-fix"} <= set(listed)
+
+    labels = [item.label for item in _session_workflows()]
+    assert labels == sorted(labels), "o menu é alfabético"

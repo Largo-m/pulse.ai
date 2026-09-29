@@ -127,3 +127,100 @@ def test_history_detail_replays_the_log_from_the_database(tmp_path: Path):
             assert "Plano pronto" in content
 
     asyncio.run(run())
+
+
+def test_deleting_a_run_asks_first_and_then_removes_it(tmp_path: Path):
+    """`d` abre a confirmação; confirmar tira a run da lista e do banco."""
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+    _finished_run(tmp_path, "run-token", "Corrigir refresh token")
+
+    async def run() -> None:
+        from textual.app import App
+        from textual.widgets import OptionList
+
+        from pulse.tui.screens.confirm import ConfirmScreen
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+            options = screen.query_one("#history-options", OptionList)
+            options.focus()
+            options.highlighted = 0
+            await pilot.pause()
+            doomed = screen._highlighted()
+            assert doomed is not None
+
+            await pilot.press("d")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmScreen), "remover pergunta antes"
+            # Cancelar vem primeiro: um Enter distraído não apaga nada.
+            await pilot.press("enter")
+            await pilot.pause()
+            assert doomed.item_id in screen._items, "cancelar não removeu"
+
+            await pilot.press("d")
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
+
+            assert doomed.item_id not in screen._items
+            assert run_store.load_run(doomed.item_id) is None
+            assert len(screen._items) == 1
+
+    asyncio.run(run())
+
+
+def test_delete_is_offered_only_when_there_is_a_run_under_the_cursor(tmp_path: Path):
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+            assert screen._highlighted() is None
+            assert screen.check_action("delete_run", ()) is False
+
+    asyncio.run(run())
+
+
+def test_the_history_only_removes_runs_from_its_own_workspace(tmp_path: Path):
+    """A mesma regra do `get`: o histórico só mexe no que ele mostra."""
+    other = tmp_path / "outro"
+    other.mkdir()
+    run_id = _finished_run(other, "run-de-fora", "Mexer em outro repo")
+
+    assert HistoryCatalog(tmp_path).delete(run_id) is False
+    assert run_store.load_run(run_id) is not None
+    assert HistoryCatalog(other).delete(run_id) is True
+    assert run_store.load_run(run_id) is None
+
+
+def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
+    """Run travada como `executando` precisa poder sair — mas avisada."""
+    from pulse.tui.screens.history import _delete_warning
+
+    _finished_run(tmp_path, "run-viva", "Rodando agora")
+    run_store.update_run("run-viva", status="running")
+    item = HistoryCatalog(tmp_path).get("run-viva")
+    assert item is not None
+
+    warning = _delete_warning(item)
+
+    assert "em andamento" in warning
+    assert "Os arquivos no workspace ficam." in warning

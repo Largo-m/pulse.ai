@@ -44,6 +44,16 @@ class HistoryCatalog:
             return None
         return _item(record)
 
+    def delete(self, item_id: str) -> bool:
+        """Remove a run do histórico. `False` = não é deste workspace.
+
+        A checagem de workspace é a mesma do `get`: o histórico só mostra as
+        runs daqui, então só essas ele pode apagar.
+        """
+        if self.get(item_id) is None:
+            return False
+        return run_store.delete_run(item_id)
+
 
 def search_history(workspace: Path, query: str = "") -> list[HistoryItem]:
     return HistoryCatalog(workspace).search(query)

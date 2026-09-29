@@ -30,6 +30,41 @@ MAX_PHASE_APPROVAL_TURNS = 12
 #: por conta própria antes de considerar cancelado mesmo assim.
 CANCEL_GRACE_SECONDS = 10.0
 
+#: `session/prompt` é o único pedido sem prazo previsível: implementar uma task
+#: leva o tempo que levar. Para ele o relógio é de *silêncio* — ver `_request`.
+_IDLE_CLOCK_METHODS = frozenset({"session/prompt"})
+
+
+class _WatchedPrompts:
+    """Proxy do prompt port que avisa quando há uma pergunta na tela.
+
+    Enquanto o usuário decide, o agente fica calado — e silêncio é justamente o
+    que o relógio de `session/prompt` mede. Sem isto, uma aprovação que demorou
+    mais que o timeout derrubava o step por "timeout", culpando o agente por
+    uma espera que era nossa.
+    """
+
+    def __init__(self, inner: Any, *, on_enter, on_exit) -> None:
+        self._inner = inner
+        self._on_enter = on_enter
+        self._on_exit = on_exit
+
+    def __getattr__(self, name: str) -> Any:
+        # AttributeError vaza de propósito: quem pergunta por `select_choice`
+        # num port que não tem precisa continuar ouvindo "não tem".
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def watched(*args: Any, **kwargs: Any) -> Any:
+            self._on_enter()
+            try:
+                return attr(*args, **kwargs)
+            finally:
+                self._on_exit()
+
+        return watched
+
 
 class AcpSessionRunner:
     def __init__(
@@ -54,7 +89,11 @@ class AcpSessionRunner:
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
         self._stream = stream or NullStreamSink()
-        self._prompt_handler = prompt_handler or NullPromptPort()
+        self._prompt_handler = _WatchedPrompts(
+            prompt_handler or NullPromptPort(),
+            on_enter=self._begin_user_wait,
+            on_exit=self._end_user_wait,
+        )
         self._enable_mcp_ask = enable_mcp_ask
         self._pulse_agent = pulse_agent
         self._ask_bridge: AskQuestionHttpServer | None = None
@@ -74,6 +113,17 @@ class AcpSessionRunner:
         self._auth_methods: list[str] = []
         self.ask_question_count = 0
         self._logger = AcpLogger(self._run_id)
+        #: Última vez que o agente deu sinal de vida, para o relógio de silêncio.
+        self._activity = time.monotonic()
+        #: Perguntas abertas na tela. Enquanto houver, o silêncio é nosso.
+        self._user_waits = 0
+
+    def _begin_user_wait(self) -> None:
+        self._user_waits += 1
+
+    def _end_user_wait(self) -> None:
+        self._user_waits = max(0, self._user_waits - 1)
+        self._activity = time.monotonic()
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self._logger.log_event("run_prompt_start", {"cwd": self._cwd})
@@ -256,6 +306,25 @@ class AcpSessionRunner:
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
 
+    def ensure_process(self) -> bool:
+        """Reergue o processo do agente se ele não está mais de pé.
+
+        Devolve `True` quando precisou reiniciar. Existe para o retry de um step
+        que caiu junto com a sessão: sem isto, "Refazer" só repetiria a queda.
+        """
+        if self._process is not None and self._process.poll() is None:
+            return False
+        self._logger.log_event("process_revive")
+        self.close()
+        self._responses.clear()
+        while not self._response_queue.empty():
+            self._response_queue.get_nowait()
+        self._session_id = None
+        self.start()
+        self.initialize()
+        self.authenticate()
+        return True
+
     def close(self) -> None:
         self._logger.log_event("process_close")
         if self._ask_bridge is not None:
@@ -288,6 +357,9 @@ class AcpSessionRunner:
             except json.JSONDecodeError:
                 continue
 
+            # Qualquer linha serve como sinal de vida: é o que segura o relógio
+            # de silêncio de um `session/prompt` longo.
+            self._activity = time.monotonic()
             self._logger.log_received(message)
 
             if message.get("method") and message.get("id") is not None:
@@ -370,16 +442,36 @@ class AcpSessionRunner:
             }
         )
 
-        deadline = time.monotonic() + self._timeout_seconds
+        # Para `session/prompt` o prazo conta do último sinal de vida, não do
+        # envio: um step que trabalha por meia hora, falando o tempo todo, não é
+        # um step travado. Para o resto do protocolo, que é pergunta e resposta
+        # imediata, o prazo continua sendo o total.
+        idle_clock = method in _IDLE_CLOCK_METHODS
+        self._activity = time.monotonic()
+        deadline = self._activity + self._timeout_seconds
         cancelling = False
-        while time.monotonic() < deadline:
+        while True:
+            if self._user_waits:
+                # A pergunta está na tela: o relógio espera o usuário.
+                self._activity = time.monotonic()
+            if not cancelling and idle_clock:
+                deadline = self._activity + self._timeout_seconds
+            if time.monotonic() >= deadline:
+                break
+
             # Pausar/parar corta o turno em voo. Só vale para `session/prompt`:
             # o resto do protocolo é rápido e cancelar no meio deixaria a
             # sessão num estado que o agente não sabe descrever.
             if not cancelling and method == "session/prompt" and self._control.interrupted:
                 self._cancel_active_session()
                 cancelling = True
-                deadline = min(deadline, time.monotonic() + CANCEL_GRACE_SECONDS)
+                deadline = time.monotonic() + CANCEL_GRACE_SECONDS
+
+            if self._process is not None and self._process.poll() is not None:
+                # Sem processo não há resposta para esperar — nem os 10 minutos
+                # de timeout que `session/close` gastaria à toa no caminho.
+                self._logger.log_event("process_gone", {"method": method})
+                raise RuntimeError(f"o processo do agente encerrou durante `{method}`")
 
             remaining = deadline - time.monotonic()
             try:
@@ -404,7 +496,9 @@ class AcpSessionRunner:
             # em seguida (`close_session`), então seguir como cancelado é seguro.
             self._logger.log_event("prompt_cancel_timeout", {"method": method})
             return {"stopReason": "cancelled"}
-        raise TimeoutError(f"Timeout aguardando resposta de `{method}`")
+        raise TimeoutError(
+            f"o agente ficou {int(self._timeout_seconds)}s sem dar sinal em `{method}`"
+        )
 
     def _cancel_active_session(self) -> None:
         """Pede ao agente para abortar o turno da sessão ativa."""

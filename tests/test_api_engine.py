@@ -22,9 +22,17 @@ def test_status_and_workflows():
     assert status.json()["protocol"] >= 2
     workflows = client.get("/api/workflows")
     assert workflows.status_code == 200
-    ids = {item["id"] for item in workflows.json()["workflows"]}
+    listed = workflows.json()["workflows"]
+    ids = {item["id"] for item in listed}
     # Só o que está no banco: o Pulse não tem catálogo em código.
-    assert ids == {"default"}
+    assert ids >= {"default", "new-issue", "quick-fix"}
+    pipeline = next(item for item in listed if item["id"] == "new-issue")
+    assert [step["agent"] for step in pipeline["steps"]] == [
+        "prd",
+        "techspec",
+        "tasks",
+        "implement",
+    ]
 
 
 def test_doctor_endpoint():
@@ -206,3 +214,24 @@ def test_control_endpoints_404_for_unknown_run():
     client = TestClient(create_app(RunManager()))
     for action in ("pause", "resume", "cancel"):
         assert client.post(f"/api/runs/nao-existe/{action}").status_code == 404
+
+
+def test_history_delete_endpoint(tmp_path: Path):
+    from pulse.store import runs as run_store
+    from pulse.store.runs import StepRecord
+
+    run_store.create_run(
+        run_id="run-api",
+        workflow_id="default",
+        workspace=tmp_path,
+        user_prompt="algo",
+        steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
+    )
+    client = TestClient(create_app(RunManager()))
+
+    removed = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
+    assert removed.status_code == 200
+    assert run_store.load_run("run-api") is None
+
+    again = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
+    assert again.status_code == 404

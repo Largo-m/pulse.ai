@@ -564,4 +564,47 @@ ResumeChoiceScreen .resume-hint {{
     width: 100%;
     margin-top: 1;
 }}
+
+ConfirmScreen {{
+    align: center middle;
+}}
+
+ConfirmScreen #confirm-box {{
+    width: 62;
+    height: auto;
+    padding: 1 2;
+    background: {BG_PANEL};
+    /* Vermelho porque o que passa por aqui não volta. */
+    border: solid {ERROR};
+}}
+
+ConfirmScreen .confirm-title {{
+    color: {ERROR_SOFT};
+    text-style: bold;
+    width: 100%;
+}}
+
+ConfirmScreen .confirm-detail {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-bottom: 1;
+}}
+
+ConfirmScreen OptionList {{
+    width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT};
+}}
+
+ConfirmScreen OptionList:focus {{
+    border: none;
+}}
+
+ConfirmScreen .confirm-hint {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-top: 1;
+}}
 """

@@ -239,24 +239,73 @@ def update_run(
 def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
     connection = connect(db_path or default_db_path())
     try:
+        # Upsert, e não `UPDATE`: nem todo step existe desde o início da run. O
+        # fan-out cria os dele no meio, e um step acrescentado à definição
+        # depois também — com `UPDATE` os dois sumiam sem erro nenhum.
+        #
+        # Em conflito, só o estado é reescrito. `position`, `label` e `agent_id`
+        # foram copiados da definição quando a run começou, e editar o workflow
+        # depois não pode reescrever o que já aconteceu.
         connection.execute(
             """
-            UPDATE run_steps
-            SET status = ?, summary = ?, acp_session_id = ?, started_at = ?, ended_at = ?
-            WHERE run_id = ? AND step_id = ?
+            INSERT INTO run_steps
+              (run_id, step_id, position, label, agent_id,
+               status, summary, acp_session_id, started_at, ended_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, step_id) DO UPDATE SET
+              status = excluded.status,
+              summary = excluded.summary,
+              acp_session_id = excluded.acp_session_id,
+              started_at = excluded.started_at,
+              ended_at = excluded.ended_at
             """,
             (
+                run_id,
+                step.step_id,
+                step.position,
+                step.label,
+                step.agent_id,
                 step.status,
                 step.summary,
                 step.acp_session_id,
                 step.started_at,
                 step.ended_at,
-                run_id,
-                step.step_id,
             ),
         )
         connection.execute(
             "UPDATE runs SET updated_at = ? WHERE id = ?", (utc_now(), run_id)
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
+    """Apaga a run e tudo que pendura nela. `False` = não existia.
+
+    Steps, eventos e artefatos vão junto por `ON DELETE CASCADE` — o que fica no
+    disco do workspace não é nosso para apagar: o Pulse grava caminho, não
+    arquivo.
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        cursor = connection.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+        connection.commit()
+        return cursor.rowcount > 0
+    finally:
+        connection.close()
+
+
+def delete_step(run_id: str, step_id: str, *, db_path: Path | None = None) -> None:
+    """Tira um step da run.
+
+    Existe para o fan-out: o step que vira N some, e no lugar dele entram os N.
+    Deixar o original viraria uma linha a mais no painel, sem dono.
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?", (run_id, step_id)
         )
         connection.commit()
     finally:

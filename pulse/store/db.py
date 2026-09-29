@@ -117,6 +117,10 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   agent_id TEXT NOT NULL,
   prompt_template TEXT NOT NULL DEFAULT '{{user_prompt}}',
   requires_approval INTEGER NOT NULL DEFAULT 0,
+  -- 1 = o step roda uma vez por item que o step anterior enumerou, cada um em
+  -- sessão isolada e com linha própria em `run_steps`. Ver
+  -- [pulse.orchestrator.fanout]. O motor não sabe o que é um item.
+  fan_out INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (workflow_id, step_id)
 );
 
@@ -187,21 +191,11 @@ CREATE TABLE IF NOT EXISTS run_artifacts (
 );
 """
 
-#: Configuração de fábrica. Não é arquivo do pacote de propósito: o Pulse não
-#: carrega nenhum `.md`/`.yaml` de domínio. O que ele sabe rodar nasce como
-#: linha no banco, na primeira abertura, e daí em diante o banco manda —
-#: `INSERT OR IGNORE` nunca desfaz edição de quem já usava.
-SEED = """
-INSERT OR IGNORE INTO agent_defs (id, label, instructions)
-  VALUES ('default', 'Agente', '');
-
-INSERT OR IGNORE INTO workflow_defs (id, label, description, is_default)
-  VALUES ('default', 'Executar', 'Envia a tarefa ao agente configurado', 1);
-
-INSERT OR IGNORE INTO workflow_steps
-  (workflow_id, step_id, position, label, agent_id, prompt_template, requires_approval)
-  VALUES ('default', 'run', 1, 'Executar', 'default', '{{user_prompt}}', 1);
-"""
+#: Configuração de fábrica: ver [pulse.store.factory]. Os loops que o Pulse já
+#: nasce sabendo rodar nascem como linha no banco, na primeira abertura, e daí
+#: em diante o banco manda — `INSERT OR IGNORE` nunca desfaz edição de quem já
+#: usava. O motor continua sem catálogo em código: ele lê as tabelas, não o
+#: pacote.
 
 
 def default_db_path() -> Path:
@@ -216,6 +210,23 @@ def default_db_path() -> Path:
     return GLOBAL_DB_FILE
 
 
+#: Coluna acrescentada depois que já havia banco na rua. `CREATE TABLE IF NOT
+#: EXISTS` não altera tabela existente, então é `ALTER` explícito — e uma lista,
+#: porque a próxima também vai passar por aqui.
+ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("workflow_steps", "fan_out", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+def _apply_added_columns(connection: sqlite3.Connection) -> None:
+    for table, column, declaration in ADDED_COLUMNS:
+        existing = {
+            str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")
+        }
+        if column not in existing:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     db_path = path or default_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -223,7 +234,13 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(SCHEMA)
-    connection.executescript(SEED)
+    _apply_added_columns(connection)
+    # Import tardio: `factory` lê os `.md` de fábrica e não precisa existir para
+    # quem só abre o banco para ler uma run.
+    from pulse.store import factory
+
+    if not factory.is_seeded(connection):
+        factory.seed(connection)
     connection.commit()
     return connection
 

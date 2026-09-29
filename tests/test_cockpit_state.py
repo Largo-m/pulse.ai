@@ -410,3 +410,83 @@ def test_select_from_prompt_ignores_artifacts_without_content():
 
     assert selected is False
     assert state.artifact_pane_open is False
+
+
+def test_fan_out_replaces_one_phase_with_the_items():
+    """O painel montou as fases pela definição; o fan-out muda isso na run."""
+    make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+    state.apply_phase_statuses(
+        steps=[{"id": "plan", "label": "Planejar"}],
+        done_ids=["plan"],
+    )
+
+    state.apply_phase_statuses(
+        steps=[
+            {"id": "plan", "label": "Planejar"},
+            {"id": "run:T1", "label": "Criar o endpoint"},
+            {"id": "run:T2", "label": "Montar o CSV"},
+        ],
+        done_ids=["plan"],
+    )
+
+    assert [phase.id for phase in state.phases] == ["plan", "run:T1", "run:T2"]
+    assert [phase.label for phase in state.phases] == [
+        "Planejar",
+        "Criar o endpoint",
+        "Montar o CSV",
+    ]
+    # O step que já fechou não volta para pendente ao entrar a lista nova.
+    assert state.phases[0].status == PhaseStatus.DONE
+    assert state.total_count() == 3
+    assert state.done_count() == 1
+
+
+def test_the_fan_out_items_stay_grouped_under_the_step_that_made_them():
+    """`Implementar` não some da sidebar: as tasks entram embaixo dele."""
+    make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+    state.apply_phase_statuses(
+        steps=[
+            {"id": "plan", "label": "Planejar"},
+            {"id": "run:T1", "label": "Criar o endpoint"},
+            {"id": "run:T2", "label": "Montar o CSV"},
+        ],
+    )
+
+    groups = state.phase_groups()
+
+    assert [key for key, _members in groups] == ["", "run"]
+    assert [phase.id for _index, phase in groups[1][1]] == ["run:T1", "run:T2"]
+    assert state.base_step_label("run") == "Implementar"
+    # Agrupar é desenho: a navegação continua plana, sobre `phases`.
+    assert state.nav_items() == [("phase", 0), ("phase", 1), ("phase", 2)]
+
+
+def test_syncing_the_list_keeps_what_a_phase_already_gathered():
+    """Recriar a fase apagaria status, relógio e contadores de quem já rodou."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+    state.begin_phase("Um")
+    running = state.phases[0]
+    running.files = 3
+
+    state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
+
+    assert state.phases[0] is running
+    assert state.phases[0].files == 3
+    assert state.phases[0].status == PhaseStatus.RUNNING
+
+
+def test_an_empty_list_leaves_the_phases_alone():
+    """Sink antigo (sem `steps`) não pode zerar o painel."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+
+    state.apply_phase_statuses(done_ids=["one"])
+
+    assert [phase.id for phase in state.phases] == ["one", "two"]

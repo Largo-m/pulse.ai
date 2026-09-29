@@ -26,6 +26,7 @@ from pulse.orchestrator.cli_output import (
     print_workflow_error,
     print_workflow_result,
 )
+from pulse.orchestrator.fanout import Item, parse_items
 from pulse.orchestrator.prompts import build_continuation_prompt, guidance_block
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import CANCEL, SKIP, format_summary
@@ -46,6 +47,9 @@ _POLICIES: dict[str, PermissionPolicy] = {
 }
 #: Fallback para runner sem controle (CLI, testes): nunca pausa nem para.
 _NEVER_INTERRUPTED = RunControl()
+#: Espaço entre as posições da definição, para o fan-out caber no meio sem
+#: renumerar o resto: o step 4 vira 4001, 4002… e continua antes do step 5.
+POSITION_STRIDE = 1000
 
 
 class UnknownWorkflow(ValueError):
@@ -165,7 +169,7 @@ def _resolve_run(
         steps=[
             StepRecord(
                 step_id=step.step_id,
-                position=step.position,
+                position=step.position * POSITION_STRIDE,
                 label=step.label,
                 agent_id=step.agent_id,
             )
@@ -189,45 +193,53 @@ def _execute(
         runner.authenticate()
         _sync_steps(runner, run)
 
-        for step in definition.steps:
-            record = run.step(step.step_id)
-            if record is None:
-                # Step acrescentado à definição depois que a run começou: entra
-                # como pendente em vez de ser ignorado silenciosamente.
-                record = StepRecord(
-                    step_id=step.step_id,
-                    position=step.position,
-                    label=step.label,
-                    agent_id=step.agent_id,
-                )
-                run.steps.append(record)
-
-            if record.status in SETTLED:
-                continue
-
-            # Pausa pedida entre dois steps: segura aqui, sem nada em voo.
-            if not _control(runner).checkpoint():
-                _notify(runner, "Run parada pelo usuário")
-                run_store.update_run(run.id, status="stopped")
-                return RUN_STOPPED
-
-            run_store.update_run(run.id, status=RUNNING, current_step=step.step_id)
-            exit_code = _run_step(
-                runner=runner,
-                cockpit=cockpit,
-                run=run,
-                step=step,
-                record=record,
-                workspace=workspace,
-                fallback_model=fallback_model,
-            )
+        for definition_step in definition.steps:
+            # Um step de fan-out só sabe quantos trabalhos tem depois que o
+            # anterior rodou — por isso a expansão acontece aqui, e não ao criar
+            # a run.
+            units = _units(run, definition_step)
             _sync_steps(runner, run)
-            if exit_code != 0:
-                run_store.update_run(
-                    run.id,
-                    status="stopped" if exit_code == RUN_STOPPED else FAILED,
+
+            for step, item in units:
+                record = run.step(step.step_id)
+                if record is None:
+                    # Step acrescentado à definição depois que a run começou:
+                    # entra como pendente em vez de ser ignorado silenciosamente.
+                    record = StepRecord(
+                        step_id=step.step_id,
+                        position=step.position,
+                        label=step.label,
+                        agent_id=step.agent_id,
+                    )
+                    run.steps.append(record)
+
+                if record.status in SETTLED:
+                    continue
+
+                # Pausa pedida entre dois steps: segura aqui, sem nada em voo.
+                if not _control(runner).checkpoint():
+                    _notify(runner, "Run parada pelo usuário")
+                    run_store.update_run(run.id, status="stopped")
+                    return RUN_STOPPED
+
+                run_store.update_run(run.id, status=RUNNING, current_step=step.step_id)
+                exit_code = _run_step(
+                    runner=runner,
+                    cockpit=cockpit,
+                    run=run,
+                    step=step,
+                    record=record,
+                    workspace=workspace,
+                    fallback_model=fallback_model,
+                    item=item,
                 )
-                return exit_code
+                _sync_steps(runner, run)
+                if exit_code != 0:
+                    run_store.update_run(
+                        run.id,
+                        status="stopped" if exit_code == RUN_STOPPED else FAILED,
+                    )
+                    return exit_code
 
         run_store.update_run(run.id, status="completed")
         if not cockpit:
@@ -235,6 +247,80 @@ def _execute(
         return 0
     finally:
         runner.close()
+
+
+def _units(
+    run: run_store.RunRecord, step: StepDef
+) -> list[tuple[StepDef, Item | None]]:
+    """O step da definição vira os steps que a run vai mesmo rodar.
+
+    Sem `fan_out`, é ele mesmo. Com, é um por item que o step anterior
+    enumerou — cada um com `step_id` próprio, porque cada um quer sessão
+    isolada, linha no painel e a chance de ser refeito sozinho.
+
+    Lista vazia (o agente não emitiu o bloco, ou emitiu vazio) roda o step uma
+    vez, como se `fan_out` não existisse: um protocolo que o agente não seguiu
+    não é motivo para a run parar.
+    """
+    if not step.fan_out:
+        return [(step, None)]
+
+    items = parse_items(_previous_summary(run, step.step_id))
+    if not items:
+        return [(step, None)]
+
+    base = run.step(step.step_id)
+    base_position = base.position if base is not None else step.position * POSITION_STRIDE
+    at = len(run.steps)
+    if base is not None:
+        # O placeholder cumpriu o papel de mostrar que o step existe; agora os
+        # N filhos tomam o lugar dele — no mesmo ponto da lista, senão o painel
+        # mostraria as tasks depois de um step que ainda nem rodou.
+        at = run.steps.index(base)
+        run.steps.remove(base)
+        run_store.delete_step(run.id, step.step_id)
+
+    units: list[tuple[StepDef, Item | None]] = []
+    for index, item in enumerate(items, start=1):
+        step_id = f"{step.step_id}:{item.id}"
+        label = item.label or item.id
+        position = base_position + index
+        units.append(
+            (
+                StepDef(
+                    workflow_id=step.workflow_id,
+                    step_id=step_id,
+                    position=position,
+                    label=label,
+                    agent_id=step.agent_id,
+                    prompt_template=step.prompt_template,
+                    requires_approval=step.requires_approval,
+                ),
+                item,
+            )
+        )
+        if run.step(step_id) is None:
+            run.steps.insert(
+                at + index - 1,
+                StepRecord(
+                    step_id=step_id,
+                    position=position,
+                    label=label,
+                    agent_id=step.agent_id,
+                ),
+            )
+    return units
+
+
+def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
+    """Resumo do último step com resposta antes deste."""
+    previous = ""
+    for record in run.steps:
+        if record.step_id == step_id:
+            break
+        if record.summary:
+            previous = record.summary
+    return previous
 
 
 def _run_step(
@@ -246,6 +332,7 @@ def _run_step(
     record: StepRecord,
     workspace: Path,
     fallback_model: str | None,
+    item: Item | None = None,
 ) -> int:
     guidance = ""
     while True:
@@ -258,6 +345,7 @@ def _run_step(
             workspace=workspace,
             fallback_model=fallback_model,
             guidance=guidance,
+            item=item,
         )
         if outcome in {DONE, SKIPPED}:
             return 0
@@ -275,6 +363,7 @@ def _run_step(
             record.ended_at = run_store.utc_now()
             run_store.save_step(run.id, record)
             return 1
+        _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
         else:
@@ -291,6 +380,7 @@ def _attempt_step(
     workspace: Path,
     fallback_model: str | None,
     guidance: str,
+    item: Item | None = None,
 ) -> tuple[str, str]:
     record.status = RUNNING
     record.started_at = record.started_at or run_store.utc_now()
@@ -298,37 +388,45 @@ def _attempt_step(
 
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
     try:
-        prompt_text = render(step.prompt_template, _context(run, step, workspace))
+        prompt_text = render(step.prompt_template, _context(run, step, workspace, item))
     except TemplateError as error:
         return FAILED, str(error)
     if instructions:
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
 
-    if step.requires_approval:
-        result = runner.run_isolated_phase(
-            workflow=run.workflow_id,
-            phase_label=record.label or step.step_id,
-            initial_prompt=prompt_text,
-            preferred_model=model,
-            build_continuation=lambda *, phase_summary, questionnaire_answers, outcome, **_: (
-                build_continuation_prompt(
-                    step_id=step.step_id,
-                    summary=phase_summary,
-                    answers=questionnaire_answers,
-                    outcome=outcome,
-                )
-            ),
-            phase_id=step.step_id,
-        )
-    else:
-        result = runner.run_isolated_prompt(
-            workflow=run.workflow_id,
-            phase_label=record.label or step.step_id,
-            prompt_text=prompt_text,
-            preferred_model=model,
-            phase_id=step.step_id,
-        )
+    try:
+        if step.requires_approval:
+            result = runner.run_isolated_phase(
+                workflow=run.workflow_id,
+                phase_label=record.label or step.step_id,
+                initial_prompt=prompt_text,
+                preferred_model=model,
+                build_continuation=lambda *, phase_summary, questionnaire_answers, outcome, **_: (
+                    build_continuation_prompt(
+                        step_id=step.step_id,
+                        summary=phase_summary,
+                        answers=questionnaire_answers,
+                        outcome=outcome,
+                    )
+                ),
+                phase_id=step.step_id,
+            )
+        else:
+            result = runner.run_isolated_prompt(
+                workflow=run.workflow_id,
+                phase_label=record.label or step.step_id,
+                prompt_text=prompt_text,
+                preferred_model=model,
+                phase_id=step.step_id,
+            )
+    except (TimeoutError, RuntimeError, OSError) as error:
+        # A sessão caiu: timeout, processo morto, protocolo quebrado. Isto
+        # subia até `run_workflow` e matava a run inteira calada — logo a falha
+        # que mais vale refazer, porque quase nunca é do step. Vira desfecho de
+        # tentativa, e quem decide é o usuário no menu de retry.
+        run_store.save_step(run.id, record)
+        return FAILED, _session_error(error)
 
     record.acp_session_id = runner.last_session_id or record.acp_session_id
     record.summary = format_summary(str(result.get("phaseSummary", "")))
@@ -362,20 +460,29 @@ def _attempt_step(
     return DONE, ""
 
 
-def _context(run: run_store.RunRecord, step: StepDef, workspace: Path) -> dict[str, str]:
+def _context(
+    run: run_store.RunRecord,
+    step: StepDef,
+    workspace: Path,
+    item: Item | None = None,
+) -> dict[str, str]:
     """Valores que o `prompt_template` pode citar.
 
     Chaves genéricas de propósito: o motor não tem nome de artefato nem de fase
     para oferecer. O que um step produziu chega no seguinte como `previous_summary`
     e `artifacts` — o resto o agente descobre lendo o workspace.
+
+    `item_*` só tem valor num step de fan-out. Fora dele são strings vazias e não
+    chaves ausentes: o mesmo `prompt_template` roda nos dois modos, e chave
+    ausente é `TemplateError`.
     """
-    previous = ""
-    for item in run.steps:
-        if item.step_id == step.step_id:
-            break
-        if item.summary:
-            previous = item.summary
     artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
+    # Irmãos do fan-out: mesmo step da definição, item diferente. Serve para o
+    # prompt poder dizer "task 2 de 7" sem o motor saber o que é uma task.
+    prefix = f"{step.step_id.rsplit(':', 1)[0]}:" if item is not None else ""
+    siblings = (
+        [record for record in run.steps if record.step_id.startswith(prefix)] if prefix else []
+    )
     return {
         "user_prompt": run.user_prompt.strip(),
         "workspace": str(workspace),
@@ -383,9 +490,20 @@ def _context(run: run_store.RunRecord, step: StepDef, workspace: Path) -> dict[s
         "run_id": run.id,
         "step_id": step.step_id,
         "step_label": step.label,
-        "previous_summary": previous,
+        "previous_summary": _previous_summary(run, step.step_id),
         "artifacts": "\n".join(f"- {path}" for path in artifacts),
+        "item_id": item.id if item else "",
+        "item_label": item.label if item else "",
+        "item_index": str(_index_of(siblings, step.step_id)) if item else "",
+        "item_total": str(len(siblings)) if item else "",
     }
+
+
+def _index_of(records: list[StepRecord], step_id: str) -> int:
+    for index, record in enumerate(records, start=1):
+        if record.step_id == step_id:
+            return index
+    return 1
 
 
 def _activate_agent(
@@ -466,6 +584,28 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str
     return "stop", ""
 
 
+def _session_error(error: BaseException) -> str:
+    if isinstance(error, TimeoutError):
+        return f"o agente parou de responder — {error}"
+    return f"a sessão do agente caiu — {error}"
+
+
+def _revive_session(runner: AcpSessionRunner) -> None:
+    """Reergue o processo do agente antes de refazer o step.
+
+    Retry depois de uma sessão morta só repetiria a queda; e se reerguer também
+    falhar, a próxima tentativa cai rápido e o menu volta a aparecer.
+    """
+    ensure = getattr(runner, "ensure_process", None)
+    if not callable(ensure):
+        return
+    try:
+        if ensure():
+            _notify(runner, "Sessão do agente reiniciada")
+    except (RuntimeError, TimeoutError, OSError) as error:
+        _notify(runner, f"Não consegui reiniciar a sessão do agente: {error}")
+
+
 def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:
     handler = getattr(runner, "_prompt_handler", None)
     ask_text = getattr(handler, "ask_text", None)
@@ -491,11 +631,17 @@ def _notify(runner: AcpSessionRunner, message: str) -> None:
 
 
 def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
+    """Espelha `run_steps` no painel — a lista inteira, não só os status.
+
+    A lista vai junto porque o fan-out a muda no meio da run: o painel montou as
+    fases pela definição, e um step que virou sete precisa aparecer como sete.
+    """
     stream = getattr(runner, "_stream", None)
     apply = getattr(stream, "apply_phase_statuses", None) if stream is not None else None
     if not callable(apply):
         return
     apply(
+        steps=[{"id": item.step_id, "label": item.label} for item in run.steps],
         done_ids=[item.step_id for item in run.steps if item.status == DONE],
         skipped_ids=[item.step_id for item in run.steps if item.status == SKIPPED],
         failed_ids=[item.step_id for item in run.steps if item.status == FAILED],

@@ -30,5 +30,10 @@ pulse-mcp-ask = "pulse.mcp.ask_stdio:main"
 where = ["."]
 include = ["pulse*"]
 
+# Semente de fábrica: os `.md` que `pulse.store.factory` converte em linha do
+# banco na primeira abertura. Sem isto o wheel instala sem os loops.
+[tool.setuptools.package-data]
+"pulse.store.factory" = ["agents/*/*.md", "shared/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

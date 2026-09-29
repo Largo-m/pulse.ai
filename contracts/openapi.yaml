@@ -96,6 +96,33 @@ paths:
       responses:
         "200":
           description: History list
+  /api/history/{item_id}:
+    get:
+      summary: One history item
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: History item
+        "404":
+          description: Not found
+    delete:
+      summary: Remove a run from the history
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed
+        "404":
+          description: Not found
   /api/config:
     get:
       summary: Global and project config

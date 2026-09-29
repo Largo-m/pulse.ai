@@ -62,6 +62,7 @@ class _Runner:
         self._stream = _Stream()
         self._prompt_handler = _Prompt()
         self.closed = False
+        self.revivals = 0
 
     def bind_run(self, run_id: str) -> None:
         self.run_id = run_id
@@ -83,11 +84,22 @@ class _Runner:
 
     def run_isolated_phase(self, *, initial_prompt: str, **_kwargs) -> dict:
         self.prompts.append(initial_prompt)
-        return self._results.pop(0) if self._results else {"approved": True}
+        return self._next({"approved": True})
 
     def run_isolated_prompt(self, *, prompt_text: str, **_kwargs) -> dict:
         self.prompts.append(prompt_text)
-        return self._results.pop(0) if self._results else {"stopReason": "end_turn"}
+        return self._next({"stopReason": "end_turn"})
+
+    def _next(self, default: dict) -> dict:
+        """Um resultado da fila — ou a exceção que a sessão levantaria."""
+        result = self._results.pop(0) if self._results else default
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    def ensure_process(self) -> bool:
+        self.revivals += 1
+        return True
 
 
 @pytest.fixture
@@ -217,6 +229,57 @@ def test_retry_runs_the_same_step_again(wired, monkeypatch, tmp_path: Path):
     assert code == 0
     assert len(runner.prompts) == 2
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+
+
+def test_a_timeout_offers_retry_instead_of_killing_the_run(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Sessão que estourou o prazo é falha de tentativa, não fim de run."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    runner = _Runner(
+        [TimeoutError("o agente ficou 600s sem dar sinal em `session/prompt`"), _approved(), _approved()]
+    )
+    runner._prompt_handler.choice = "retry"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner._prompt_handler.asked == ["Step Um falhou"]
+    # A sessão morta é reerguida antes de refazer, senão o retry só repetiria.
+    assert runner.revivals == 1
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["done", "done"]
+
+
+def test_a_dead_session_that_the_user_gives_up_on_fails_the_step(
+    wired, monkeypatch, tmp_path: Path
+):
+    """`Parar` fecha a run pelo caminho normal: step falhado, sem exceção."""
+    make_workflow("demo", steps=[("one", "Um")])
+    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 1
+    assert runner.revivals == 0
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("one").status == "failed"
+    assert record.status == "failed"
 
 
 def test_skip_settles_the_step_without_failing_the_run(wired, monkeypatch, tmp_path: Path):

@@ -264,6 +264,13 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="item não encontrado")
         return _history_to_dict(item)
 
+    @app.delete("/api/history/{item_id}")
+    def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
+        root = Path(workspace).resolve() if workspace else Path.cwd()
+        if not HistoryCatalog(root).delete(item_id):
+            raise HTTPException(status_code=404, detail="item não encontrado")
+        return {"ok": True}
+
     @app.exception_handler(Exception)
     async def on_error(_request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(status_code=500, content={"detail": str(exc)})

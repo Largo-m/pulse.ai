@@ -1,9 +1,12 @@
 # Como o Pulse carrega e interpreta workflows
 
-O Pulse **não conhece nenhum workflow por código**. Não há catálogo em Python,
-nem `AGENT.md`/`PHASE.md` no pacote, nem skill embutida. Um workflow é um
-conjunto de linhas no SQLite, e a única responsabilidade do Pulse é apontar
-**qual agente roda agora** e **quando**.
+O Pulse **não conhece nenhum workflow por código**. Não há catálogo em Python
+nem `if workflow_id == …` em lugar nenhum. Um workflow é um conjunto de linhas
+no SQLite, e a única responsabilidade do Pulse é apontar **qual agente roda
+agora** e **quando**.
+
+O pacote traz a **semente** desses loops — ver §1.1 — mas nada dela é lido
+durante uma run.
 
 ## 1. Onde um workflow é definido
 
@@ -12,19 +15,52 @@ Tabelas em `~/.pulse/pulse.db` (ver [armazenamento.md](armazenamento.md)):
 ```
 workflow_defs     id, label, description, is_default
 workflow_steps    workflow_id, step_id, position, label,
-                  agent_id, prompt_template, requires_approval
+                  agent_id, prompt_template, requires_approval, fan_out
 agent_defs        id, label, runtime, model, permission_policy, instructions
 ```
 
 Acesso: [`pulse/store/workflow_defs.py`](../pulse/store/workflow_defs.py).
 
-A configuração de fábrica é **semente do banco**, não arquivo do pacote: o
-`SEED` em [`pulse/store/db.py`](../pulse/store/db.py) roda com `INSERT OR IGNORE`
-na primeira abertura e cria um workflow `default` de um step só. Como é
-`OR IGNORE`, quem já editou não perde nada no upgrade.
-
 Id que não está em `workflow_defs` não existe: `run_workflow` levanta
 `UnknownWorkflow`, e a API responde 404.
+
+## 1.1 A semente de fábrica
+
+[`pulse/store/factory/`](../pulse/store/factory/) roda uma vez, na primeira
+abertura do banco, com `INSERT OR IGNORE` — quem já editou não perde nada no
+upgrade, e linha de fábrica apagada volta na abertura seguinte.
+
+| Loop | Steps |
+| --- | --- |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) |
+| `quick-fix` — Correção rápida | quick-plan → quick-implement |
+| `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
+| `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
+| `default` — Executar | um step, sem pipeline (fora do menu) |
+
+`is_default` marca o loop genérico, e a home usa a marca para **não** listá-lo
+em "Nova sessão": aquele menu é de pipeline. Ele segue no banco e na API.
+
+Os playbooks são `.md` em `factory/agents/<id>/AGENT.md` (vira
+`agent_defs.instructions`) e `PHASE.md` (vira `workflow_steps.prompt_template`).
+Os blocos repetidos — isolamento, clarify, aprovação, idioma de saída — ficam em
+`factory/shared/` e são expandidos **na semeadura**, via
+`<!-- include: nome -->`, para a linha do banco ser autossuficiente.
+
+Ficam em arquivo, e não em string Python, porque são ~8 mil linhas que alguém
+precisa revisar em diff. Isso **não** reintroduz catálogo em código: o motor lê
+as tabelas, nunca o pacote, e `test_domain_markdown_lives_only_in_the_factory_seed`
+falha se qualquer módulo fora de `store/db.py` passar a importar a fábrica.
+
+`runtime` e `model` nascem **vazios** de propósito, mesmo onde o playbook declara
+uma preferência: vazio significa "use o padrão da máquina", e um valor concreto
+congelaria a escolha feita no `pulse init`. Quem quiser fixar o par por agente
+usa a tela de configurações, que grava em `agent_settings`.
+
+Não há ramificação: `workflow_steps` é uma lista, e o motor a percorre. Quem
+escolhe entre spec completa e correção rápida é o usuário, no menu **Nova
+sessão** — e o `quick-plan` refaz a checagem de escopo, então um pedido grande
+que entrou pelo loop errado para no primeiro step em vez de seguir.
 
 ## 2. O laço do motor
 
@@ -48,7 +84,49 @@ run_workflow(workflow_id, user_prompt, …)
 
 A sessão ACP é **isolada por step**. O agente do step seguinte não herda o
 contexto do anterior — só o resumo que o Pulse repassa. É isso que permite
-trocar de runtime entre steps e retomar uma run refazendo um step só.
+retomar uma run refazendo um step só e manter o contexto pequeno.
+
+Detalhe do agente e do laço, passo a passo: [`agentes.md`](agentes.md).
+
+### 2.1 Fan-out: um step que vira N
+
+`workflow_steps.fan_out = 1` significa **"rode este step uma vez por item que o
+step anterior enumerou"**. É o que faz cada task ter agente isolado e linha
+própria no painel, sem o motor saber o que é uma task.
+
+Quem enumera é o agente, num bloco cercado que o Pulse acha
+([`pulse/orchestrator/fanout.py`](../pulse/orchestrator/fanout.py)) — é o segundo
+e último protocolo que o motor lê da resposta, ao lado do questionário de
+aprovação:
+
+````text
+```pulse:items
+T1 — Criar o endpoint de exportação
+T2 — Montar o CSV a partir do relatório
+```
+````
+
+O que o motor faz com isso:
+
+```
+step `implement` (fan_out)          →   run_steps
+  lê o resumo do step anterior            implement:T1   Criar o endpoint…
+  parse_items(...)                        implement:T2   Montar o CSV…
+  o placeholder some                      (cada um: sessão ACP própria,
+                                           retry próprio, retomada própria)
+```
+
+- **Sem bloco, ou bloco vazio** → o step roda uma vez, como se `fan_out` não
+  existisse. Protocolo que o agente não seguiu não derruba a run.
+- **Id repetido** é descartado: viraria `step_id` duplicado, e `run_steps` tem
+  chave `(run_id, step_id)` — o segundo sobrescreveria o primeiro em silêncio.
+- **Teto de 40 itens**: abrir 200 sessões ACP sairia caro antes de alguém notar.
+- A posição usa passo de 1000 (`POSITION_STRIDE`), então o step 4 vira
+  4001, 4002… e continua antes do step 5. Sem isso `T10` cairia entre `T1` e
+  `T2`, que é como o `step_id` ordena.
+
+O motor continua sem ler artefato: ele não abre `tasks.md` nem conhece `### T1`.
+Trocar `tasks.md` por outra coisa não muda uma linha do orquestrador.
 
 ### Valores disponíveis no `prompt_template`
 
@@ -63,9 +141,12 @@ trocar de runtime entre steps e retomar uma run refazendo um step só.
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resposta do último step que produziu resumo |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
+| `item_id` / `item_label` | o item deste step, num step de fan-out |
+| `item_index` / `item_total` | "2 de 7", para o prompt situar o agente |
 
 Não há chave com nome de artefato ou de fase: o motor não tem nenhum para
-oferecer.
+oferecer. As `item_*` vêm **vazias** fora de um fan-out, e não ausentes: o mesmo
+`prompt_template` roda nos dois modos, e chave ausente é erro.
 
 ## 3. O que o motor interpreta da resposta do agente
 
@@ -84,6 +165,11 @@ Step sem aprovação só precisa que o agente feche o turno (`stopReason`).
 
 Falha ou não-aprovação abre o menu **Refazer / Outro — dizer o que fazer /
 Parar**. "Outro" injeta a orientação do usuário no prompt da tentativa seguinte.
+
+Queda de sessão (timeout, processo do agente morto) cai no mesmo menu: é falha
+de tentativa, não fim de run. Antes de refazer, o processo ACP é reerguido.
+O prazo de `session/prompt` conta **silêncio**, não duração: cada linha vinda do
+agente o renova, e pergunta aberta na tela não gasta o relógio.
 
 O conteúdo do que o agente produziu **nunca** é interpretado. O Pulse não lê
 Markdown, não valida formato, não espera arquivo com nome conhecido.
@@ -126,10 +212,28 @@ runtime concreto na semente congelaria a escolha feita no `pulse init`.
 
 ## 6. A UI
 
+[`HomeScreen`](../pulse/tui/screens/home.py) tem dois níveis: a raiz (**Nova
+sessão** · Histórico · Configurações · Sair) e o submenu de loops, montado com
+`list_workflows()`. Os loops ficam um nível abaixo porque a lista cresce com o
+banco — na raiz, "Configurações" e "Sair" acabariam abaixo de N workflows. O
+`default` ("Executar") fecha a lista: é o escape, não o que se procura ali. `Esc`
+volta um passo de cada vez (fecha o campo de tarefa, depois sai do submenu).
+
+No item vai só `label · description`, e a `description` de fábrica é curta de
+propósito ("pipeline completo", "até 3 arquivos"). A cadeia de steps — o que é
+longo — vai para a dica, montada a partir de `workflow_steps` e trocada conforme
+o item destacado. A dica tem sempre duas linhas, mesmo sem descrição: alternar a
+altura faria a lista pular a cada tecla.
+
 [`CockpitState.configure_workflow`](../pulse/tui/state.py) monta a sidebar a
 partir de `workflow_steps`, pelo mesmo caminho do motor. Não há mapa de fases na
 UI. Workflow desconhecido resulta em sidebar vazia, que se preenche conforme os
 steps começam.
+
+A lista de fases não é fixa: `_sync_steps` manda a lista inteira a cada mudança,
+e `CockpitState.sync_phases` reconcilia **por id**, preservando status, relógio e
+contadores de quem já rodou. É o que permite o fan-out trocar uma fase por N no
+meio da run sem apagar o que já aconteceu.
 
 ## Design
 
@@ -143,3 +247,12 @@ um flow, o mapa da sidebar e cinco arquivos de prompt.
 **Trade-off:** workflow novo agora é `INSERT`, não release. Em compensação não há
 tela para editar isso ainda: quem quiser outro pipeline escreve no banco pela
 API ou por `pulse.store.workflow_defs`.
+
+**O que a semente custou:** os steps de um loop são uma lista linear, então o
+agente `classify` — que antes escolhia entre spec completa e quick e escrevia a
+rota em disco — deixou de existir. Quem dimensiona o pedido é o usuário, no menu,
+com o `quick-plan` como rede de segurança. E como cada step roda em sessão
+isolada, o diretório da feature não é mais estado do motor: o step do PRD o
+declara no resumo, e os seguintes o leem de `previous_summary`/`artifacts`.
+Ramificação e estado por feature voltam a ser assunto do motor no dia em que um
+loop realmente precisar deles.

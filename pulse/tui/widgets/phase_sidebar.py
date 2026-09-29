@@ -74,18 +74,60 @@ class PhaseSidebar(Widget):
             output.append("Nenhum step configurado\n", style="#888888")
             return output
 
-        for index, phase in enumerate(state.phases):
-            self._slots.append((line, line + 2, NAV_PHASE, index))
-            output.append_text(
-                self._render_item(
-                    state,
-                    phase,
-                    selected=index == state.selected_phase_index,
-                    now=now,
-                    trailing_blank=True,
+        for key, members in state.phase_groups():
+            # O step de fan-out não some da lista: ele vira o cabeçalho das
+            # tasks que gerou, e elas aparecem indentadas embaixo dele.
+            if key:
+                output.append_text(self._render_group(state, key, members))
+                line += 2
+            for index, phase in members:
+                self._slots.append((line, line + 2, NAV_PHASE, index))
+                output.append_text(
+                    self._render_item(
+                        state,
+                        phase,
+                        selected=index == state.selected_phase_index,
+                        now=now,
+                        nested=bool(key),
+                        trailing_blank=True,
+                    )
                 )
-            )
-            line += 3
+                line += 3
+        return output
+
+    def _render_group(
+        self,
+        state: CockpitState,
+        key: str,
+        members: list[tuple[int, PhaseItem]],
+    ) -> Text:
+        """Cabeçalho do fan-out: o nome do step e quantas tasks já fecharam."""
+        statuses = [phase.status for _index, phase in members]
+        done = sum(1 for status in statuses if status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
+        if PhaseStatus.FAILED in statuses:
+            status = PhaseStatus.FAILED
+        elif PhaseStatus.RUNNING in statuses:
+            status = PhaseStatus.RUNNING
+        elif done == len(statuses):
+            status = PhaseStatus.DONE
+        else:
+            status = PhaseStatus.PENDING
+
+        output = Text()
+        if status == PhaseStatus.RUNNING:
+            output.append("▌ ", style="#D4AF37")
+        else:
+            output.append("  ", style="#333333")
+        tone = status_color(status)
+        name_style = tone if status in {PhaseStatus.RUNNING, PhaseStatus.FAILED} else "#E0E0E0"
+        label = f"{status_icon(status)} {state.base_step_label(key) or key}"
+        if len(label) > 28:
+            label = f"{label[:27]}…"
+        output.append(label, style=name_style)
+        output.append("\n")
+        output.append("   ")
+        output.append(status_label(status), style=tone)
+        output.append(f" · {done}/{len(members)}\n", style="#888888")
         return output
 
     def _render_item(
@@ -137,6 +179,9 @@ class PhaseSidebar(Widget):
     def _item_label(item: PhaseItem, *, nested: bool) -> str:
         if not nested:
             return item.label
-        if item.label == item.id or item.label.startswith(f"{item.id} "):
-            return item.label
-        return f"{item.id} · {item.label}"
+        # `implement:T1` → `T1`: o prefixo é o cabeçalho logo acima, repetir em
+        # cada filho só gastaria a largura da coluna.
+        _base, _sep, task_id = item.id.partition(":")
+        if not task_id or item.label == task_id or item.label.startswith(f"{task_id} "):
+            return item.label or task_id
+        return f"{task_id} · {item.label}"

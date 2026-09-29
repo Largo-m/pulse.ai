@@ -7,7 +7,7 @@ from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
 
-from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
+from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, find_runtime, get_runtime
 
 _DEFAULT_RUNTIME = get_runtime(DEFAULT_RUNTIME_ID)
 
@@ -157,6 +157,14 @@ def resolve_config(
         agent_name, agent_source = _resolve_agent_name(global_cfg, project_cfg, workflow)
         model, model_source = _resolve_model(global_cfg, project_cfg, workflow)
         permission_policy, policy_source = _resolve_permission_policy(global_cfg, project_cfg)
+        # Só um runtime do registry pode ser julgado indisponível: um agente
+        # declarado à mão no config tem binário próprio, e `get_runtime` devolve
+        # o default para nome desconhecido — checar a disponibilidade dele seria
+        # checar a do Cursor.
+        if find_runtime(agent_name) is not None:
+            fallback = _available_runtime_fallback(agent_name, project_cfg, global_cfg)
+            if fallback is not None and fallback in agents:
+                agent_name, agent_source = fallback, "runtime.fallback"
 
     agent = agents.get(agent_name) or agents[DEFAULT_AGENT_NAME]
 
@@ -248,10 +256,12 @@ def _available_runtime_fallback(
 ) -> str | None:
     """Runtime alternativo quando o declarado não existe nesta máquina.
 
-    O `runtime:` de um AGENT.md é preferência do autor do agente, não requisito
-    da máquina: quem só tem o Claude instalado não deve ficar travado porque o
-    agente declara `cursor`. O modelo é preservado — se o id não existir no
-    runtime novo, o próprio agente cai no default dele.
+    O runtime escolhido — no agente, no projeto ou na máquina — é preferência,
+    não requisito: quem só tem o Claude instalado não deve ficar travado porque
+    a preferência diz `cursor`. Vale para os dois caminhos de resolução; se só o
+    do agente caísse aqui, o pré-voo do orquestrador reprovaria a run inteira
+    por um runtime que nenhum step ia usar. O modelo é preservado — se o id não
+    existir no runtime novo, o próprio agente cai no default dele.
     """
     if get_runtime(runtime).is_available():
         return None

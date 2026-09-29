@@ -94,9 +94,24 @@ Um workflow é uma linha em `workflow_defs` mais N em `workflow_steps`, no
 `~/.pulse/pulse.db`. Cada step diz **qual agente** roda, **qual prompt** ele
 recebe e se o Pulse deve **esperar aprovação** antes de seguir.
 
-O banco nasce com um workflow `default` de um step, semeado na primeira abertura.
-Não há tela para editar workflows ainda: quem quiser outro pipeline escreve no
-banco via `pulse.store.workflow_defs`.
+O banco nasce semeado ([`pulse/store/factory/`](pulse/store/factory/)) com os
+loops de fábrica, que aparecem no menu **Nova sessão**:
+
+| Loop | Steps |
+| --- | --- |
+| Nova spec | PRD → Techspec → Tasks → Implementar |
+| Correção rápida | Quick plan → Quick implement |
+| Setup do projeto | Entrevista → Artefatos |
+| Analisar codebase | Exploração → Documentação |
+
+Há ainda o loop genérico `default` ("Executar", um step sem pipeline). Ele não
+entra no menu — repassar o prompt cru ao agente é o que se faz no terminal —
+mas continua no banco e em `/api/workflows`, para quem chama o daemon direto.
+
+A semeadura é `INSERT OR IGNORE`: quem editou não perde nada no upgrade, e linha
+de fábrica apagada volta na abertura seguinte. Não há tela para editar workflows
+ainda — quem quiser outro pipeline escreve no banco via
+`pulse.store.workflow_defs`.
 
 O Pulse abre uma sessão ACP **isolada por step** — o agente seguinte recebe só o
 resumo do anterior, não o contexto. É o que permite trocar de runtime entre steps

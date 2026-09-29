@@ -100,13 +100,19 @@ que já aconteceu.
 
 ### A configuração de fábrica é semente do banco
 
-O pacote não traz arquivo de defaults. O `SEED` em
-[`pulse/store/db.py`](pulse/store/db.py) roda com `INSERT OR IGNORE` na primeira
-abertura do banco e cria um workflow `default` de um step só, com um agente
-`default` sem runtime fixo (vazio = "use o padrão da máquina").
+[`pulse/store/factory/`](pulse/store/factory/) roda com `INSERT OR IGNORE` na
+primeira abertura do banco e grava os loops de fábrica (Nova spec, Correção
+rápida, Setup do projeto, Analisar codebase, Executar) com os
+agentes deles — sem runtime nem model fixos (vazio = "use o padrão da máquina").
 
 `INSERT OR IGNORE` é o detalhe que importa: quem já editou não perde nada no
-upgrade.
+upgrade, e linha de fábrica apagada volta na abertura seguinte.
+
+Os playbooks e templates são `.md` dentro de `store/factory/` — ~8 mil linhas
+que precisam ser revisáveis em diff. **Semente não é catálogo:** eles viram linha
+uma vez e nunca mais são lidos; o motor lê as tabelas, e nenhum módulo fora de
+`store/db.py` importa a fábrica (`test_domain_markdown_lives_only_in_the_factory_seed`
+falha se isso mudar).
 
 ### Id desconhecido não existe
 
@@ -146,9 +152,9 @@ Cada step abre e fecha a própria sessão. O agente do step seguinte **não herd
 contexto** do anterior — recebe só o resumo que o Pulse repassa em
 `{{previous_summary}}`.
 
-É isso que permite três coisas: trocar de runtime entre steps (um step no Cursor,
-o próximo no Claude), retomar uma run refazendo um step só, e manter o contexto
-pequeno num pipeline longo.
+É isso que permite retomar uma run refazendo um step só e manter o contexto
+pequeno num pipeline longo — e é o que abriria caminho para trocar de runtime
+entre steps, que hoje ainda não acontece (ver §Fora de escopo).
 
 ### O que o motor interpreta da resposta
 
@@ -299,7 +305,8 @@ enxergá-lo sem mudanças.
 |-------|--------|
 | [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Definições de workflow, step e agente |
 | [`pulse/store/runs.py`](pulse/store/runs.py) | Estado da run, log e artefatos |
-| [`pulse/store/db.py`](pulse/store/db.py) | Schema + semente da config de fábrica |
+| [`pulse/store/db.py`](pulse/store/db.py) | Schema + disparo da semente |
+| [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
 | [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |
 | [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
@@ -423,11 +430,12 @@ pytest
 Duas invariantes que valem checar depois de mexer no pacote:
 
 ```bash
-# nenhum arquivo não-Python no pacote (a config de fábrica é semente do banco)
-find pulse -type f ! -name "*.py" -not -path "*__pycache__*"
+# arquivo não-Python só na semente de fábrica
+find pulse -type f ! -name "*.py" -not -path "*__pycache__*" -not -path "pulse/store/factory/*"
 
-# nenhum vocabulário de domínio: o Pulse não conhece pipeline nenhum
-grep -rniE "\bprd\b|techspec|new-issue|fix-bug|setup-project|analyze-codebase" pulse/
+# nenhum vocabulário de domínio fora da semente: o motor não conhece pipeline
+grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase" \
+  --include="*.py" pulse/ | grep -v "^pulse/store/factory/"
 ```
 
 ---
@@ -456,8 +464,10 @@ grep -rniE "\bprd\b|techspec|new-issue|fix-bug|setup-project|analyze-codebase" p
 
 - **Tela de edição de workflow** — hoje o único caminho para criar um pipeline é
   `pulse.store.workflow_defs.save_workflow()`. É a lacuna mais visível do desenho.
-- **Fan-out de sub-tasks** — um step é um prompt, um turno. Não há step que gere N
-  sub-execuções.
+- **Troca de runtime entre steps** — `resolve_config(pulse_agent=…)` já devolve um
+  runtime por agente, mas o `acp_command` é fixado na construção do
+  `AcpSessionRunner`, no pré-voo. Uma run inteira roda no mesmo backend; o que
+  varia por step é modelo, política e instruções.
 - **Gates de shell** — o Pulse não roda comando de verificação entre steps.
 - App Desktop (consumirá a mesma API HTTP), gateway remoto / pairing.
 - Monorepo físico (`engine/` e `cli/` como packages separados).
@@ -468,6 +478,7 @@ grep -rniE "\bprd\b|techspec|new-issue|fix-bug|setup-project|analyze-codebase" p
 
 - Mapa interativo: [`docs/arquitetura.html`](docs/arquitetura.html)
 - Uso do produto: [`README.md`](README.md)
+- Agentes e o loop de execução, passo a passo: [`docs/agentes.md`](docs/agentes.md)
 - Modelo de workflow: [`docs/workflows.md`](docs/workflows.md)
 - Armazenamento: [`docs/armazenamento.md`](docs/armazenamento.md)
 - Perguntas e aprovação: [`docs/questions.md`](docs/questions.md)

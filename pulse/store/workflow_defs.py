@@ -35,6 +35,9 @@ class StepDef:
     agent_id: str
     prompt_template: str
     requires_approval: bool
+    #: Roda uma vez por item que o step anterior enumerou. Ver
+    #: [pulse.orchestrator.fanout].
+    fan_out: bool = False
 
 
 @dataclass(frozen=True)
@@ -66,6 +69,7 @@ def _step(row: Any) -> StepDef:
         agent_id=str(row["agent_id"]),
         prompt_template=str(row["prompt_template"] or ""),
         requires_approval=bool(row["requires_approval"]),
+        fan_out=bool(row["fan_out"]),
     )
 
 
@@ -180,8 +184,9 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
         connection.executemany(
             """
             INSERT INTO workflow_steps
-              (workflow_id, step_id, position, label, agent_id, prompt_template, requires_approval)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+              (workflow_id, step_id, position, label, agent_id, prompt_template,
+               requires_approval, fan_out)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -192,6 +197,7 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
                     step.agent_id,
                     step.prompt_template,
                     int(step.requires_approval),
+                    int(step.fan_out),
                 )
                 for index, step in enumerate(workflow.steps, start=1)
             ],

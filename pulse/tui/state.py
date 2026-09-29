@@ -20,6 +20,9 @@ from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
+#: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
+#: gerou. Ver [pulse.orchestrator.engine._units].
+FANOUT_SEP = ":"
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -58,6 +61,8 @@ class CockpitState:
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
     _follow_live: bool = True
+    _base_labels: dict[str, str] = field(default_factory=dict, repr=False)
+    _base_labels_for: str = field(default="", repr=False)
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -124,13 +129,45 @@ class CockpitState:
         self.running = True
         self.notify()
 
+    def sync_phases(self, steps: list[dict[str, str]] | tuple[dict[str, str], ...]) -> None:
+        """Refaz a lista de fases a partir do que o motor está mesmo rodando.
+
+        A lista muda no meio da run: um step de fan-out vira N, um por item. O
+        que já existe é preservado por id — recriar apagaria status, duração e
+        contadores de quem já rodou.
+        """
+        if not steps:
+            return
+        existing = {phase.id: phase for phase in self.phases}
+        selected = self.selected_phase()
+        self.phases = [
+            existing.get(str(step["id"]))
+            or PhaseItem(id=str(step["id"]), label=str(step.get("label", "")))
+            for step in steps
+        ]
+        for phase, step in zip(self.phases, steps):
+            phase.label = str(step.get("label", "")) or phase.label
+        # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
+        # depois dele para baixo.
+        if selected is not None:
+            for index, phase in enumerate(self.phases):
+                if phase.id == selected.id:
+                    self.selected_phase_index = index
+                    break
+            else:
+                self.selected_phase_index = min(
+                    self.selected_phase_index, max(0, len(self.phases) - 1)
+                )
+
     def apply_phase_statuses(
         self,
         *,
+        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
         failed_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
+        self.sync_phases(steps)
         done = set(done_ids)
         skipped = set(skipped_ids)
         failed = set(failed_ids)
@@ -413,6 +450,33 @@ class CockpitState:
 
     def selected_nav_item(self) -> PhaseItem | None:
         return self.selected_phase()
+
+    def base_step_label(self, step_id: str) -> str:
+        """Rótulo do step como a definição o nomeia (`implement` → Implementar).
+
+        O fan-out apaga o step pai da run e põe os N filhos no lugar dele, então
+        o nome do pai só existe na definição do workflow.
+        """
+        if self._base_labels_for != self.workflow_id:
+            self._base_labels_for = self.workflow_id
+            self._base_labels = dict(workflow_steps(self.workflow_id)) if self.workflow_id else {}
+        return self._base_labels.get(step_id, "")
+
+    def phase_groups(self) -> list[tuple[str, list[tuple[int, PhaseItem]]]]:
+        """Fases na ordem, com os filhos de um fan-out reunidos sob o pai.
+
+        Chave vazia é fase solta. O índice vem junto porque a navegação continua
+        sendo sobre `phases` — agrupar é só desenho, não muda o que se seleciona.
+        """
+        groups: list[tuple[str, list[tuple[int, PhaseItem]]]] = []
+        for index, phase in enumerate(self.phases):
+            base, sep, _ = phase.id.partition(FANOUT_SEP)
+            key = base if sep else ""
+            if key and groups and groups[-1][0] == key:
+                groups[-1][1].append((index, phase))
+            else:
+                groups.append((key, [(index, phase)]))
+        return groups
 
     def visible_entries(self) -> list[LogEntry]:
         phase = self.selected_phase()

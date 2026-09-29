@@ -119,3 +119,21 @@ def test_an_event_without_title_or_detail_is_dropped(tmp_path: Path):
     run_store.record_event(record.id, kind="Assistant", title="", detail="")
 
     assert run_store.list_events(record.id) == []
+
+
+def test_deleting_a_run_takes_its_steps_events_and_artifacts_along(tmp_path: Path):
+    record = _create(tmp_path)
+    run_store.record_event(record.id, kind="Assistant", title="oi", detail="oi")
+    run_store.record_artifact(record.id, path="docs/PRD.md", step_id="one")
+    other = _create(tmp_path, run_id="run-2")
+
+    assert run_store.delete_run(record.id) is True
+
+    assert run_store.load_run(record.id) is None
+    assert run_store.list_events(record.id) == []
+    assert run_store.list_artifacts(record.id) == []
+    assert [item.id for item in run_store.list_runs(tmp_path)] == [other.id]
+
+
+def test_deleting_a_run_that_is_not_there_says_so(tmp_path: Path):
+    assert run_store.delete_run("run-que-nunca-existiu") is False

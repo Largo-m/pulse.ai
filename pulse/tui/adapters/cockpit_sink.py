@@ -164,11 +164,13 @@ class CockpitSink:
     def apply_phase_statuses(
         self,
         *,
+        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
         failed_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         self._state.apply_phase_statuses(
+            steps=steps,
             done_ids=done_ids,
             skipped_ids=skipped_ids,
             failed_ids=failed_ids,
