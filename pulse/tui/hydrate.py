@@ -143,6 +143,22 @@ def _parse_stamp(value: str) -> datetime | None:
         return None
 
 
+#: O stream desenha estes a partir de `body`; o resto, de `title`/`detail`.
+_BODY_KINDS = frozenset({LogKind.ASSISTANT, LogKind.QUESTION, LogKind.ANSWER})
+_KIND_BY_NAME = {kind.value.lower(): kind for kind in LogKind}
+
+
+def _entry_kind(raw: str) -> LogKind:
+    """Tipo gravado de volta ao tipo da tela.
+
+    O banco guarda o rótulo que a sessão viva mostrou — `Read`, `Shell`,
+    `Write`, `Info`. Traduzir tudo para `Tool`, como antes, era o que fazia o
+    histórico virar uma coluna de "v Tool" sem dizer o que o agente fez.
+    Rótulo desconhecido (ou de uma run antiga) cai em `Tool`, que é o genérico.
+    """
+    return _KIND_BY_NAME.get(str(raw or "").strip().lower(), LogKind.TOOL)
+
+
 def _load_entries(
     run_id: str, phases: list[PhaseItem], *, placeholder: bool = True
 ) -> list[LogEntry]:
@@ -152,15 +168,13 @@ def _load_entries(
         detail = row.get("detail", "").strip()
         if not title and not detail:
             continue
-        is_tool = row.get("kind") == "Tool"
+        kind = _entry_kind(row.get("kind", ""))
         entries.append(
             LogEntry(
-                kind=LogKind.TOOL if is_tool else LogKind.ASSISTANT,
+                kind=kind,
                 title=title[:160] or detail[:160],
                 detail=detail,
-                # O stream desenha a fala do agente a partir de `body`; a de tool,
-                # de `detail`. Sem isso o balão do assistente reabre vazio.
-                body="" if is_tool else detail,
+                body=detail if kind in _BODY_KINDS else "",
                 entry_id=len(entries) + 1,
                 tool_id=row.get("tool_id", ""),
                 phase_id=row.get("step_id", ""),

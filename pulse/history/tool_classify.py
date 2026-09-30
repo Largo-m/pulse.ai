@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from pulse.tui.state import LogKind
+from pulse.history.events import LogKind
 
 _SEARCH = re.compile(r"\b(search|grep|find|glob|rg)\b", re.IGNORECASE)
 _LIST = re.compile(r"\b(list|ls|dir|glob)\b", re.IGNORECASE)

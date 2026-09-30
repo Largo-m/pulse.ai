@@ -46,8 +46,10 @@ def test_a_write_tool_call_records_the_artifact(tmp_path):
 
     runner._record_run_event(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))
 
+    # Relativo ao workspace: o caminho gravado é o mesmo que a aba de
+    # artefatos usa para abrir o arquivo em outra máquina.
     assert run_store.list_artifacts("run-1") == [
-        {"path": "/repo/docs/PLANO.md", "step_id": "one"}
+        {"path": "docs/PLANO.md", "step_id": "one"}
     ]
 
 
@@ -59,7 +61,7 @@ def test_the_path_can_come_from_raw_input(tmp_path):
     runner._record_run_event(_write_call(rawInput={"file_path": "/repo/src/main.rs"}))
 
     assert [item["path"] for item in run_store.list_artifacts("run-1")] == [
-        "/repo/src/main.rs"
+        "src/main.rs"
     ]
 
 
@@ -118,4 +120,6 @@ def test_tool_calls_also_land_in_the_run_log(tmp_path):
     runner._record_run_event(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))
 
     events = run_store.list_events("run-1")
-    assert [(event["kind"], event["step_id"]) for event in events] == [("Tool", "one")]
+    assert [(event["kind"], event["step_id"]) for event in events] == [("Write", "one")]
+    # O detalhe gravado é o rótulo da tela viva, não o `title` cru do ACP.
+    assert events[0]["title"] == "docs/PLANO.md"

@@ -18,8 +18,10 @@ from typing import Any
 
 from pulse.store.db import connect, default_db_path
 
-#: Detalhe de tool pode vir com o arquivo inteiro; a UI só mostra o começo.
-MAX_DETAIL = 2000
+#: Teto do detalhe gravado. É ele que segura a fala do agente inteira — em
+#: 2000 caracteres uma resposta longa reabria cortada no meio, e o histórico
+#: mostrava menos do que a sessão viva tinha mostrado.
+MAX_DETAIL = 20_000
 
 PENDING = "pending"
 RUNNING = "running"

@@ -8,7 +8,7 @@ from pulse.prompts.text_questionnaire import extract_questionnaire_block
 from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
-from pulse.tui.tool_detail import (
+from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
     merge_tool_update,

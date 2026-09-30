@@ -12,6 +12,8 @@ from typing import Any
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
 from pulse.acp.models import resolve_model_display_name
+from pulse.history.events import LogKind
+from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
 from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
@@ -116,6 +118,15 @@ class AcpSessionRunner:
         self._phase_id = ""
         #: Texto do agente acumulado até o próximo tool call / fim do prompt.
         self._text_buffer: list[str] = []
+        #: Tool-calls já vistos nesta run, acumulados update a update. O ACP
+        #: manda o `rawInput` num evento e o `rawOutput` noutro: gravar só o
+        #: último deixava o log do histórico sem o arquivo que o tool tocou.
+        self._tool_payloads: dict[str, dict[str, Any]] = {}
+        #: Classificação já atribuída a cada tool-call, para um update tardio
+        #: não rebatizar de "Tool" o que já entrou como "Write".
+        self._tool_kinds: dict[str, str] = {}
+        #: Tool-calls que já gravaram um rótulo de verdade (não "…").
+        self._tool_labeled: set[str] = set()
         self._run_id = str(uuid.uuid4())
         self._auth_methods: list[str] = []
         self.ask_question_count = 0
@@ -186,7 +197,7 @@ class AcpSessionRunner:
         try:
             for turn in range(MAX_PHASE_APPROVAL_TURNS):
                 label = phase_label if turn == 0 else f"{phase_label} — continuação ({turn + 1})"
-                self._stream.begin_phase(label)
+                self._begin_phase(label)
                 self._stream.reset_capture()
                 phase_result = self.prompt(self._session_id, next_prompt)
                 if phase_result.get("stopReason") == "cancelled":
@@ -297,9 +308,9 @@ class AcpSessionRunner:
         try:
             for turn in range(max(1, max_turns)):
                 if turn:
-                    self._stream.begin_phase(f"{phase_label} — continuação ({turn + 1})")
+                    self._begin_phase(f"{phase_label} — continuação ({turn + 1})")
                 else:
-                    self._stream.begin_phase(phase_label)
+                    self._begin_phase(phase_label)
                 self._stream.reset_capture()
                 result = self.prompt(self._session_id, next_prompt)
                 text = self._stream.agent_text().strip()
@@ -648,6 +659,11 @@ class AcpSessionRunner:
         self._permission_policy = policy
 
     def _activate_session(self, session_id: str) -> None:
+        # Os ids de tool-call valem dentro de uma sessão: o acumulado da
+        # anterior só ocuparia memória e poderia casar id repetido.
+        self._tool_payloads.clear()
+        self._tool_kinds.clear()
+        self._tool_labeled.clear()
         self._session_id = str(session_id)
         self.last_session_id = self._session_id
         self._logger.set_session_id(self._session_id)
@@ -676,6 +692,12 @@ class AcpSessionRunner:
 
         Ler o log do runtime não serve: só o Cursor tem um, e o Pulse é
         agnóstico ao agente que está rodando.
+
+        O que vai para o banco passa pelo **mesmo** rótulo que a tela ao vivo
+        usa ([pulse.history.tool_detail.build_tool_labels]): tipo do tool, alvo e
+        detalhe. Gravar o `title` cru do ACP com um `kind` fixo "Tool" era o que
+        fazia o histórico mostrar uma fileira de "v Tool" onde a sessão viva
+        mostra "Read pulse/store/runs.py" ou "Shell pytest -q".
         """
         if not self._bound_run_id:
             return
@@ -690,28 +712,72 @@ class AcpSessionRunner:
                 if text:
                     self._text_buffer.append(text)
             return
-        if kind not in {"tool_call", "tool_call_update"}:
+        if kind not in {"tool_call", "tool_call_update", "tool_result"}:
             return
         self._flush_text()
-        title = str(update.get("title") or update.get("kind") or "tool").strip()
+        tool_id = str(update.get("toolCallId") or "")
+        merged = self._merge_tool_payload(tool_id, update)
+        log_kind, title, detail = self._tool_labels(tool_id, merged)
+        if title.strip() in {"", "…", "..."} and not detail.strip():
+            # Tool-call que ainda não disse o que vai fazer. Regravar o
+            # placeholder apagaria o rótulo bom que já está na linha: o
+            # `tool_id` reescreve a existente em vez de acrescentar.
+            if tool_id in self._tool_labeled:
+                return
+            title = "…"
+        elif tool_id:
+            self._tool_labeled.add(tool_id)
+        self._save_event(kind=log_kind, title=title, detail=detail, tool_id=tool_id)
+        self._record_artifacts(merged, log_kind)
+
+    def _merge_tool_payload(self, tool_id: str, update: dict[str, Any]) -> dict[str, Any]:
+        if not tool_id:
+            return update
+        merged = merge_tool_update(self._tool_payloads.get(tool_id, {}), update)
+        self._tool_payloads[tool_id] = merged
+        return merged
+
+    def _tool_labels(self, tool_id: str, update: dict[str, Any]) -> tuple[str, str, str]:
+        """(kind, título, detalhe) de um tool-call, como a tela viva os monta.
+
+        Rotular é acessório ao step: qualquer tropeço aqui cai no `title` cru do
+        ACP em vez de derrubar a run.
+        """
+        try:
+            previous = self._tool_kinds.get(tool_id)
+            fallback = LogKind(previous) if previous else None
+            log_kind, title, detail = build_tool_labels(
+                update, cwd=self._cwd, fallback_kind=fallback
+            )
+            if tool_id and log_kind != LogKind.TOOL:
+                self._tool_kinds[tool_id] = log_kind.value
+            return log_kind.value, title, detail
+        except Exception:
+            return "Tool", self._fallback_title(update), self._fallback_detail(update)
+
+    @staticmethod
+    def _fallback_title(update: dict[str, Any]) -> str:
+        return str(update.get("title") or update.get("kind") or "tool").strip()
+
+    def _fallback_detail(self, update: dict[str, Any]) -> str:
         raw = update.get("rawInput")
-        detail = ""
         if isinstance(raw, dict):
             for key in (*self._PATH_KEYS, "command", "pattern", "query"):
                 value = raw.get(key)
                 if isinstance(value, str) and value.strip():
-                    detail = value.strip()
-                    break
-        self._save_event(
-            kind="Tool",
-            title=title,
-            detail=detail,
-            tool_id=str(update.get("toolCallId") or ""),
-        )
-        self._record_artifacts(update)
+                    return value.strip()
+        return ""
 
-    def _record_artifacts(self, update: dict[str, Any]) -> None:
-        if str(update.get("kind") or "").lower() not in self._WRITE_KINDS:
+    def _record_artifacts(self, update: dict[str, Any], log_kind: str = "") -> None:
+        """Registra o que o tool-call escreveu.
+
+        O `kind` do ACP nem sempre vem — vários runtimes mandam só o nome do
+        tool. Por isso vale também a classificação de `build_tool_labels`, que é
+        a mesma que faz a aba de artefatos aparecer na sessão viva; sem ela o
+        histórico reabria sem nenhum artefato.
+        """
+        writes = str(update.get("kind") or "").lower() in self._WRITE_KINDS
+        if not writes and log_kind not in {"Write", "Edit"}:
             return
         for path in self._artifact_paths(update):
             try:
@@ -723,6 +789,14 @@ class AcpSessionRunner:
                 pass
 
     def _artifact_paths(self, update: dict[str, Any]) -> list[str]:
+        """Caminhos tocados pelo tool-call, relativos ao workspace.
+
+        A mesma extração da tela viva, para o artefato gravado abrir pela aba do
+        histórico: caminho absoluto de outra máquina não resolve arquivo nenhum.
+        """
+        paths = extract_paths(update, cwd=self._cwd)
+        if paths:
+            return paths
         found: list[str] = []
         locations = update.get("locations")
         if isinstance(locations, list):
@@ -740,6 +814,17 @@ class AcpSessionRunner:
                     break
         # `locations` e `rawInput` costumam trazer o mesmo arquivo.
         return list(dict.fromkeys(found))
+
+    def _begin_phase(self, label: str) -> None:
+        """Abre o passo na tela e deixa a mesma marca no log gravado.
+
+        A tela viva escreve uma linha de info a cada passo (e a cada
+        continuação); sem gravá-la, o histórico colava dois turnos num bloco só,
+        sem dizer onde um terminou.
+        """
+        self._flush_text()
+        self._stream.begin_phase(label)
+        self._save_event(kind="Info", title=label, detail=label)
 
     def _flush_text(self) -> None:
         text = "".join(self._text_buffer).strip()

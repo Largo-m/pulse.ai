@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pulse.tui.state import LogKind
-from pulse.tui.tool_classify import classify_tool
+from pulse.history.events import LogKind
+from pulse.history.tool_classify import classify_tool
 
 _HEADING_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 _FRONTMATTER_NAME_RE = re.compile(r"(?m)^name:\s*[\"']?([^\"'\n]+)[\"']?")
@@ -59,6 +59,17 @@ _GENERIC_GLOBS = frozenset({"*", "**", "**/*", "./**/*", "**/**"})
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:
+    """Caminho do jeito que a aba de artefatos o abre: relativo ao workspace.
+
+    O runtime reporta o mesmo arquivo de dois jeitos — absoluto em `locations`,
+    relativo em `rawInput`. Os dois têm que chegar na **mesma** string, senão o
+    artefato entra duas vezes e a aba aparece duplicada.
+
+    Por isso o relativo volta como está: `resolve()` num caminho relativo mede
+    a partir do cwd do *processo* (o daemon), não do workspace — daí
+    `.pulse/specs/x/PRD.md` falhava o `relative_to` e caía no corte de 4
+    segmentos, virando `specs/x/PRD.md`, que não abre arquivo nenhum.
+    """
     text = path.strip().strip("\"'`")
     if not text:
         return ""
@@ -68,6 +79,9 @@ def shorten_path(path: str, *, cwd: str | None = None) -> str:
         candidate = Path(text)
     except Exception:
         return text
+    if not candidate.is_absolute():
+        # `removeprefix`, não `lstrip`: este come o ponto de `.pulse/` também.
+        return text.removeprefix("./") or text
     if cwd:
         try:
             return str(candidate.resolve().relative_to(Path(cwd).resolve()))
@@ -75,6 +89,8 @@ def shorten_path(path: str, *, cwd: str | None = None) -> str:
             pass
     parts = candidate.parts
     if len(parts) > 4:
+        # Absoluto de fora do workspace: só o rabo, para caber na linha. Não
+        # abre arquivo — e é por isso que caminho relativo não passa por aqui.
         return str(Path(*parts[-4:]))
     return text
 

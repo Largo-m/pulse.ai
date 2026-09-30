@@ -429,6 +429,12 @@ Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
 `run_events` dá o stream, `run_artifacts` dá o painel — sem ler o store do
 runtime nem varrer pasta.
 
+O que vai para `run_events` é o **mesmo rótulo** que a tela ao vivo mostra:
+`acp/session_runner.py` acumula os updates de cada tool-call e passa por
+`history/tool_detail.build_tool_labels` antes de gravar, então o tipo (`Read`,
+`Shell`, `Write`…), o alvo e o detalhe são os da sessão viva — e o caminho do
+artefato é gravado relativo ao workspace, que é como o painel o abre.
+
 ---
 
 ## 7. O que pode / não pode misturar
