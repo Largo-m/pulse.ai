@@ -9,7 +9,7 @@ from typing import Any
 
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
@@ -156,6 +156,10 @@ class RunManager:
             state.status = "completed"
         elif exit_code == RUN_STOPPED:
             state.status = "stopped"
+        elif exit_code == RUN_BLOCKED:
+            # Nada quebrou: um step declarou que não tinha como entregar e a run
+            # não passou por cima. Quem consulta a API precisa ver a diferença.
+            state.status = "blocked"
         else:
             state.status = "failed"
         state.bus.publish(

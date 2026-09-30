@@ -7,8 +7,16 @@ from pathlib import Path
 import pytest
 
 from tests.conftest import make_workflow
-from tests.test_engine_steps import _Runner, _approved, _install, wired  # noqa: F401
+from tests.test_engine_steps import (  # noqa: F401
+    _approved,
+    _blocked,
+    _delivered,
+    _install,
+    _Runner,
+    wired,
+)
 
+from pulse.orchestrator import engine
 from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
 from pulse.orchestrator.engine import run_workflow
 from pulse.store import runs as run_store
@@ -307,3 +315,46 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
         ("run:T1", "done"),
         ("run:T2", "done"),
     ]
+
+
+def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tmp_path: Path):
+    """O caso que deu origem a tudo: T2 travou e T3 rodou assim mesmo.
+
+    Cada task tem sessão isolada, então a de T3 nem saberia que T2 não
+    entregou. Quem tem de saber é o motor — e ele para na task bloqueada.
+    """
+    make_workflow(
+        "demo",
+        steps=[("plan", "Planejar"), ("run", "Implementar")],
+        fan_out=("run",),
+        requires_approval=False,
+    )
+    runner = _Runner(
+        [
+            _delivered(_block("T1 — Um", "T2 — Dois", "T3 — Três")),
+            _delivered(),
+            _blocked("a migration depende de uma decisão de schema", needs="user"),
+        ]
+    )
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == engine.RUN_BLOCKED
+    record = run_store.list_runs(tmp_path)[0]
+    assert [(step.step_id, step.status) for step in record.steps] == [
+        ("plan", "done"),
+        ("run:T1", "done"),
+        ("run:T2", "blocked"),
+        ("run:T3", "pending"),
+    ]
+    assert len(runner.prompts) == 3, "T3 nem chegou a abrir sessão"
+    # O painel mostra a task travada como bloqueada, não como falha.
+    assert runner._stream.statuses[-1]["blocked_ids"] == ["run:T2"]

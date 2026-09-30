@@ -23,6 +23,10 @@ class NavSelected(Message):
 
 PhaseSelected = NavSelected
 
+#: Estados em que a cor do status manda no nome do step: os que pedem atenção.
+#: Nos demais, o realce é da seleção.
+_ATTENTION = frozenset({PhaseStatus.RUNNING, PhaseStatus.FAILED, PhaseStatus.BLOCKED})
+
 
 class PhaseSidebar(Widget):
     can_focus = True
@@ -106,6 +110,8 @@ class PhaseSidebar(Widget):
         done = sum(1 for status in statuses if status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
         if PhaseStatus.FAILED in statuses:
             status = PhaseStatus.FAILED
+        elif PhaseStatus.BLOCKED in statuses:
+            status = PhaseStatus.BLOCKED
         elif PhaseStatus.RUNNING in statuses:
             status = PhaseStatus.RUNNING
         elif done == len(statuses):
@@ -119,7 +125,7 @@ class PhaseSidebar(Widget):
         else:
             output.append("  ", style="#333333")
         tone = status_color(status)
-        name_style = tone if status in {PhaseStatus.RUNNING, PhaseStatus.FAILED} else "#E0E0E0"
+        name_style = tone if status in _ATTENTION else "#E0E0E0"
         label = f"{status_icon(status)} {state.base_step_label(key) or key}"
         if len(label) > 28:
             label = f"{label[:27]}…"
@@ -157,7 +163,7 @@ class PhaseSidebar(Widget):
         # A cor do status manda no nome só quando ele pede atenção (rodando ou
         # quebrado); nos demais, o realce é da seleção.
         tone = status_color(item.status)
-        name_style = tone if item.status in {PhaseStatus.RUNNING, PhaseStatus.FAILED} else (
+        name_style = tone if item.status in _ATTENTION else (
             "#E0E0E0" if accent else "#888888"
         )
         label = f"{status_icon(item.status)} {self._item_label(item, nested=nested)}"

@@ -41,9 +41,11 @@ class _Prompt:
     def __init__(self, choice: str = "stop") -> None:
         self.choice = choice
         self.asked: list[str] = []
+        self.prompts: list[str] = []
 
     def select_choice(self, prompt, choices, *, title=""):
         self.asked.append(title)
+        self.prompts.append(prompt)
         return self.choice
 
     def ask_text(self, prompt, *, title=""):
@@ -86,9 +88,28 @@ class _Runner:
         self.prompts.append(initial_prompt)
         return self._next({"approved": True})
 
-    def run_isolated_prompt(self, *, prompt_text: str, **_kwargs) -> dict:
+    def run_isolated_prompt(self, *, prompt_text: str, build_continuation=None, **_kwargs) -> dict:
+        """Imita o laço de turnos do runner de verdade, inclusive a continuação.
+
+        Sem isto, a chance que o agente tem de se destravar sozinho não seria
+        exercitada por teste nenhum: o motor só a oferece por este callback.
+        """
         self.prompts.append(prompt_text)
-        return self._next({"stopReason": "end_turn"})
+        result = self._next({"stopReason": "end_turn"})
+        parts = [str(result.get("phaseSummary", ""))]
+        turn = 0
+        while build_continuation is not None:
+            follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
+            if not follow_up:
+                break
+            self.prompts.append(follow_up)
+            result = self._next({"stopReason": "end_turn"})
+            parts.append(str(result.get("phaseSummary", "")))
+            # O resumo soma os turnos, como no runner de verdade: é o que faz o
+            # bloco do último turno ser o que vale.
+            result["phaseSummary"] = "\n\n".join(part for part in parts if part)
+            turn += 1
+        return result
 
     def _next(self, default: dict) -> dict:
         """Um resultado da fila — ou a exceção que a sessão levantaria."""
@@ -125,6 +146,26 @@ def _install(monkeypatch, runner: _Runner) -> None:
 
 def _approved(summary: str = "") -> dict:
     return {"approved": True, "outcome": "approve", "phaseSummary": summary}
+
+
+def _delivered(summary: str = "feito") -> dict:
+    """Turno de um step sem aprovação que declarou a entrega."""
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\n```",
+    }
+
+
+def _blocked(reason: str, *, needs: str = "") -> dict:
+    """Turno em que o agente declara que não teve como entregar."""
+    lines = ["status: blocked", f"reason: {reason}"]
+    if needs:
+        lines.append(f"needs: {needs}")
+    body = "\n".join(lines)
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"tentei e não deu\n\n```pulse:outcome\n{body}\n```",
+    }
 
 
 def test_steps_run_in_order_and_each_one_is_recorded(wired, monkeypatch, tmp_path: Path):
@@ -301,11 +342,11 @@ def test_skip_settles_the_step_without_failing_the_run(wired, monkeypatch, tmp_p
     assert record.step("two").status == "done"
 
 
-def test_a_step_without_approval_only_needs_the_agent_to_finish(
+def test_a_step_without_approval_closes_when_the_agent_declares_the_outcome(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "pronto"}])
+    runner = _Runner([_delivered("pronto")])
     _install(monkeypatch, runner)
 
     code = run_workflow(
@@ -318,6 +359,269 @@ def test_a_step_without_approval_only_needs_the_agent_to_finish(
 
     assert code == 0
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+
+
+def test_encerrar_o_turno_nao_basta_mais_para_um_step_contar_como_feito(
+    wired, monkeypatch, tmp_path: Path
+):
+    """A regra antiga — `end_turn` é sucesso — era o buraco inteiro.
+
+    Um agente que respondia "não consigo" encerrava o turno como qualquer
+    outro, o step virava `done` e o seguinte rodava em cima do nada.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
+    runner = _Runner(
+        [
+            {"stopReason": "end_turn", "phaseSummary": "não consigo: falta a credencial"},
+            # A continuação que o motor oferece, e o agente insistindo.
+            {"stopReason": "end_turn", "phaseSummary": "continuo sem conseguir"},
+        ]
+    )
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == engine.RUN_BLOCKED
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("one").status == "blocked"
+    assert record.step("two").status == "pending", "a cascata para no step bloqueado"
+    assert record.status == "blocked", "bloqueio não é falha"
+
+
+def test_a_declared_block_stops_the_run_instead_of_cascading(
+    wired, monkeypatch, tmp_path: Path
+):
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
+    runner = _Runner([_blocked("falta a credencial do banco", needs="user")])
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == engine.RUN_BLOCKED
+    assert runner._prompt_handler.asked == ["Um está bloqueado"]
+    assert runner._prompt_handler.prompts == ["falta a credencial do banco"], (
+        "o motivo que o agente declarou é o que a pessoa lê"
+    )
+    assert len(runner.prompts) == 1, "`needs: user` não gasta turno de auto-resolução"
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["blocked", "pending"]
+
+
+def test_a_blocked_step_gets_one_shot_at_unblocking_itself(
+    wired, monkeypatch, tmp_path: Path
+):
+    """O que está ao alcance do agente não acorda ninguém.
+
+    Sem `needs`, o motor devolve o bloqueio para o próprio agente uma vez — na
+    mesma sessão, para ele não recomeçar do zero — antes de escalar.
+    """
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
+    runner = _Runner(
+        [_blocked("o arquivo de config não existe"), _delivered("criei o config e segui")]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner._prompt_handler.asked == [], "ninguém foi interrompido"
+    assert len(runner.prompts) == 2
+    assert "Bloqueio declarado" in runner.prompts[1]
+    assert "o arquivo de config não existe" in runner.prompts[1]
+    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+
+
+def test_the_agent_gets_only_one_shot_before_the_person_is_called(
+    wired, monkeypatch, tmp_path: Path
+):
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
+    runner = _Runner([_blocked("falta X"), _blocked("continua faltando X")])
+    runner._prompt_handler.choice = "stop"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == engine.RUN_BLOCKED
+    assert len(runner.prompts) == 2, "duas tentativas, não um pingue-pongue"
+    assert runner._prompt_handler.prompts == ["continua faltando X"]
+
+
+def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Esquecer o bloco é o caso mais comum, e o mais barato de resolver.
+
+    Sem isto, todo agente distraído viraria uma pergunta na tela — que é
+    exatamente a fricção que faria o protocolo não valer a pena.
+    """
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
+    runner = _Runner(
+        [{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner._prompt_handler.asked == []
+    assert "Desfecho do step" in runner.prompts[1]
+    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+
+
+def test_skipping_a_blocked_step_records_it_as_skipped_not_done(
+    wired, monkeypatch, tmp_path: Path
+):
+    """O pulo explícito é a diferença: antes ele acontecia disfarçado de `done`."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
+    runner = _Runner([_blocked("falta acesso", needs="user"), _delivered()])
+    runner._prompt_handler.choice = "skip"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["skipped", "done"]
+
+
+def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(
+    wired, monkeypatch, tmp_path: Path
+):
+    """O resumo envenenado: o próximo step não pode receber "não consegui".
+
+    Ele recebe o resumo do último step que entregou de verdade — aqui, o
+    primeiro —, não o do step que travou e foi pulado.
+    """
+    make_workflow(
+        "demo",
+        steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")],
+        requires_approval=False,
+        prompt_template="{{#if previous_summary}}antes: {{previous_summary}}{{/if}}siga",
+    )
+    runner = _Runner(
+        [
+            _delivered("escrevi o plano"),
+            _blocked("não consegui migrar o schema", needs="user"),
+            _delivered(),
+        ]
+    )
+    runner._prompt_handler.choice = "skip"
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert "não consegui migrar o schema" not in runner.prompts[2]
+    assert runner.prompts[2].startswith("antes: escrevi o plano")
+
+
+def test_requires_outcome_off_brings_the_old_behaviour_back(
+    wired, monkeypatch, tmp_path: Path
+):
+    """A válvula de escape, para workflow que ainda não ensinou o protocolo."""
+    make_workflow(
+        "demo", steps=[("one", "Um")], requires_approval=False, requires_outcome=False
+    )
+    runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "pronto"}])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner.prompts == ["x"], "sem protocolo, o prompt fica como o autor escreveu"
+    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+
+
+def test_an_approval_step_keeps_the_person_as_the_only_gate(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Um step tem um portão só: onde há aprovação, quem atesta é a pessoa."""
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=True)
+    runner = _Runner([_approved("entreguei")])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert runner.prompts == ["x"], "nada de pedir desfecho onde já há aprovação"
+
+
+def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
+    wired, monkeypatch, tmp_path: Path
+):
+    """CLI, cockpit fechado, run do daemon: o default seguro é parar."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
+    runner = _Runner([_blocked("falta acesso", needs="user")])
+    runner._prompt_handler = object()  # sem `select_choice`: ninguém para perguntar
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == engine.RUN_BLOCKED
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.status for step in record.steps] == ["blocked", "pending"]
 
 
 def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_path: Path):

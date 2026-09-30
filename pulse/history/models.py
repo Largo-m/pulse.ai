@@ -12,6 +12,7 @@ class HistoryStatus(str, Enum):
     DONE = "done"
     FAILED = "failed"
     STOPPED = "stopped"
+    BLOCKED = "blocked"
 
 
 @dataclass

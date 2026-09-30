@@ -7,6 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
+from pulse.orchestrator.engine import RUN_BLOCKED
 from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
@@ -219,6 +220,15 @@ class CockpitScreen(Screen[None]):
             self.state.add_info("Workflow concluído")
         elif code == RUN_STOPPED:
             self.state.add_info("Run parada — dá para retomar de onde parou")
+            self._sync_ui(force=True)
+            self._offer_resume()
+            return
+        elif code == RUN_BLOCKED:
+            # "Falhou" seria a palavra errada: o agente rodou e disse que não
+            # tinha como entregar. O que resolve é destravar e retomar.
+            self.state.add_info(
+                "Run bloqueada — resolva o que o step pediu e retome de onde parou"
+            )
             self._sync_ui(force=True)
             self._offer_resume()
             return

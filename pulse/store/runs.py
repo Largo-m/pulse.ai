@@ -27,8 +27,14 @@ DONE = "done"
 SKIPPED = "skipped"
 FAILED = "failed"
 STOPPED = "stopped"
+#: O agente rodou e declarou que não tinha como concluir. Diferente de `failed`,
+#: que é quebra técnica (sessão caiu, prazo estourou): aqui nada quebrou, a
+#: entrega é que não aconteceu. A distinção existe porque o que se faz com cada
+#: um é diferente — falha se refaz, bloqueio se destrava.
+BLOCKED = "blocked"
 
-#: Um step nesses estados não roda de novo ao retomar.
+#: Um step nesses estados não roda de novo ao retomar. `blocked` fica de fora de
+#: propósito: retomar uma run bloqueada tem de refazer o step que travou.
 SETTLED = frozenset({DONE, SKIPPED})
 
 

@@ -11,6 +11,9 @@ class PhaseStatus(str, Enum):
     DONE = "done"
     SKIPPED = "skipped"
     FAILED = "failed"
+    #: O agente rodou e declarou que não tinha como concluir. Ver
+    #: [pulse.orchestrator.outcome].
+    BLOCKED = "blocked"
 
 
 class LogKind(str, Enum):

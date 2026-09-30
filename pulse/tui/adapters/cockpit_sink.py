@@ -168,12 +168,14 @@ class CockpitSink:
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
         failed_ids: list[str] | tuple[str, ...] = (),
+        blocked_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         self._state.apply_phase_statuses(
             steps=steps,
             done_ids=done_ids,
             skipped_ids=skipped_ids,
             failed_ids=failed_ids,
+            blocked_ids=blocked_ids,
         )
         self._emit()
 

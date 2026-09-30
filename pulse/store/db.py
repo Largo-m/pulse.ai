@@ -125,6 +125,11 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   -- sessão isolada e com linha própria em `run_steps`. Ver
   -- [pulse.orchestrator.fanout]. O motor não sabe o que é um item.
   fan_out INTEGER NOT NULL DEFAULT 0,
+  -- 1 = o step só fecha como `done` se o agente declarar o desfecho no bloco
+  -- `pulse:outcome`. Ver [pulse.orchestrator.outcome]. Vale para step sem
+  -- aprovação: onde há aprovação, quem atesta a entrega é a pessoa. Desligar
+  -- devolve o comportamento antigo — encerrar o turno conta como concluir.
+  requires_outcome INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (workflow_id, step_id)
 );
 
@@ -220,6 +225,10 @@ def default_db_path() -> Path:
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "fan_out", "INTEGER NOT NULL DEFAULT 0"),
     ("workflow_defs", "default_prompt", "TEXT NOT NULL DEFAULT ''"),
+    # Nasce ligada também para quem já tinha banco: o step que vinha fechando
+    # como `done` por encerrar o turno é exatamente o que precisa passar a
+    # declarar o desfecho.
+    ("workflow_steps", "requires_outcome", "INTEGER NOT NULL DEFAULT 1"),
 )
 
 

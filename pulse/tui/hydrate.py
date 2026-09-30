@@ -28,6 +28,7 @@ _STEP_TO_PHASE = {
     "done": PhaseStatus.DONE,
     "skipped": PhaseStatus.SKIPPED,
     "failed": PhaseStatus.FAILED,
+    "blocked": PhaseStatus.BLOCKED,
 }
 
 

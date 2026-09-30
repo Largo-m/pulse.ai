@@ -18,6 +18,7 @@ def make_workflow(
     requires_approval: bool = True,
     prompt_template: str = "{{user_prompt}}",
     fan_out: tuple[str, ...] | set[str] = (),
+    requires_outcome: bool = True,
 ) -> WorkflowDef:
     """Grava um workflow de teste no banco e devolve a definição.
 
@@ -39,6 +40,7 @@ def make_workflow(
                 prompt_template=prompt_template,
                 requires_approval=requires_approval,
                 fan_out=step_id in fan_out,
+                requires_outcome=requires_outcome,
             )
             for index, (step_id, step_label) in enumerate(entries, start=1)
         ),

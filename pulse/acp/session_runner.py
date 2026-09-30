@@ -26,6 +26,13 @@ from pulse.runcontrol import RunControl
 #: deixar um agente em loop infinito — ao estourar, o step cai no retry.
 MAX_PHASE_APPROVAL_TURNS = 12
 
+#: Turnos de um step sem aprovação: o trabalho, mais uma continuação. A segunda
+#: é a chance de o agente destravar sozinho o que declarou bloqueado. Duas e não
+#: mais: um agente que repete o bloqueio depois de ser cutucado uma vez está
+#: dizendo que precisa de gente, e insistir só gasta token para chegar ao mesmo
+#: menu. Ver [pulse.orchestrator.engine._attempt_step].
+MAX_PROMPT_TURNS = 2
+
 #: Depois de pedir `session/cancel`, quanto esperamos o agente fechar o turno
 #: por conta própria antes de considerar cancelado mesmo assim.
 CANCEL_GRACE_SECONDS = 10.0
@@ -254,7 +261,17 @@ class AcpSessionRunner:
         preferred_model: str | None = None,
         agent_mode: bool = True,
         phase_id: str = "",
+        build_continuation: Callable[..., str] | None = None,
+        max_turns: int = MAX_PROMPT_TURNS,
     ) -> dict[str, Any]:
+        """Roda o step numa sessão própria, com direito a continuação.
+
+        `build_continuation` recebe o resultado do turno e devolve o próximo
+        prompt, ou vazio para encerrar. É o que deixa o motor mandar o agente
+        destravar o que ele mesmo declarou bloqueado **sem trocar de sessão**:
+        uma sessão nova perderia tudo que ele já descobriu e o faria recomeçar
+        do zero, que é justamente o que não se quer de uma segunda chance.
+        """
         if phase_id:
             self._phase_id = phase_id
         self._logger.log_event(
@@ -270,16 +287,40 @@ class AcpSessionRunner:
         self.apply_model(session, preferred_model)
 
         self.apply_mode(session, execute=agent_mode)
-        self._stream.begin_phase(phase_label)
-        self._stream.reset_capture()
 
+        next_prompt = prompt_text
+        # O resumo é a soma dos turnos, não só o do último: o turno que
+        # destravou costuma ser curto ("criei o arquivo e conclui"), e entregar
+        # só ele ao step seguinte jogaria fora o trabalho descrito no primeiro.
+        parts: list[str] = []
+        result: dict[str, Any] = {}
         try:
-            result = self.prompt(self._session_id, prompt_text)
-            result["phaseSummary"] = self._stream.agent_text()
-            result["askQuestionCount"] = self.ask_question_count
+            for turn in range(max(1, max_turns)):
+                if turn:
+                    self._stream.begin_phase(f"{phase_label} — continuação ({turn + 1})")
+                else:
+                    self._stream.begin_phase(phase_label)
+                self._stream.reset_capture()
+                result = self.prompt(self._session_id, next_prompt)
+                text = self._stream.agent_text().strip()
+                if text:
+                    parts.append(text)
+                result["phaseSummary"] = "\n\n".join(parts)
+                result["askQuestionCount"] = self.ask_question_count
+                result["turns"] = turn + 1
+                if build_continuation is None or result.get("stopReason") == "cancelled":
+                    break
+                follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
+                if not follow_up:
+                    break
+                next_prompt = follow_up
             self._logger.log_event(
                 "run_isolated_prompt_done",
-                {"phase": phase_label, "stop_reason": result.get("stopReason")},
+                {
+                    "phase": phase_label,
+                    "stop_reason": result.get("stopReason"),
+                    "turns": result.get("turns"),
+                },
             )
             return result
         finally:

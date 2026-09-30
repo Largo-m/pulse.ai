@@ -159,14 +159,20 @@ class CockpitState:
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
         failed_ids: list[str] | tuple[str, ...] = (),
+        blocked_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         self.sync_phases(steps)
         done = set(done_ids)
         skipped = set(skipped_ids)
         failed = set(failed_ids)
+        blocked = set(blocked_ids)
         now = time.monotonic()
         for phase in self.phases:
-            if phase.id in failed:
+            if phase.id in blocked:
+                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
+                    phase.ended_at = now
+                phase.status = PhaseStatus.BLOCKED
+            elif phase.id in failed:
                 if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
                     phase.ended_at = now
                 phase.status = PhaseStatus.FAILED

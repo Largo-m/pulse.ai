@@ -105,8 +105,8 @@ própria no painel, sem o motor saber o que é uma task.
 
 Quem enumera é o agente, num bloco cercado que o Pulse acha
 ([`pulse/orchestrator/fanout.py`](../pulse/orchestrator/fanout.py)) — é o segundo
-e último protocolo que o motor lê da resposta, ao lado do questionário de
-aprovação:
+dos três protocolos que o motor lê da resposta, ao lado do questionário de
+aprovação e do bloco de desfecho (§2.2):
 
 ````text
 ```pulse:items
@@ -142,6 +142,66 @@ step `implement` (fan_out)          →   run_steps
 O motor continua sem ler artefato: ele não abre `tasks.md` nem conhece `### T1`.
 Trocar `tasks.md` por outra coisa não muda uma linha do orquestrador.
 
+### 2.2 Desfecho: como um step fecha como concluído
+
+Antes, "o step terminou bem" queria dizer apenas **"o agente encerrou o turno"**.
+Um agente que respondia *"não consigo, falta a credencial"* encerrava o turno
+como qualquer outro (`end_turn`), o step ia para o banco como `done` e o step
+seguinte rodava em cima de uma entrega que não existiu — em cascata, até o fim
+do workflow.
+
+Um step tem **um portão só**:
+
+| Step | Quem atesta a entrega |
+| --- | --- |
+| `requires_approval = 1` | a pessoa, no questionário de aprovação |
+| `requires_approval = 0` e `requires_outcome = 1` | o agente, no bloco `pulse:outcome` |
+| `requires_outcome = 0` | ninguém — encerrar o turno basta (comportamento antigo) |
+
+O motor anexa a instrução do protocolo ao prompt sozinho
+([`pulse/orchestrator/prompts.py`](../pulse/orchestrator/prompts.py)): nenhum
+`prompt_template` precisa ser editado. O agente encerra com:
+
+````text
+```pulse:outcome
+status: done
+```
+````
+
+ou, quando não entregou:
+
+````text
+```pulse:outcome
+status: blocked
+reason: falta a credencial do banco (DATABASE_URL não está no ambiente)
+needs: user
+```
+````
+
+`needs: user` só quando depender de outra pessoa, de um acesso ou de uma
+permissão. Ele é o que decide se o motor gasta ou não a tentativa de
+auto-resolução.
+
+**Os três degraus**, nesta ordem
+([`pulse/orchestrator/outcome.py`](../pulse/orchestrator/outcome.py)):
+
+1. **O agente pergunta.** Falta um dado que só a pessoa tem? O canal de pergunta
+   (`cursor/ask_question`) entrega na tela **sem encerrar o step**. Bloqueio não
+   é o jeito de pedir informação.
+2. **O agente tenta resolver sozinho, uma vez.** Bloqueio sem `needs: user` — e
+   bloco esquecido — voltam para ele numa continuação **na mesma sessão ACP**,
+   para ele não recomeçar do zero. Uma só: quem repete o bloqueio depois de ser
+   cutucado está dizendo que precisa de gente.
+3. **Só então escala.** O step vai para `blocked`, a run para (`RUN_BLOCKED`) e
+   o menu oferece *Refazer · Outro · Pular este step · Parar*. Sem ninguém para
+   perguntar (CLI, cockpit fechado, daemon), a run **para** — o default seguro é
+   nunca seguir adiante.
+
+`blocked` é estado próprio, e não `failed`: nada quebrou, a entrega é que não
+aconteceu. Fica fora de `SETTLED`, então retomar refaz o step que travou e só
+ele. Pular é registrado como `skipped`, nunca como `done`, e o step pulado não
+passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fechou.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
@@ -153,7 +213,7 @@ Trocar `tasks.md` por outra coisa não muda uma linha do orquestrador.
 | `user_prompt` | o que o usuário pediu |
 | `workspace` | diretório da run |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
-| `previous_summary` | resposta do último step que produziu resumo |
+| `previous_summary` | resumo do último step que **fechou** (`done`/`skipped`) |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 | `item_id` / `item_label` | o item deste step, num step de fan-out |
 | `item_index` / `item_total` | "2 de 7", para o prompt situar o agente |

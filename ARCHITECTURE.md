@@ -85,6 +85,7 @@ em quatro tabelas de estado.
     agent_id ──────┐                      acp_session_id, started_at, ended_at
     prompt_template│                          │
     requires_approval                         ├──► run_events
+    requires_outcome, fan_out                 │
         ┌──────────┘                          │      kind, title, detail, tool_id
         ▼                                     │
   agent_defs                                  └──► run_artifacts
@@ -143,6 +144,7 @@ run_workflow(workflow_id, user_prompt, …)
        ├─ render(step.prompt_template) com os valores da run
        ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
        ├─ classify_outcome(…)          approve | adjust | skip | cancel
+       ├─ parse_outcome(…)             done | blocked  (step sem aprovação)
        └─ save_step(status, summary)   desfecho no banco
 ```
 
@@ -158,7 +160,10 @@ entre steps, que hoje ainda não acontece (ver §Fora de escopo).
 
 ### O que o motor interpreta da resposta
 
-Só o desfecho do questionário de aprovação
+Três blocos cercados que o próprio Pulse especificou — nunca o conteúdo do que o
+agente produziu, nunca um arquivo que ele escreveu.
+
+**1. O questionário de aprovação**
 ([`pulse/prompts/approval.py`](pulse/prompts/approval.py)):
 
 | Desfecho | Efeito |
@@ -168,12 +173,36 @@ Só o desfecho do questionário de aprovação
 | `skip` | step vira `skipped` — não é falha |
 | `cancel` | step não fechou; cai no menu de retry |
 
-Step sem aprovação só precisa que o agente feche o turno (`stopReason`).
+**2. O desfecho do step sem aprovação**
+([`pulse/orchestrator/outcome.py`](pulse/orchestrator/outcome.py)). Um step tem
+um portão só: onde há aprovação quem atesta a entrega é a pessoa; onde não há, é
+o agente, no bloco `pulse:outcome`:
 
-Falha ou não-aprovação abre **Refazer / Outro — dizer o que fazer / Parar**.
-"Outro" injeta a orientação do usuário no prompt da tentativa seguinte.
+````text
+```pulse:outcome
+status: blocked
+reason: falta a credencial do banco
+needs: user
+```
+````
 
-O **conteúdo** do que o agente produziu nunca é lido.
+Antes desse bloco, fechar o turno bastava para o step virar `done` — um agente
+que dizia "não consigo" era registrado como concluído e o step seguinte rodava
+em cima de uma entrega que não existiu, em cascata. Agora: bloqueio sem
+`needs: user` (e bloco esquecido) voltam uma vez para o próprio agente, na mesma
+sessão, para ele destravar o que estiver ao alcance dele; o que sobra vira
+`blocked` e **para a run** (`RUN_BLOCKED`, 131), que não é falha — nada quebrou,
+a entrega é que não aconteceu. `requires_outcome = 0` desliga o protocolo por
+step e devolve o comportamento antigo.
+
+**3. A lista de itens do fan-out**
+([`pulse/orchestrator/fanout.py`](pulse/orchestrator/fanout.py)).
+
+Falha ou não-aprovação abre **Refazer / Outro — dizer o que fazer / Parar**;
+bloqueio abre o mesmo menu com **Pular este step** a mais. "Outro" injeta a
+orientação do usuário no prompt da tentativa seguinte. Sem ninguém para
+perguntar (CLI, daemon), os dois param a run: o que ninguém vê não segue
+adiante sozinho.
 
 ### Parar e retomar
 
@@ -186,7 +215,9 @@ Não existe pausa. Segurar a run viva esperando o usuário custava thread e sess
 ACP abertas por tempo indefinido e dava no mesmo: a sessão ACP não congela no
 meio de um turno, então o step cortado é refeito do começo de qualquer jeito.
 
-Retomar = rodar o primeiro step que não está `done`/`skipped`. É a única porta
+Retomar = rodar o primeiro step que não está `done`/`skipped` — `blocked` fica
+de fora desse par de propósito: retomar uma run bloqueada refaz o step que
+travou, e só ele. É a única porta
 de volta a uma run: não existe "refazer do zero", porque rodar tudo de novo é
 começar uma run nova — assim a tentativa anterior fica no histórico em vez de ser
 sobrescrita.

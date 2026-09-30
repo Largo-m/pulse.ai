@@ -379,10 +379,52 @@ com `→` (as escolhas do usuário). Texto livre é tratado como orientação, n
 escolha: "revise o fluxo de aprovação" não aprova o step só porque contém
 "aprov".
 
-**É o único conteúdo que o motor interpreta.** Ele nunca abre um arquivo que o
-agente escreveu, nunca valida formato, nunca espera nome conhecido.
+Ele nunca abre um arquivo que o agente escreveu, nunca valida formato, nunca
+espera nome conhecido: o que o motor interpreta são os três blocos cercados que
+ele mesmo especificou — este, o `pulse:items` do fan-out (§6) e o
+`pulse:outcome` do desfecho (§5.3).
 
-### 5.3 Desfechos e retry
+### 5.3 O laço do step sem aprovação (`run_isolated_prompt`)
+
+Um step sem aprovação não tem pessoa atestando a entrega, então quem atesta é o
+agente, no bloco de desfecho
+([`outcome.py`](../pulse/orchestrator/outcome.py)):
+
+````text
+```pulse:outcome
+status: done
+```
+````
+
+Antes desse bloco, "o step terminou bem" queria dizer só "o agente encerrou o
+turno": quem respondia *"não consigo, falta a credencial"* fechava com
+`end_turn` como qualquer outro, virava `done`, e o step seguinte rodava em cima
+do nada — em cascata.
+
+O laço tem até `MAX_PROMPT_TURNS` (2) rodadas:
+
+```
+1. stream.begin_phase(label) + reset_capture()
+2. session/prompt(next_prompt)
+3. phaseSummary = soma dos turnos            ← o bloco que vale é o do último
+4. parse_outcome(phaseSummary)
+     ├─ done                    → step fecha
+     ├─ bloco ausente           → pede o desfecho e volta ao passo 1
+     ├─ blocked sem needs: user → build_unblock_prompt() e volta ao passo 1
+     └─ blocked com needs: user → escala direto, sem gastar o turno
+```
+
+A continuação roda **na mesma sessão ACP**, e é uma só por tentativa. Na mesma
+sessão porque uma sessão nova perderia tudo que o agente já descobriu e o faria
+recomeçar do zero — que é justamente o que não se quer de uma segunda chance.
+Uma só porque quem repete o bloqueio depois de ser cutucado está dizendo que
+precisa de gente.
+
+Antes de tudo isso vem o degrau zero: falta um dado que só a pessoa tem? O
+agente **pergunta** (`cursor/ask_question`, §4), o que não encerra o step.
+Bloqueio é o último recurso, não o jeito de pedir informação.
+
+### 5.4 Desfechos e retry
 
 | Desfecho | `run_steps.status` | Efeito |
 | --- | --- | --- |
@@ -390,8 +432,9 @@ agente escreveu, nunca valida formato, nunca espera nome conhecido.
 | `skip` | `skipped` | segue — não é falha |
 | `adjust` / `continue` | — | volta ao agente com as respostas |
 | `cancel` / não aprovado / `stopReason` ruim | — | cai no menu de retry |
+| `status: blocked` (ou sem bloco) | `blocked` | cai no menu de bloqueio |
 
-O menu ([`_offer_retry`](../pulse/orchestrator/engine.py)):
+O menu de falha ([`_offer_retry`](../pulse/orchestrator/engine.py)):
 
 ```
 Refazer                      → nova tentativa, mesmo prompt
@@ -399,9 +442,26 @@ Outro — dizer o que fazer    → ask_text() → guidance_block() no prompt seg
 Parar                        → status FAILED, run encerra com exit 1
 ```
 
-Sem `prompt_handler` capaz de perguntar (CLI, testes), o padrão é `stop`.
+O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/engine.py)) tem uma
+opção a mais, porque bloqueio costuma ser legítimo e às vezes a resposta certa é
+seguir sem aquele step:
 
-### 5.4 Parar e retomar
+```
+Refazer — já resolvi         → nova tentativa
+Outro — dizer o que fazer    → orientação do usuário no prompt seguinte
+Pular este step              → status SKIPPED, e sem passar resumo adiante
+Parar a run                  → status BLOCKED, run encerra com RUN_BLOCKED (131)
+```
+
+Sem `prompt_handler` capaz de perguntar (CLI, testes, daemon), o padrão é
+`stop` nos dois. É a inversão que faltava: antes, o que ninguém via seguia
+adiante sozinho.
+
+`blocked` não é `failed`. Falha é quebra técnica — a sessão caiu, o prazo
+estourou; bloqueio é o agente rodando bem e dizendo que não tinha como entregar.
+O que se faz com cada um é diferente: falha se refaz, bloqueio se destrava.
+
+### 5.5 Parar e retomar
 
 Não dá para congelar um turno do agente no meio: ou ele termina, ou é descartado.
 Por isso existe um comando só — não há pausa. O contrato

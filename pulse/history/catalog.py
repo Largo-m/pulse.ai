@@ -20,6 +20,7 @@ _RUN_TO_HISTORY = {
     "completed": HistoryStatus.DONE,
     "failed": HistoryStatus.FAILED,
     "stopped": HistoryStatus.STOPPED,
+    "blocked": HistoryStatus.BLOCKED,
 }
 
 

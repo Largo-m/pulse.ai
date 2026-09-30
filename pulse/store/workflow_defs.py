@@ -38,6 +38,10 @@ class StepDef:
     #: Roda uma vez por item que o step anterior enumerou. Ver
     #: [pulse.orchestrator.fanout].
     fan_out: bool = False
+    #: Exige o bloco `pulse:outcome` para fechar como concluído. Ver
+    #: [pulse.orchestrator.outcome]. Sem efeito quando há aprovação: ali quem
+    #: atesta a entrega é a pessoa.
+    requires_outcome: bool = True
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,7 @@ def _step(row: Any) -> StepDef:
         prompt_template=str(row["prompt_template"] or ""),
         requires_approval=bool(row["requires_approval"]),
         fan_out=bool(row["fan_out"]),
+        requires_outcome=bool(row["requires_outcome"]),
     )
 
 
@@ -189,8 +194,8 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
             """
             INSERT INTO workflow_steps
               (workflow_id, step_id, position, label, agent_id, prompt_template,
-               requires_approval, fan_out)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               requires_approval, fan_out, requires_outcome)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -202,6 +207,7 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
                     step.prompt_template,
                     int(step.requires_approval),
                     int(step.fan_out),
+                    int(step.requires_outcome),
                 )
                 for index, step in enumerate(workflow.steps, start=1)
             ],
