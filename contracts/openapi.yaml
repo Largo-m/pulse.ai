@@ -44,11 +44,9 @@ paths:
                 resume_run_id:
                   type: string
                   nullable: true
-                  description: Resume a previous run instead of creating one
-                restart:
-                  type: boolean
-                  default: false
-                  description: With resume_run_id, redo every step from the first
+                  description: >-
+                    Resume a previous run instead of creating one; it picks up at
+                    the first step that is not done or skipped
       responses:
         "200":
           description: Run created

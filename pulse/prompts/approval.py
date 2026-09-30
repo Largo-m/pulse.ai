@@ -7,7 +7,16 @@ que ele precisa saber para decidir se o próximo agente pode rodar.
 
 from __future__ import annotations
 
-from pulse.prompts.ask_question import is_free_text_answer
+from pulse.prompts.ask_question import (
+    ADJUST_WORDS,
+    APPROVE_WORDS,
+    CANCEL_WORDS,
+    NEGATIVE_WORDS,
+    SKIP_WORDS,
+    is_approval_prompt,
+    is_free_text_answer,
+    option_requires_description,
+)
 
 #: Resumo de um step injetado no prompt do seguinte. Sem teto, um step que
 #: despeja um arquivo inteiro estoura o contexto do próximo.
@@ -50,9 +59,9 @@ def is_positive(answers_text: str) -> bool:
         if is_free_text_answer(raw):
             continue
         answer = raw.lower()
-        if any(token in answer for token in ("não", "nao", "ajuste", "cancel", "pular")):
+        if any(token in answer for token in NEGATIVE_WORDS):
             continue
-        if "aprov" in answer:
+        if any(token in answer for token in APPROVE_WORDS):
             return True
     return False
 
@@ -61,12 +70,34 @@ def classify_outcome(answers_text: str) -> str:
     picked = [answer.lower() for answer in picked_answers(answers_text)]
     if not picked:
         return UNKNOWN
-    if any("cancelar" in answer for answer in picked):
+    if any(word in answer for answer in picked for word in CANCEL_WORDS):
         return CANCEL
-    if any("pular" in answer for answer in picked):
+    if any(word in answer for answer in picked for word in SKIP_WORDS):
         return SKIP
     if is_positive(answers_text):
         return APPROVE
-    if any("ajuste" in answer for answer in picked):
+    if any(word in answer for answer in picked for word in ADJUST_WORDS):
         return ADJUST
     return CONTINUE
+
+
+def answer_needs_description(*, prompt: str, label: str) -> bool:
+    """A escolha abre o campo de texto?
+
+    Duas razões, e a segunda é a que não depende de como o agente escreveu:
+
+    1. O rótulo pede — `(descreva)`, `[describe]`, `— especifique`.
+    2. É um portão de aprovação e a escolha **não** aprova, pula nem cancela.
+       Tudo que sobra volta ao agente como "o usuário quer mudanças", e sem texto
+       isso não diz *o que* mudar: o agente refaz o mesmo turno no escuro. Vale
+       para qualquer agente e qualquer step, mesmo que o rótulo seja um "Não"
+       seco, porque quem decide aqui é o desfecho, não a redação.
+
+    Classifica pelo mesmo `classify_outcome` que o motor usa depois — assim a
+    pergunta que a tela faz e a leitura que o motor faz não podem discordar.
+    """
+    if option_requires_description(label):
+        return True
+    if not is_approval_prompt(prompt):
+        return False
+    return classify_outcome(f"→ {label}") in {ADJUST, CONTINUE}

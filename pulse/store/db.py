@@ -106,7 +106,11 @@ CREATE TABLE IF NOT EXISTS workflow_defs (
   id TEXT PRIMARY KEY,
   label TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
-  is_default INTEGER NOT NULL DEFAULT 0
+  is_default INTEGER NOT NULL DEFAULT 0,
+  -- Tarefa que este loop já sabe qual é: "analisar codebase" e "setup do
+  -- projeto" olham o repositório, não um pedido do usuário. Preenchido, o menu
+  -- não pede texto nenhum e entra direto na run. Vazio = o usuário descreve.
+  default_prompt TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS workflow_steps (
@@ -215,16 +219,26 @@ def default_db_path() -> Path:
 #: porque a próxima também vai passar por aqui.
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "fan_out", "INTEGER NOT NULL DEFAULT 0"),
+    ("workflow_defs", "default_prompt", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
-def _apply_added_columns(connection: sqlite3.Connection) -> None:
+def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    """Aplica os `ALTER` que faltam e devolve o que foi acrescentado agora.
+
+    Quem chama precisa saber: uma coluna nova nasce com o default do `ALTER` nas
+    linhas que já existiam, e a semeadura de fábrica não roda de novo num banco
+    já semeado — então o valor de fábrica dela tem de ser preenchido aqui.
+    """
+    added: set[tuple[str, str]] = set()
     for table, column, declaration in ADDED_COLUMNS:
         existing = {
             str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")
         }
         if column not in existing:
             connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+            added.add((table, column))
+    return added
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -234,13 +248,19 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.executescript(SCHEMA)
-    _apply_added_columns(connection)
+    added = _apply_added_columns(connection)
     # Import tardio: `factory` lê os `.md` de fábrica e não precisa existir para
     # quem só abre o banco para ler uma run.
     from pulse.store import factory
 
     if not factory.is_seeded(connection):
         factory.seed(connection)
+    else:
+        # Banco já semeado não recebe `seed` de novo: mudança em linha que já
+        # existe chega por estes dois, cada um com o seu próprio guarda.
+        if ("workflow_defs", "default_prompt") in added:
+            factory.backfill_default_prompts(connection)
+        factory.drop_approval_from_unattended_steps(connection)
     connection.commit()
     return connection
 

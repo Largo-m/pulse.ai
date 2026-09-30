@@ -350,7 +350,16 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
     assert len(run_store.list_runs(tmp_path)) == 1, "retomar não cria outra run"
 
 
-def test_restart_runs_every_step_again(wired, monkeypatch, tmp_path: Path):
+def test_retomar_e_a_unica_porta_de_volta_a_uma_run(wired, monkeypatch, tmp_path: Path):
+    """Não há refazer do zero: `run_workflow` nem aceita o parâmetro.
+
+    Uma run que já fechou todos os steps não tem o que rodar ao ser reaberta —
+    quem quer o pipeline inteiro de novo começa uma run nova.
+    """
+    import inspect
+
+    assert "restart" not in inspect.signature(run_workflow).parameters
+
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     first = _Runner([_approved(), _approved()])
     _install(monkeypatch, first)
@@ -365,17 +374,17 @@ def test_restart_runs_every_step_again(wired, monkeypatch, tmp_path: Path):
 
     second = _Runner([_approved(), _approved()])
     _install(monkeypatch, second)
-    run_workflow(
+    code = run_workflow(
         workflow_id="demo",
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
         render_header=False,
         resume_run_id=run_id,
-        restart=True,
     )
 
-    assert len(second.prompts) == 2
+    assert code == 0
+    assert second.prompts == [], "tudo já estava done: nada roda de novo"
 
 
 def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_path: Path):
@@ -478,3 +487,61 @@ def test_a_step_that_failed_is_never_left_as_running(wired, monkeypatch, tmp_pat
     record = run_store.list_runs(tmp_path)[0]
     assert [step.status for step in record.steps] == ["failed", "pending"]
     assert record.step("one").ended_at, "falha também fecha o relógio do step"
+
+
+def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Parar no meio do step 2: ele volta a pendente e só ele é refeito.
+
+    É o contrato inteiro do parar/retomar — o step cortado não terminou nem
+    falhou, e o step 1, que fechou, não pode rodar de novo ao retomar.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
+    control = RunControl()
+    runner = _Runner([_approved(), {"stopReason": "cancelled"}], control=control)
+    _install(monkeypatch, runner)
+
+    original = runner.run_isolated_phase
+
+    def stop_during_second(**kwargs):
+        if len(runner.prompts) == 1:
+            # O usuário aperta `s` enquanto o step 2 está em voo.
+            control.stop()
+        return original(**kwargs)
+
+    runner.run_isolated_phase = stop_during_second
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+        control=control,
+    )
+
+    assert code == RUN_STOPPED
+    assert runner._prompt_handler.asked == [], "parar não passa pelo menu de retry"
+    record = run_store.list_runs(tmp_path)[0]
+    run_id = record.id
+    assert record.status == "stopped"
+    assert [step.status for step in record.steps] == ["done", "pending", "pending"]
+
+    # Retomar: run nova sobre o mesmo registro, sem controle parado.
+    second = _Runner([_approved(), _approved()])
+    _install(monkeypatch, second)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=second._stream,
+        prompt_handler=second._prompt_handler,
+        render_header=False,
+        resume_run_id=run_id,
+    )
+
+    assert code == 0
+    assert len(second.prompts) == 2, "só os dois pendentes rodam; o que fechou não volta"
+    record = run_store.load_run(run_id)
+    assert [step.status for step in record.steps] == ["done", "done", "done"]

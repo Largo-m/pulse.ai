@@ -19,8 +19,8 @@ class EngineRunSession:
         self._client = client or EngineClient()
         self._exit_code = 1
         self._owns_client = client is None
-        #: Conhecido só depois que o daemon aceita a run; pausar/parar antes
-        #: disso simplesmente não faz nada.
+        #: Conhecido só depois que o daemon aceita a run; parar antes disso
+        #: simplesmente não faz nada.
         self.run_id = ""
 
     def run(
@@ -30,7 +30,6 @@ class EngineRunSession:
         user_prompt: str,
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
-        restart: bool = False,
     ) -> int:
         self._client.ensure_daemon()
         created = self._client.start_run(
@@ -38,7 +37,6 @@ class EngineRunSession:
             prompt=user_prompt,
             workspace=str(workspace) if workspace is not None else None,
             resume_run_id=resume_run_id,
-            restart=restart,
         )
         run_id = str(created["id"])
         self.run_id = run_id
@@ -50,26 +48,12 @@ class EngineRunSession:
                 self._client.close()
         return self._exit_code
 
-    def pause(self) -> bool:
-        return self._control("pause")
-
-    def resume(self) -> bool:
-        return self._control("resume")
-
     def stop(self) -> bool:
-        return self._control("cancel")
-
-    def _control(self, action: str) -> bool:
-        """Comandos de controle vêm da UI, fora da thread que roda a run."""
+        """Parar vem da UI, fora da thread que roda a run."""
         if not self.run_id:
             return False
-        method = {
-            "pause": self._client.pause_run,
-            "resume": self._client.resume_run,
-            "cancel": self._client.cancel_run,
-        }[action]
         try:
-            method(self.run_id)
+            self._client.cancel_run(self.run_id)
         except Exception:
             return False
         return True
@@ -105,8 +89,8 @@ class EngineRunSession:
             if callable(setter):
                 setter(str(event.get("session_id", "")))
             return
-        if kind in {"run.paused", "run.resumed", "run.stopped"}:
-            handler = getattr(self._stream, f"mark_{kind.split('.', 1)[1]}", None)
+        if kind == "run.stopped":
+            handler = getattr(self._stream, "mark_stopped", None)
             if callable(handler):
                 handler()
             return

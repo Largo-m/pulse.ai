@@ -9,16 +9,16 @@ from textual.widgets.option_list import Option
 
 #: Valores devolvidos pela tela.
 RESUME = "resume"
-RESTART = "restart"
-VIEW = "view"
+#: Sai sem escolher nada — a tela de trás continua onde estava.
+BACK = "back"
 
 
 class ResumeChoiceScreen(ModalScreen[str | None]):
     """Pergunta o que fazer com um workflow que ficou pela metade."""
 
     BINDINGS = [
-        ("escape", "just_view", "Só visualizar"),
-        ("q", "just_view", "Só visualizar"),
+        ("escape", "back", "Voltar"),
+        ("q", "back", "Voltar"),
     ]
 
     def __init__(self, *, slug: str, summary: str) -> None:
@@ -33,19 +33,18 @@ class ResumeChoiceScreen(ModalScreen[str | None]):
             yield Static(f"parou em: {self._summary}", classes="resume-summary")
             yield OptionList(
                 Option("Retomar de onde parou", id=RESUME),
-                Option("Refazer do zero (reescreve os artefatos)", id=RESTART),
-                Option("Só visualizar", id=VIEW),
+                Option("Voltar", id=BACK),
                 id="resume-options",
             )
-            yield Static("Enter confirma · Esc só visualiza", classes="resume-hint")
+            yield Static("Enter confirma · Esc volta", classes="resume-hint")
 
     def on_mount(self) -> None:
         self.query_one("#resume-options", OptionList).focus()
 
     @on(OptionList.OptionSelected, "#resume-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
-        choice = str(event.option_id or VIEW)
-        self.dismiss(None if choice == VIEW else choice)
+        choice = str(event.option_id or BACK)
+        self.dismiss(None if choice == BACK else choice)
 
-    def action_just_view(self) -> None:
+    def action_back(self) -> None:
         self.dismiss(None)

@@ -9,7 +9,7 @@ from textual.screen import Screen
 
 from pulse.history.models import HistoryItem
 from pulse.tui.hydrate import hydrate_history_item
-from pulse.tui.screens.resume_choice import RESTART, RESUME, ResumeChoiceScreen
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
 from pulse.tui.widgets.artifact_pane import (
@@ -66,13 +66,12 @@ class HistoryDetailScreen(Screen[None]):
         run_id, summary = self._pending
 
         def _chosen(mode: str | None) -> None:
-            if mode not in {RESUME, RESTART}:
+            if mode != RESUME:
                 return
             self.app.open_cockpit(
                 self.item.workflow_id,
                 self.item.prompt,
                 resume_run_id=run_id,
-                restart=mode == RESTART,
             )
 
         self.app.push_screen(

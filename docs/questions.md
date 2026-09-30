@@ -57,7 +57,23 @@ Depois do `session/prompt` acabar, o runner chama `_run_text_questionnaire`:
 | usuário cancela (Esc) | retorna `None` — workflow cancela |
 | usuário responde | texto `→ A) Sim, aprovar…` |
 
-O handler mostra **uma pergunta por vez**. Sem opções → campo livre. Opção com “(descreva)” → select + texto. “Outro” → texto livre (`__other__`).
+O handler mostra **uma pergunta por vez**. Sem opções → campo livre. “Outro” → texto livre (`__other__`).
+
+O campo de texto abre depois do select por duas razões
+([`approval.answer_needs_description`](../pulse/prompts/approval.py)):
+
+1. **O rótulo pede.** Não só `(descreva)`: vale parêntese, colchete ou cauda
+   depois de travessão/dois-pontos, com qualquer verbo de escrever nos dois
+   idiomas — `(describe)`, `[descreva]`, `— especifique`, `Descreva:`.
+2. **É portão de aprovação e a escolha não aprova, pula nem cancela.** Esta não
+   depende da redação: o desfecho é lido pelo mesmo `classify_outcome` que o
+   motor usa, então um `B) Não` seco também abre o campo. Sem isso a escolha
+   volta ao agente como “o usuário quer mudanças” sem dizer **o que** mudar, e
+   ele refaz o step no escuro.
+
+O vocabulário do portão (`aprovar/approve`, `cancelar/cancel`, `pular/skip`,
+`ajuste/adjust/change`) é bilíngue: os playbooks de fábrica são em inglês e pedem
+o bloco em português, e o agente nem sempre obedece.
 
 O Pulse **injeta** `Outro (descreva)` sozinho, **exceto** em perguntas fechadas de aprovação / migração / “funciona como esperado”.
 

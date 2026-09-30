@@ -97,12 +97,6 @@ class EngineClient:
     def answer_prompt(self, prompt_id: str, answer: Any) -> dict[str, Any]:
         return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})
 
-    def pause_run(self, run_id: str) -> dict[str, Any]:
-        return self.post(f"/api/runs/{run_id}/pause")
-
-    def resume_run(self, run_id: str) -> dict[str, Any]:
-        return self.post(f"/api/runs/{run_id}/resume")
-
     def cancel_run(self, run_id: str) -> dict[str, Any]:
         return self.post(f"/api/runs/{run_id}/cancel")
 
@@ -113,14 +107,12 @@ class EngineClient:
         prompt: str,
         workspace: str | None = None,
         resume_run_id: str | None = None,
-        restart: bool = False,
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt}
         if workspace is not None:
             body["workspace"] = workspace
         if resume_run_id:
             body["resume_run_id"] = resume_run_id
-            body["restart"] = restart
         return self.post(f"/api/workflows/{workflow_id}/runs", body)
 
     def doctor(self) -> dict[str, Any]:

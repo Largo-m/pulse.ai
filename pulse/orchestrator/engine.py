@@ -45,7 +45,7 @@ _POLICIES: dict[str, PermissionPolicy] = {
     "auto_approve": "auto_approve",
     "deny_writes": "deny_writes",
 }
-#: Fallback para runner sem controle (CLI, testes): nunca pausa nem para.
+#: Fallback para runner sem controle (CLI, testes): nunca para.
 _NEVER_INTERRUPTED = RunControl()
 #: Espaço entre as posições da definição, para o fan-out caber no meio sem
 #: renumerar o resto: o step 4 vira 4001, 4002… e continua antes do step 5.
@@ -65,7 +65,6 @@ def run_workflow(
     prompt_handler: Any | None = None,
     render_header: bool = True,
     resume_run_id: str | None = None,
-    restart: bool = False,
     control: RunControl | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
@@ -102,7 +101,6 @@ def run_workflow(
         workspace_root,
         user_prompt,
         resume_run_id=resume_run_id,
-        restart=restart,
     )
 
     if render_header and not cockpit:
@@ -154,16 +152,10 @@ def _resolve_run(
     user_prompt: str,
     *,
     resume_run_id: str | None,
-    restart: bool,
 ) -> run_store.RunRecord:
     if resume_run_id:
         existing = run_store.load_run(resume_run_id)
         if existing is not None:
-            if restart:
-                run_store.reset_steps(existing.id)
-                reloaded = run_store.load_run(existing.id)
-                if reloaded is not None:
-                    return reloaded
             return existing
     return run_store.create_run(
         run_id=str(uuid.uuid4()),
@@ -220,7 +212,7 @@ def _execute(
                 if record.status in SETTLED:
                     continue
 
-                # Pausa pedida entre dois steps: segura aqui, sem nada em voo.
+                # Parada pedida entre dois steps: encerra aqui, sem nada em voo.
                 if not _control(runner).checkpoint():
                     _notify(runner, "Run parada pelo usuário")
                     run_store.update_run(run.id, status="stopped")
@@ -364,12 +356,12 @@ def _run_step(
         if outcome in {DONE, SKIPPED}:
             return 0
 
-        # O step não terminou porque o usuário cortou, não porque falhou: não
-        # faz sentido perguntar "quer tentar de novo?" — é só segurar e refazer.
+        # O step não terminou porque o usuário parou a run, não porque falhou:
+        # não faz sentido perguntar "quer tentar de novo?" — é só encerrar
+        # deixando o step pendente para quem retomar.
         if _control(runner).interrupted:
-            if not _hold_for_pause(runner, run=run, record=record, label=record.label):
-                return RUN_STOPPED
-            continue
+            _release_step(runner, run=run, record=record, label=record.label)
+            return RUN_STOPPED
 
         choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if choice != "retry":
@@ -561,32 +553,25 @@ def _activate_agent(
     return resolved.model or fallback_model, instructions
 
 
-def _hold_for_pause(
+def _release_step(
     runner: AcpSessionRunner,
     *,
     run: run_store.RunRecord,
     record: StepRecord,
     label: str,
-) -> bool:
-    """Segura o fluxo enquanto a run está pausada.
+) -> None:
+    """Solta o step cortado pela parada, devolvendo-o para pendente.
 
-    O step que foi cortado volta para pendente: ele não terminou, então será
-    refeito inteiro ao retomar. Devolve `False` quando a run foi parada.
+    Ele não terminou nem falhou — o usuário cortou. Pendente é o que faz
+    `resume_run_id` recomeçar por ele e só por ele: os steps que já fecharam
+    continuam `done`/`skipped` e não são refeitos.
     """
     if record.status in {RUNNING, FAILED}:
         record.status = PENDING
         record.ended_at = ""
         run_store.save_step(run.id, record)
         _sync_steps(runner, run)
-    if _control(runner).stopped:
-        _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
-        return False
-    _notify(runner, f"Pausado em {label}" if label else "Run pausada")
-    if not _control(runner).wait_while_paused():
-        _notify(runner, "Run parada pelo usuário")
-        return False
-    _notify(runner, f"Retomando {label}" if label else "Retomando a run")
-    return True
+    _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
 
 
 def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:

@@ -10,7 +10,7 @@ from textual.screen import Screen
 from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
-from pulse.tui.screens.resume_choice import RESTART, RESUME, ResumeChoiceScreen
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -26,7 +26,6 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 _PROMPT_BLOCKED = {
     # Com um prompt aberto quem está travado é o usuário, não o agente: cortar
     # o turno aqui deixaria a pergunta sem ninguém para respondê-la.
-    "toggle_pause",
     "stop_run",
     "toggle_artifact_pane",
     "close_artifact_pane",
@@ -43,7 +42,6 @@ class CockpitScreen(Screen[None]):
     BINDINGS = [
         Binding("q", "back_to_menu", "Menu"),
         Binding("b", "back_to_menu", "Menu"),
-        Binding("p", "toggle_pause", "Pausar"),
         Binding("s", "stop_run", "Parar"),
         Binding("tab", "toggle_focus", "Focus"),
         Binding("a", "toggle_artifact_pane", "Artifacts"),
@@ -65,13 +63,11 @@ class CockpitScreen(Screen[None]):
         *,
         workspace: Path | None = None,
         resume_run_id: str | None = None,
-        restart: bool = False,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
         self.resume_run_id = resume_run_id
-        self.restart = restart
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
@@ -97,6 +93,7 @@ class CockpitScreen(Screen[None]):
         yield AppFooter()
 
     def on_mount(self) -> None:
+        self._restore_previous_run()
         self._sync_ui(force=True)
         self._apply_focus()
         self.set_interval(0.08, self._flush_ui)
@@ -105,6 +102,23 @@ class CockpitScreen(Screen[None]):
 
     def on_unmount(self) -> None:
         self.bridge.close()
+
+    def _restore_previous_run(self) -> None:
+        """Retomar continua a mesma run: a tela abre com o passado dela.
+
+        Sem isto o cockpit nascia vazio e os steps que já tinham fechado voltavam
+        como "concluído" e nada mais — sem log, sem tool e sem duração.
+        """
+        if not self.resume_run_id:
+            return
+        from pulse.tui.hydrate import restore_run
+
+        try:
+            restore_run(self.state, self.resume_run_id, Path(self._cwd))
+        except (OSError, ValueError):
+            # Histórico é contexto, não requisito: não vale impedir a run de
+            # continuar porque o banco não abriu.
+            pass
 
     def _on_state_change(self) -> None:
         self._dirty = True
@@ -134,8 +148,6 @@ class CockpitScreen(Screen[None]):
         if self._prompt_open and action in {"nav_up", "nav_down"}:
             if self.state.focus_target != "phases":
                 return False
-        if action == "toggle_pause":
-            return self.state.running and self.state.can_pause and self._session is not None
         if action == "stop_run":
             return self.state.running and self.state.can_stop and self._session is not None
         if action == "close_artifact_pane":
@@ -190,7 +202,6 @@ class CockpitScreen(Screen[None]):
                 user_prompt=self.user_prompt,
                 workspace=self._cwd,
                 resume_run_id=self.resume_run_id,
-                restart=self.restart,
             )
         except Exception as error:
             self.state.add_error("Workflow falhou", str(error))
@@ -209,7 +220,7 @@ class CockpitScreen(Screen[None]):
         elif code == RUN_STOPPED:
             self.state.add_info("Run parada — dá para retomar de onde parou")
             self._sync_ui(force=True)
-            self._offer_restart()
+            self._offer_resume()
             return
         else:
             if not self.state.has_error():
@@ -223,48 +234,36 @@ class CockpitScreen(Screen[None]):
             if self._resumable_run() is not None:
                 self.state.add_info("Dá para retomar do step que falhou")
             self._sync_ui(force=True)
-            self._offer_restart()
+            self._offer_resume()
             return
-        self._sync_ui(force=True)
-
-    def action_toggle_pause(self) -> None:
-        """`p` pausa a run viva e retoma a pausada."""
-        session = self._session
-        if session is None or not self.state.running or not self.state.can_pause:
-            return
-        if self.state.paused:
-            session.resume()
-            return
-        session.pause()
-        # O corte do turno leva alguns instantes; o estado real chega pelo
-        # evento `run.paused`, mas a intenção aparece na hora.
-        self.state.add_info("Pausando — cortando o step em execução")
         self._sync_ui(force=True)
 
     def action_stop_run(self) -> None:
+        """`s` corta o step em execução e encerra a run — retomável depois."""
         session = self._session
         if session is None or not self.state.running or not self.state.can_stop:
             return
         session.stop()
-        self.state.add_info("Parando a run")
+        # O corte do turno leva alguns instantes; o estado real chega pelo
+        # evento `run.stopped`, mas a intenção aparece na hora.
+        self.state.add_info("Parando — cortando o step em execução")
         self._sync_ui(force=True)
 
-    def _offer_restart(self) -> None:
-        """Depois de parar, oferece o mesmo retomar/refazer do histórico."""
+    def _offer_resume(self) -> None:
+        """Depois de parar, oferece o mesmo retomar do histórico."""
         pending = self._resumable_run()
         if pending is None:
             return
         run_id, summary = pending
 
         def _chosen(mode: str | None) -> None:
-            if mode not in {RESUME, RESTART}:
+            if mode != RESUME:
                 return
             self.app.pop_screen()
             self.app.open_cockpit(
                 self.workflow_id,
                 self.user_prompt,
                 resume_run_id=run_id,
-                restart=mode == RESTART,
             )
 
         self.app.push_screen(

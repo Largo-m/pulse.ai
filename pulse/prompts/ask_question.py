@@ -6,7 +6,35 @@ from typing import Any
 OTHER_OPTION_ID = "__other__"
 DEFAULT_QUESTIONNAIRE_TITLE = "Preciso de algumas informações antes de continuar."
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-_DESCRIBE_PATTERN = re.compile(r"\(descreva|descreva abaixo|descreva o|descreva qual", re.IGNORECASE)
+#: Verbos que pedem ao usuário para escrever algo. Radical, não palavra inteira:
+#: o agente conjuga ("descreva", "descrever", "descrição") e às vezes escreve em
+#: inglês, porque os playbooks de fábrica são em inglês.
+_FREE_TEXT_VERB = re.compile(
+    r"descrev|descri[çc][ãa]|especifi|detalh|expliqu|explicar|informe|informar"
+    r"|describe|specify|explain|elaborate",
+    re.IGNORECASE,
+)
+#: Onde cabe uma instrução ao usuário dentro de um rótulo: entre parênteses ou
+#: colchetes, ou na cauda depois de travessão/dois-pontos. Procurar o verbo solto
+#: no rótulo inteiro marcaria "Documentação que descreve o fluxo" como campo.
+_ANNOTATION = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
+_ANNOTATION_TAIL = re.compile(r"(?:[—–]|--|:)\s*(.*)$")
+#: Perguntas em que o Pulse decide o rumo da run pela resposta. É o portão de
+#: aprovação de step — não o "Como deseja prosseguir?", que é escolha fechada.
+_APPROVAL_PROMPT = re.compile(r"\baprovar\b|\bapprove\b", re.IGNORECASE)
+
+#: O vocabulário do portão de aprovação, nos dois idiomas em que ele aparece: os
+#: playbooks de fábrica são em inglês e mandam escrever o bloco em português, e o
+#: agente nem sempre obedece. Radicais, porque ele conjuga e pluraliza.
+#: Moram aqui, e não em [pulse.prompts.approval], porque `approval` importa este
+#: módulo — o contrário fecharia o ciclo.
+APPROVE_WORDS = ("aprov", "approv")
+CANCEL_WORDS = ("cancelar", "cancel")
+SKIP_WORDS = ("pular", "skip")
+ADJUST_WORDS = ("ajust", "adjust", "change")
+#: Marcas de que a resposta **não** é um sim. Um rótulo que traga qualquer uma
+#: delas não aprova o step, mesmo que também diga "aprovar".
+NEGATIVE_WORDS = ("não", "nao", "no,", "not ", *ADJUST_WORDS, *CANCEL_WORDS, *SKIP_WORDS)
 _OTHER_LABEL = re.compile(
     r"^(?:[a-z0-9]+\)\s*)?(?:outro|other)(?:\s|\(|$)",
     re.IGNORECASE,
@@ -78,7 +106,26 @@ def is_other_option(option_id: str, label: str = "") -> bool:
 
 
 def option_requires_description(label: str) -> bool:
-    return bool(_DESCRIBE_PATTERN.search(label.strip()))
+    r"""O rótulo pede que o usuário escreva algo?
+
+    Antes isto era `\(descreva` e mais três variantes fixas: bastava o agente
+    escrever `[descreva]`, `— describe` ou `Descreva:` para o campo não abrir e a
+    escolha voltar ao agente sem dizer o que mudar.
+    """
+    text = label.strip()
+    for inside_parens, inside_brackets in _ANNOTATION.findall(text):
+        if _FREE_TEXT_VERB.search(inside_parens or inside_brackets):
+            return True
+    tail = _ANNOTATION_TAIL.search(text)
+    if tail and _FREE_TEXT_VERB.search(tail.group(1)):
+        return True
+    # "Descreva:" no fim não deixa cauda nenhuma — os dois-pontos são o convite.
+    return text.endswith(":") and bool(_FREE_TEXT_VERB.search(text))
+
+
+def is_approval_prompt(prompt: str) -> bool:
+    """Pergunta que decide se a run avança — onde "não" precisa vir com o motivo."""
+    return bool(_APPROVAL_PROMPT.search(prompt))
 
 
 #: Prefixo da resposta digitada à mão em "Outro". O que vem depois é frase do
@@ -98,9 +145,9 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
 
     if any(is_other_option("", label) for label in option_labels):
         return False
-    if any("cancelar" in label for label in labels_lower):
+    if any(word in label for label in labels_lower for word in CANCEL_WORDS):
         return False
-    if any("aprovar" in label for label in labels_lower):
+    if any(word in label for label in labels_lower for word in APPROVE_WORDS):
         return False
 
     closed_prompt_markers = (

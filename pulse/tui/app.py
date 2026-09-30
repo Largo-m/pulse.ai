@@ -23,14 +23,12 @@ class PulseApp(App[None]):
         user_prompt: str,
         *,
         resume_run_id: str | None = None,
-        restart: bool = False,
     ) -> None:
         self.push_screen(
             CockpitScreen(
                 workflow_id,
                 user_prompt,
                 resume_run_id=resume_run_id,
-                restart=restart,
             )
         )
 

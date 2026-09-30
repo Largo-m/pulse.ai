@@ -46,6 +46,9 @@ class WorkflowDef:
     label: str
     description: str = ""
     is_default: bool = False
+    #: Tarefa que o loop já sabe qual é (ex.: "Mapear codebase existente"). Com
+    #: valor, o menu entra direto na run em vez de pedir texto ao usuário.
+    default_prompt: str = ""
     steps: tuple[StepDef, ...] = ()
 
 
@@ -79,6 +82,7 @@ def _workflow(row: Any, steps: tuple[StepDef, ...]) -> WorkflowDef:
         label=str(row["label"]),
         description=str(row["description"] or ""),
         is_default=bool(row["is_default"]),
+        default_prompt=str(row["default_prompt"] or ""),
         steps=steps,
     )
 

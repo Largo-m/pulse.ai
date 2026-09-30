@@ -26,7 +26,6 @@ RUNNING = "running"
 DONE = "done"
 SKIPPED = "skipped"
 FAILED = "failed"
-PAUSED = "paused"
 STOPPED = "stopped"
 
 #: Um step nesses estados não roda de novo ao retomar.
@@ -315,27 +314,6 @@ def delete_step(run_id: str, step_id: str, *, db_path: Path | None = None) -> No
     try:
         connection.execute(
             "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?", (run_id, step_id)
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def reset_steps(run_id: str, *, db_path: Path | None = None) -> None:
-    """Zera o progresso mantendo a run — é o "refazer" do histórico."""
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            """
-            UPDATE run_steps
-            SET status = ?, summary = '', acp_session_id = '', started_at = '', ended_at = ''
-            WHERE run_id = ?
-            """,
-            (PENDING, run_id),
-        )
-        connection.execute(
-            "UPDATE runs SET status = ?, current_step = '', updated_at = ? WHERE id = ?",
-            (RUNNING, utc_now(), run_id),
         )
         connection.commit()
     finally:

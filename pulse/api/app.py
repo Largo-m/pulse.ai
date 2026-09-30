@@ -23,9 +23,8 @@ from pulse.history.catalog import HistoryCatalog
 class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
-    #: Run anterior a retomar; `restart` refaz do primeiro step.
+    #: Run anterior a retomar, do primeiro step que não fechou.
     resume_run_id: str | None = None
-    restart: bool = False
 
 
 class PromptAnswerBody(BaseModel):
@@ -185,7 +184,6 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 prompt=body.prompt,
                 workspace=body.workspace,
                 resume_run_id=body.resume_run_id,
-                restart=body.restart,
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -209,18 +207,6 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "status": state.status,
             "exit_code": state.exit_code,
         }
-
-    @app.post("/api/runs/{run_id}/pause")
-    def pause_run(run_id: str) -> dict[str, Any]:
-        if not runs.pause(run_id):
-            raise HTTPException(status_code=404, detail="run não encontrado")
-        return {"ok": True}
-
-    @app.post("/api/runs/{run_id}/resume")
-    def resume_run(run_id: str) -> dict[str, Any]:
-        if not runs.resume(run_id):
-            raise HTTPException(status_code=404, detail="run não encontrado")
-        return {"ok": True}
 
     @app.post("/api/runs/{run_id}/cancel")
     def cancel_run(run_id: str) -> dict[str, Any]:

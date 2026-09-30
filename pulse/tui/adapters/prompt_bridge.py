@@ -14,12 +14,12 @@ from pulse.prompts.ask_question import (
     build_ask_question_cancelled,
     format_option_label,
     is_other_option,
-    option_requires_description,
     parse_ask_question_params,
     parse_questionnaire_meta,
     resolve_question_progress,
     should_add_other_option,
 )
+from pulse.prompts.approval import answer_needs_description
 from pulse.prompts.permission import (
     PermissionPolicy,
     permission_cancelled,
@@ -446,7 +446,9 @@ class TextualPromptHandler:
 
         selected_id = str(selected)
         selected_label = self._choice_label(choices, selected_id)
-        if selected_label and option_requires_description(selected_label):
+        if selected_label and answer_needs_description(
+            prompt=prompt, label=selected_label
+        ):
             custom = self._prompt_follow_up_text(prompt, selected_label, title=title)
             if custom is None:
                 return None

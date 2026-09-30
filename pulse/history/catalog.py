@@ -17,7 +17,6 @@ from pulse.store.workflow_defs import get_workflow
 _RUN_TO_HISTORY = {
     "pending": HistoryStatus.PENDING,
     "running": HistoryStatus.IN_PROGRESS,
-    "paused": HistoryStatus.IN_PROGRESS,
     "completed": HistoryStatus.DONE,
     "failed": HistoryStatus.FAILED,
     "stopped": HistoryStatus.STOPPED,

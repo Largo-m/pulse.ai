@@ -13,7 +13,7 @@ durante uma run.
 Tabelas em `~/.pulse/pulse.db` (ver [armazenamento.md](armazenamento.md)):
 
 ```
-workflow_defs     id, label, description, is_default
+workflow_defs     id, label, description, is_default, default_prompt
 workflow_steps    workflow_id, step_id, position, label,
                   agent_id, prompt_template, requires_approval, fan_out
 agent_defs        id, label, runtime, model, permission_policy, instructions
@@ -23,6 +23,10 @@ Acesso: [`pulse/store/workflow_defs.py`](../pulse/store/workflow_defs.py).
 
 Id que não está em `workflow_defs` não existe: `run_workflow` levanta
 `UnknownWorkflow`, e a API responde 404.
+
+`default_prompt` é a tarefa que o loop já sabe qual é — "Analisar codebase" e
+"Setup do projeto" olham o repositório, não um pedido. Preenchido, o menu entra
+direto na run; vazio, ele abre o campo para o usuário descrever a tarefa.
 
 ## 1.1 A semente de fábrica
 
@@ -37,6 +41,11 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
 | `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
 | `default` — Executar | um step, sem pipeline (fora do menu) |
+
+`setup-project` e `analyze-codebase` rodam **do começo ao fim**: nenhum step
+deles aprova, e `default_prompt` já traz a tarefa. Os dois olham o repositório,
+não um pedido — não há o que perguntar nem o que revisar no meio. Os outros
+pipelines existem para serem revisados e continuam parando em cada aprovação.
 
 `is_default` marca o loop genérico, e a home usa a marca para **não** listá-lo
 em "Nova sessão": aquele menu é de pipeline. Ele segue no banco e na API.
@@ -74,7 +83,7 @@ run_workflow(workflow_id, user_prompt, …)
   ├─ resolve_config(workflow=id)      runtime, model, policy, cwd
   ├─ create_run | load_run            linha em `runs` + N em `run_steps`
   └─ para cada step pendente:
-       control.checkpoint()           barreira de pausa/parada
+       control.checkpoint()           ponto de corte do parar
        resolve_config(pulse_agent=…)  o agente DESTE step
        runner.use_agent(…)
        render(step.prompt_template)   valores da run
@@ -188,11 +197,12 @@ Markdown, não valida formato, não espera arquivo com nome conhecido.
 | `run_events` | o stream que o cockpit reexibe |
 | `run_artifacts` | caminhos que o agente escreveu |
 
-Retomar = rodar o primeiro step que não está `done`/`skipped`. Refazer
-(`restart`) zera `run_steps` mantendo a run.
+Retomar = rodar o primeiro step que não está `done`/`skipped`. Não há refazer:
+rodar tudo de novo é começar uma run nova, e a anterior fica no histórico.
 
-Pausar corta o turno em voo e devolve o step em curso para `pending`: ele não
-terminou, então é refeito inteiro. Step já fechado nunca é refeito.
+Parar corta o turno em voo e devolve o step em curso para `pending`: ele não
+terminou, então é refeito inteiro ao retomar. Step já fechado nunca é refeito.
+Não há pausa — parar e retomar dão no mesmo, sem thread nem sessão ACP presas.
 
 Artefato é descoberto pelos **tool-calls do ACP**: um `write`/`edit`/`create`
 faz o Pulse gravar o caminho em `run_artifacts`

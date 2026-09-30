@@ -101,8 +101,8 @@ loops de fábrica, que aparecem no menu **Nova sessão**:
 | --- | --- |
 | Nova spec | PRD → Techspec → Tasks → Implementar |
 | Correção rápida | Quick plan → Quick implement |
-| Setup do projeto | Entrevista → Artefatos |
-| Analisar codebase | Exploração → Documentação |
+| Setup do projeto | Entrevista → Artefatos (roda direto, sem aprovar) |
+| Analisar codebase | Exploração → Documentação (roda direto, sem aprovar) |
 
 Há ainda o loop genérico `default` ("Executar", um step sem pipeline). Ele não
 entra no menu — repassar o prompt cru ao agente é o que se faz no terminal —

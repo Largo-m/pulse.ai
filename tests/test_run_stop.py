@@ -19,11 +19,11 @@ def _reply(runner: AcpSessionRunner, request_id: int, result: dict) -> None:
     runner._response_queue.put(request_id)
 
 
-def test_pause_cancels_the_turn_in_flight(monkeypatch):
-    """Pausar manda `session/cancel` e devolve o turno como cancelado."""
+def test_stop_cancels_the_turn_in_flight(monkeypatch):
+    """Parar manda `session/cancel` e devolve o turno como cancelado."""
     monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 0.3)
     control = RunControl()
-    control.pause()
+    control.stop()
     runner, sent = _runner(control)
 
     result = runner._request("session/prompt", {"sessionId": "sess-1"})
@@ -50,7 +50,7 @@ def test_agent_answer_to_the_cancelled_turn_wins(monkeypatch):
     """Se o agente fecha o turno sozinho, é a resposta dele que vale."""
     monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 5.0)
     control = RunControl()
-    control.pause()
+    control.stop()
     runner, sent = _runner(control)
     _reply(runner, 1, {"stopReason": "cancelled", "phaseSummary": "parcial"})
 
@@ -59,7 +59,7 @@ def test_agent_answer_to_the_cancelled_turn_wins(monkeypatch):
     assert result == {"stopReason": "cancelled", "phaseSummary": "parcial"}
 
 
-def test_sem_pausa_o_turno_segue_normal():
+def test_sem_parada_o_turno_segue_normal():
     runner, sent = _runner(RunControl())
     _reply(runner, 1, {"stopReason": "end_turn"})
 
@@ -69,11 +69,11 @@ def test_sem_pausa_o_turno_segue_normal():
     assert [payload.get("method") for payload in sent] == ["session/prompt"]
 
 
-def test_pausa_nao_corta_requests_curtos_do_protocolo(monkeypatch):
+def test_parada_nao_corta_requests_curtos_do_protocolo(monkeypatch):
     """`initialize`, `session/new` e afins não são cancelados no meio."""
     monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 0.2)
     control = RunControl()
-    control.pause()
+    control.stop()
     runner, sent = _runner(control)
     _reply(runner, 1, {"sessionId": "sess-2"})
 

@@ -137,7 +137,7 @@ run_workflow(workflow_id, user_prompt, …)
   ├─ create_run | load_run             `runs` + N em `run_steps`
   └─ para cada step ainda pendente:
        │
-       ├─ control.checkpoint()         ◄── barreira de pausa/parada
+       ├─ control.checkpoint()         ◄── ponto de corte do parar
        ├─ resolve_config(pulse_agent=step.agent_id)
        ├─ runner.use_agent(…)          o agente DESTE step
        ├─ render(step.prompt_template) com os valores da run
@@ -175,15 +175,26 @@ Falha ou não-aprovação abre **Refazer / Outro — dizer o que fazer / Parar**
 
 O **conteúdo** do que o agente produziu nunca é lido.
 
-### Pausar, parar e retomar
+### Parar e retomar
 
-Pausar corta o turno em voo (`session/cancel`) e devolve o step em curso para
-`pending`: ele não terminou, então é refeito inteiro. Step já fechado nunca é
-refeito. Parar faz o mesmo e encerra a run com exit code `RUN_STOPPED` (130) —
-que não é falha: o cockpit oferece retomar.
+Há um comando só, `parar` (`s` no cockpit). Ele corta o turno em voo
+(`session/cancel`), devolve o step em curso para `pending` — não terminou, logo
+não é `done` nem `failed` — e encerra a run com exit code `RUN_STOPPED` (130),
+que não é falha: o cockpit oferece retomar na hora.
 
-Retomar = rodar o primeiro step que não está `done`/`skipped`.
-Refazer (`restart=True`) zera `run_steps` mantendo a run.
+Não existe pausa. Segurar a run viva esperando o usuário custava thread e sessão
+ACP abertas por tempo indefinido e dava no mesmo: a sessão ACP não congela no
+meio de um turno, então o step cortado é refeito do começo de qualquer jeito.
+
+Retomar = rodar o primeiro step que não está `done`/`skipped`. É a única porta
+de volta a uma run: não existe "refazer do zero", porque rodar tudo de novo é
+começar uma run nova — assim a tentativa anterior fica no histórico em vez de ser
+sobrescrita.
+
+O `run_id` é o mesmo, então o cockpit reabre com o passado da run:
+[`hydrate.restore_run`](pulse/tui/hydrate.py) devolve log, tools e duração de
+`run_events`/`run_steps` antes de o motor recomeçar. Sem isso a tela nascia vazia
+e o que já tinha fechado voltava como "concluído" e nada mais.
 
 Run que **falhou** também é retomável, e é o caso em que mais se quer voltar: o
 que já fechou está em `run_steps`, então retomar roda só o que faltou. Quem
@@ -256,7 +267,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run; pause/resume/cancel |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run; cancel |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
@@ -268,13 +279,13 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Runtime | `GET /status`, `GET /doctor`, `POST /doctor/acp-probe` |
 | Config | `GET /config`, `GET /config/resolved`, `PATCH /config/global`, `POST /config/project` |
 | Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
-| Runs | `GET /runs/{id}`, `POST /runs/{id}/pause\|resume\|cancel`, `GET /runs/{id}/events` (SSE) |
+| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
 | History | `GET /history`, `GET /history/{id}` |
 
 #### Eventos no SSE
 
-`run.started` · `run.paused` · `run.resumed` · `run.stopped` ·
+`run.started` · `run.stopped` ·
 `run.cancel_requested` · `run.finished` · `phase.begin` · `phase.info` ·
 `phase.error` · `phases.sync` · `session.update` · `session.id` ·
 `stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered`
@@ -286,11 +297,11 @@ Usado pelo Engine. A TUI **não** chama isso direto para executar.
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/ports.py`](pulse/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
-| [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e pausa |
+| [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada |
 | [`pulse/orchestrator/prompts.py`](pulse/orchestrator/prompts.py) | Os dois textos que o próprio Pulse escreve |
 | [`pulse/prompts/render.py`](pulse/prompts/render.py) | Engine `{{placeholder}}` |
 | [`pulse/prompts/approval.py`](pulse/prompts/approval.py) | Lê o desfecho do questionário |
-| [`pulse/runcontrol.py`](pulse/runcontrol.py) | Pausar/retomar/parar, seguro entre threads |
+| [`pulse/runcontrol.py`](pulse/runcontrol.py) | Parar uma run, seguro entre threads |
 
 ### 3.6 ACP e runtimes
 

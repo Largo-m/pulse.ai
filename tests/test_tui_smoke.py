@@ -416,3 +416,89 @@ def test_new_session_lists_pipelines_and_hides_the_generic_loop():
 
     labels = [item.label for item in _session_workflows()]
     assert labels == sorted(labels), "o menu é alfabético"
+
+
+def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
+    """"Analisar codebase" e "Setup do projeto" olham o repositório, não um pedido.
+
+    Pedir "descreva a tarefa" nesses dois era uma pergunta sem resposta possível:
+    o loop já sabe o que vai fazer. Enter começa a run na hora.
+    """
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Input, Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+            def open_cockpit(self, workflow_id: str, prompt: str) -> None:
+                opened.append((workflow_id, prompt))
+
+        opened: list[tuple[str, str]] = []
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+
+            screen.on_option_selected(_selected("workflow:analyze-codebase"))
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+
+            screen.on_option_selected(_selected("workflow:setup-project"))
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+
+            assert opened == [
+                ("analyze-codebase", "Mapear codebase existente"),
+                ("setup-project", "Novo projeto"),
+            ]
+
+    asyncio.run(run())
+
+
+def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+
+            screen.on_option_highlighted(_highlighted("workflow:analyze-codebase"))
+            await pilot.pause()
+            hint = str(screen.query_one(".home-hint", Static).render())
+            assert "Enter inicia" in hint
+
+            screen.on_option_highlighted(_highlighted("workflow:new-issue"))
+            await pilot.pause()
+            hint = str(screen.query_one(".home-hint", Static).render())
+            assert "Enter seleciona" in hint
+
+    asyncio.run(run())

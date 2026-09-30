@@ -48,11 +48,8 @@ class CockpitState:
     artifact_pane_open: bool = False
     focus_target: str = "phases"
     running: bool = False
-    #: Run viva, mas segurada pelo usuário. `running` continua True.
-    paused: bool = False
     stopped: bool = False
-    #: Ligados por `configure_workflow`: fora de uma run não há o que pausar.
-    can_pause: bool = False
+    #: Ligado por `configure_workflow`: fora de uma run não há o que parar.
     can_stop: bool = False
     exit_code: int | None = None
     acp_session_id: str = ""
@@ -92,11 +89,7 @@ class CockpitState:
         self._active_assistant_id = None
         self._follow_live = True
         self.running = False
-        self.paused = False
         self.stopped = False
-        # Todo workflow tem barreira entre steps: a sessão ACP é isolada por
-        # step, então pausar sempre tem onde segurar e retomar tem onde voltar.
-        self.can_pause = True
         self.can_stop = True
         self.exit_code = None
         self.notify()
@@ -201,28 +194,13 @@ class CockpitState:
                 phase.status = PhaseStatus.FAILED
         self.notify()
 
-    def mark_paused(self) -> None:
-        """Pausa cortou o step em voo — ele volta para pendente e o relógio para.
+    def mark_stopped(self) -> None:
+        """Parar cortou o step em voo — ele volta para pendente e o relógio para.
 
         O step interrompido é refeito do começo ao retomar, então zerar o
         cronômetro é o que descreve a verdade: o tempo que ele já tinha gasto
         não conta para nada.
         """
-        self.paused = True
-        for item in self.phases:
-            if item.status != PhaseStatus.RUNNING:
-                continue
-            item.status = PhaseStatus.PENDING
-            item.started_at = None
-            item.ended_at = None
-        self.notify()
-
-    def mark_resumed(self) -> None:
-        self.paused = False
-        self.notify()
-
-    def mark_stopped(self) -> None:
-        self.paused = False
         self.stopped = True
         for item in self.phases:
             if item.status != PhaseStatus.RUNNING:
@@ -241,7 +219,6 @@ class CockpitState:
         else:
             self.fail_active()
         self.running = False
-        self.paused = False
         self.exit_code = exit_code
         self.notify()
 

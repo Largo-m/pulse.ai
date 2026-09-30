@@ -124,53 +124,29 @@ def test_unknown_workflow_returns_404():
     assert response.status_code == 404
 
 
-def test_pause_resume_and_stop_reach_the_running_flow(monkeypatch):
-    """A tecla no cockpit vira HTTP, e o flow enxerga pausa/parada de verdade."""
+def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
+    """Retomar é uma run nova sobre o mesmo registro — o flow recebe o id."""
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app)
     seen: dict[str, object] = {}
     entered = threading.Event()
-    release = threading.Event()
 
     def fake_run_workflow(**kwargs):
-        control = kwargs["control"]
-        seen["control"] = control
+        seen.update(kwargs)
         entered.set()
-        # Como o flow real: uma barreira entre cada step, não uma só.
-        while not release.is_set():
-            if not control.checkpoint():
-                return RUN_STOPPED
-            time.sleep(0.01)
         return 0
 
     monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
 
-    run_id = client.post(
+    client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp"},
-    ).json()["id"]
+        json={"prompt": "x", "workspace": "/tmp", "resume_run_id": "run-anterior"},
+    )
     assert entered.wait(timeout=5)
-    control = seen["control"]
 
-    assert client.post(f"/api/runs/{run_id}/pause").status_code == 200
-    assert control.paused is True
-    assert control.interrupted is True
-    assert client.get(f"/api/runs/{run_id}").json()["status"] == "paused"
-
-    assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
-    assert control.paused is False
-    assert client.get(f"/api/runs/{run_id}").json()["status"] == "running"
-
-    release.set()
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        payload = client.get(f"/api/runs/{run_id}").json()
-        if payload.get("exit_code") is not None:
-            assert payload["exit_code"] == 0, "retomar leva a run até o fim"
-            return
-        time.sleep(0.05)
-    raise AssertionError("run não encerrou depois de retomar")
+    assert seen["resume_run_id"] == "run-anterior"
+    assert "restart" not in seen, "não há refazer do zero: só retomar"
 
 
 def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
@@ -196,7 +172,6 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
     ).json()["id"]
     assert entered.wait(timeout=5)
 
-    client.post(f"/api/runs/{run_id}/pause")
     assert client.post(f"/api/runs/{run_id}/cancel").status_code == 200
 
     deadline = time.monotonic() + 5
@@ -212,8 +187,7 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
 
 def test_control_endpoints_404_for_unknown_run():
     client = TestClient(create_app(RunManager()))
-    for action in ("pause", "resume", "cancel"):
-        assert client.post(f"/api/runs/nao-existe/{action}").status_code == 404
+    assert client.post("/api/runs/nao-existe/cancel").status_code == 404
 
 
 def test_history_delete_endpoint(tmp_path: Path):

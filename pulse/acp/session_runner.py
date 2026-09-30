@@ -82,7 +82,7 @@ class AcpSessionRunner:
         control: RunControl | None = None,
     ) -> None:
         self._command = command
-        #: Sem controle externo (CLI), o padrão nunca pausa nem para.
+        #: Sem controle externo (CLI), o padrão nunca para.
         self._control = control or RunControl()
         self._runtime = runtime or runtime_for_command(command)
         self._cwd = cwd
@@ -459,7 +459,7 @@ class AcpSessionRunner:
             if time.monotonic() >= deadline:
                 break
 
-            # Pausar/parar corta o turno em voo. Só vale para `session/prompt`:
+            # Parar corta o turno em voo. Só vale para `session/prompt`:
             # o resto do protocolo é rápido e cancelar no meio deixaria a
             # sessão num estado que o agente não sabe descrever.
             if not cancelling and method == "session/prompt" and self._control.interrupted:
@@ -596,7 +596,7 @@ class AcpSessionRunner:
 
     @property
     def control(self) -> RunControl:
-        """Pausa/parada desta run — o motor consulta nas barreiras."""
+        """Parada desta run — o motor consulta nos pontos de corte."""
         return self._control
 
     def set_permission_policy(self, policy: PermissionPolicy) -> None:

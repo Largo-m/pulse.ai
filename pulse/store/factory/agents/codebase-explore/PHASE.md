@@ -49,7 +49,8 @@ FORBIDDEN in this phase:
 
 When the exploration is done, present the map you built — structure, stack,
 patterns, conventions, tests, integrations, warning signs — in enough detail that
-the next step can write the documentation from it without re-exploring. Then end
-with the approval block below.
+the next step can write the documentation from it without re-exploring, and close
+the phase.
 
-<!-- include: approval -->
+Do **not** ask for approval to move on: this loop runs end to end. Closing your
+turn is what hands the map to the documentation step.

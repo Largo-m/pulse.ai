@@ -26,9 +26,8 @@ class RunState:
     correlator: PromptCorrelator | None = None
     cancel_requested: bool = False
     control: RunControl | None = None
-    #: Run anterior a retomar (`restart=True` refaz do primeiro step).
+    #: Run anterior a retomar, do primeiro step que não fechou.
     resume_run_id: str | None = None
-    restart: bool = False
 
 
 class RunManager:
@@ -43,6 +42,7 @@ class RunManager:
                 "label": item.label,
                 "description": item.description,
                 "is_default": item.is_default,
+                "default_prompt": item.default_prompt,
                 "steps": [
                     {"id": step.step_id, "label": step.label, "agent": step.agent_id}
                     for step in item.steps
@@ -58,7 +58,6 @@ class RunManager:
         prompt: str,
         workspace: str | None = None,
         resume_run_id: str | None = None,
-        restart: bool = False,
     ) -> RunState:
         if get_workflow(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
@@ -78,7 +77,6 @@ class RunManager:
             correlator=correlator,
             control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
-            restart=restart,
         )
         with self._lock:
             self._runs[run_id] = state
@@ -95,24 +93,8 @@ class RunManager:
         with self._lock:
             return self._runs.get(run_id)
 
-    def pause(self, run_id: str) -> bool:
-        """Corta o step em voo e segura a run. Retomável sem refazer o resto."""
-        state = self.get(run_id)
-        if state is None or state.control is None:
-            return False
-        state.control.pause()
-        state.status = "paused"
-        return True
-
-    def resume(self, run_id: str) -> bool:
-        state = self.get(run_id)
-        if state is None or state.control is None:
-            return False
-        state.control.resume()
-        state.status = "running"
-        return True
-
     def cancel(self, run_id: str) -> bool:
+        """Corta o step em voo e encerra a run. Retomável por `resume_run_id`."""
         state = self.get(run_id)
         if state is None:
             return False
@@ -150,7 +132,6 @@ class RunManager:
                 prompt_handler=prompt_handler,
                 render_header=False,
                 resume_run_id=state.resume_run_id,
-                restart=state.restart,
                 control=state.control,
             )
         except Exception as error:

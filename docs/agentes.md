@@ -244,13 +244,16 @@ run_workflow(workflow_id, user_prompt, workspace, stream, prompt_handler, contro
   └─ 7. AcpSessionRunner(...)  +  bind_run(run.id)
 ```
 
-O passo 6 tem três modos:
+O passo 6 tem dois modos:
 
 | Chamada | Efeito |
 | --- | --- |
 | sem `resume_run_id` | `create_run`: linha em `runs` + N em `run_steps`, todas `pending` |
 | `resume_run_id` | `load_run`: volta a run existente; steps `done`/`skipped` são pulados |
-| `resume_run_id` + `restart=True` | `reset_steps`: zera os status mantendo a run |
+
+Não há "refazer do zero". Rodar o pipeline inteiro de novo é começar uma run
+nova — que é o que o usuário quer dizer quando pede isso, e deixa a tentativa
+anterior intacta no histórico em vez de sobrescrevê-la.
 
 `run_steps` copia `label` e `position` da definição **no início da run**. Editar
 o workflow depois não reescreve o que já aconteceu.
@@ -275,7 +278,7 @@ para cada definition_step em definition.steps:
        │
        ├─ record = run.step(step_id)  ← step novo na definição entra como pending
        ├─ record.status ∈ SETTLED?    ← done/skipped: pula (é isso que faz retomada)
-       ├─ control.checkpoint()        ◄── BARREIRA de pausa/parada, nada em voo
+       ├─ control.checkpoint()        ◄── PONTO DE CORTE do parar, nada em voo
        ├─ update_run(status=running, current_step=…)
        ├─ _run_step(...)              ← tentativa + retry (§5)
        ├─ _sync_steps()
@@ -398,30 +401,32 @@ Parar                        → status FAILED, run encerra com exit 1
 
 Sem `prompt_handler` capaz de perguntar (CLI, testes), o padrão é `stop`.
 
-### 5.4 Pausar e parar
+### 5.4 Parar e retomar
 
 Não dá para congelar um turno do agente no meio: ou ele termina, ou é descartado.
-O contrato ([`runcontrol.py`](../pulse/runcontrol.py)):
+Por isso existe um comando só — não há pausa. O contrato
+([`runcontrol.py`](../pulse/runcontrol.py)):
 
 ```
-pause()  →  control.interrupted = True
+stop()   →  control.interrupted = True
              │
              ├─ dentro de _request("session/prompt"): manda session/cancel
              │   e espera CANCEL_GRACE_SECONDS (10s) o agente fechar o turno
              │
-             └─ _run_step vê interrupted → _hold_for_pause()
-                  step volta para `pending`  ← será refeito inteiro ao retomar
-                  wait_while_paused()        ← segura aqui
+             └─ _run_step vê interrupted → _release_step()
+                  step volta para `pending`  ← nem done nem failed: não terminou
+                  encerra a run com exit RUN_STOPPED (130)
+                  não é falha: o cockpit oferece retomar
 
-stop()   →  mesmo corte, mas encerra a run com exit RUN_STOPPED (130)
-             não é falha: o cockpit oferece retomar
+retomar  →  run nova sobre o mesmo registro (`resume_run_id`)
+             recomeça no primeiro step que não fechou
 ```
 
 Step já `done` nunca é refeito — é o `if record.status in SETTLED: continue` do
 laço.
 
-Há **duas barreiras**: `checkpoint()` entre steps (nada em voo, corte limpo) e o
-cancelamento dentro do `session/prompt` (corte no meio do turno).
+Há **dois pontos de corte**: `checkpoint()` entre steps (nada em voo, corte
+limpo) e o cancelamento dentro do `session/prompt` (corte no meio do turno).
 
 ---
 

@@ -72,6 +72,8 @@ class HomeScreen(Screen[None]):
         self._pending_workflow: str | None = None
         self._view = ROOT
         self._descriptions: dict[str, str] = {}
+        #: Loops que já sabem qual é a tarefa — entram direto, sem pedir texto.
+        self._default_prompts: dict[str, str] = {}
         self._refresh_options()
         self.query_one("#workflow-prompt", Input).display = False
 
@@ -82,9 +84,10 @@ class HomeScreen(Screen[None]):
         uma e duas faria a lista pular a cada item destacado.
         """
         description = self._descriptions.get(workflow_id or "", "")
-        self.query_one(".home-hint", Static).update(
-            f"{description}\nEnter seleciona · Esc volta"
-        )
+        # Loop com tarefa própria não abre campo nenhum: "Enter inicia" avisa que
+        # o Enter já começa a run, em vez de prometer um passo que não vem.
+        keys = "Enter inicia" if self._default_prompts.get(workflow_id or "") else "Enter seleciona"
+        self.query_one(".home-hint", Static).update(f"{description}\n{keys} · Esc volta")
 
     @on(OptionList.OptionHighlighted, "#home-options")
     def on_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
@@ -113,6 +116,9 @@ class HomeScreen(Screen[None]):
             # caber na descrição.
             self._descriptions = {
                 item.id: " → ".join(step.label for step in item.steps) for item in workflows
+            }
+            self._default_prompts = {
+                item.id: item.default_prompt for item in workflows if item.default_prompt
             }
             for workflow in workflows:
                 label = workflow.label
@@ -158,7 +164,14 @@ class HomeScreen(Screen[None]):
             self.action_back()
             return
         if action.startswith("workflow:"):
-            self._pending_workflow = action.split(":", 1)[1]
+            workflow_id = action.split(":", 1)[1]
+            # "Analisar codebase" e "Setup do projeto" olham o repositório, não
+            # um pedido: pedir texto era uma pergunta sem resposta possível.
+            default_prompt = self._default_prompts.get(workflow_id, "")
+            if default_prompt:
+                self.app.open_cockpit(workflow_id, default_prompt)
+                return
+            self._pending_workflow = workflow_id
             prompt_input = self.query_one("#workflow-prompt", Input)
             prompt_input.display = True
             prompt_input.focus()

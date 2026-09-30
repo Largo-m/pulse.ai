@@ -88,22 +88,6 @@ def test_runs_are_scoped_to_their_workspace(tmp_path: Path):
     assert [item.id for item in run_store.list_runs(other)] == ["run-there"]
 
 
-def test_reset_steps_clears_progress_but_keeps_the_run(tmp_path: Path):
-    record = _create(tmp_path)
-    first = record.steps[0]
-    first.status = DONE
-    first.summary = "resumo"
-    run_store.save_step(record.id, first)
-
-    run_store.reset_steps(record.id)
-
-    loaded = run_store.load_run(record.id)
-    assert loaded is not None
-    assert [step.status for step in loaded.steps] == [PENDING, PENDING]
-    assert loaded.steps[0].summary == ""
-    assert len(run_store.list_runs(tmp_path)) == 1
-
-
 def test_a_repeated_tool_id_updates_the_log_line(tmp_path: Path):
     """Tool-call em andamento vira uma linha só, não uma por atualização."""
     record = _create(tmp_path)

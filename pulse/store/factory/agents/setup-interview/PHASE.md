@@ -48,7 +48,9 @@ FORBIDDEN in this phase:
 ### Closing the phase
 
 When nothing is left to ask, present what you gathered — vision, audience, v1
-scope, constraints — so the next step can write the artefacts from it, and end
-with the approval block below.
+scope, constraints — so the next step can write the artefacts from it, and close
+the phase.
 
-<!-- include: approval -->
+Do **not** ask for approval to move on: this loop runs end to end. The questions
+above are the only thing you ask the user. Closing your turn is what hands what
+you gathered to the artefacts step.

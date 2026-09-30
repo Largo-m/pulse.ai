@@ -49,6 +49,9 @@ class FactoryWorkflow:
     description: str
     steps: tuple[FactoryStep, ...]
     is_default: bool = False
+    #: Loop que já sabe qual é a tarefa — o menu entra direto na run, sem pedir
+    #: texto. Vazio = o usuário descreve o que quer.
+    default_prompt: str = ""
 
 
 #: Rótulo de cada agente na UI. O resto (runtime, model, policy, descrição) sai
@@ -97,18 +100,20 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
         label="Setup do projeto",
         description="artefatos do projeto",
         steps=(
-            FactoryStep("setup-interview", "Entrevista", True),
+            FactoryStep("setup-interview", "Entrevista", False),
             FactoryStep("setup-artifacts", "Artefatos", False),
         ),
+        default_prompt="Novo projeto",
     ),
     FactoryWorkflow(
         id="analyze-codebase",
         label="Analisar codebase",
         description="docs do repositório",
         steps=(
-            FactoryStep("codebase-explore", "Exploração", True),
+            FactoryStep("codebase-explore", "Exploração", False),
             FactoryStep("codebase-docs", "Documentação", False),
         ),
+        default_prompt="Mapear codebase existente",
     ),
     FactoryWorkflow(
         id="default",
@@ -216,11 +221,12 @@ def seed(connection: Any) -> None:
     templates["default"] = "{{user_prompt}}"
     connection.executemany(
         """
-        INSERT OR IGNORE INTO workflow_defs (id, label, description, is_default)
-        VALUES (?, ?, ?, ?)
+        INSERT OR IGNORE INTO workflow_defs
+          (id, label, description, is_default, default_prompt)
+        VALUES (?, ?, ?, ?, ?)
         """,
         [
-            (item.id, item.label, item.description, int(item.is_default))
+            (item.id, item.label, item.description, int(item.is_default), item.default_prompt)
             for item in WORKFLOWS
         ],
     )
@@ -244,6 +250,70 @@ def seed(connection: Any) -> None:
             )
             for workflow in WORKFLOWS
             for position, step in enumerate(workflow.steps, start=1)
+        ],
+    )
+
+
+def backfill_default_prompts(connection: Any) -> None:
+    """Preenche `default_prompt` nos bancos semeados antes da coluna existir.
+
+    O `ALTER` dá `''` a toda linha que já estava lá, e `seed` não roda num banco
+    já semeado — sem isto, "Analisar codebase" e "Setup do projeto" voltariam a
+    pedir texto em quem já usa o Pulse. Só toca no que está vazio: o loop que o
+    usuário editou continua como ele deixou.
+    """
+    connection.executemany(
+        "UPDATE workflow_defs SET default_prompt = ? WHERE id = ? AND default_prompt = ''",
+        [(item.default_prompt, item.id) for item in WORKFLOWS if item.default_prompt],
+    )
+
+
+#: Trecho que só existe num `prompt_template` que ainda manda o agente pedir
+#: aprovação. É o sinal de "esta linha é a de fábrica antiga", e some no próprio
+#: UPDATE — por isso `drop_approval_from_unattended_steps` é idempotente.
+APPROVAL_MARK = "Aprovar {{step_label}} e avançar?"
+
+#: Steps que pediam aprovação e não pedem mais: os dois loops que rodam do
+#: começo ao fim sem ninguém olhando. `(workflow_id, step_id)`.
+UNATTENDED_STEPS: tuple[tuple[str, str], ...] = (
+    ("setup-project", "setup-interview"),
+    ("analyze-codebase", "codebase-explore"),
+)
+
+
+def drop_approval_from_unattended_steps(connection: Any) -> None:
+    """Tira o pedido de aprovação desses steps nos bancos já semeados.
+
+    `seed` é `INSERT OR IGNORE` e não reescreve linha existente, então mudar o
+    playbook de fábrica não chega a quem já usa o Pulse. Aqui chega — mas só na
+    linha que ainda carrega o bloco de aprovação de fábrica: template que o
+    usuário reescreveu não é tocado.
+
+    Roda em toda abertura do banco, então sai cedo pelo `SELECT`: depois do
+    primeiro UPDATE nenhuma linha casa, e `load_agents` — que relê ~8 mil linhas
+    de playbook — nem chega a ser chamado.
+    """
+    placeholders = ",".join("?" * len(UNATTENDED_STEPS))
+    pending = connection.execute(
+        f"""
+        SELECT count(*) FROM workflow_steps
+         WHERE step_id IN ({placeholders}) AND instr(prompt_template, ?) > 0
+        """,  # noqa: S608
+        (*(step_id for _workflow_id, step_id in UNATTENDED_STEPS), APPROVAL_MARK),
+    ).fetchone()[0]
+    if not pending:
+        return
+
+    templates = {agent.id: agent.prompt_template for agent in load_agents()}
+    connection.executemany(
+        """
+        UPDATE workflow_steps
+           SET requires_approval = 0, prompt_template = ?
+         WHERE workflow_id = ? AND step_id = ? AND instr(prompt_template, ?) > 0
+        """,
+        [
+            (templates[step_id], workflow_id, step_id, APPROVAL_MARK)
+            for workflow_id, step_id in UNATTENDED_STEPS
         ],
     )
 
