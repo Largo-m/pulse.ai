@@ -1,9 +1,7 @@
 from pathlib import Path
 
 from pulse.config.paths import (
-    PROJECT_SPECS_DIRNAME,
     find_project_config_file,
-    project_specs_dir,
 )
 from pulse.config.project_config import (
     ensure_project_workflows,
@@ -12,13 +10,9 @@ from pulse.config.project_config import (
     project_config_exists,
     update_project_agent,
     update_project_defaults,
+    update_project_workflow,
 )
 from pulse.store.db import connect, default_db_path
-
-
-def test_project_specs_dir(tmp_path: Path):
-    assert PROJECT_SPECS_DIRNAME == ".pulse/specs"
-    assert project_specs_dir(tmp_path) == tmp_path / ".pulse" / "specs"
 
 
 def test_load_project_config_reads_overrides(tmp_path: Path):
@@ -89,15 +83,17 @@ def test_no_project_config_returns_none(tmp_path: Path):
 
 
 def test_load_project_config_parses_workflows(tmp_path: Path):
+    """`project_workflows` é só override por id — não semeia workflow nenhum."""
     init_project_config(tmp_path)
     update_project_defaults(tmp_path, agent="claude")
+    update_project_workflow(tmp_path, "meu-fluxo", agent="claude", model="opus[1m]")
 
     config = load_project_config(tmp_path)
 
     assert config is not None
     assert config.default_agent == "claude"
-    assert config.workflows["setup-project"].agent == "claude"
-    assert config.workflows["setup-project"].model == "claude-opus-4.8"
+    assert config.workflows["meu-fluxo"].agent == "claude"
+    assert config.workflows["meu-fluxo"].model == "opus[1m]"
 
 
 def test_load_project_config_parses_agents(tmp_path: Path):
@@ -134,38 +130,22 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert config.default_agent == "cursor"
     assert config.model == "claude-sonnet-4-6"
     assert config.permission_policy == "deny_writes"
-    assert config.workflows["setup-project"].agent == "claude"
-    assert config.workflows["setup-project"].model == "claude-opus-4.8"
-    assert config.workflows["analyze-codebase"].agent == "cursor"
-    assert config.workflows["analyze-codebase"].model == "gpt-5.5"
-    assert config.workflows["spec"].agent == "cursor"
-    assert config.workflows["spec"].model == "Auto"
-    assert "new-issue" not in config.workflows
-    assert "fix-bug" not in config.workflows
+    # Nenhum workflow nasce aqui: quem define workflow é `workflow_defs`.
+    assert config.workflows == {}
     assert not (tmp_path / ".pulse" / "config.yaml").exists()
 
 
-def test_ensure_project_workflows_adds_missing_entries(tmp_path: Path):
+def test_ensure_project_workflows_keeps_the_overrides_the_user_set(tmp_path: Path):
     init_project_config(tmp_path)
-    config = load_project_config(tmp_path)
-    assert config is not None
-    connection = connect(default_db_path())
-    connection.execute(
-        "DELETE FROM project_workflows WHERE project_id = ? AND workflow_id = ?",
-        (config.project_id, "spec"),
-    )
-    connection.commit()
-    connection.close()
+    update_project_workflow(tmp_path, "meu-fluxo", agent="cursor", model="Auto")
 
     path = ensure_project_workflows(tmp_path)
     loaded = load_project_config(tmp_path)
 
     assert path == find_project_config_file(tmp_path)
     assert loaded is not None
-    assert loaded.workflows["setup-project"].agent == "claude"
-    assert loaded.workflows["analyze-codebase"].agent == "cursor"
-    assert loaded.workflows["spec"].agent == "cursor"
-    assert loaded.workflows["spec"].model == "Auto"
+    assert loaded.workflows["meu-fluxo"].agent == "cursor"
+    assert loaded.workflows["meu-fluxo"].model == "Auto"
 
 
 def test_update_project_defaults_agent(tmp_path: Path):

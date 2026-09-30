@@ -6,34 +6,73 @@ import threading
 import time
 import uuid
 from queue import Empty, Queue
-from pathlib import Path
 from collections.abc import Callable
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
-from pulse.acp.models import resolve_interview_model_id, resolve_model_display_name
+from pulse.acp.models import resolve_model_display_name
+from pulse.history.events import LogKind
+from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
+from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.plan.analyze_codebase_prompt import build_analyze_codebase_artifact_prompt
-from pulse.plan.new_issue_prompt import (
-    build_phase_continuation_prompt,
-    classify_phase_questionnaire_outcome,
-)
-from pulse.plan.quick_prompt import (
-    build_quick_continuation_prompt,
-    build_quick_implement_prompt,
-    classify_quick_questionnaire_outcome,
-)
-from pulse.plan.setup_project_prompt import build_setup_project_artifact_prompt
 from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
 from pulse.prompts.permission import PermissionPolicy
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
+from pulse.runcontrol import RunControl
 
-INTERVIEW_MODE = "agent"
-AGENT_MODE = "agent"
-MAX_QUICK_PLAN_TURNS = 4
-MAX_PHASE_APPROVAL_TURNS = 4
+#: Teto de rodadas de pergunta/resposta dentro de um step. Um agente que
+#: pergunta até não sobrar dúvida precisa de folga; o teto existe só para não
+#: deixar um agente em loop infinito — ao estourar, o step cai no retry.
+MAX_PHASE_APPROVAL_TURNS = 12
+
+#: Turnos de um step sem aprovação: o trabalho, mais uma continuação. A segunda
+#: é a chance de o agente destravar sozinho o que declarou bloqueado. Duas e não
+#: mais: um agente que repete o bloqueio depois de ser cutucado uma vez está
+#: dizendo que precisa de gente, e insistir só gasta token para chegar ao mesmo
+#: menu. Ver [pulse.orchestrator.engine._attempt_step].
+MAX_PROMPT_TURNS = 2
+
+#: Depois de pedir `session/cancel`, quanto esperamos o agente fechar o turno
+#: por conta própria antes de considerar cancelado mesmo assim.
+CANCEL_GRACE_SECONDS = 10.0
+
+#: `session/prompt` é o único pedido sem prazo previsível: implementar uma task
+#: leva o tempo que levar. Para ele o relógio é de *silêncio* — ver `_request`.
+_IDLE_CLOCK_METHODS = frozenset({"session/prompt"})
+
+
+class _WatchedPrompts:
+    """Proxy do prompt port que avisa quando há uma pergunta na tela.
+
+    Enquanto o usuário decide, o agente fica calado — e silêncio é justamente o
+    que o relógio de `session/prompt` mede. Sem isto, uma aprovação que demorou
+    mais que o timeout derrubava o step por "timeout", culpando o agente por
+    uma espera que era nossa.
+    """
+
+    def __init__(self, inner: Any, *, on_enter, on_exit) -> None:
+        self._inner = inner
+        self._on_enter = on_enter
+        self._on_exit = on_exit
+
+    def __getattr__(self, name: str) -> Any:
+        # AttributeError vaza de propósito: quem pergunta por `select_choice`
+        # num port que não tem precisa continuar ouvindo "não tem".
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def watched(*args: Any, **kwargs: Any) -> Any:
+            self._on_enter()
+            try:
+                return attr(*args, **kwargs)
+            finally:
+                self._on_exit()
+
+        return watched
 
 
 class AcpSessionRunner:
@@ -48,13 +87,22 @@ class AcpSessionRunner:
         prompt_handler: Any | None = None,
         enable_mcp_ask: bool = True,
         pulse_agent: str | None = None,
+        runtime: AgentRuntime | None = None,
+        control: RunControl | None = None,
     ) -> None:
         self._command = command
+        #: Sem controle externo (CLI), o padrão nunca para.
+        self._control = control or RunControl()
+        self._runtime = runtime or runtime_for_command(command)
         self._cwd = cwd
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
         self._stream = stream or NullStreamSink()
-        self._prompt_handler = prompt_handler or NullPromptPort()
+        self._prompt_handler = _WatchedPrompts(
+            prompt_handler or NullPromptPort(),
+            on_enter=self._begin_user_wait,
+            on_exit=self._end_user_wait,
+        )
         self._enable_mcp_ask = enable_mcp_ask
         self._pulse_agent = pulse_agent
         self._ask_bridge: AskQuestionHttpServer | None = None
@@ -65,12 +113,35 @@ class AcpSessionRunner:
         self._next_id = 1
         self._session_id: str | None = None
         self.last_session_id = ""
-        self._spec_dir = ""
+        #: Run a que este runner está ligado (`bind_run`). Vazio = não grava log.
+        self._bound_run_id = ""
         self._phase_id = ""
-        self._task_id = ""
+        #: Texto do agente acumulado até o próximo tool call / fim do prompt.
+        self._text_buffer: list[str] = []
+        #: Tool-calls já vistos nesta run, acumulados update a update. O ACP
+        #: manda o `rawInput` num evento e o `rawOutput` noutro: gravar só o
+        #: último deixava o log do histórico sem o arquivo que o tool tocou.
+        self._tool_payloads: dict[str, dict[str, Any]] = {}
+        #: Classificação já atribuída a cada tool-call, para um update tardio
+        #: não rebatizar de "Tool" o que já entrou como "Write".
+        self._tool_kinds: dict[str, str] = {}
+        #: Tool-calls que já gravaram um rótulo de verdade (não "…").
+        self._tool_labeled: set[str] = set()
         self._run_id = str(uuid.uuid4())
+        self._auth_methods: list[str] = []
         self.ask_question_count = 0
         self._logger = AcpLogger(self._run_id)
+        #: Última vez que o agente deu sinal de vida, para o relógio de silêncio.
+        self._activity = time.monotonic()
+        #: Perguntas abertas na tela. Enquanto houver, o silêncio é nosso.
+        self._user_waits = 0
+
+    def _begin_user_wait(self) -> None:
+        self._user_waits += 1
+
+    def _end_user_wait(self) -> None:
+        self._user_waits = max(0, self._user_waits - 1)
+        self._activity = time.monotonic()
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self._logger.log_event("run_prompt_start", {"cwd": self._cwd})
@@ -90,156 +161,6 @@ class AcpSessionRunner:
             self._stream.finish()
             self.close()
 
-    def run_setup_project(
-        self,
-        *,
-        interview_prompt: str,
-        workspace: Path,
-        user_prompt: str,
-        skill_dir: Path,
-        preferred_model: str | None = None,
-    ) -> dict[str, Any]:
-        self._run_id = str(uuid.uuid4())
-        self._logger = AcpLogger(self._run_id)
-        self._logger.log_event(
-            "run_setup_project_start",
-            {"workspace": str(workspace), "preferred_model": preferred_model},
-        )
-        self.start()
-        try:
-            self.initialize()
-            self.authenticate()
-            session = self.new_session(self._cwd)
-            session_id = session.get("sessionId")
-            if not session_id:
-                raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._activate_session(str(session_id))
-
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
-
-            self.set_mode(self._session_id, INTERVIEW_MODE)
-            self._stream.begin_phase("Fase 1 — Análise do projeto")
-            self._stream.reset_capture()
-            interview_result = self.prompt(self._session_id, interview_prompt)
-            if interview_result.get("stopReason") == "cancelled":
-                interview_result["askQuestionCount"] = self.ask_question_count
-                return interview_result
-
-            phase1_analysis = self._stream.agent_text()
-            answers_text = self._run_text_questionnaire(phase1_analysis)
-            if answers_text is None:
-                return {
-                    "stopReason": "cancelled",
-                    "interviewStopReason": interview_result.get("stopReason"),
-                    "askQuestionCount": self.ask_question_count,
-                }
-            artifact_prompt = build_setup_project_artifact_prompt(
-                workspace=workspace,
-                user_prompt=user_prompt,
-                skill_dir=skill_dir,
-                analysis_summary=phase1_analysis,
-                questionnaire_answers=answers_text,
-            )
-
-            self.set_mode(self._session_id, AGENT_MODE)
-            self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/project/")
-            self._stream.reset_capture()
-            artifact_result = self.prompt(self._session_id, artifact_prompt)
-            artifact_result["interviewStopReason"] = interview_result.get("stopReason")
-            artifact_result["askQuestionCount"] = self.ask_question_count
-            self._logger.log_event(
-                "run_setup_project_done",
-                {
-                    "stop_reason": artifact_result.get("stopReason"),
-                    "interview_stop_reason": artifact_result.get("interviewStopReason"),
-                    "ask_question_count": self.ask_question_count,
-                    "log_path": str(self._logger.path),
-                },
-            )
-            return artifact_result
-        finally:
-            self._stream.finish()
-            self.close_session()
-            self.close()
-
-    def run_analyze_codebase(
-        self,
-        *,
-        explore_prompt: str,
-        workspace: Path,
-        user_prompt: str,
-        skill_dir: Path,
-        preferred_model: str | None = None,
-    ) -> dict[str, Any]:
-        self._run_id = str(uuid.uuid4())
-        self._logger = AcpLogger(self._run_id)
-        self._logger.log_event(
-            "run_analyze_codebase_start",
-            {"workspace": str(workspace), "preferred_model": preferred_model},
-        )
-        self.start()
-        try:
-            self.initialize()
-            self.authenticate()
-            session = self.new_session(self._cwd, workflow="analyze-codebase")
-            session_id = session.get("sessionId")
-            if not session_id:
-                raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._activate_session(str(session_id))
-
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
-
-            self.set_mode(self._session_id, INTERVIEW_MODE)
-            self._stream.begin_phase("Fase 1 — Explorando codebase")
-            self._stream.reset_capture()
-            explore_result = self.prompt(self._session_id, explore_prompt)
-            if explore_result.get("stopReason") == "cancelled":
-                explore_result["askQuestionCount"] = self.ask_question_count
-                return explore_result
-
-            phase1_analysis = self._stream.agent_text()
-            answers_text = self._run_text_questionnaire(phase1_analysis)
-            if answers_text is None:
-                return {
-                    "stopReason": "cancelled",
-                    "exploreStopReason": explore_result.get("stopReason"),
-                    "askQuestionCount": self.ask_question_count,
-                }
-            artifact_prompt = build_analyze_codebase_artifact_prompt(
-                workspace=workspace,
-                user_prompt=user_prompt,
-                skill_dir=skill_dir,
-                analysis_summary=phase1_analysis,
-                questionnaire_answers=answers_text,
-            )
-
-            self.set_mode(self._session_id, AGENT_MODE)
-            self._stream.begin_phase("Fase 2 — Gerando .pulse/specs/codebase/")
-            self._stream.reset_capture()
-            artifact_result = self.prompt(self._session_id, artifact_prompt)
-            artifact_result["exploreStopReason"] = explore_result.get("stopReason")
-            artifact_result["askQuestionCount"] = self.ask_question_count
-            self._logger.log_event(
-                "run_analyze_codebase_done",
-                {
-                    "stop_reason": artifact_result.get("stopReason"),
-                    "explore_stop_reason": artifact_result.get("exploreStopReason"),
-                    "ask_question_count": self.ask_question_count,
-                    "log_path": str(self._logger.path),
-                },
-            )
-            return artifact_result
-        finally:
-            self._stream.finish()
-            self.close_session()
-            self.close()
-
     def run_isolated_phase(
         self,
         *,
@@ -253,7 +174,6 @@ class AcpSessionRunner:
     ) -> dict[str, Any]:
         if phase_id:
             self._phase_id = phase_id
-        self._task_id = ""
         self._logger.log_event(
             "run_isolated_phase_start",
             {"workflow": workflow, "phase": phase_label},
@@ -264,12 +184,9 @@ class AcpSessionRunner:
             raise RuntimeError("Sessão ACP não retornou sessionId")
         self._activate_session(str(session_id))
 
-        model_id = resolve_interview_model_id(session, preferred_model)
-        if model_id:
-            self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+        self.apply_model(session, preferred_model)
 
-        self.set_mode(self._session_id, INTERVIEW_MODE)
+        self.apply_mode(session, execute=False)
         next_prompt = initial_prompt
         phase_summary = ""
         answers_text = ""
@@ -280,7 +197,7 @@ class AcpSessionRunner:
         try:
             for turn in range(MAX_PHASE_APPROVAL_TURNS):
                 label = phase_label if turn == 0 else f"{phase_label} — continuação ({turn + 1})"
-                self._stream.begin_phase(label)
+                self._begin_phase(label)
                 self._stream.reset_capture()
                 phase_result = self.prompt(self._session_id, next_prompt)
                 if phase_result.get("stopReason") == "cancelled":
@@ -304,44 +221,30 @@ class AcpSessionRunner:
                 if not answers_text.strip():
                     break
 
-                outcome = classify_phase_questionnaire_outcome(answers_text)
-                if outcome == "approve":
+                outcome = classify_outcome(answers_text)
+                if outcome == APPROVE:
                     approved = True
                     break
-                if outcome == "cancel":
+                if outcome in {CANCEL, SKIP}:
                     return {
                         "stopReason": phase_result.get("stopReason", "end_turn"),
                         "phaseStopReason": phase_result.get("stopReason"),
                         "askQuestionCount": self.ask_question_count,
                         "approved": False,
-                        "outcome": "cancel",
-                        "phaseSummary": phase_summary,
-                    }
-                if outcome == "skip":
-                    return {
-                        "stopReason": phase_result.get("stopReason", "end_turn"),
-                        "phaseStopReason": phase_result.get("stopReason"),
-                        "askQuestionCount": self.ask_question_count,
-                        "approved": False,
-                        "outcome": "skip",
+                        "outcome": outcome,
                         "phaseSummary": phase_summary,
                     }
 
-                if build_continuation is not None:
-                    kwargs = dict(continuation_kwargs or {})
-                    next_prompt = build_continuation(
-                        phase_summary=phase_summary,
-                        questionnaire_answers=answers_text,
-                        outcome=outcome,
-                        **kwargs,
-                    )
-                else:
-                    next_prompt = build_phase_continuation_prompt(
-                        phase_summary=phase_summary,
-                        questionnaire_answers=answers_text,
-                        outcome=outcome,
-                        **(continuation_kwargs or {}),
-                    )
+                if build_continuation is None:
+                    # Sem como retomar a conversa, insistir só repetiria o mesmo
+                    # turno: devolve não-aprovado e deixa o motor decidir.
+                    break
+                next_prompt = build_continuation(
+                    phase_summary=phase_summary,
+                    questionnaire_answers=answers_text,
+                    outcome=outcome,
+                    **dict(continuation_kwargs or {}),
+                )
 
             phase_result["approved"] = approved
             phase_result["outcome"] = outcome if approved else outcome
@@ -369,11 +272,19 @@ class AcpSessionRunner:
         preferred_model: str | None = None,
         agent_mode: bool = True,
         phase_id: str = "",
-        task_id: str = "",
+        build_continuation: Callable[..., str] | None = None,
+        max_turns: int = MAX_PROMPT_TURNS,
     ) -> dict[str, Any]:
+        """Roda o step numa sessão própria, com direito a continuação.
+
+        `build_continuation` recebe o resultado do turno e devolve o próximo
+        prompt, ou vazio para encerrar. É o que deixa o motor mandar o agente
+        destravar o que ele mesmo declarou bloqueado **sem trocar de sessão**:
+        uma sessão nova perderia tudo que ele já descobriu e o faria recomeçar
+        do zero, que é justamente o que não se quer de uma segunda chance.
+        """
         if phase_id:
             self._phase_id = phase_id
-        self._task_id = task_id
         self._logger.log_event(
             "run_isolated_prompt_start",
             {"workflow": workflow, "phase": phase_label},
@@ -384,165 +295,47 @@ class AcpSessionRunner:
             raise RuntimeError("Sessão ACP não retornou sessionId")
         self._activate_session(str(session_id))
 
-        model_id = resolve_interview_model_id(session, preferred_model)
-        if model_id:
-            self.set_model(self._session_id, model_id)
-            self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
+        self.apply_model(session, preferred_model)
 
-        mode = AGENT_MODE if agent_mode else INTERVIEW_MODE
-        self.set_mode(self._session_id, mode)
-        self._stream.begin_phase(phase_label)
-        self._stream.reset_capture()
+        self.apply_mode(session, execute=agent_mode)
 
+        next_prompt = prompt_text
+        # O resumo é a soma dos turnos, não só o do último: o turno que
+        # destravou costuma ser curto ("criei o arquivo e conclui"), e entregar
+        # só ele ao step seguinte jogaria fora o trabalho descrito no primeiro.
+        parts: list[str] = []
+        result: dict[str, Any] = {}
         try:
-            result = self.prompt(self._session_id, prompt_text)
-            result["phaseSummary"] = self._stream.agent_text()
-            result["askQuestionCount"] = self.ask_question_count
+            for turn in range(max(1, max_turns)):
+                if turn:
+                    self._begin_phase(f"{phase_label} — continuação ({turn + 1})")
+                else:
+                    self._begin_phase(phase_label)
+                self._stream.reset_capture()
+                result = self.prompt(self._session_id, next_prompt)
+                text = self._stream.agent_text().strip()
+                if text:
+                    parts.append(text)
+                result["phaseSummary"] = "\n\n".join(parts)
+                result["askQuestionCount"] = self.ask_question_count
+                result["turns"] = turn + 1
+                if build_continuation is None or result.get("stopReason") == "cancelled":
+                    break
+                follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
+                if not follow_up:
+                    break
+                next_prompt = follow_up
             self._logger.log_event(
                 "run_isolated_prompt_done",
-                {"phase": phase_label, "stop_reason": result.get("stopReason")},
+                {
+                    "phase": phase_label,
+                    "stop_reason": result.get("stopReason"),
+                    "turns": result.get("turns"),
+                },
             )
             return result
         finally:
             self.close_session()
-
-    def run_quick(
-        self,
-        *,
-        plan_prompt: str,
-        workspace: Path,
-        user_prompt: str,
-        skill_dir: Path,
-        preferred_model: str | None = None,
-    ) -> dict[str, Any]:
-        self._run_id = str(uuid.uuid4())
-        self._logger = AcpLogger(self._run_id)
-        self._logger.log_event(
-            "run_quick_start",
-            {"workspace": str(workspace), "preferred_model": preferred_model},
-        )
-        self.start()
-        try:
-            self.initialize()
-            self.authenticate()
-            session = self.new_session(self._cwd, workflow="spec")
-            session_id = session.get("sessionId")
-            if not session_id:
-                raise RuntimeError("Sessão ACP não retornou sessionId")
-            self._activate_session(str(session_id))
-
-            model_id = resolve_interview_model_id(session, preferred_model)
-            if model_id:
-                self.set_model(self._session_id, model_id)
-                self._emit_info(f"Modelo: {resolve_model_display_name(session, model_id)}")
-
-            self.set_mode(self._session_id, INTERVIEW_MODE)
-            next_prompt = plan_prompt
-            plan_summary = ""
-            answers_text = ""
-            approved = False
-            outcome = "unknown"
-
-            for turn in range(MAX_QUICK_PLAN_TURNS):
-                phase_label = (
-                    "Fase 1 — Planejando quick task"
-                    if turn == 0
-                    else f"Fase 1 — Continuando ({turn + 1})"
-                )
-                self._stream.begin_phase(phase_label)
-                self._stream.reset_capture()
-                plan_result = self.prompt(self._session_id, next_prompt)
-                if plan_result.get("stopReason") == "cancelled":
-                    plan_result["askQuestionCount"] = self.ask_question_count
-                    plan_result["approved"] = False
-                    plan_result["outcome"] = "cancelled"
-                    return plan_result
-
-                plan_summary = self._stream.agent_text()
-                answers_text = self._run_text_questionnaire(plan_summary)
-                if answers_text is None:
-                    return {
-                        "stopReason": "cancelled",
-                        "planStopReason": plan_result.get("stopReason"),
-                        "askQuestionCount": self.ask_question_count,
-                        "approved": False,
-                        "outcome": "cancelled",
-                    }
-
-                if not answers_text.strip():
-                    if turn == 0:
-                        approved = False
-                        outcome = "unknown"
-                    break
-
-                outcome = classify_quick_questionnaire_outcome(answers_text)
-                if outcome == "approve":
-                    approved = True
-                    break
-                if outcome == "cancel":
-                    return {
-                        "stopReason": plan_result.get("stopReason", "end_turn"),
-                        "planStopReason": plan_result.get("stopReason"),
-                        "askQuestionCount": self.ask_question_count,
-                        "approved": False,
-                        "outcome": "cancel",
-                    }
-
-                next_prompt = build_quick_continuation_prompt(
-                    workspace=workspace,
-                    user_prompt=user_prompt,
-                    skill_dir=skill_dir,
-                    plan_summary=plan_summary,
-                    questionnaire_answers=answers_text,
-                    outcome=outcome,
-                )
-
-            if not approved:
-                self._logger.log_event(
-                    "run_quick_not_approved",
-                    {
-                        "ask_question_count": self.ask_question_count,
-                        "outcome": outcome,
-                        "log_path": str(self._logger.path),
-                    },
-                )
-                return {
-                    "stopReason": plan_result.get("stopReason", "end_turn"),
-                    "planStopReason": plan_result.get("stopReason"),
-                    "askQuestionCount": self.ask_question_count,
-                    "approved": False,
-                    "outcome": outcome,
-                }
-
-            implement_prompt = build_quick_implement_prompt(
-                workspace=workspace,
-                user_prompt=user_prompt,
-                skill_dir=skill_dir,
-                plan_summary=plan_summary,
-                approval_answers=answers_text,
-            )
-
-            self.set_mode(self._session_id, AGENT_MODE)
-            self._stream.begin_phase("Fase 2 — Implementando quick task")
-            self._stream.reset_capture()
-            implement_result = self.prompt(self._session_id, implement_prompt)
-            implement_result["planStopReason"] = plan_result.get("stopReason")
-            implement_result["askQuestionCount"] = self.ask_question_count
-            implement_result["approved"] = True
-            self._logger.log_event(
-                "run_quick_done",
-                {
-                    "stop_reason": implement_result.get("stopReason"),
-                    "plan_stop_reason": implement_result.get("planStopReason"),
-                    "ask_question_count": self.ask_question_count,
-                    "log_path": str(self._logger.path),
-                },
-            )
-            return implement_result
-        finally:
-            self._stream.finish()
-            self.close_session()
-            self.close()
 
     def start(self) -> None:
         self._logger.log_event("process_start", {"command": self._command, "cwd": self._cwd})
@@ -564,6 +357,25 @@ class AcpSessionRunner:
         )
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
+
+    def ensure_process(self) -> bool:
+        """Reergue o processo do agente se ele não está mais de pé.
+
+        Devolve `True` quando precisou reiniciar. Existe para o retry de um step
+        que caiu junto com a sessão: sem isto, "Refazer" só repetiria a queda.
+        """
+        if self._process is not None and self._process.poll() is None:
+            return False
+        self._logger.log_event("process_revive")
+        self.close()
+        self._responses.clear()
+        while not self._response_queue.empty():
+            self._response_queue.get_nowait()
+        self._session_id = None
+        self.start()
+        self.initialize()
+        self.authenticate()
+        return True
 
     def close(self) -> None:
         self._logger.log_event("process_close")
@@ -597,6 +409,9 @@ class AcpSessionRunner:
             except json.JSONDecodeError:
                 continue
 
+            # Qualquer linha serve como sinal de vida: é o que segura o relógio
+            # de silêncio de um `session/prompt` longo.
+            self._activity = time.monotonic()
             self._logger.log_received(message)
 
             if message.get("method") and message.get("id") is not None:
@@ -614,6 +429,7 @@ class AcpSessionRunner:
                     or session_id == self._session_id
                 ):
                     self._stream.handle_update(params)
+                    self._record_run_event(params)
                 continue
 
             message_id = message.get("id")
@@ -678,11 +494,40 @@ class AcpSessionRunner:
             }
         )
 
-        deadline = time.monotonic() + self._timeout_seconds
-        while time.monotonic() < deadline:
+        # Para `session/prompt` o prazo conta do último sinal de vida, não do
+        # envio: um step que trabalha por meia hora, falando o tempo todo, não é
+        # um step travado. Para o resto do protocolo, que é pergunta e resposta
+        # imediata, o prazo continua sendo o total.
+        idle_clock = method in _IDLE_CLOCK_METHODS
+        self._activity = time.monotonic()
+        deadline = self._activity + self._timeout_seconds
+        cancelling = False
+        while True:
+            if self._user_waits:
+                # A pergunta está na tela: o relógio espera o usuário.
+                self._activity = time.monotonic()
+            if not cancelling and idle_clock:
+                deadline = self._activity + self._timeout_seconds
+            if time.monotonic() >= deadline:
+                break
+
+            # Parar corta o turno em voo. Só vale para `session/prompt`:
+            # o resto do protocolo é rápido e cancelar no meio deixaria a
+            # sessão num estado que o agente não sabe descrever.
+            if not cancelling and method == "session/prompt" and self._control.interrupted:
+                self._cancel_active_session()
+                cancelling = True
+                deadline = time.monotonic() + CANCEL_GRACE_SECONDS
+
+            if self._process is not None and self._process.poll() is not None:
+                # Sem processo não há resposta para esperar — nem os 10 minutos
+                # de timeout que `session/close` gastaria à toa no caminho.
+                self._logger.log_event("process_gone", {"method": method})
+                raise RuntimeError(f"o processo do agente encerrou durante `{method}`")
+
             remaining = deadline - time.monotonic()
             try:
-                response_id = self._response_queue.get(timeout=min(1.0, remaining))
+                response_id = self._response_queue.get(timeout=min(1.0, max(0.0, remaining)))
             except Empty:
                 continue
 
@@ -692,10 +537,38 @@ class AcpSessionRunner:
 
             if "error" in response:
                 error = response["error"]
+                if cancelling:
+                    # O agente reclamou do cancelamento: o corte é o que importa.
+                    return {"stopReason": "cancelled"}
                 raise RuntimeError(error.get("message", "Erro ACP desconhecido"))
             return response.get("result", {})
 
-        raise TimeoutError(f"Timeout aguardando resposta de `{method}`")
+        if cancelling:
+            # O agente não fechou o turno no prazo — a sessão é descartada logo
+            # em seguida (`close_session`), então seguir como cancelado é seguro.
+            self._logger.log_event("prompt_cancel_timeout", {"method": method})
+            return {"stopReason": "cancelled"}
+        raise TimeoutError(
+            f"o agente ficou {int(self._timeout_seconds)}s sem dar sinal em `{method}`"
+        )
+
+    def _cancel_active_session(self) -> None:
+        """Pede ao agente para abortar o turno da sessão ativa."""
+        session_id = self._session_id
+        if session_id is None:
+            return
+        self._logger.log_event("session_cancel", {"session_id": session_id})
+        try:
+            self._send(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "session/cancel",
+                    "params": {"sessionId": session_id},
+                }
+            )
+        except (RuntimeError, OSError, ValueError) as error:
+            # Processo já caiu ou stdin fechou: o turno morre junto, tudo bem.
+            self._logger.log_event("session_cancel_failed", {"error": str(error)})
 
     def initialize(self) -> dict[str, Any]:
         result = self._request(
@@ -707,15 +580,56 @@ class AcpSessionRunner:
             },
         )
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        self._auth_methods = [
+            str(method.get("id"))
+            for method in result.get("authMethods", [])
+            if isinstance(method, dict) and method.get("id")
+        ]
         return result
 
     def authenticate(self) -> dict[str, Any]:
+        method_id = self._runtime.auth_method(self._auth_methods)
+        if method_id is None:
+            return {}
         try:
-            return self._request("authenticate", {"methodId": "cursor_login"})
-        except RuntimeError:
+            return self._request("authenticate", {"methodId": method_id})
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event(
+                "authenticate_failed", {"method": method_id, "error": str(error)}
+            )
             return {}
 
-    def new_session(self, cwd: str, *, workflow: str = "setup-project") -> dict[str, Any]:
+    def apply_model(self, session: dict[str, Any], preferred_model: str | None) -> None:
+        """Aplica o modelo pelo dialeto do runtime, sem derrubar a sessão se falhar."""
+        if self._session_id is None:
+            return
+        request = self._runtime.model_request(
+            session, preferred_model, session_id=self._session_id
+        )
+        if request is None:
+            return
+        try:
+            self._request(request.method, request.params)
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event(
+                "set_model_failed",
+                {"method": request.method, "model": request.model_id, "error": str(error)},
+            )
+            return
+        self._emit_info(f"Modelo: {resolve_model_display_name(session, request.model_id)}")
+
+    def apply_mode(self, session: dict[str, Any], *, execute: bool) -> None:
+        if self._session_id is None:
+            return
+        mode_id = self._runtime.resolve_mode(session, execute=execute)
+        if not mode_id:
+            return
+        try:
+            self.set_mode(self._session_id, mode_id)
+        except (RuntimeError, TimeoutError) as error:
+            self._logger.log_event("set_mode_failed", {"mode": mode_id, "error": str(error)})
+
+    def new_session(self, cwd: str, *, workflow: str = "") -> dict[str, Any]:
         params: dict[str, Any] = {
             "cwd": cwd,
             "mcpServers": self._mcp_servers(),
@@ -728,8 +642,14 @@ class AcpSessionRunner:
         }
         return self._request("session/new", params)
 
-    def bind_spec(self, spec_dir: str) -> None:
-        self._spec_dir = spec_dir
+    def bind_run(self, run_id: str) -> None:
+        """Liga o runner à run: log e artefatos passam a ser gravados nela."""
+        self._bound_run_id = run_id
+
+    @property
+    def control(self) -> RunControl:
+        """Parada desta run — o motor consulta nos pontos de corte."""
+        return self._control
 
     def set_permission_policy(self, policy: PermissionPolicy) -> None:
         self._permission_policy = policy
@@ -739,6 +659,11 @@ class AcpSessionRunner:
         self._permission_policy = policy
 
     def _activate_session(self, session_id: str) -> None:
+        # Os ids de tool-call valem dentro de uma sessão: o acumulado da
+        # anterior só ocuparia memória e poderia casar id repetido.
+        self._tool_payloads.clear()
+        self._tool_kinds.clear()
+        self._tool_labeled.clear()
         self._session_id = str(session_id)
         self.last_session_id = self._session_id
         self._logger.set_session_id(self._session_id)
@@ -755,22 +680,173 @@ class AcpSessionRunner:
             )
         except Exception:
             pass
-        self._remember_spec_session()
 
-    def _remember_spec_session(self) -> None:
-        if not self._spec_dir or not self._session_id or not self._phase_id:
+    #: Onde cada runtime põe o caminho do arquivo no `rawInput` do tool-call.
+    _PATH_KEYS = ("path", "file_path", "target_file", "filePath", "abs_path")
+    #: Tool-calls que produzem artefato. É assim que o Pulse descobre o que o
+    #: agente escreveu — não há convenção de pasta nem de extensão.
+    _WRITE_KINDS = frozenset({"edit", "write", "create"})
+
+    def _record_run_event(self, params: dict[str, Any]) -> None:
+        """Grava no banco do Pulse o que o cockpit está mostrando.
+
+        Ler o log do runtime não serve: só o Cursor tem um, e o Pulse é
+        agnóstico ao agente que está rodando.
+
+        O que vai para o banco passa pelo **mesmo** rótulo que a tela ao vivo
+        usa ([pulse.history.tool_detail.build_tool_labels]): tipo do tool, alvo e
+        detalhe. Gravar o `title` cru do ACP com um `kind` fixo "Tool" era o que
+        fazia o histórico mostrar uma fileira de "v Tool" onde a sessão viva
+        mostra "Read pulse/store/runs.py" ou "Shell pytest -q".
+        """
+        if not self._bound_run_id:
             return
-        try:
-            from pulse.store.spec_sessions import record_spec_session
+        update = params.get("update", params)
+        if not isinstance(update, dict):
+            return
+        kind = str(update.get("sessionUpdate") or "")
+        if kind == "agent_message_chunk":
+            content = update.get("content")
+            if isinstance(content, dict) and content.get("type") == "text":
+                text = str(content.get("text") or "")
+                if text:
+                    self._text_buffer.append(text)
+            return
+        if kind not in {"tool_call", "tool_call_update", "tool_result"}:
+            return
+        self._flush_text()
+        tool_id = str(update.get("toolCallId") or "")
+        merged = self._merge_tool_payload(tool_id, update)
+        log_kind, title, detail = self._tool_labels(tool_id, merged)
+        if title.strip() in {"", "…", "..."} and not detail.strip():
+            # Tool-call que ainda não disse o que vai fazer. Regravar o
+            # placeholder apagaria o rótulo bom que já está na linha: o
+            # `tool_id` reescreve a existente em vez de acrescentar.
+            if tool_id in self._tool_labeled:
+                return
+            title = "…"
+        elif tool_id:
+            self._tool_labeled.add(tool_id)
+        self._save_event(kind=log_kind, title=title, detail=detail, tool_id=tool_id)
+        self._record_artifacts(merged, log_kind)
 
-            record_spec_session(
-                self._cwd,
-                spec_dir=self._spec_dir,
-                phase_id=self._phase_id,
-                acp_session_id=self._session_id,
-                task_id=self._task_id,
+    def _merge_tool_payload(self, tool_id: str, update: dict[str, Any]) -> dict[str, Any]:
+        if not tool_id:
+            return update
+        merged = merge_tool_update(self._tool_payloads.get(tool_id, {}), update)
+        self._tool_payloads[tool_id] = merged
+        return merged
+
+    def _tool_labels(self, tool_id: str, update: dict[str, Any]) -> tuple[str, str, str]:
+        """(kind, título, detalhe) de um tool-call, como a tela viva os monta.
+
+        Rotular é acessório ao step: qualquer tropeço aqui cai no `title` cru do
+        ACP em vez de derrubar a run.
+        """
+        try:
+            previous = self._tool_kinds.get(tool_id)
+            fallback = LogKind(previous) if previous else None
+            log_kind, title, detail = build_tool_labels(
+                update, cwd=self._cwd, fallback_kind=fallback
+            )
+            if tool_id and log_kind != LogKind.TOOL:
+                self._tool_kinds[tool_id] = log_kind.value
+            return log_kind.value, title, detail
+        except Exception:
+            return "Tool", self._fallback_title(update), self._fallback_detail(update)
+
+    @staticmethod
+    def _fallback_title(update: dict[str, Any]) -> str:
+        return str(update.get("title") or update.get("kind") or "tool").strip()
+
+    def _fallback_detail(self, update: dict[str, Any]) -> str:
+        raw = update.get("rawInput")
+        if isinstance(raw, dict):
+            for key in (*self._PATH_KEYS, "command", "pattern", "query"):
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+        return ""
+
+    def _record_artifacts(self, update: dict[str, Any], log_kind: str = "") -> None:
+        """Registra o que o tool-call escreveu.
+
+        O `kind` do ACP nem sempre vem — vários runtimes mandam só o nome do
+        tool. Por isso vale também a classificação de `build_tool_labels`, que é
+        a mesma que faz a aba de artefatos aparecer na sessão viva; sem ela o
+        histórico reabria sem nenhum artefato.
+        """
+        writes = str(update.get("kind") or "").lower() in self._WRITE_KINDS
+        if not writes and log_kind not in {"Write", "Edit"}:
+            return
+        for path in self._artifact_paths(update):
+            try:
+                from pulse.store.runs import record_artifact
+
+                record_artifact(self._bound_run_id, path, step_id=self._phase_id)
+            except Exception:
+                # Registrar artefato é acessório: nunca derruba o step.
+                pass
+
+    def _artifact_paths(self, update: dict[str, Any]) -> list[str]:
+        """Caminhos tocados pelo tool-call, relativos ao workspace.
+
+        A mesma extração da tela viva, para o artefato gravado abrir pela aba do
+        histórico: caminho absoluto de outra máquina não resolve arquivo nenhum.
+        """
+        paths = extract_paths(update, cwd=self._cwd)
+        if paths:
+            return paths
+        found: list[str] = []
+        locations = update.get("locations")
+        if isinstance(locations, list):
+            for item in locations:
+                if isinstance(item, dict):
+                    value = item.get("path")
+                    if isinstance(value, str) and value.strip():
+                        found.append(value.strip())
+        raw = update.get("rawInput")
+        if isinstance(raw, dict):
+            for key in self._PATH_KEYS:
+                value = raw.get(key)
+                if isinstance(value, str) and value.strip():
+                    found.append(value.strip())
+                    break
+        # `locations` e `rawInput` costumam trazer o mesmo arquivo.
+        return list(dict.fromkeys(found))
+
+    def _begin_phase(self, label: str) -> None:
+        """Abre o passo na tela e deixa a mesma marca no log gravado.
+
+        A tela viva escreve uma linha de info a cada passo (e a cada
+        continuação); sem gravá-la, o histórico colava dois turnos num bloco só,
+        sem dizer onde um terminou.
+        """
+        self._flush_text()
+        self._stream.begin_phase(label)
+        self._save_event(kind="Info", title=label, detail=label)
+
+    def _flush_text(self) -> None:
+        text = "".join(self._text_buffer).strip()
+        self._text_buffer.clear()
+        if text:
+            self._save_event(kind="Assistant", title=text[:160], detail=text)
+
+    def _save_event(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:
+        try:
+            from pulse.store.runs import record_event
+
+            record_event(
+                self._bound_run_id,
+                step_id=self._phase_id,
+                acp_session_id=self._session_id or "",
+                kind=kind,
+                title=title,
+                detail=detail,
+                tool_id=tool_id,
             )
         except Exception:
+            # Log é acessório: falha ao gravar não pode derrubar o step.
             pass
 
     def close_session(self) -> None:
@@ -795,13 +871,16 @@ class AcpSessionRunner:
         )
 
     def prompt(self, session_id: str, text: str) -> dict[str, Any]:
-        return self._request(
-            "session/prompt",
-            {
-                "sessionId": session_id,
-                "prompt": [{"type": "text", "text": text}],
-            },
-        )
+        try:
+            return self._request(
+                "session/prompt",
+                {
+                    "sessionId": session_id,
+                    "prompt": [{"type": "text", "text": text}],
+                },
+            )
+        finally:
+            self._flush_text()
 
     def _mcp_servers(self) -> list[dict[str, Any]]:
         if not self._enable_mcp_ask or self._ask_bridge is None:

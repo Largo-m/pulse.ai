@@ -1,41 +1,42 @@
+"""Artefatos exibidos no cockpit.
+
+Artefato é qualquer arquivo que o agente escreveu — o Pulse descobre pelos
+tool-calls do ACP, não por convenção de pasta ou extensão. Por isso não há mais
+filtro por `.pulse/specs/**.md`: o caminho chega pronto do runtime e aqui só é
+normalizado e lido.
+"""
+
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 MAX_ARTIFACT_CHARS = 200_000
-_SPECS_TOKEN = ".pulse/specs/"
-_TEXT_PATH_RE = re.compile(r"\.pulse/specs/[A-Za-z0-9_./-]+\.md")
 
 
 def artifact_key(path: str) -> str:
+    """Forma canônica de um caminho: barras normais, sem `file://`."""
     text = str(path or "").strip().replace("\\", "/")
     if text.startswith("file://"):
         text = text[7:]
-    marker = text.find(_SPECS_TOKEN)
-    if marker >= 0:
-        return text[marker:]
     return text
 
 
-def is_spec_artifact(path: str) -> bool:
-    key = artifact_key(path)
-    if not key.lower().endswith(".md"):
-        return False
-    if ".pulse/skills/" in key or ".pulse/specs/skills/" in key:
-        return False
-    return _SPECS_TOKEN in key
+def artifact_paths_in_text(text: str, known: list[str]) -> list[str]:
+    """Artefatos conhecidos que o texto cita.
 
-
-def extract_spec_artifacts_from_text(text: str) -> list[str]:
+    Procura só entre os que a run já registrou, em vez de adivinhar caminho por
+    regex: sem uma convenção de nome, qualquer padrão inventado casaria com
+    trecho de código e apontaria a aba para um arquivo que não é artefato.
+    """
+    haystack = str(text or "").replace("\\", "/")
     found: list[str] = []
-    seen: set[str] = set()
-    for match in _TEXT_PATH_RE.finditer(text or ""):
-        key = artifact_key(match.group(0))
-        if key in seen or not is_spec_artifact(key):
+    for candidate in known:
+        key = artifact_key(candidate)
+        if not key:
             continue
-        seen.add(key)
-        found.append(key)
+        name = key.rsplit("/", 1)[-1]
+        if (key in haystack or name in haystack) and key not in found:
+            found.append(key)
     return found
 
 
@@ -60,6 +61,15 @@ def resolve_artifact_path(path: str, cwd: str | None = None) -> Path:
         except OSError:
             continue
     return candidates[0] if candidates else Path(key)
+
+
+def artifact_has_content(path: str, cwd: str | None = None) -> bool:
+    """Arquivo existe e não está vazio — há algo de fato para exibir."""
+    target = resolve_artifact_path(path, cwd)
+    try:
+        return target.is_file() and target.stat().st_size > 0
+    except OSError:
+        return False
 
 
 def read_artifact_markdown(path: str, cwd: str | None = None) -> tuple[str, float, bool]:

@@ -160,14 +160,9 @@ class LogStream(Widget):
         right = state.model_label or state.agent_label or "Agent"
         visible = state.visible_entries()
         count = len(visible)
-        if state.selected_nav_kind == "task" and state.tasks:
-            position = state.selected_task_index + 1
-            total = state.task_total_count()
-            kind = "task"
-        else:
-            position = (state.selected_phase_index + 1) if state.phases else 0
-            total = state.total_count()
-            kind = "step"
+        position = (state.selected_phase_index + 1) if state.phases else 0
+        total = state.total_count()
+        kind = "step"
         meta.update(
             Text(f"{count} entries · {kind} {position}/{total}          {right}", style="#888888")
         )
@@ -194,9 +189,7 @@ class LogStream(Widget):
                 0,
                 False,
                 nav_id,
-                state.selected_nav_kind,
                 state.selected_phase_index,
-                state.selected_task_index,
                 state.model_label,
             )
         last = entries[-1]
@@ -212,9 +205,7 @@ class LogStream(Widget):
             pending,
             state.model_label,
             nav_id,
-            state.selected_nav_kind,
             state.selected_phase_index,
-            state.selected_task_index,
         )
 
     def _render_bubble(

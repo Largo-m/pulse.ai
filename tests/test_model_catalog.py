@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models
+from pulse.runtimes import get_runtime
 
 
 def test_collect_available_models_falls_back_to_defaults(monkeypatch, tmp_path):
@@ -37,17 +38,18 @@ def test_collect_available_models_keeps_only_the_runtime(monkeypatch, tmp_path):
         path=tmp_path / "pulse.db",
     )
 
+    claude_command = list(get_runtime("claude").acp_command)
+
     def fake_models(*, command, cwd, timeout_seconds=30.0):
-        if command[:1] == ["claude-code"]:
-            return ["claude-opus-4.8", "claude-sonnet-4-6"]
+        if command == claude_command:
+            return ["opus[1m]", "sonnet"]
         return ["Auto", "gpt-5.5", "composer-2.5"]
 
     monkeypatch.setattr("pulse.config.model_catalog.fetch_acp_available_models", fake_models)
     cursor_models = collect_available_models(tmp_path, agent_name="cursor")
     claude_models = collect_available_models(tmp_path, agent_name="claude")
-    assert "claude-opus-4.8" not in cursor_models
-    assert "claude-sonnet-4-6" not in cursor_models
+    assert "opus[1m]" not in cursor_models
     assert "gpt-5.5" not in claude_models
     assert "composer-2.5" not in claude_models
     assert "Auto" in cursor_models
-    assert "claude-opus-4.8" in claude_models
+    assert "opus[1m]" in claude_models

@@ -7,12 +7,16 @@ import pytest
 
 pytest.importorskip("textual")
 
+from tests.conftest import make_workflow
+
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest
 from pulse.tui.screens.cockpit import CockpitScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.prompt_dock import PromptDock
+
+FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
 
 def _select_request(future: Future[object | None] | None = None) -> PromptRequest:
@@ -38,7 +42,7 @@ def test_prompt_stays_inside_log_stream_while_tools_keep_rendering():
             CSS = COCKPIT_CSS
 
             def compose(self) -> ComposeResult:
-                screen = CockpitScreen("fix-bug", "demo")
+                screen = CockpitScreen("demo", "demo")
                 holder["screen"] = screen
                 with Horizontal(id="cockpit-body"):
                     yield LogStream(screen.state, id="log-stream")
@@ -84,7 +88,7 @@ def test_prompt_stays_inside_log_stream_while_tools_keep_rendering():
                         "toolCallId": "t2",
                         "title": "Write File",
                         "kind": "write",
-                        "rawInput": {"path": "/repo/.pulse/specs/plan.md"},
+                        "rawInput": {"path": "/repo/docs/plan.md"},
                     }
                 }
             )
@@ -131,7 +135,7 @@ def test_select_options_are_visible_in_compact_terminal():
             CSS = COCKPIT_CSS
 
             def compose(self) -> ComposeResult:
-                state_screen = CockpitScreen("setup-project", "demo")
+                state_screen = CockpitScreen("demo", "demo")
                 yield LogStream(state_screen.state, id="log-stream")
 
             def on_mount(self) -> None:
@@ -177,7 +181,7 @@ def test_cockpit_poll_opens_prompt_dock_not_modal(monkeypatch, tmp_path):
             CSS = COCKPIT_CSS
 
             def on_mount(self) -> None:
-                self.push_screen(CockpitScreen("fix-bug", "demo", workspace=tmp_path))
+                self.push_screen(CockpitScreen("demo", "demo", workspace=tmp_path))
 
         app = Harness()
         async with app.run_test(size=(120, 40)) as pilot:
@@ -206,13 +210,13 @@ def test_prompt_text_submit_and_confirm_cancel():
             CSS = COCKPIT_CSS
 
             def compose(self) -> ComposeResult:
-                state_screen = CockpitScreen("new-issue", "demo")
+                state_screen = CockpitScreen("demo", "demo")
                 holder["sink"] = CockpitSink(state_screen.state, cwd="/repo")
                 yield LogStream(state_screen.state, id="log-stream")
 
             def on_mount(self) -> None:
                 sink: CockpitSink = holder["sink"]
-                sink.begin_phase("Fase Specify")
+                sink.begin_phase("Um")
                 self.query_one(LogStream).sync_from_state(sink._state, force=True)
 
         app = Harness()

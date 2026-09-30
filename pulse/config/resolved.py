@@ -7,11 +7,15 @@ from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
 
-DEFAULT_ACP_COMMAND = ["agent", "acp"]
+from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, find_runtime, get_runtime
+
+_DEFAULT_RUNTIME = get_runtime(DEFAULT_RUNTIME_ID)
+
+DEFAULT_ACP_COMMAND = _DEFAULT_RUNTIME.acp_command
 DEFAULT_MODEL = "auto"
 DEFAULT_PERMISSION_POLICY = "ask"
-DEFAULT_AGENT_BINARY = "agent"
-DEFAULT_AUTH_METHOD = "cursor_login"
+DEFAULT_AGENT_BINARY = _DEFAULT_RUNTIME.binary
+DEFAULT_AUTH_METHOD = _DEFAULT_RUNTIME.auth_method_label
 
 
 @dataclass(frozen=True)
@@ -153,6 +157,14 @@ def resolve_config(
         agent_name, agent_source = _resolve_agent_name(global_cfg, project_cfg, workflow)
         model, model_source = _resolve_model(global_cfg, project_cfg, workflow)
         permission_policy, policy_source = _resolve_permission_policy(global_cfg, project_cfg)
+        # Só um runtime do registry pode ser julgado indisponível: um agente
+        # declarado à mão no config tem binário próprio, e `get_runtime` devolve
+        # o default para nome desconhecido — checar a disponibilidade dele seria
+        # checar a do Cursor.
+        if find_runtime(agent_name) is not None:
+            fallback = _available_runtime_fallback(agent_name, project_cfg, global_cfg)
+            if fallback is not None and fallback in agents:
+                agent_name, agent_source = fallback, "runtime.fallback"
 
     agent = agents.get(agent_name) or agents[DEFAULT_AGENT_NAME]
 
@@ -194,16 +206,28 @@ def _resolve_pulse_agent(
     project_cfg: ProjectConfig | None,
     global_cfg: GlobalConfig | None,
 ) -> tuple[str, str, str, str, str, str]:
-    from pulse.agents.loader import load_agent
-    from pulse.store.agent_settings import load_agent_settings
+    """Runtime, model e policy de um agente do banco.
 
-    loaded = load_agent(pulse_agent, workspace=workspace_dir)
-    runtime = loaded.runtime if loaded else "cursor"
-    model = loaded.model if loaded else DEFAULT_MODEL
-    policy = loaded.permission_policy if loaded else DEFAULT_PERMISSION_POLICY
-    agent_source = "agent.file"
-    model_source = "agent.file"
-    policy_source = "agent.file"
+    Campo vazio na definição significa "use o padrão" — e não o default do
+    código, mas o que a máquina/projeto já resolveram. Gravar um runtime
+    concreto na semente congelaria a escolha feita no `pulse init`.
+    """
+    from pulse.store.agent_settings import load_agent_settings
+    from pulse.store.workflow_defs import get_agent
+
+    definition = get_agent(pulse_agent)
+    default_runtime, default_runtime_source = _resolve_agent_name(global_cfg, project_cfg, None)
+    default_model, default_model_source = _resolve_model(global_cfg, project_cfg, None)
+    default_policy, default_policy_source = _resolve_permission_policy(global_cfg, project_cfg)
+
+    runtime = (definition.runtime if definition else "") or default_runtime
+    model = (definition.model if definition else "") or default_model
+    policy = (definition.permission_policy if definition else "") or default_policy
+    agent_source = "agent" if definition and definition.runtime else default_runtime_source
+    model_source = "agent" if definition and definition.model else default_model_source
+    policy_source = (
+        "agent" if definition and definition.permission_policy else default_policy_source
+    )
     if project_cfg is not None:
         stored = load_agent_settings(project_cfg.project_id, pulse_agent)
         if stored.get("runtime"):
@@ -215,9 +239,43 @@ def _resolve_pulse_agent(
         if stored.get("permission_policy"):
             policy = str(stored["permission_policy"])
             policy_source = "agent.settings"
-    if runtime not in runtimes and global_cfg and runtime in global_cfg.agents:
-        runtime = runtime
     if runtime not in runtimes:
         runtime = DEFAULT_AGENT_NAME
         agent_source = "default"
+
+    fallback = _available_runtime_fallback(runtime, project_cfg, global_cfg)
+    if fallback is not None:
+        runtime, agent_source = fallback, "runtime.fallback"
     return runtime, agent_source, model, model_source, policy, policy_source
+
+
+def _available_runtime_fallback(
+    runtime: str,
+    project_cfg: ProjectConfig | None,
+    global_cfg: GlobalConfig | None,
+) -> str | None:
+    """Runtime alternativo quando o declarado não existe nesta máquina.
+
+    O runtime escolhido — no agente, no projeto ou na máquina — é preferência,
+    não requisito: quem só tem o Claude instalado não deve ficar travado porque
+    a preferência diz `cursor`. Vale para os dois caminhos de resolução; se só o
+    do agente caísse aqui, o pré-voo do orquestrador reprovaria a run inteira
+    por um runtime que nenhum step ia usar. O modelo é preservado — se o id não
+    existir no runtime novo, o próprio agente cai no default dele.
+    """
+    if get_runtime(runtime).is_available():
+        return None
+
+    preferred = None
+    if project_cfg and project_cfg.default_agent:
+        preferred = project_cfg.default_agent
+    elif global_cfg and global_cfg.default_agent:
+        preferred = global_cfg.default_agent
+
+    candidates = [preferred, *(item.id for item in all_runtimes())]
+    for candidate in candidates:
+        if not candidate or candidate == runtime:
+            continue
+        if get_runtime(candidate).is_available():
+            return candidate
+    return None

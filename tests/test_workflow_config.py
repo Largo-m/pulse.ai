@@ -18,26 +18,26 @@ def test_update_global_workflow(tmp_path: Path):
     )
 
     update_global_workflow(
-        "setup-project",
+        "fluxo-a",
         agent="claude",
         model="claude-opus-4.8",
         path=config_path,
     )
     loaded = load_global_config(config_path)
     assert loaded is not None
-    assert loaded.workflows["setup-project"].agent == "claude"
-    assert loaded.workflows["setup-project"].model == "claude-opus-4.8"
+    assert loaded.workflows["fluxo-a"].agent == "claude"
+    assert loaded.workflows["fluxo-a"].model == "claude-opus-4.8"
 
 
 def test_update_project_workflow(tmp_path: Path):
     init_project_config(tmp_path)
     update_project_workflow(
         tmp_path,
-        "analyze-codebase",
+        "fluxo-b",
         agent="cursor",
         model="gpt-5.5",
     )
     loaded = load_project_config(tmp_path)
     assert loaded is not None
-    assert loaded.workflows["analyze-codebase"].agent == "cursor"
-    assert loaded.workflows["analyze-codebase"].model == "gpt-5.5"
+    assert loaded.workflows["fluxo-b"].agent == "cursor"
+    assert loaded.workflows["fluxo-b"].model == "gpt-5.5"

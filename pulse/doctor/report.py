@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 from pulse.acp.client import probe_acp_connection
@@ -11,7 +9,9 @@ from pulse.config import (
     load_global_config,
     load_project_config,
 )
-from pulse.doctor.checks import CheckResult, run_environment_checks
+from pulse.config.resolved import resolve_config
+from pulse.doctor.checks import CheckResult, run_doctor_checks
+from pulse.runtimes import get_runtime
 
 
 def _status_icon(status: str) -> str:
@@ -35,7 +35,9 @@ def print_doctor_report(
 
 
 def run_doctor(*, test_acp: bool = False) -> int:
-    checks = run_environment_checks()
+    resolved = resolve_config()
+    active = get_runtime(resolved.agent_name).id
+    checks = run_doctor_checks(active)
     acp_message: str | None = None
 
     if global_config_exists():
@@ -78,11 +80,12 @@ def run_doctor(*, test_acp: bool = False) -> int:
         )
 
     if test_acp:
-        agent_ok = any(check.name == "Agent CLI" and check.status == "ok" for check in checks)
-        auth_ok = any(check.name == "Autenticação" and check.status == "ok" for check in checks)
-        if agent_ok and auth_ok:
-            print("Testando conexão ACP…")
-            probe = probe_acp_connection(cwd=str(Path.cwd()))
+        if not any(check.status == "fail" for check in checks):
+            print(f"Testando conexão ACP com `{active}`…")
+            probe = probe_acp_connection(
+                command=list(resolved.acp_command),
+                cwd=str(Path.cwd()),
+            )
             acp_message = probe.message if probe.success else probe.error or probe.message
             checks.append(
                 CheckResult(
@@ -98,7 +101,7 @@ def run_doctor(*, test_acp: bool = False) -> int:
                     name="ACP",
                     status="warn",
                     message="Teste ACP ignorado",
-                    detail="Corrija agent e autenticação antes",
+                    detail=f"Corrija o runtime `{active}` e a autenticação antes",
                 )
             )
 
@@ -107,11 +110,6 @@ def run_doctor(*, test_acp: bool = False) -> int:
     return 1 if failed else 0
 
 
-def run_agent_login() -> int:
-    binary = "agent"
-    try:
-        completed = subprocess.run([binary, "login"], check=False)
-    except OSError as error:
-        print(f"[pulse] Não foi possível executar `agent login`: {error}", file=sys.stderr)
-        return 1
-    return completed.returncode
+def run_agent_login(runtime: str = "cursor") -> int:
+    """Dispara o fluxo de login do runtime (`agent login`, `claude /login`, …)."""
+    return get_runtime(runtime).login()

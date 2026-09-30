@@ -7,8 +7,9 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.tui.hydrate import hydrate_history_item
 from pulse.history.models import HistoryItem
+from pulse.tui.hydrate import hydrate_history_item
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
 from pulse.tui.widgets.artifact_pane import (
@@ -24,6 +25,7 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 class HistoryDetailScreen(Screen[None]):
     BINDINGS = [
         Binding("q", "back_list", "Voltar"),
+        Binding("r", "resume_workflow", "Retomar"),
         Binding("b", "back_list", "Voltar"),
         Binding("tab", "toggle_focus", "Focus"),
         Binding("a", "toggle_artifact_pane", "Artifacts"),
@@ -43,6 +45,7 @@ class HistoryDetailScreen(Screen[None]):
         self.item = item
         self._cwd = str(workspace or Path.cwd())
         self.state = hydrate_history_item(item, Path(self._cwd))
+        self._pending = _pending_run(item)
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -54,6 +57,27 @@ class HistoryDetailScreen(Screen[None]):
 
     def on_mount(self) -> None:
         self._sync_ui(force=True)
+        if self._pending is not None:
+            self.action_resume_workflow()
+
+    def action_resume_workflow(self) -> None:
+        if self._pending is None:
+            return
+        run_id, summary = self._pending
+
+        def _chosen(mode: str | None) -> None:
+            if mode != RESUME:
+                return
+            self.app.open_cockpit(
+                self.item.workflow_id,
+                self.item.prompt,
+                resume_run_id=run_id,
+            )
+
+        self.app.push_screen(
+            ResumeChoiceScreen(slug=self.item.title, summary=summary),
+            callback=_chosen,
+        )
 
     def _sync_ui(self, *, force: bool = False) -> None:
         body = self.query_one("#cockpit-body")
@@ -69,6 +93,8 @@ class HistoryDetailScreen(Screen[None]):
         self.query_one(AppFooter).sync_from_state(self.state)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "resume_workflow":
+            return self._pending is not None
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":
@@ -160,10 +186,7 @@ class HistoryDetailScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def on_nav_selected(self, event: NavSelected) -> None:
-        if event.kind == "task":
-            self.state.select_task(event.index)
-        else:
-            self.state.select_phase(event.index)
+        self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 
@@ -174,3 +197,19 @@ class HistoryDetailScreen(Screen[None]):
 
     def action_back_list(self) -> None:
         self.app.pop_screen()
+
+
+def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
+    """Id e resumo da run, quando ainda há step por fazer.
+
+    Qualquer workflow é retomável: a sessão ACP é isolada por step, então
+    retomar é rodar o primeiro step que não terminou.
+    """
+    if not item.is_incomplete:
+        return None
+    done = sum(1 for step in item.steps if step.status in {"done", "skipped"})
+    current = next(
+        (step.label for step in item.steps if step.status not in {"done", "skipped"}),
+        "—",
+    )
+    return item.run_id, f"{current} · steps {done}/{len(item.steps)}"

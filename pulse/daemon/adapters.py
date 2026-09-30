@@ -44,17 +44,6 @@ class ApiStreamSink:
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         self._bus.publish({"type": "phases.sync", **kwargs})
 
-    def apply_routed_flow(self, flow: str) -> None:
-        self._bus.publish({"type": "workflow.route", "flow": flow})
-
-    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
-        self._bus.publish(
-            {
-                "type": "tasks.sync",
-                "items": [{"id": i, "title": t, "status": s} for i, t, s in items],
-            }
-        )
-
     def set_session_id(self, session_id: str) -> None:
         self._bus.publish({"type": "session.id", "session_id": session_id})
 
@@ -112,6 +101,13 @@ class ApiPromptPort:
         if questionnaire is None:
             return None
         return self.run_parsed_questionnaire(questionnaire)
+
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
+        answer = self._correlator.request("text", {"prompt": prompt, "title": title})
+        if answer is None:
+            return None
+        text = str(answer).strip()
+        return text or None
 
     def select_choice(
         self,

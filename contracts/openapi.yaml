@@ -17,10 +17,10 @@ paths:
           description: Check results
   /api/workflows:
     get:
-      summary: List workflows
+      summary: List workflows defined in the database
       responses:
         "200":
-          description: Workflow catalog
+          description: Workflow definitions, each with its ordered steps
   /api/workflows/{workflow_id}/runs:
     post:
       summary: Start a workflow run
@@ -30,9 +30,28 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+                workspace:
+                  type: string
+                  nullable: true
+                resume_run_id:
+                  type: string
+                  nullable: true
+                  description: >-
+                    Resume a previous run instead of creating one; it picks up at
+                    the first step that is not done or skipped
       responses:
         "200":
           description: Run created
+        "404":
+          description: Unknown workflow id
   /api/runs/{run_id}:
     get:
       summary: Get run status
@@ -75,6 +94,33 @@ paths:
       responses:
         "200":
           description: History list
+  /api/history/{item_id}:
+    get:
+      summary: One history item
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: History item
+        "404":
+          description: Not found
+    delete:
+      summary: Remove a run from the history
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed
+        "404":
+          description: Not found
   /api/config:
     get:
       summary: Global and project config

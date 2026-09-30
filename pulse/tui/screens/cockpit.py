@@ -7,8 +7,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
+from pulse.orchestrator.engine import RUN_BLOCKED
+from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -22,6 +25,9 @@ from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 _PROMPT_BLOCKED = {
+    # Com um prompt aberto quem está travado é o usuário, não o agente: cortar
+    # o turno aqui deixaria a pergunta sem ninguém para respondê-la.
+    "stop_run",
     "toggle_artifact_pane",
     "close_artifact_pane",
     "escape_back",
@@ -37,6 +43,7 @@ class CockpitScreen(Screen[None]):
     BINDINGS = [
         Binding("q", "back_to_menu", "Menu"),
         Binding("b", "back_to_menu", "Menu"),
+        Binding("s", "stop_run", "Parar"),
         Binding("tab", "toggle_focus", "Focus"),
         Binding("a", "toggle_artifact_pane", "Artifacts"),
         Binding("escape", "escape_back", "Back"),
@@ -56,10 +63,12 @@ class CockpitScreen(Screen[None]):
         user_prompt: str,
         *,
         workspace: Path | None = None,
+        resume_run_id: str | None = None,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
+        self.resume_run_id = resume_run_id
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
@@ -73,6 +82,8 @@ class CockpitScreen(Screen[None]):
         self._worker = None
         self._dirty = False
         self._prompt_open = False
+        #: Criada na thread da run; as teclas de controle falam com ela por HTTP.
+        self._session = None
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -83,6 +94,7 @@ class CockpitScreen(Screen[None]):
         yield AppFooter()
 
     def on_mount(self) -> None:
+        self._restore_previous_run()
         self._sync_ui(force=True)
         self._apply_focus()
         self.set_interval(0.08, self._flush_ui)
@@ -91,6 +103,23 @@ class CockpitScreen(Screen[None]):
 
     def on_unmount(self) -> None:
         self.bridge.close()
+
+    def _restore_previous_run(self) -> None:
+        """Retomar continua a mesma run: a tela abre com o passado dela.
+
+        Sem isto o cockpit nascia vazio e os steps que já tinham fechado voltavam
+        como "concluído" e nada mais — sem log, sem tool e sem duração.
+        """
+        if not self.resume_run_id:
+            return
+        from pulse.tui.hydrate import restore_run
+
+        try:
+            restore_run(self.state, self.resume_run_id, Path(self._cwd))
+        except (OSError, ValueError):
+            # Histórico é contexto, não requisito: não vale impedir a run de
+            # continuar porque o banco não abriu.
+            pass
 
     def _on_state_change(self) -> None:
         self._dirty = True
@@ -120,6 +149,8 @@ class CockpitScreen(Screen[None]):
         if self._prompt_open and action in {"nav_up", "nav_down"}:
             if self.state.focus_target != "phases":
                 return False
+        if action == "stop_run":
+            return self.state.running and self.state.can_stop and self._session is not None
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":
@@ -143,7 +174,7 @@ class CockpitScreen(Screen[None]):
         if request is None:
             return
         self._prompt_open = True
-        self.state.reveal_artifact_from_prompt(f"{request.prompt}\n{request.title}")
+        self.state.select_artifact_from_prompt(f"{request.prompt}\n{request.title}")
         self._sync_ui(force=True)
 
         def _finish(result: object | None) -> None:
@@ -166,10 +197,12 @@ class CockpitScreen(Screen[None]):
                 stream=self.sink,
                 prompt_handler=self.prompt_handler,
             )
+            self._session = session
             code = session.run(
                 workflow_id=self.workflow_id,
                 user_prompt=self.user_prompt,
                 workspace=self._cwd,
+                resume_run_id=self.resume_run_id,
             )
         except Exception as error:
             self.state.add_error("Workflow falhou", str(error))
@@ -185,12 +218,85 @@ class CockpitScreen(Screen[None]):
     def _on_workflow_done(self, code: int) -> None:
         if code == 0:
             self.state.add_info("Workflow concluído")
-        elif not self.state.has_error():
-            self.state.add_error(
-                "Workflow falhou",
-                f"O fluxo encerrou com código {code}.",
+        elif code == RUN_STOPPED:
+            self.state.add_info("Run parada — dá para retomar de onde parou")
+            self._sync_ui(force=True)
+            self._offer_resume()
+            return
+        elif code == RUN_BLOCKED:
+            # "Falhou" seria a palavra errada: o agente rodou e disse que não
+            # tinha como entregar. O que resolve é destravar e retomar.
+            self.state.add_info(
+                "Run bloqueada — resolva o que o step pediu e retome de onde parou"
             )
+            self._sync_ui(force=True)
+            self._offer_resume()
+            return
+        else:
+            if not self.state.has_error():
+                self.state.add_error(
+                    "Workflow falhou",
+                    f"O fluxo encerrou com código {code}.",
+                )
+            # Falha também é run pela metade: o que já rodou está em
+            # `run_steps`, então oferecer retomar aqui evita mandar o usuário
+            # ao histórico só para descobrir que dá para continuar.
+            if self._resumable_run() is not None:
+                self.state.add_info("Dá para retomar do step que falhou")
+            self._sync_ui(force=True)
+            self._offer_resume()
+            return
         self._sync_ui(force=True)
+
+    def action_stop_run(self) -> None:
+        """`s` corta o step em execução e encerra a run — retomável depois."""
+        session = self._session
+        if session is None or not self.state.running or not self.state.can_stop:
+            return
+        session.stop()
+        # O corte do turno leva alguns instantes; o estado real chega pelo
+        # evento `run.stopped`, mas a intenção aparece na hora.
+        self.state.add_info("Parando — cortando o step em execução")
+        self._sync_ui(force=True)
+
+    def _offer_resume(self) -> None:
+        """Depois de parar, oferece o mesmo retomar do histórico."""
+        pending = self._resumable_run()
+        if pending is None:
+            return
+        run_id, summary = pending
+
+        def _chosen(mode: str | None) -> None:
+            if mode != RESUME:
+                return
+            self.app.pop_screen()
+            self.app.open_cockpit(
+                self.workflow_id,
+                self.user_prompt,
+                resume_run_id=run_id,
+            )
+
+        self.app.push_screen(
+            ResumeChoiceScreen(slug=summary, summary=summary),
+            callback=_chosen,
+        )
+
+    def _resumable_run(self) -> tuple[str, str] | None:
+        """Run parada que dá para retomar: a desta tela, ou a mais recente."""
+        from pulse.store import runs as run_store
+
+        try:
+            if self.resume_run_id:
+                record = run_store.load_run(self.resume_run_id)
+                pending = [record] if record is not None and record.is_incomplete() else []
+            else:
+                pending = run_store.find_resumable(Path(self._cwd))
+        except (OSError, ValueError):
+            return None
+        if not pending:
+            return None
+        newest = max(pending, key=lambda item: item.updated_at or item.created_at)
+        return newest.id, _run_summary(newest)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":
@@ -272,10 +378,7 @@ class CockpitScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def on_nav_selected(self, event: NavSelected) -> None:
-        if event.kind == "task":
-            self.state.select_task(event.index)
-        else:
-            self.state.select_phase(event.index)
+        self.state.select_phase(event.index)
         self.state.focus_target = "phases"
         self._sync_ui(force=True)
 
@@ -289,3 +392,10 @@ class CockpitScreen(Screen[None]):
         if self.state.running:
             self.bridge.close()
         self.app.pop_screen()
+
+
+def _run_summary(record) -> str:
+    """Onde a run parou, para a tela de escolha."""
+    done = sum(1 for step in record.steps if step.status in {"done", "skipped"})
+    current = record.current_step or (record.steps[0].step_id if record.steps else "—")
+    return f"{current} · steps {done}/{len(record.steps)}"

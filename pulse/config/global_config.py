@@ -222,6 +222,7 @@ def mark_onboarding_complete(
     model: str,
     permission_policy: str,
     acp_test_passed: bool,
+    default_agent: str = "cursor",
     path: Path | None = None,
 ) -> Path:
     config = GlobalConfig(
@@ -234,7 +235,7 @@ def mark_onboarding_complete(
         permission_policy=permission_policy,
         completed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         acp_test_passed=acp_test_passed,
-        default_agent="cursor",
+        default_agent=default_agent,
         agents=default_global_agents(),
         workflows=default_global_workflows(),
     )

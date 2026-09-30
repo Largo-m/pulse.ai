@@ -97,9 +97,9 @@ def _doctor_via_engine(*, test_acp: bool) -> int:
             status = str(item.get("status", ""))
             name = str(item.get("name", ""))
             message = str(item.get("message", ""))
-            mark = "ok" if status == "ok" else "FAIL"
+            mark = {"ok": "ok", "warn": "warn"}.get(status, "FAIL")
             print(f"[{mark}] {name}: {message}")
-            if status != "ok":
+            if status == "fail":
                 failed = True
         if test_acp:
             probe = client.post("/api/doctor/acp-probe", {})

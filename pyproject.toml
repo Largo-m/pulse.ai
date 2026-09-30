@@ -9,7 +9,6 @@ description = "Orquestrador terminal-first de workflows com agentes de IA"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pyyaml>=6.0",
     "textual>=1.0",
     "fastapi>=0.115",
     "uvicorn>=0.30",
@@ -31,8 +30,10 @@ pulse-mcp-ask = "pulse.mcp.ask_stdio:main"
 where = ["."]
 include = ["pulse*"]
 
+# Semente de fábrica: os `.md` que `pulse.store.factory` converte em linha do
+# banco na primeira abertura. Sem isto o wheel instala sem os loops.
 [tool.setuptools.package-data]
-pulse = ["skills/pulse-spec-driven/**/*", "agents/bundled/**/*"]
+"pulse.store.factory" = ["agents/*/*.md", "shared/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

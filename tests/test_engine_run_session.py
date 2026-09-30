@@ -15,7 +15,8 @@ class _FakeClient:
     def ensure_daemon(self) -> None:
         return None
 
-    def start_run(self, workflow_id: str, *, prompt: str, workspace: str | None = None) -> dict[str, Any]:
+    def start_run(self, workflow_id: str, **kwargs: Any) -> dict[str, Any]:
+        self.start_kwargs = kwargs
         return {"id": "run-1", "workflow_id": workflow_id, "status": "running"}
 
     def stream_events(self, run_id: str):
@@ -89,7 +90,7 @@ def test_engine_run_session_runs_questionnaire_from_questions():
     ]
     client = _FakeClient(events)
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
-    code = session.run(workflow_id="analyze-codebase", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
     assert code == 0
     prompt_handler.run_parsed_questionnaire.assert_called_once()
     questionnaire = prompt_handler.run_parsed_questionnaire.call_args[0][0]
@@ -122,7 +123,7 @@ def test_engine_run_session_recovers_questionnaire_from_agent_text():
             ]
         ),
     )
-    code = session.run(workflow_id="setup-project", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
     assert code == 0
     questionnaire = prompt_handler.run_parsed_questionnaire.call_args[0][0]
     assert questionnaire.questions[0].options[0] == ("A", "Python")
@@ -142,7 +143,7 @@ def test_engine_run_session_errors_when_questionnaire_missing():
             ]
         ),
     )
-    code = session.run(workflow_id="setup-project", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
     assert code == 1
     stream.error.assert_called_with(
         "Questionário inválido",
@@ -188,19 +189,3 @@ def test_engine_run_session_maps_run_finished_error():
     stream.error.assert_called_with("Workflow falhou", "Falha na sessão ACP: timeout")
 
 
-def test_engine_run_session_maps_workflow_route():
-    stream = MagicMock()
-    prompt_handler = MagicMock()
-    events = [
-        {"type": "phase.begin", "title": "Classificar spec"},
-        {"type": "workflow.route", "flow": "quick"},
-        {"type": "run.finished", "exit_code": 0},
-    ]
-    session = EngineRunSession(
-        stream=stream,
-        prompt_handler=prompt_handler,
-        client=_FakeClient(events),
-    )
-    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
-    assert code == 0
-    stream.apply_routed_flow.assert_called_with("quick")

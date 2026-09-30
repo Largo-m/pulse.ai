@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
+from pulse.runcontrol import RUN_STOPPED
 
 
 def test_status_and_workflows():
@@ -21,10 +22,17 @@ def test_status_and_workflows():
     assert status.json()["protocol"] >= 2
     workflows = client.get("/api/workflows")
     assert workflows.status_code == 200
-    ids = {item["id"] for item in workflows.json()["workflows"]}
-    assert "spec" in ids
-    assert "new-issue" not in ids
-    assert "fix-bug" not in ids
+    listed = workflows.json()["workflows"]
+    ids = {item["id"] for item in listed}
+    # Só o que está no banco: o Pulse não tem catálogo em código.
+    assert ids >= {"default", "new-issue", "quick-fix"}
+    pipeline = next(item for item in listed if item["id"] == "new-issue")
+    assert [step["agent"] for step in pipeline["steps"]] == [
+        "prd",
+        "techspec",
+        "tasks",
+        "implement",
+    ]
 
 
 def test_doctor_endpoint():
@@ -41,7 +49,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
     client = TestClient(app)
     captured: dict[str, object] = {}
 
-    def fake_run_plan(**kwargs):
+    def fake_run_workflow(**kwargs):
         captured["workspace"] = kwargs.get("workspace")
         stream = kwargs["stream"]
         prompt_handler = kwargs["prompt_handler"]
@@ -68,10 +76,10 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         assert answer["outcome"]["outcome"] == "selected"
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_plan", fake_run_plan)
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
 
     created = client.post(
-        "/api/workflows/spec/runs",
+        "/api/workflows/default/runs",
         json={"prompt": "x", "workspace": "/tmp"},
     )
     assert created.status_code == 200
@@ -114,6 +122,90 @@ def test_unknown_workflow_returns_404():
     client = TestClient(app)
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
-    for workflow_id in ("new-issue", "fix-bug"):
-        rejected = client.post(f"/api/workflows/{workflow_id}/runs", json={"prompt": "x"})
-        assert rejected.status_code == 404
+
+
+def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
+    """Retomar é uma run nova sobre o mesmo registro — o flow recebe o id."""
+    manager = RunManager()
+    app = create_app(manager)
+    client = TestClient(app)
+    seen: dict[str, object] = {}
+    entered = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        seen.update(kwargs)
+        entered.set()
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+
+    client.post(
+        "/api/workflows/default/runs",
+        json={"prompt": "x", "workspace": "/tmp", "resume_run_id": "run-anterior"},
+    )
+    assert entered.wait(timeout=5)
+
+    assert seen["resume_run_id"] == "run-anterior"
+    assert "restart" not in seen, "não há refazer do zero: só retomar"
+
+
+def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
+    manager = RunManager()
+    app = create_app(manager)
+    client = TestClient(app)
+    entered = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        control = kwargs["control"]
+        entered.set()
+        # Só sai quando o usuário parar: é o cancel que encerra esta run.
+        while True:
+            if not control.checkpoint():
+                return RUN_STOPPED
+            time.sleep(0.01)
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+
+    run_id = client.post(
+        "/api/workflows/default/runs",
+        json={"prompt": "x", "workspace": "/tmp"},
+    ).json()["id"]
+    assert entered.wait(timeout=5)
+
+    assert client.post(f"/api/runs/{run_id}/cancel").status_code == 200
+
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        payload = client.get(f"/api/runs/{run_id}").json()
+        if payload.get("exit_code") is not None:
+            assert payload["exit_code"] == RUN_STOPPED
+            assert payload["status"] == "stopped", "parar não é falhar"
+            return
+        time.sleep(0.05)
+    raise AssertionError("run não encerrou depois do stop")
+
+
+def test_control_endpoints_404_for_unknown_run():
+    client = TestClient(create_app(RunManager()))
+    assert client.post("/api/runs/nao-existe/cancel").status_code == 404
+
+
+def test_history_delete_endpoint(tmp_path: Path):
+    from pulse.store import runs as run_store
+    from pulse.store.runs import StepRecord
+
+    run_store.create_run(
+        run_id="run-api",
+        workflow_id="default",
+        workspace=tmp_path,
+        user_prompt="algo",
+        steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
+    )
+    client = TestClient(create_app(RunManager()))
+
+    removed = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
+    assert removed.status_code == 200
+    assert run_store.load_run("run-api") is None
+
+    again = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
+    assert again.status_code == 404

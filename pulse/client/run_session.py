@@ -19,6 +19,9 @@ class EngineRunSession:
         self._client = client or EngineClient()
         self._exit_code = 1
         self._owns_client = client is None
+        #: Conhecido só depois que o daemon aceita a run; parar antes disso
+        #: simplesmente não faz nada.
+        self.run_id = ""
 
     def run(
         self,
@@ -26,14 +29,17 @@ class EngineRunSession:
         workflow_id: str,
         user_prompt: str,
         workspace: str | Path | None = None,
+        resume_run_id: str | None = None,
     ) -> int:
         self._client.ensure_daemon()
         created = self._client.start_run(
             workflow_id,
             prompt=user_prompt,
             workspace=str(workspace) if workspace is not None else None,
+            resume_run_id=resume_run_id,
         )
         run_id = str(created["id"])
+        self.run_id = run_id
         try:
             for event in self._client.stream_events(run_id):
                 self._dispatch(event)
@@ -41,6 +47,16 @@ class EngineRunSession:
             if self._owns_client:
                 self._client.close()
         return self._exit_code
+
+    def stop(self) -> bool:
+        """Parar vem da UI, fora da thread que roda a run."""
+        if not self.run_id:
+            return False
+        try:
+            self._client.cancel_run(self.run_id)
+        except Exception:
+            return False
+        return True
 
     def _dispatch(self, event: dict[str, Any]) -> None:
         kind = str(event.get("type", ""))
@@ -68,27 +84,15 @@ class EngineRunSession:
                 payload = {key: value for key, value in event.items() if key != "type"}
                 apply(**payload)
             return
-        if kind == "workflow.route":
-            apply = getattr(self._stream, "apply_routed_flow", None)
-            if callable(apply):
-                apply(str(event.get("flow", "")))
-            return
-        if kind == "tasks.sync":
-            setter = getattr(self._stream, "set_tasks", None)
-            if callable(setter):
-                items = event.get("items") or []
-                setter(
-                    [
-                        (str(item.get("id", "")), str(item.get("title", "")), str(item.get("status", "")))
-                        for item in items
-                        if isinstance(item, dict)
-                    ]
-                )
-            return
         if kind == "session.id":
             setter = getattr(self._stream, "set_session_id", None)
             if callable(setter):
                 setter(str(event.get("session_id", "")))
+            return
+        if kind == "run.stopped":
+            handler = getattr(self._stream, "mark_stopped", None)
+            if callable(handler):
+                handler()
             return
         if kind == "stream.finish":
             self._stream.finish()
@@ -130,6 +134,16 @@ class EngineRunSession:
             )
         elif prompt_kind == "questionnaire":
             answer = self._handle_questionnaire(payload)
+        elif prompt_kind == "text":
+            ask_text = getattr(self._prompt_handler, "ask_text", None)
+            answer = (
+                ask_text(
+                    str(payload.get("prompt") or ""),
+                    title=str(payload.get("title") or ""),
+                )
+                if callable(ask_text)
+                else None
+            )
         elif prompt_kind == "choice":
             select = getattr(self._prompt_handler, "select_choice", None)
             choices_raw = payload.get("choices") or []

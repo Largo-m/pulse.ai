@@ -4,13 +4,18 @@ import json
 import sqlite3
 from pathlib import Path
 
+from tests.conftest import make_workflow
+
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+
+FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
 
 def test_cockpit_sink_records_error_with_reason():
     state = CockpitState()
-    state.configure_workflow("spec")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state)
     sink.error("Classificação cancelada", "O agente não definiu o flow (quick ou full).")
     entry = state.entries[-1]
@@ -21,11 +26,12 @@ def test_cockpit_sink_records_error_with_reason():
 
 def test_cockpit_sink_streams_assistant_and_tools():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     dirty = {"n": 0}
     sink = CockpitSink(state, on_change=lambda: dirty.__setitem__("n", dirty["n"] + 1))
 
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Um")
     assert state.phases[0].status == PhaseStatus.RUNNING
 
     sink.handle_update(
@@ -58,21 +64,22 @@ def test_cockpit_sink_streams_assistant_and_tools():
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": "call-1",
                 "status": "completed",
-                "rawOutput": {"content": "# Specify\n\n**Goal**: capture requirements"},
+                "rawOutput": {"content": "# PRD\n\n**Goal**: capture requirements"},
             }
         }
     )
     assert state.entries[-1].kind == LogKind.READ
-    assert state.entries[-1].title == "Specify"
+    assert state.entries[-1].title == "PRD"
     assert state.entries[-1].pending is False
     assert dirty["n"] > 0
 
 
 def test_read_update_prefers_locations_over_body():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -88,7 +95,7 @@ def test_read_update_prefers_locations_over_body():
             "update": {
                 "sessionUpdate": "tool_call_update",
                 "toolCallId": "call-loc",
-                "locations": [{"path": "/repo/.pulse/specs/project/STATE.md"}],
+                "locations": [{"path": "/repo/docs/STATE.md"}],
                 "rawOutput": {"content": "version: 1\n"},
             }
         }
@@ -100,9 +107,10 @@ def test_read_update_prefers_locations_over_body():
 
 def test_phase_metrics_count_files_and_failed_tools():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase Execute")
+    sink.begin_phase("Quatro")
 
     sink.handle_update(
         {
@@ -175,9 +183,10 @@ def test_phase_metrics_count_files_and_failed_tools():
 
 def test_edit_update_fills_path():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -197,7 +206,7 @@ def test_edit_update_fills_path():
                 "content": [
                     {
                         "type": "diff",
-                        "path": "/repo/.pulse/specs/features/demo/spec.md",
+                        "path": "/repo/docs/PRD.md",
                     }
                 ],
             }
@@ -205,13 +214,13 @@ def test_edit_update_fills_path():
     )
     entry = state.entries[-1]
     assert entry.kind == LogKind.EDIT
-    assert entry.title.endswith("spec.md")
-    assert "features" in entry.title
+    assert entry.title.endswith("PRD.md")
 
 
 def test_search_update_shows_query_scope_and_hits():
     state = CockpitState()
-    state.configure_workflow("fix-bug")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
     sink.begin_phase("Planejar")
     sink.handle_update(
@@ -221,12 +230,12 @@ def test_search_update_shows_query_scope_and_hits():
                 "toolCallId": "find-1",
                 "title": "Find",
                 "kind": "search",
-                "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+                "rawInput": {"pattern": "dashboard", "path": "/repo/docs"},
             }
         }
     )
     assert state.entries[-1].title == "“dashboard”"
-    assert "in .pulse/specs" in state.entries[-1].detail
+    assert "in docs" in state.entries[-1].detail
 
     sink.handle_update(
         {
@@ -236,10 +245,10 @@ def test_search_update_shows_query_scope_and_hits():
                 "status": "completed",
                 "rawOutput": {"totalFiles": 4, "truncated": False},
                 "locations": [
-                    "/repo/.pulse/specs/features/a/spec.md",
-                    "/repo/.pulse/specs/features/b/spec.md",
-                    "/repo/.pulse/specs/features/c/spec.md",
-                    "/repo/.pulse/specs/project/STATE.md",
+                    "/repo/docs/a/PRD.md",
+                    "/repo/docs/b/PRD.md",
+                    "/repo/docs/c/PRD.md",
+                    "/repo/docs/STATE.md",
                 ],
             }
         }
@@ -248,13 +257,14 @@ def test_search_update_shows_query_scope_and_hits():
     assert entry.kind == LogKind.SEARCH
     assert entry.title == "“dashboard”"
     assert "4 files" in entry.detail
-    assert "in .pulse/specs" in entry.detail
+    assert "in docs" in entry.detail
     assert "(+1)" in entry.detail
 
 
 def test_search_update_count_only_fallback():
     state = CockpitState()
-    state.configure_workflow("fix-bug")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state)
     sink.begin_phase("Planejar")
     sink.handle_update(
@@ -297,13 +307,13 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
                 "type": "tool-call",
                 "toolCallId": "call-read\nfc_1",
                 "toolName": "Read",
-                "args": {"path": "/repo/.pulse/skills/pulse-spec-driven/SKILL.md"},
+                "args": {"path": "/repo/vendor/NOTES.md"},
             },
             {
                 "type": "tool-call",
                 "toolCallId": "call-glob\nfc_2",
                 "toolName": "Glob",
-                "args": {"glob_pattern": ".pulse/specs/features/**/*"},
+                "args": {"glob_pattern": "docs/features/**/*"},
             },
         ],
     }
@@ -314,9 +324,10 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
 
     sink.handle_update(
         {
@@ -330,7 +341,7 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
         }
     )
     assert state.entries[-1].kind == LogKind.READ
-    assert state.entries[-1].title.endswith("SKILL.md")
+    assert state.entries[-1].title.endswith("NOTES.md")
 
     sink.handle_update(
         {
@@ -344,7 +355,7 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
         }
     )
     assert state.entries[-1].kind == LogKind.SEARCH
-    assert ".pulse/specs/features/**/*" in state.entries[-1].title
+    assert "docs/features/**/*" in state.entries[-1].title
 
 
 def test_cockpit_sink_backfills_vague_search(tmp_path: Path, monkeypatch):
@@ -360,9 +371,10 @@ def test_cockpit_sink_backfills_vague_search(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
 
     tool_id = "call-late\nfc_9"
     sink.handle_update(
@@ -437,9 +449,10 @@ def test_completed_without_path_keeps_spinner_until_backfill(tmp_path: Path, mon
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     tool_id = "call-read\nfc_pending"
 
     sink.handle_update(
@@ -525,9 +538,10 @@ def test_assistant_chunk_backfills_completed_placeholder(tmp_path: Path, monkeyp
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     tool_id = "call-last\nfc_z"
 
     sink.handle_update(
@@ -607,9 +621,10 @@ def test_search_stays_pending_until_completed(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -653,9 +668,10 @@ def test_search_stays_pending_until_completed(tmp_path: Path, monkeypatch):
 
 def test_model_info_sets_header_without_duplicate_entry():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state)
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     before = len(state.entries)
     sink.handle_update(
         {
@@ -681,7 +697,8 @@ def test_model_info_sets_header_without_duplicate_entry():
     assert not any(entry.title == "Project Setup Request" for entry in state.entries)
 
     state = CockpitState()
-    state.configure_workflow("setup-project")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state)
     sink.begin_phase("Fase 1")
     sink.handle_update(
@@ -700,9 +717,10 @@ def test_model_info_sets_header_without_duplicate_entry():
 
 def test_write_and_edit_register_spec_artifacts():
     state = CockpitState()
-    state.configure_workflow("setup-project")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase 2 — Gerando specs")
+    sink.begin_phase("Dois")
     sink.handle_update(
         {
             "update": {
@@ -710,11 +728,11 @@ def test_write_and_edit_register_spec_artifacts():
                 "toolCallId": "w1",
                 "title": "Write File",
                 "kind": "write",
-                "rawInput": {"path": "/repo/.pulse/specs/project/PROJECT.md"},
+                "rawInput": {"path": "/repo/docs/PROJECT.md"},
             }
         }
     )
-    assert [item.path for item in state.artifacts] == [".pulse/specs/project/PROJECT.md"]
+    assert [item.path for item in state.artifacts] == ["docs/PROJECT.md"]
     assert state.artifacts[0].ready is False
     sink.handle_update(
         {
@@ -734,7 +752,7 @@ def test_write_and_edit_register_spec_artifacts():
                 "title": "Write File",
                 "kind": "write",
                 "status": "completed",
-                "rawInput": {"path": "/repo/.pulse/specs/project/ROADMAP.md"},
+                "rawInput": {"path": "/repo/docs/ROADMAP.md"},
             }
         }
     )
@@ -747,23 +765,24 @@ def test_write_and_edit_register_spec_artifacts():
                 "content": [
                     {
                         "type": "diff",
-                        "path": "/repo/.pulse/specs/project/PROJECT.md",
+                        "path": "/repo/docs/PROJECT.md",
                     }
                 ],
             }
         }
     )
     assert [item.path for item in state.artifacts] == [
-        ".pulse/specs/project/PROJECT.md",
-        ".pulse/specs/project/ROADMAP.md",
+        "docs/PROJECT.md",
+        "docs/ROADMAP.md",
     ]
 
 
 def test_read_and_search_do_not_register_artifacts():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Specify")
+    sink.begin_phase("PRD")
     sink.handle_update(
         {
             "update": {
@@ -772,7 +791,7 @@ def test_read_and_search_do_not_register_artifacts():
                 "title": "Read File",
                 "kind": "read",
                 "status": "completed",
-                "rawInput": {"path": "/repo/.pulse/specs/project/STATE.md"},
+                "rawInput": {"path": "/repo/docs/STATE.md"},
             }
         }
     )
@@ -785,8 +804,8 @@ def test_read_and_search_do_not_register_artifacts():
                 "kind": "search",
                 "status": "completed",
                 "locations": [
-                    "/repo/.pulse/specs/features/a/spec.md",
-                    "/repo/.pulse/specs/project/STATE.md",
+                    "/repo/docs/a/PRD.md",
+                    "/repo/docs/STATE.md",
                 ],
             }
         }
@@ -797,14 +816,15 @@ def test_read_and_search_do_not_register_artifacts():
 
 def test_cockpit_sink_collects_acp_sessions_per_phase():
     state = CockpitState()
-    state.configure_workflow("new-issue")
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
     sink = CockpitSink(state)
-    sink.set_session_id("sess-specify")
-    sink.begin_phase("Specify")
-    sink.set_session_id("sess-design")
-    sink.begin_phase("Design")
-    assert state.acp_session_id == "sess-design"
+    sink.set_session_id("sess-one")
+    sink.begin_phase("Um")
+    sink.set_session_id("sess-two")
+    sink.begin_phase("Dois")
+    assert state.acp_session_id == "sess-two"
     assert state.acp_sessions == [
-        {"session_id": "sess-specify", "phase_id": "specify"},
-        {"session_id": "sess-design", "phase_id": "design"},
+        {"session_id": "sess-one", "phase_id": "one"},
+        {"session_id": "sess-two", "phase_id": "two"},
     ]

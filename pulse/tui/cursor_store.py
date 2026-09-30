@@ -135,46 +135,6 @@ def _load_tool_args(db_path: Path) -> dict[str, dict[str, Any]]:
     return found
 
 
-_TASK_LINE_RE = re.compile(r"^Task:\s*(T\d+)\b", re.MULTILINE)
-
-
-def session_task_id(session_id: str) -> str:
-    path = find_session_store(session_id)
-    if path is None:
-        return ""
-    try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-    except sqlite3.Error:
-        return ""
-    try:
-        rows = con.execute("SELECT data FROM blobs").fetchall()
-    except sqlite3.Error:
-        con.close()
-        return ""
-    found = ""
-    for (data,) in rows:
-        try:
-            obj = json.loads(bytes(data).decode("utf-8"))
-        except Exception:
-            continue
-        if str(obj.get("role") or "") != "user":
-            continue
-        content = obj.get("content")
-        if not isinstance(content, list):
-            continue
-        for item in content:
-            if not isinstance(item, dict) or str(item.get("type") or "") != "text":
-                continue
-            match = _TASK_LINE_RE.search(str(item.get("text") or ""))
-            if match is not None:
-                found = match.group(1)
-                break
-        if found:
-            break
-    con.close()
-    return found
-
-
 def list_session_events(session_id: str) -> list[dict[str, Any]]:
     path = find_session_store(session_id)
     if path is None:

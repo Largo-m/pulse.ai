@@ -17,8 +17,20 @@ class PulseApp(App[None]):
     def on_mount(self) -> None:
         self.push_screen(HomeScreen())
 
-    def open_cockpit(self, workflow_id: str, user_prompt: str) -> None:
-        self.push_screen(CockpitScreen(workflow_id, user_prompt))
+    def open_cockpit(
+        self,
+        workflow_id: str,
+        user_prompt: str,
+        *,
+        resume_run_id: str | None = None,
+    ) -> None:
+        self.push_screen(
+            CockpitScreen(
+                workflow_id,
+                user_prompt,
+                resume_run_id=resume_run_id,
+            )
+        )
 
     def open_history(self) -> None:
         self.push_screen(HistoryListScreen())

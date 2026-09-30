@@ -17,12 +17,14 @@ from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunManager
-from pulse.doctor.checks import run_environment_checks
+from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
 
 class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
+    #: Run anterior a retomar, do primeiro step que não fechou.
+    resume_run_id: str | None = None
 
 
 class PromptAnswerBody(BaseModel):
@@ -68,6 +70,24 @@ def _project_to_dict(config: Any) -> dict[str, Any] | None:
     }
 
 
+def _history_to_dict(item: Any) -> dict[str, Any]:
+    return {
+        "id": item.item_id,
+        "run_id": item.run_id,
+        "workflow_id": item.workflow_id,
+        "workflow_label": item.workflow_label,
+        "title": item.title,
+        "prompt": item.prompt,
+        "status": item.status.value,
+        "updated_at": item.updated_at,
+        "artifacts": list(item.artifacts),
+        "steps": [
+            {"id": step.id, "label": step.label, "status": step.status}
+            for step in item.steps
+        ],
+    }
+
+
 def create_app(manager: RunManager | None = None) -> FastAPI:
     runs = manager or RunManager()
     app = FastAPI(title="Pulse Engine", version=__version__)
@@ -84,7 +104,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/doctor")
     def doctor() -> dict[str, Any]:
-        results = run_environment_checks()
+        results = run_doctor_checks()
         return {
             "checks": [
                 {
@@ -102,7 +122,11 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         from pulse.acp.client import probe_acp_connection
 
         cwd = workspace or str(Path.cwd())
-        result = probe_acp_connection(cwd=cwd)
+        ws = Path(workspace).resolve() if workspace else None
+        result = probe_acp_connection(
+            command=list(resolve_config(workspace=ws).acp_command),
+            cwd=cwd,
+        )
         return {
             "ok": result.success,
             "message": result.message,
@@ -159,6 +183,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 workflow_id=workflow_id,
                 prompt=body.prompt,
                 workspace=body.workspace,
+                resume_run_id=body.resume_run_id,
             )
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -215,31 +240,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         root = Path(workspace).resolve() if workspace else Path.cwd()
         catalog = HistoryCatalog(root)
         items = catalog.search(query) if query else catalog.list_items()
-        return {
-            "items": [
-                {
-                    "id": item.item_id,
-                    "kind": item.kind.value,
-                    "slug": item.slug,
-                    "title": item.title,
-                    "prompt": item.prompt,
-                    "status": item.status.value,
-                    "updated_at": item.updated_at,
-                    "spec_dir": item.spec_dir,
-                    "run_id": item.run_id,
-                    "steps": [
-                        {
-                            "id": step.id,
-                            "label": step.label,
-                            "status": step.status,
-                            "artifact": step.artifact,
-                        }
-                        for step in item.steps
-                    ],
-                }
-                for item in items
-            ]
-        }
+        return {"items": [_history_to_dict(item) for item in items]}
 
     @app.get("/api/history/{item_id}")
     def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
@@ -247,26 +248,14 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         item = HistoryCatalog(root).get(item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="item não encontrado")
-        return {
-            "id": item.item_id,
-            "kind": item.kind.value,
-            "slug": item.slug,
-            "title": item.title,
-            "prompt": item.prompt,
-            "status": item.status.value,
-            "updated_at": item.updated_at,
-            "spec_dir": item.spec_dir,
-            "run_id": item.run_id,
-            "steps": [
-                {
-                    "id": step.id,
-                    "label": step.label,
-                    "status": step.status,
-                    "artifact": step.artifact,
-                }
-                for step in item.steps
-            ],
-        }
+        return _history_to_dict(item)
+
+    @app.delete("/api/history/{item_id}")
+    def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
+        root = Path(workspace).resolve() if workspace else Path.cwd()
+        if not HistoryCatalog(root).delete(item_id):
+            raise HTTPException(status_code=404, detail="item não encontrado")
+        return {"ok": True}
 
     @app.exception_handler(Exception)
     async def on_error(_request: Request, exc: Exception) -> JSONResponse:

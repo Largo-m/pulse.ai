@@ -7,26 +7,37 @@ import pytest
 
 pytest.importorskip("textual")
 
+from tests.conftest import make_workflow
+
 from pulse.tui.adapters.cockpit_sink import CockpitSink
-from pulse.tui.state import WORKFLOW_PHASES, CockpitState, LogKind, PhaseStatus
+from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 
-WORKFLOWS = tuple(WORKFLOW_PHASES.keys())
-
-PHASE_TITLES: dict[str, tuple[str, ...]] = {
-    "spec": ("Classificar spec",),
-    "new-issue": ("Fase Specify", "Fase Design", "Fase Tasks", "Fase Execute"),
-    "fix-bug": ("Fase 1 — Planejando quick task", "Fase 2 — Implementando quick task"),
-    "setup-project": (
-        "Fase 1 — Análise do projeto",
-        "Fase 2 — Gerando .pulse/specs/project/",
-    ),
-    "analyze-codebase": (
-        "Fase 1 — Explorando codebase",
-        "Fase 2 — Gerando .pulse/specs/codebase/",
-    ),
+#: Formas de workflow que a UI precisa aguentar: de um step só até vários.
+#: Não há catálogo a percorrer — o Pulse não define workflow nenhum.
+SHAPES: dict[str, list[tuple[str, str]]] = {
+    "single": [("only", "Único")],
+    "pair": [("plan", "Planejar"), ("build", "Construir")],
+    "many": [
+        ("one", "Primeiro"),
+        ("two", "Segundo"),
+        ("three", "Terceiro"),
+        ("four", "Quarto"),
+    ],
 }
+WORKFLOWS = tuple(SHAPES)
+
+
+def _configure(workflow_id: str) -> CockpitState:
+    make_workflow(workflow_id, steps=SHAPES[workflow_id])
+    state = CockpitState()
+    state.configure_workflow(workflow_id)
+    return state
+
+
+def _titles(workflow_id: str) -> list[str]:
+    return [label for _step_id, label in SHAPES[workflow_id]]
 
 TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
     (
@@ -50,10 +61,10 @@ TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
             "title": "Edit File",
             "kind": "edit",
             "status": "pending",
-            "rawInput": {"path": "/repo/.pulse/specs/features/demo/spec.md"},
+            "rawInput": {"path": "/repo/docs/PRD.md"},
         },
         LogKind.EDIT,
-        "spec.md",
+        "PRD.md",
     ),
     (
         "write",
@@ -63,7 +74,7 @@ TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
             "title": "Write File",
             "kind": "write",
             "status": "pending",
-            "rawInput": {"path": "/repo/.pulse/specs/project/STATE.md"},
+            "rawInput": {"path": "/repo/docs/STATE.md"},
         },
         LogKind.WRITE,
         "STATE.md",
@@ -76,7 +87,7 @@ TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
             "title": "Find",
             "kind": "search",
             "status": "pending",
-            "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+            "rawInput": {"pattern": "dashboard", "path": "/repo/docs"},
         },
         LogKind.SEARCH,
         "dashboard",
@@ -110,16 +121,15 @@ def _render_plain(state: CockpitState) -> str:
 
 
 @pytest.mark.parametrize("workflow_id", WORKFLOWS)
-def test_all_workflows_have_phase_titles(workflow_id: str):
-    assert workflow_id in PHASE_TITLES
-    assert len(PHASE_TITLES[workflow_id]) == len(WORKFLOW_PHASES[workflow_id])
+def test_sidebar_comes_from_the_database(workflow_id: str):
+    state = _configure(workflow_id)
+    assert [(phase.id, phase.label) for phase in state.phases] == SHAPES[workflow_id]
 
 
 @pytest.mark.parametrize("workflow_id", WORKFLOWS)
 def test_phase_titles_mark_running_across_workflows(workflow_id: str):
-    state = CockpitState()
-    state.configure_workflow(workflow_id)
-    titles = PHASE_TITLES[workflow_id]
+    state = _configure(workflow_id)
+    titles = _titles(workflow_id)
     for index, title in enumerate(titles):
         sink = CockpitSink(state, cwd="/repo")
         sink.begin_phase(title)
@@ -133,11 +143,10 @@ def test_phase_titles_mark_running_across_workflows(workflow_id: str):
 
 
 def test_resume_jump_to_last_phase_marks_prior_done():
-    state = CockpitState()
-    state.configure_workflow("new-issue")
+    state = _configure("many")
     sink = CockpitSink(state, cwd="/repo")
-    sink.apply_phase_statuses(done_ids=("specify",), skipped_ids=("design", "tasks"))
-    sink.begin_phase("Fase Execute")
+    sink.apply_phase_statuses(done_ids=("one",), skipped_ids=("two", "three"))
+    sink.begin_phase("Quarto")
     assert [phase.status for phase in state.phases] == [
         PhaseStatus.DONE,
         PhaseStatus.SKIPPED,
@@ -149,10 +158,9 @@ def test_resume_jump_to_last_phase_marks_prior_done():
 @pytest.mark.parametrize("sample", TOOL_SAMPLES, ids=[s[0] for s in TOOL_SAMPLES])
 def test_tool_kinds_pending_then_gray_block(workflow_id: str, sample: tuple):
     _name, call_payload, expected_kind, target_snip = sample
-    state = CockpitState()
-    state.configure_workflow(workflow_id)
+    state = _configure(workflow_id)
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase(PHASE_TITLES[workflow_id][0])
+    sink.begin_phase(_titles(workflow_id)[0])
 
     call = dict(call_payload)
     call["toolCallId"] = f"{workflow_id}-{call['toolCallId']}"
@@ -189,8 +197,8 @@ def test_tool_kinds_pending_then_gray_block(workflow_id: str, sample: tuple):
     if expected_kind == LogKind.SEARCH:
         completed["rawOutput"] = {"totalFiles": 2}
         completed["locations"] = [
-            "/repo/.pulse/specs/a.md",
-            "/repo/.pulse/specs/b.md",
+            "/repo/docs/a.md",
+            "/repo/docs/b.md",
         ]
     sink.handle_update({"update": completed})
     assert state.entries[-1].pending is False
@@ -202,22 +210,21 @@ def test_tool_kinds_pending_then_gray_block(workflow_id: str, sample: tuple):
     block = plain_done[block_start : block_start + 240]
     assert "\n  " in block
     if expected_kind == LogKind.SEARCH:
-        assert "2 files" in plain_done or "in .pulse/specs" in plain_done
+        assert "2 files" in plain_done or "in docs" in plain_done
 
 
 @pytest.mark.parametrize("workflow_id", WORKFLOWS)
 def test_assistant_gutter_across_workflows(workflow_id: str):
-    state = CockpitState()
-    state.configure_workflow(workflow_id)
+    state = _configure(workflow_id)
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase(PHASE_TITLES[workflow_id][0])
+    sink.begin_phase(_titles(workflow_id)[0])
     sink.handle_update(
         {
             "update": {
                 "sessionUpdate": "agent_message_chunk",
                 "content": {
                     "type": "text",
-                    "text": "Vou usar `Specify` e marcar **large** no STATE.",
+                    "text": "Vou usar `PRD` e marcar **large** no STATE.",
                 },
             }
         }
@@ -225,7 +232,7 @@ def test_assistant_gutter_across_workflows(workflow_id: str):
     plain = _render_plain(state)
     assert "Assistente" in plain
     assert "│" in plain
-    assert "Specify" in plain
+    assert "PRD" in plain
     assert "large" in plain
     assert "**" not in plain
     assert "`" not in plain
@@ -247,10 +254,9 @@ def test_placeholder_keeps_spinner_until_path(workflow_id: str, tmp_path: Path, 
     monkeypatch.setattr("pulse.tui.cursor_store._ACP_SESSIONS", tmp_path / "acp-sessions")
     monkeypatch.setattr("pulse.tui.cursor_store._CHATS", tmp_path / "chats")
 
-    state = CockpitState()
-    state.configure_workflow(workflow_id)
+    state = _configure(workflow_id)
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
-    sink.begin_phase(PHASE_TITLES[workflow_id][0])
+    sink.begin_phase(_titles(workflow_id)[0])
     tool_id = f"{workflow_id}-placeholder\nfc_1"
 
     sink.handle_update(
@@ -326,8 +332,7 @@ def test_textual_render_smoke_all_workflows(workflow_id: str):
             CSS = COCKPIT_CSS
 
             def compose(self) -> ComposeResult:
-                state = CockpitState()
-                state.configure_workflow(workflow_id)
+                state = _configure(workflow_id)
                 holder["state"] = state
                 holder["sink"] = CockpitSink(state, cwd="/repo")
                 with Horizontal():
@@ -336,7 +341,7 @@ def test_textual_render_smoke_all_workflows(workflow_id: str):
 
             def on_mount(self) -> None:
                 sink: CockpitSink = holder["sink"]
-                sink.begin_phase(PHASE_TITLES[workflow_id][0])
+                sink.begin_phase(_titles(workflow_id)[0])
                 sink.handle_update(
                     {
                         "update": {
@@ -377,16 +382,15 @@ def test_textual_render_smoke_all_workflows(workflow_id: str):
             assert "v Read" in content or "Read" in content
             assert "\n  " in content or "  pulse/" in content or "cli.py" in content
             assert any(phase.label in phases for phase in holder["state"].phases)
-            assert "em curso" in phases or "pendente" in phases
+            assert "executando" in phases or "pendente" in phases
 
     asyncio.run(run())
 
 
 def test_search_detail_gray_block_layout():
-    state = CockpitState()
-    state.configure_workflow("new-issue")
+    state = _configure("many")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Primeiro")
     sink.handle_update(
         {
             "update": {
@@ -394,7 +398,7 @@ def test_search_detail_gray_block_layout():
                 "toolCallId": "search-layout",
                 "title": "Find",
                 "kind": "search",
-                "rawInput": {"pattern": "dashboard", "path": "/repo/.pulse/specs"},
+                "rawInput": {"pattern": "dashboard", "path": "/repo/docs"},
             }
         }
     )
@@ -406,9 +410,9 @@ def test_search_detail_gray_block_layout():
                 "status": "completed",
                 "rawOutput": {"totalFiles": 3},
                 "locations": [
-                    "/repo/.pulse/specs/a.md",
-                    "/repo/.pulse/specs/b.md",
-                    "/repo/.pulse/specs/c.md",
+                    "/repo/docs/a.md",
+                    "/repo/docs/b.md",
+                    "/repo/docs/c.md",
                 ],
             }
         }
@@ -417,7 +421,7 @@ def test_search_detail_gray_block_layout():
     expected_head = _plain_tool_block("Search", "“dashboard”")
     assert expected_head.splitlines()[0] in plain
     assert "“dashboard”" in plain
-    assert "in .pulse/specs" in plain
+    assert "in docs" in plain
     assert "3 files" in plain
     search_idx = plain.rfind("v Search")
     block = plain[search_idx:]
@@ -428,10 +432,9 @@ def test_search_detail_gray_block_layout():
 
 
 def test_log_stream_renders_only_selected_step():
-    state = CockpitState()
-    state.configure_workflow("new-issue")
+    state = _configure("many")
     sink = CockpitSink(state, cwd="/repo")
-    sink.begin_phase("Fase Specify")
+    sink.begin_phase("Primeiro")
     sink.handle_update(
         {
             "update": {
@@ -440,7 +443,7 @@ def test_log_stream_renders_only_selected_step():
             }
         }
     )
-    sink.begin_phase("Fase Design")
+    sink.begin_phase("Segundo")
     sink.handle_update(
         {
             "update": {

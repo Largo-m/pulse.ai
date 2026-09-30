@@ -1,239 +1,333 @@
 # Como o Pulse carrega e interpreta workflows
 
-Workflows **não são lidos de um YAML de definição**. O Pulse conhece um catálogo hardcoded. “Carregar” significa: escolher o ID → resolver config → montar estado/UI → despachar o flow Python → interpretar artefatos e respostas do agente.
+O Pulse **não conhece nenhum workflow por código**. Não há catálogo em Python
+nem `if workflow_id == …` em lugar nenhum. Um workflow é um conjunto de linhas
+no SQLite, e a única responsabilidade do Pulse é apontar **qual agente roda
+agora** e **quando**.
 
-## 1. O catálogo (único lugar que “define” workflows)
+O pacote traz a **semente** desses loops — ver §1.1 — mas nada dela é lido
+durante uma run.
 
-Arquivo: `pulse/plan/spec_types.py`
+## 1. Onde um workflow é definido
 
-```python
-SPEC_TYPES = (
-    SpecType("spec", "Nova spec", ""),
-    SpecType("setup-project", "Setup project", "Setup inicial"),
-    SpecType("analyze-codebase", "Analyze codebase", "Mapear código"),
-)
+Tabelas em `~/.pulse/pulse.db` (ver [armazenamento.md](armazenamento.md)):
+
+```
+workflow_defs     id, label, description, is_default, default_prompt
+workflow_steps    workflow_id, step_id, position, label,
+                  agent_id, prompt_template, requires_approval, fan_out
+agent_defs        id, label, runtime, model, permission_policy, instructions
 ```
 
-O catálogo público alimenta o menu, a API e o settings.
+Acesso: [`pulse/store/workflow_defs.py`](../pulse/store/workflow_defs.py).
 
-| Consumidor | Uso |
+Id que não está em `workflow_defs` não existe: `run_workflow` levanta
+`UnknownWorkflow`, e a API responde 404.
+
+`default_prompt` é a tarefa que o loop já sabe qual é — "Analisar codebase" e
+"Setup do projeto" olham o repositório, não um pedido. Preenchido, o menu entra
+direto na run; vazio, ele abre o campo para o usuário descrever a tarefa.
+
+## 1.1 A semente de fábrica
+
+[`pulse/store/factory/`](../pulse/store/factory/) roda uma vez, na primeira
+abertura do banco, com `INSERT OR IGNORE` — quem já editou não perde nada no
+upgrade, e linha de fábrica apagada volta na abertura seguinte.
+
+| Loop | Steps |
 | --- | --- |
-| `HomeScreen` / menu terminal | lista de opções públicas |
-| `run_plan` | `if spec_type_id == "..."` → função Python |
-| settings de workflow | quais IDs podem ter agent/model |
-| `CockpitState.WORKFLOW_PHASES` | quais steps a sidebar mostra |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) |
+| `quick-fix` — Correção rápida | quick-plan → quick-implement |
+| `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
+| `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
+| `default` — Executar | um step, sem pipeline (fora do menu) |
 
-Não existe plugin, discovery em disco, nem `workflows/*.yaml` de pipeline. ID desconhecido → exit `2`.
+`setup-project` e `analyze-codebase` rodam **do começo ao fim**: nenhum step
+deles aprova, e `default_prompt` já traz a tarefa. Os dois olham o repositório,
+não um pedido — não há o que perguntar nem o que revisar no meio. Os outros
+pipelines existem para serem revisados e continuam parando em cada aprovação.
 
-A config TOML/YAML (`workflows.spec.agent`, etc.) **não define o pipeline** — só agent e model. Ver [armazenamento.md](armazenamento.md).
+`is_default` marca o loop genérico, e a home usa a marca para **não** listá-lo
+em "Nova sessão": aquele menu é de pipeline. Ele segue no banco e na API.
 
-## 2. Pipeline de carregamento (tudo workflow)
+Os playbooks são `.md` em `factory/agents/<id>/AGENT.md` (vira
+`agent_defs.instructions`) e `PHASE.md` (vira `workflow_steps.prompt_template`).
+Os blocos repetidos — isolamento, clarify, aprovação, idioma de saída — ficam em
+`factory/shared/` e são expandidos **na semeadura**, via
+`<!-- include: nome -->`, para a linha do banco ser autossuficiente.
 
-```
-usuário escolhe "Nova spec"
-        │
-        ▼
-Home / menu  →  workflow_id = "spec" + user_prompt
-        │
-        ▼
-CockpitScreen.configure_workflow("spec")
-        │     fase Classificar
-        ▼
-run_plan(spec_type_id="spec", workspace=..., stream=CockpitSink)
-        │
-        ▼
-resolve_config(workflow="spec")
-        │     agent, model, acp_command, permission_policy, cwd
-        ▼
-run_spec(...)               ← classifica e despacha
-        │
-        ├─ .pulse/specs/.route.yaml  (flow: full | quick)
-        ├─ workflow.route            (sidebar ganha fases do flow)
-        ├─ run_new_issue             se full
-        └─ run_quick                 se quick
-```
+Ficam em arquivo, e não em string Python, porque são ~8 mil linhas que alguém
+precisa revisar em diff. Isso **não** reintroduz catálogo em código: o motor lê
+as tabelas, nunca o pacote, e `test_domain_markdown_lives_only_in_the_factory_seed`
+falha se qualquer módulo fora de `store/db.py` passar a importar a fábrica.
 
-Passos comuns a **todos** os flows:
+`runtime` e `model` nascem **vazios** de propósito, mesmo onde o playbook declara
+uma preferência: vazio significa "use o padrão da máquina", e um valor concreto
+congelaria a escolha feita no `pulse init`. Quem quiser fixar o par por agente
+usa a tela de configurações, que grava em `agent_settings`.
 
-1. Gate: terminal interativo **ou** `stream.cockpit` (TUI).
-2. `check_agent_in_path` + `check_auth`.
-3. `resolve_config(workflow=<id>)`.
-4. `cleanup_legacy_pulse_questions` (apaga perguntas antigas em disco).
-5. Resolve skill bundled → paths no prompt (não o conteúdo).
-6. Sobe `AcpSessionRunner` com o sink (cockpit ou console).
+Não há ramificação: `workflow_steps` é uma lista, e o motor a percorre. Quem
+escolhe entre spec completa e correção rápida é o usuário, no menu **Nova
+sessão** — e o `quick-plan` refaz a checagem de escopo, então um pedido grande
+que entrou pelo loop errado para no primeiro step em vez de seguir.
 
-Detalhe de skills: [workflows-e-skills.md](workflows-e-skills.md). Detalhe de perguntas: [questions.md](questions.md).
+## 2. O laço do motor
 
-## 3. Como a UI “interpreta” o workflow
-
-Antes do ACP subir, o cockpit já sabe a forma:
-
-```103:122:pulse/tui/state.py
-WORKFLOW_PHASES = {
-    "spec": (("classify", "Classificar"),),
-    "new-issue": (("specify", "Specify"), ("design", "Design"), ...),
-    "fix-bug": (("plan", "Planejar"), ("implement", "Implementar")),
-    "setup-project": (("phase1", "Análise do projeto"), ("phase2", "Gerando specs")),
-    "analyze-codebase": (("phase1", "Explorando codebase"), ("phase2", "Gerando docs")),
-}
-```
-
-`configure_workflow(id)` cria a lista de `PhaseItem`. Depois da classificação, `apply_routed_flow` acrescenta as fases do flow escolhido sem apagar o log. O stream (`CockpitSink.begin_phase`) marca RUNNING / DONE. Tasks aninhadas (só `new-issue` Execute) vêm de `workflow.yaml` / `tasks.md` via `set_tasks`.
-
-**Importante:** a sidebar e o `workflow.yaml` usam nomes parecidos, mas são camadas diferentes. A UI pode mostrar “Specify” enquanto o YAML ainda diz `awaiting_approval`.
-
-## 4. Resolução de config por workflow
-
-`resolve_config(..., workflow=id)`:
+[`pulse/orchestrator/engine.py`](../pulse/orchestrator/engine.py) — uma função
+pública, `run_workflow`, e nenhum `if workflow_id == ...`:
 
 ```
-projeto.workflows[id].agent/model
-  → global.workflows[id]
+run_workflow(workflow_id, user_prompt, …)
+  │
+  ├─ get_workflow(id)                 definição + steps, do banco
+  ├─ resolve_config(workflow=id)      runtime, model, policy, cwd
+  ├─ create_run | load_run            linha em `runs` + N em `run_steps`
+  └─ para cada step pendente:
+       control.checkpoint()           ponto de corte do parar
+       resolve_config(pulse_agent=…)  o agente DESTE step
+       runner.use_agent(…)
+       render(step.prompt_template)   valores da run
+       run_isolated_phase | run_isolated_prompt
+       save_step(status, summary)     desfecho no banco
+```
+
+A sessão ACP é **isolada por step**. O agente do step seguinte não herda o
+contexto do anterior — só o resumo que o Pulse repassa. É isso que permite
+retomar uma run refazendo um step só e manter o contexto pequeno.
+
+Detalhe do agente e do laço, passo a passo: [`agentes.md`](agentes.md).
+
+### 2.1 Fan-out: um step que vira N
+
+`workflow_steps.fan_out = 1` significa **"rode este step uma vez por item que o
+step anterior enumerou"**. É o que faz cada task ter agente isolado e linha
+própria no painel, sem o motor saber o que é uma task.
+
+Quem enumera é o agente, num bloco cercado que o Pulse acha
+([`pulse/orchestrator/fanout.py`](../pulse/orchestrator/fanout.py)) — é o segundo
+dos três protocolos que o motor lê da resposta, ao lado do questionário de
+aprovação e do bloco de desfecho (§2.2):
+
+````text
+```pulse:items
+T1 — Criar o endpoint de exportação
+T2 — Montar o CSV a partir do relatório
+```
+````
+
+O que o motor faz com isso:
+
+```
+step `implement` (fan_out)          →   run_steps
+  lê o resumo do step anterior            implement:T1   Criar o endpoint…
+  parse_items(...)                        implement:T2   Montar o CSV…
+  o placeholder some                      (cada um: sessão ACP própria,
+                                           retry próprio, retomada própria)
+```
+
+- **Sem bloco, ou bloco vazio** → o step roda uma vez, como se `fan_out` não
+  existisse. Protocolo que o agente não seguiu não derruba a run.
+- **Id repetido** é descartado: viraria `step_id` duplicado, e `run_steps` tem
+  chave `(run_id, step_id)` — o segundo sobrescreveria o primeiro em silêncio.
+- **Teto de 40 itens**: abrir 200 sessões ACP sairia caro antes de alguém notar.
+- A posição usa passo de 1000 (`POSITION_STRIDE`), então o step 4 vira
+  4001, 4002… e continua antes do step 5. Sem isso `T10` cairia entre `T1` e
+  `T2`, que é como o `step_id` ordena.
+- Os N vão para `run_steps` **na expansão**, não quando cada um começa. Filho
+  que só existisse na memória sumiria se a run caísse no meio do fan-out, e o
+  histórico reabriria com as tasks que já rodaram e mais nenhuma.
+- Ao retomar, o bloco relido é o do step **anterior** ao fan-out — o pai já não
+  existe na run, e a busca pelo resumo para no primeiro filho.
+
+O motor continua sem ler artefato: ele não abre `tasks.md` nem conhece `### T1`.
+Trocar `tasks.md` por outra coisa não muda uma linha do orquestrador.
+
+### 2.2 Desfecho: como um step fecha como concluído
+
+Antes, "o step terminou bem" queria dizer apenas **"o agente encerrou o turno"**.
+Um agente que respondia *"não consigo, falta a credencial"* encerrava o turno
+como qualquer outro (`end_turn`), o step ia para o banco como `done` e o step
+seguinte rodava em cima de uma entrega que não existiu — em cascata, até o fim
+do workflow.
+
+Um step tem **um portão só**:
+
+| Step | Quem atesta a entrega |
+| --- | --- |
+| `requires_approval = 1` | a pessoa, no questionário de aprovação |
+| `requires_approval = 0` e `requires_outcome = 1` | o agente, no bloco `pulse:outcome` |
+| `requires_outcome = 0` | ninguém — encerrar o turno basta (comportamento antigo) |
+
+O motor anexa a instrução do protocolo ao prompt sozinho
+([`pulse/orchestrator/prompts.py`](../pulse/orchestrator/prompts.py)): nenhum
+`prompt_template` precisa ser editado. O agente encerra com:
+
+````text
+```pulse:outcome
+status: done
+```
+````
+
+ou, quando não entregou:
+
+````text
+```pulse:outcome
+status: blocked
+reason: falta a credencial do banco (DATABASE_URL não está no ambiente)
+needs: user
+```
+````
+
+`needs: user` só quando depender de outra pessoa, de um acesso ou de uma
+permissão. Ele é o que decide se o motor gasta ou não a tentativa de
+auto-resolução.
+
+**Os três degraus**, nesta ordem
+([`pulse/orchestrator/outcome.py`](../pulse/orchestrator/outcome.py)):
+
+1. **O agente pergunta.** Falta um dado que só a pessoa tem? O canal de pergunta
+   (`cursor/ask_question`) entrega na tela **sem encerrar o step**. Bloqueio não
+   é o jeito de pedir informação.
+2. **O agente tenta resolver sozinho, uma vez.** Bloqueio sem `needs: user` — e
+   bloco esquecido — voltam para ele numa continuação **na mesma sessão ACP**,
+   para ele não recomeçar do zero. Uma só: quem repete o bloqueio depois de ser
+   cutucado está dizendo que precisa de gente.
+3. **Só então escala.** O step vai para `blocked`, a run para (`RUN_BLOCKED`) e
+   o menu oferece *Refazer · Outro · Pular este step · Parar*. Sem ninguém para
+   perguntar (CLI, cockpit fechado, daemon), a run **para** — o default seguro é
+   nunca seguir adiante.
+
+`blocked` é estado próprio, e não `failed`: nada quebrou, a entrega é que não
+aconteceu. Fica fora de `SETTLED`, então retomar refaz o step que travou e só
+ele. Pular é registrado como `skipped`, nunca como `done`, e o step pulado não
+passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fechou.
+
+### Valores disponíveis no `prompt_template`
+
+`{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
+([`pulse/prompts/render.py`](../pulse/prompts/render.py)). Chave sem valor é
+**erro**, não buraco: instrução truncada sairia silenciosa.
+
+| Chave | Conteúdo |
+| --- | --- |
+| `user_prompt` | o que o usuário pediu |
+| `workspace` | diretório da run |
+| `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
+| `previous_summary` | resumo do último step que **fechou** (`done`/`skipped`) |
+| `artifacts` | arquivos que a run já escreveu, um por linha |
+| `item_id` / `item_label` | o item deste step, num step de fan-out |
+| `item_index` / `item_total` | "2 de 7", para o prompt situar o agente |
+
+Não há chave com nome de artefato ou de fase: o motor não tem nenhum para
+oferecer. As `item_*` vêm **vazias** fora de um fan-out, e não ausentes: o mesmo
+`prompt_template` roda nos dois modos, e chave ausente é erro.
+
+## 3. O que o motor interpreta da resposta do agente
+
+Só o desfecho do questionário de aprovação
+([`pulse/prompts/approval.py`](../pulse/prompts/approval.py)), quando o step tem
+`requires_approval`:
+
+| Desfecho | O que o Pulse faz |
+| --- | --- |
+| `approve` | step vira `done`, segue para o próximo |
+| `adjust` / `continue` | devolve a conversa ao agente com as respostas |
+| `skip` | step vira `skipped` — não é falha |
+| `cancel` | step não fechou; cai no menu de retry |
+
+Step sem aprovação só precisa que o agente feche o turno (`stopReason`).
+
+Falha ou não-aprovação abre o menu **Refazer / Outro — dizer o que fazer /
+Parar**. "Outro" injeta a orientação do usuário no prompt da tentativa seguinte.
+
+Queda de sessão (timeout, processo do agente morto) cai no mesmo menu: é falha
+de tentativa, não fim de run. Antes de refazer, o processo ACP é reerguido.
+O prazo de `session/prompt` conta **silêncio**, não duração: cada linha vinda do
+agente o renova, e pergunta aberta na tela não gasta o relógio.
+
+O conteúdo do que o agente produziu **nunca** é interpretado. O Pulse não lê
+Markdown, não valida formato, não espera arquivo com nome conhecido.
+
+## 4. Estado, retomada e artefatos
+
+| Tabela | Para quê |
+| --- | --- |
+| `runs` | de onde retomar (`current_step`, `status`) |
+| `run_steps` | status, resumo e sessão ACP de cada step |
+| `run_events` | o stream que o cockpit reexibe |
+| `run_artifacts` | caminhos que o agente escreveu |
+
+Retomar = rodar o primeiro step que não está `done`/`skipped`. Não há refazer:
+rodar tudo de novo é começar uma run nova, e a anterior fica no histórico.
+
+Parar corta o turno em voo e devolve o step em curso para `pending`: ele não
+terminou, então é refeito inteiro ao retomar. Step já fechado nunca é refeito.
+Não há pausa — parar e retomar dão no mesmo, sem thread nem sessão ACP presas.
+
+Artefato é descoberto pelos **tool-calls do ACP**: um `write`/`edit`/`create`
+faz o Pulse gravar o caminho em `run_artifacts`
+([`session_runner._record_artifacts`](../pulse/acp/session_runner.py)). Não há
+convenção de pasta nem de extensão.
+
+## 5. Config por workflow e por agente
+
+`machine_workflows` e `project_workflows` guardam **override** de agent/model
+por id de workflow — não definem pipeline nenhum, e nascem vazios.
+
+```
+agent_defs[step.agent_id]            runtime/model/policy declarados
+  → agent_settings (por projeto)     o que o usuário ajustou na TUI
   → projeto.defaults
   → global.defaults
   → defaults do código
 ```
 
-Só muda **quem** roda o agente (binário ACP + model). O **quê** (fases, prompts) continua no código Python do flow.
+Campo vazio em `agent_defs` significa "use o padrão da máquina" — gravar um
+runtime concreto na semente congelaria a escolha feita no `pulse init`.
 
-## 5. Cada workflow: o que carrega e o que interpreta
+## 6. A UI
 
-### `spec` — classifica e despacha
+[`HomeScreen`](../pulse/tui/screens/home.py) tem dois níveis: a raiz (**Nova
+sessão** · Histórico · Configurações · Sair) e o submenu de loops, montado com
+`list_workflows()`. Os loops ficam um nível abaixo porque a lista cresce com o
+banco — na raiz, "Configurações" e "Sair" acabariam abaixo de N workflows. O
+`default` ("Executar") fecha a lista: é o escape, não o que se procura ali. `Esc`
+volta um passo de cada vez (fecha o campo de tarefa, depois sai do submenu).
 
-**Carrega** o prompt do usuário e a skill `pulse-spec-driven` (auto-sizing + Scope Eligibility).
+No item vai só `label · description`, e a `description` de fábrica é curta de
+propósito ("pipeline completo", "até 3 arquivos"). A cadeia de steps — o que é
+longo — vai para a dica, montada a partir de `workflow_steps` e trocada conforme
+o item destacado. A dica tem sempre duas linhas, mesmo sem descrição: alternar a
+altura faria a lista pular a cada tecla.
 
-**Interpreta**
+[`CockpitState.configure_workflow`](../pulse/tui/state.py) monta a sidebar a
+partir de `workflow_steps`, pelo mesmo caminho do motor. Não há mapa de fases na
+UI. Workflow desconhecido resulta em sidebar vazia, que se preenche conforme os
+steps começam.
 
-1. Sessão ACP curta: o agente grava `.pulse/specs/.route.yaml` com `flow: full|quick`.
-2. Pulse lê o arquivo. Se faltar, pergunta no terminal.
-3. Emite `workflow.route` para a TUI remontar a sidebar.
-4. Despacha `run_new_issue` (`full`) ou `run_quick` (`quick`).
-
-### `new-issue` — o único com máquina de estados no Pulse
-
-**Carrega**
-
-| Fonte | Conteúdo |
-| --- | --- |
-| `find_resumable_workflows(workspace)` | `.pulse/specs/features/*/workflow.yaml` incompletos |
-| ou `WorkflowState.create_new` + `save` | novo slug a partir do prompt |
-| skill `pulse-spec-driven` | referências por fase |
-| depois do Tasks | `tasks.md` → lista `T1`, `T2`, … |
-
-**Interpreta**
-
-O arquivo `workflow.yaml` é a fonte da verdade do orquestrador:
-
-| Campo | Como o Pulse usa |
-| --- | --- |
-| `current_phase` | de onde retomar o loop (`_phase_start_index`) |
-| `phases.<name>.status` | skip se `approved`/`done`; espera se `awaiting_approval` |
-| `phases.design.skip` / `tasks.skip` | não roda Design/Tasks |
-| `tasks[].id/status` | o que falta no Execute; sync a partir de `tasks.md` |
-
-Ordem fixa: `specify` → `design` → `tasks` → `execute` (`PHASE_ORDER`).
-
-Por fase de planejamento:
-
-1. Marca `in_progress`, grava YAML.
-2. Monta prompt (`build_specify_prompt`, …) com a skill empacotada + tarefa.
-3. `run_isolated_phase` — sessão ACP isolada + questionário de aprovação.
-4. Classifica outcome (`approve` / `adjust` / `cancel` / `skip`) — ver [questions.md](questions.md).
-5. Se aprovou: `approve_phase` + `save`. Em Tasks: `sync_tasks_from_markdown`.
-6. Recarrega YAML do disco (`_reload_state`) — o agente pode ter marcado `skip` nas próximas fases.
-
-No Execute:
-
-1. Lê tasks do YAML / `tasks.md`.
-2. Sem tasks → um `run_isolated_prompt` inline (`implement.md`).
-3. Com tasks → `parse_task_specs` + `build_waves` (até 5, `[P]` em batch).
-4. Cada wave: prompt da skill + gates (`Done when` / `Verify` / `Gate check passes`).
-5. Só depois do gate o Pulse marca a task `done` no YAML.
-
-O agente **escreve** `spec.md`, `design.md`, `tasks.md` e atualiza o YAML. O Pulse **lê** o YAML para decidir o próximo passo.
-
-### `fix-bug` — estado no Markdown, não no YAML
-
-**Carrega**
-
-- Não lê `workflow.yaml`.
-- Prompt de plano (`build_quick_plan_prompt`).
-- Skill refs: `quick-mode.md`, …
-
-**Interpreta**
-
-1. Até 4 turns de plano + questionário.
-2. Outcomes: `approve`, `cancel`, `migrate`, `adjust`, `reduce_scope`.
-3. Sem `approve` → **não** entra na implementação.
-4. Com `approve` → `build_quick_implement_prompt` na mesma sessão ACP (muda para AGENT_MODE).
-
-O “estado” que o histórico vê depois vem de `.pulse/specs/quick/NNN-slug/TASK.md` (`**Status:** …`), parseado por `list_quick_tasks` — o Pulse não orquestra fases a partir desse arquivo durante o run; só o agente o mantém.
-
-UI: 2 steps (`plan`, `implement`).
-
-### `setup-project` — duas fases, sem resume
-
-**Carrega**
-
-- Prompt de entrevista (`build_setup_project_prompt`).
-- Nenhum estado YAML de workflow.
-
-**Interpreta**
-
-1. Fase 1 (`INTERVIEW_MODE`): agente analisa / pergunta.
-2. Se houver ` ```text `, coleta respostas; se não, segue.
-3. Fase 2 (`AGENT_MODE`): `build_setup_project_artifact_prompt` com resumo + respostas → espera `PROJECT.md`, `ROADMAP.md`, `STATE.md`.
-
-Não há resume automático. Rodar de novo é outra sessão.
-
-UI: `phase1`, `phase2`.
-
-### `analyze-codebase` — espelho do setup
-
-**Carrega / interpreta** igual ao setup, com prompts e artefatos de codebase:
-
-1. Exploração.
-2. Questionário opcional.
-3. Gera os 7 docs em `.pulse/specs/codebase/`.
-
-UI: `phase1`, `phase2`.
-
-## 6. Tabela: o que o Pulse interpreta vs o que só o agente lê
-
-| Artefato | `new-issue` | `fix-bug` | `setup` / `analyze` |
-| --- | --- | --- | --- |
-| `workflow.yaml` | Pulse lê/escreve e decide fases | — | — |
-| `spec.md` / `design.md` / `tasks.md` | Agente escreve; Pulse synca tasks e mostra no painel | — | — |
-| `TASK.md` / `SUMMARY.md` | — | Agente; histórico lê status | — |
-| `project/*` / `codebase/*` | Agente (contexto) | Agente | Agente gera |
-| bloco ` ```text ` | Pulse classifica aprovação | Pulse classifica aprovação | Pulse injeta no prompt fase 2 |
-| `cursor/ask_question` / MCP | Resposta volta ao agente | idem | idem |
-| gates de shell | Pulse roda no Execute | — | — |
-
-## 7. Relação UI ↔ orquestrador ↔ agente
-
-```
-┌─────────────────┐     begin_phase / LogEntry      ┌──────────────┐
-│  CockpitState   │ ◄───────────────────────────────│ CockpitSink  │
-│  (só memória)   │                                  └──────▲───────┘
-└────────┬────────┘                                         │
-         │ configure / set_tasks                    session/update
-         │                                          ┌───────┴───────┐
-┌────────▼────────┐     workflow.yaml / prompts     │ AcpSession    │
-│  Flow Python    │ ───────────────────────────────►│ Runner + ACP  │
-│  (orquestrador) │ ◄── aprovação / gates / reload  │               │
-└────────┬────────┘                                  └───────────────┘
-         │
-         ▼
-   .pulse/specs/...   (disco = resume + histórico)
-```
+A lista de fases não é fixa: `_sync_steps` manda a lista inteira a cada mudança,
+e `CockpitState.sync_phases` reconcilia **por id**, preservando status, relógio e
+contadores de quem já rodou. É o que permite o fan-out trocar uma fase por N no
+meio da run sem apagar o que já aconteceu.
 
 ## Design
 
-**O que:** workflows como funções Python + um catálogo de IDs; estado interpretável só onde o orquestrador precisa (`workflow.yaml` no new-issue).
+**O quê:** workflow como dado (linhas no banco) e um motor único que só sequencia
+steps.
 
-**Por quê:** o agente já segue a skill no disco. O Pulse precisa de máquina de estados só para resume, aprovação e gates — o resto é prompt.
+**Por quê:** o Pulse é um orquestrador. Saber o que o agente faz o prendia a um
+processo específico — trocar o pipeline exigia mexer em `spec_types`, `runner`,
+um flow, o mapa da sidebar e cinco arquivos de prompt.
 
-**Alternativas:** DSL YAML de pipelines, plugins, um workflow.yaml genérico para todos.
+**Trade-off:** workflow novo agora é `INSERT`, não release. Em compensação não há
+tela para editar isso ainda: quem quiser outro pipeline escreve no banco pela
+API ou por `pulse.store.workflow_defs`.
 
-**Trade-off:** novo workflow = código novo em `spec_types`, `runner`, flow, `WORKFLOW_PHASES` e prompts. Config por projeto não muda o comportamento do pipeline, só o modelo/agente.
+**O que a semente custou:** os steps de um loop são uma lista linear, então o
+agente `classify` — que antes escolhia entre spec completa e quick e escrevia a
+rota em disco — deixou de existir. Quem dimensiona o pedido é o usuário, no menu,
+com o `quick-plan` como rede de segurança. E como cada step roda em sessão
+isolada, o diretório da feature não é mais estado do motor: o step do PRD o
+declara no resumo, e os seguintes o leem de `previous_summary`/`artifacts`.
+Ramificação e estado por feature voltam a ser assunto do motor no dia em que um
+loop realmente precisar deles.

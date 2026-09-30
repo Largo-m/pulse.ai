@@ -1,31 +1,26 @@
+"""Histórico: as runs deste workspace, lidas do banco.
+
+Antes o histórico era montado varrendo `.pulse/specs/` atrás de `PRD.md` e
+`TASK.md` — o que só funcionava para um pipeline específico. Agora a lista é
+`runs` + `run_steps`, então qualquer workflow aparece sem o Pulse saber o que
+ele faz.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.history.models import HistoryItem, HistoryKind, HistoryStatus, HistoryStep, SpecFlow
-from pulse.history.quick_index import list_quick_tasks
-from pulse.plan.specify_state import (
-    PHASE_ORDER,
-    PhaseStatus,
-    WorkflowState,
-    _is_workflow_incomplete,
-    list_feature_workflows,
-)
+from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
+from pulse.store import runs as run_store
+from pulse.store.workflow_defs import get_workflow
 
-_ISSUE_STEPS = (
-    ("specify", "Specify"),
-    ("design", "Design"),
-    ("tasks", "Tasks"),
-    ("execute", "Execute"),
-)
-_WORKFLOW_TO_UI = {
-    PhaseStatus.PENDING: "pending",
-    PhaseStatus.IN_PROGRESS: "running",
-    PhaseStatus.AWAITING_APPROVAL: "running",
-    PhaseStatus.APPROVED: "done",
-    PhaseStatus.DONE: "done",
-    PhaseStatus.SKIPPED: "skipped",
-    PhaseStatus.FAILED: "failed",
+_RUN_TO_HISTORY = {
+    "pending": HistoryStatus.PENDING,
+    "running": HistoryStatus.IN_PROGRESS,
+    "completed": HistoryStatus.DONE,
+    "failed": HistoryStatus.FAILED,
+    "stopped": HistoryStatus.STOPPED,
+    "blocked": HistoryStatus.BLOCKED,
 }
 
 
@@ -34,126 +29,68 @@ class HistoryCatalog:
         self.workspace = workspace
 
     def list_items(self) -> list[HistoryItem]:
-        items = [_item_from_workflow(state) for state in list_feature_workflows(self.workspace)]
-        items.extend(_item_from_quick(task) for task in list_quick_tasks(self.workspace))
-        items.sort(key=lambda item: item.updated_at, reverse=True)
-        return items
+        return [_item(record) for record in run_store.list_runs(self.workspace)]
 
-    def search(
-        self,
-        query: str = "",
-        *,
-        kind: HistoryKind | None = None,
-        flow: SpecFlow | None = None,
-    ) -> list[HistoryItem]:
+    def search(self, query: str = "") -> list[HistoryItem]:
         items = self.list_items()
-        if flow is not None:
-            items = [item for item in items if item.flow == flow]
-        elif kind is not None:
-            items = [item for item in items if item.kind == kind]
         needle = query.strip().lower()
         if not needle:
             return items
         return [item for item in items if _matches(item, needle)]
 
     def get(self, item_id: str) -> HistoryItem | None:
-        for item in self.list_items():
-            if item.item_id == item_id:
-                return item
-        return None
+        record = run_store.load_run(item_id)
+        if record is None or record.workspace_root != str(self.workspace.resolve()):
+            return None
+        return _item(record)
+
+    def delete(self, item_id: str) -> bool:
+        """Remove a run do histórico. `False` = não é deste workspace.
+
+        A checagem de workspace é a mesma do `get`: o histórico só mostra as
+        runs daqui, então só essas ele pode apagar.
+        """
+        if self.get(item_id) is None:
+            return False
+        return run_store.delete_run(item_id)
 
 
-def search_history(
-    workspace: Path,
-    query: str = "",
-    *,
-    kind: HistoryKind | None = None,
-    flow: SpecFlow | None = None,
-) -> list[HistoryItem]:
-    return HistoryCatalog(workspace).search(query, kind=kind, flow=flow)
+def search_history(workspace: Path, query: str = "") -> list[HistoryItem]:
+    return HistoryCatalog(workspace).search(query)
 
 
-def _item_from_workflow(state: WorkflowState) -> HistoryItem:
-    spec_dir = state.feature_dir.as_posix()
-    title = state.user_prompt.strip() or state.feature_slug
+def _item(record: run_store.RunRecord) -> HistoryItem:
+    definition = get_workflow(record.workflow_id)
     return HistoryItem(
-        kind=HistoryKind.SPEC,
-        slug=state.feature_slug,
-        title=title,
-        prompt=state.user_prompt,
-        status=_issue_status(state),
-        updated_at=state.updated_at or state.created_at,
-        spec_dir=spec_dir,
-        flow=SpecFlow.FULL,
-        steps=_issue_steps(state),
+        run_id=record.id,
+        workflow_id=record.workflow_id,
+        workflow_label=definition.label if definition else record.workflow_id,
+        title=record.user_prompt.strip() or record.workflow_id,
+        prompt=record.user_prompt,
+        status=_RUN_TO_HISTORY.get(record.status, HistoryStatus.PENDING),
+        updated_at=record.updated_at or record.created_at,
+        steps=[
+            HistoryStep(
+                id=step.step_id,
+                label=step.label or step.step_id,
+                status=step.status,
+                acp_session_id=step.acp_session_id,
+            )
+            for step in record.steps
+        ],
+        artifacts=[entry["path"] for entry in run_store.list_artifacts(record.id)],
     )
-
-
-def _item_from_quick(task) -> HistoryItem:
-    return HistoryItem(
-        kind=HistoryKind.SPEC,
-        slug=task.slug,
-        title=task.title,
-        prompt=task.title,
-        status=task.status,
-        updated_at=task.updated_at,
-        spec_dir=task.spec_dir,
-        flow=SpecFlow.QUICK,
-        steps=_fix_steps(task.status),
-    )
-
-
-def _issue_status(state: WorkflowState) -> HistoryStatus:
-    if not _is_workflow_incomplete(state):
-        return HistoryStatus.DONE
-    for phase_name in PHASE_ORDER:
-        if state.phases[phase_name].status == PhaseStatus.AWAITING_APPROVAL:
-            return HistoryStatus.AWAITING_APPROVAL
-    return HistoryStatus.IN_PROGRESS
-
-
-def _issue_steps(state: WorkflowState) -> list[HistoryStep]:
-    steps: list[HistoryStep] = []
-    for phase_id, label in _ISSUE_STEPS:
-        phase = state.phases.get(phase_id)
-        if phase is None:
-            status = "pending"
-            artifact = ""
-        else:
-            status = _WORKFLOW_TO_UI.get(phase.status, "pending")
-            artifact = phase.artifact
-        steps.append(HistoryStep(id=phase_id, label=label, status=status, artifact=artifact))
-    return steps
-
-
-def _fix_steps(status: HistoryStatus) -> list[HistoryStep]:
-    if status == HistoryStatus.DONE:
-        plan_status, implement_status = "done", "done"
-    elif status == HistoryStatus.IN_PROGRESS:
-        plan_status, implement_status = "done", "running"
-    elif status in {HistoryStatus.AWAITING_APPROVAL, HistoryStatus.BLOCKED}:
-        plan_status, implement_status = "done", "pending"
-    else:
-        plan_status, implement_status = "pending", "pending"
-    return [
-        HistoryStep(id="plan", label="Planejar", status=plan_status, artifact="TASK.md"),
-        HistoryStep(id="implement", label="Implementar", status=implement_status, artifact="SUMMARY.md"),
-    ]
 
 
 def _matches(item: HistoryItem, needle: str) -> bool:
     haystack = " ".join(
         [
             item.title,
-            item.slug,
             item.prompt,
+            item.workflow_id,
+            item.workflow_label,
             item.status.value,
             item.status_label,
-            item.kind.value,
-            item.kind_label,
-            item.flow.value,
-            item.flow_label,
-            item.spec_dir,
         ]
     ).lower()
     return needle in haystack

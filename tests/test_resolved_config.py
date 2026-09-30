@@ -124,13 +124,13 @@ def test_global_workflow_selects_agent_and_model(monkeypatch, tmp_path: Path):
             ),
         },
         workflows={
-            "setup-project": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
+            "fluxo-a": WorkflowConfig(agent="claude", model="claude-opus-4.8"),
         },
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
 
-    resolved = resolve_config(tmp_path, workflow="setup-project")
+    resolved = resolve_config(tmp_path, workflow="fluxo-a")
 
     assert resolved.agent_name == "claude"
     assert resolved.agent_binary == "claude-code"
@@ -154,7 +154,7 @@ def test_global_workflow_falls_back_to_default_agent(monkeypatch, tmp_path: Path
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
 
-    resolved = resolve_config(tmp_path, workflow="analyze-codebase")
+    resolved = resolve_config(tmp_path, workflow="fluxo-b")
 
     assert resolved.agent_name == "cursor"
     assert resolved.sources["agent"] == "global.default"
@@ -176,19 +176,19 @@ def test_project_workflow_overrides_global_workflow(monkeypatch, tmp_path: Path)
                 models=["claude-opus-4.8"],
             ),
         },
-        workflows={"setup-project": WorkflowConfig(agent="cursor", model="Auto")},
+        workflows={"fluxo-a": WorkflowConfig(agent="cursor", model="Auto")},
         default_agent="cursor",
     )
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
     init_project_config(tmp_path)
     update_project_workflow(
         tmp_path,
-        "setup-project",
+        "fluxo-a",
         agent="claude",
         model="claude-opus-4.8",
     )
 
-    resolved = resolve_config(tmp_path, workflow="setup-project")
+    resolved = resolve_config(tmp_path, workflow="fluxo-a")
 
     assert resolved.agent_name == "claude"
     assert resolved.model == "claude-opus-4.8"
@@ -263,3 +263,52 @@ def test_pulse_agent_model_comes_from_workspace_project(monkeypatch, tmp_path: P
 
     assert resolved.model == "Auto"
     assert resolved.sources["model"] == "agent.settings"
+
+
+def _only_claude_installed(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "pulse.runtimes.base.AgentRuntime.is_available",
+        lambda self: self.id == "claude",
+    )
+
+
+def _both_runtimes() -> dict[str, AgentConfig]:
+    return {
+        "cursor": AgentConfig(name="cursor", binary="agent", acp_command=["agent", "acp"]),
+        "claude": AgentConfig(name="claude", binary="claude", acp_command=["npx", "adapter"]),
+    }
+
+
+def test_workflow_falls_back_to_an_installed_runtime(monkeypatch, tmp_path: Path):
+    """O pré-voo da run não pode reprovar por um runtime que não está na máquina.
+
+    O default do projeto é preferência; se o binário não existe, a run tem de
+    sair no runtime que existe em vez de morrer antes do primeiro step.
+    """
+    cfg = _global(agents=_both_runtimes(), default_agent="claude")
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+    init_project_config(tmp_path)
+    update_project_defaults(tmp_path, agent="cursor")
+    _only_claude_installed(monkeypatch)
+
+    resolved = resolve_config(tmp_path, workflow="default")
+
+    assert resolved.agent_name == "claude"
+    assert resolved.sources["agent"] == "runtime.fallback"
+    assert resolved.acp_command == ["npx", "adapter"]
+
+
+def test_custom_agent_is_never_swapped_for_a_runtime(monkeypatch, tmp_path: Path):
+    """Agente declarado à mão tem binário próprio: não é um runtime do registry."""
+    cfg = _global(agents=_both_runtimes(), default_agent="claude")
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
+    init_project_config(tmp_path)
+    update_project_agent(tmp_path, "local", binary="my-agent", models=[])
+    update_project_defaults(tmp_path, agent="local")
+    _only_claude_installed(monkeypatch)
+
+    resolved = resolve_config(tmp_path)
+
+    assert resolved.agent_name == "local"
+    assert resolved.agent_binary == "my-agent"
+    assert resolved.sources["agent"] == "project.default"

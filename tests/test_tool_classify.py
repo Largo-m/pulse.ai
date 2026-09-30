@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pulse.tui.state import LogKind
-from pulse.tui.tool_classify import classify_tool, extract_tool_path
+from pulse.history.tool_classify import classify_tool, extract_tool_path
 
 
 def test_classify_search_read_edit():

@@ -34,7 +34,6 @@ def test_global_config_roundtrip(tmp_path: Path):
     assert loaded.default_agent == "cursor"
     assert "cursor" in loaded.agents
     assert "claude" in loaded.agents
-    assert loaded.workflows["setup-project"].agent == "claude"
 
 
 def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
@@ -59,7 +58,7 @@ def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
             ),
         },
         workflows={
-            "setup-project": WorkflowConfig(agent="cursor", model="gpt-5.5"),
+            "fluxo-a": WorkflowConfig(agent="cursor", model="gpt-5.5"),
         },
     )
     save_global_config(config, config_path)
@@ -69,8 +68,8 @@ def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
     assert loaded is not None
     assert loaded.default_agent == "cursor"
     assert loaded.agents["cursor"].models == ["Auto", "gpt-5.5"]
-    assert loaded.workflows["setup-project"].agent == "cursor"
-    assert loaded.workflows["setup-project"].model == "gpt-5.5"
+    assert loaded.workflows["fluxo-a"].agent == "cursor"
+    assert loaded.workflows["fluxo-a"].model == "gpt-5.5"
 
 
 def test_save_global_config_creates_parent(tmp_path: Path):

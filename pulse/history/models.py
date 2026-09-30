@@ -3,24 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-
-class HistoryKind(str, Enum):
-    SPEC = "spec"
-    ISSUE = "issue"
-    FIX = "fix"
-
-
-class SpecFlow(str, Enum):
-    FULL = "full"
-    QUICK = "quick"
+from pulse.status_labels import status_label
 
 
 class HistoryStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
-    AWAITING_APPROVAL = "awaiting_approval"
-    BLOCKED = "blocked"
     DONE = "done"
+    FAILED = "failed"
+    STOPPED = "stopped"
+    BLOCKED = "blocked"
 
 
 @dataclass
@@ -28,46 +20,46 @@ class HistoryStep:
     id: str
     label: str
     status: str
-    artifact: str = ""
+    #: Sessão ACP daquele step — é por ela que o log é relido.
+    acp_session_id: str = ""
 
 
 @dataclass
 class HistoryItem:
-    kind: HistoryKind
-    slug: str
+    """Uma run passada, do jeito que o histórico a mostra.
+
+    Não há slug de feature nem pasta de spec: uma run é identificada pelo id que
+    o Pulse gerou, e o que ela deixou no disco são os caminhos em `artifacts`.
+    """
+
+    run_id: str
+    workflow_id: str
+    workflow_label: str
     title: str
     prompt: str
     status: HistoryStatus
     updated_at: str
-    spec_dir: str
-    flow: SpecFlow = SpecFlow.FULL
     steps: list[HistoryStep] = field(default_factory=list)
-    run_id: str | None = None
+    artifacts: list[str] = field(default_factory=list)
 
     @property
     def item_id(self) -> str:
-        folder = "features" if self.flow == SpecFlow.FULL else "quick"
-        return f"spec:{folder}/{self.slug}"
-
-    @property
-    def kind_label(self) -> str:
-        return "SPEC"
-
-    @property
-    def flow_label(self) -> str:
-        if self.flow == SpecFlow.QUICK:
-            return "quick"
-        return "full"
+        return self.run_id
 
     @property
     def status_label(self) -> str:
-        labels = {
-            HistoryStatus.PENDING: "pending",
-            HistoryStatus.IN_PROGRESS: "in progress",
-            HistoryStatus.AWAITING_APPROVAL: "aguardando",
-            HistoryStatus.BLOCKED: "blocked",
-            HistoryStatus.DONE: "done",
-        }
-        return labels.get(self.status, self.status.value)
+        return status_label(self.status)
 
+    @property
+    def is_incomplete(self) -> bool:
+        """Sobrou step por fazer — é o que decide se dá para retomar.
 
+        Quem manda é o step, não o status da run: `failed` e `stopped` também
+        têm o que retomar, e era por olhar só o status que uma run que caiu no
+        meio voltava do histórico sem oferecer nem retomar nem refazer.
+        """
+        if self.status is HistoryStatus.DONE:
+            return False
+        if not self.steps:
+            return self.status in {HistoryStatus.PENDING, HistoryStatus.IN_PROGRESS}
+        return any(step.status not in {"done", "skipped"} for step in self.steps)

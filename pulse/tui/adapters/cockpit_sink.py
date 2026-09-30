@@ -5,9 +5,10 @@ from collections.abc import Callable
 from typing import Any
 
 from pulse.prompts.text_questionnaire import extract_questionnaire_block
+from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
-from pulse.tui.tool_detail import (
+from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
     merge_tool_update,
@@ -21,7 +22,6 @@ _QUESTIONNAIRE_START = re.compile(
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
-_TASK_LABEL_RE = re.compile(r"Task\s+(T\d+)(?:\s*[:—-]\s*(.*))?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
 
@@ -158,34 +158,30 @@ class CockpitSink:
         if self._pending_session_phase and self._state.acp_sessions:
             self._state.acp_sessions[-1]["phase_id"] = self._state._entry_phase_id()
             self._pending_session_phase = False
-        match = _TASK_LABEL_RE.search(str(title or ""))
-        if match is not None:
-            task_id = match.group(1)
-            rest = str(match.group(2) or "").strip()
-            self._state.begin_task(task_id, rest or task_id)
         self._state.add_info(title)
         self._emit()
 
     def apply_phase_statuses(
         self,
         *,
+        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
         done_ids: list[str] | tuple[str, ...] = (),
         skipped_ids: list[str] | tuple[str, ...] = (),
         failed_ids: list[str] | tuple[str, ...] = (),
+        blocked_ids: list[str] | tuple[str, ...] = (),
     ) -> None:
         self._state.apply_phase_statuses(
+            steps=steps,
             done_ids=done_ids,
             skipped_ids=skipped_ids,
             failed_ids=failed_ids,
+            blocked_ids=blocked_ids,
         )
         self._emit()
 
-    def apply_routed_flow(self, flow: str) -> None:
-        self._state.apply_routed_flow(flow)
-        self._emit()
-
-    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
-        self._state.set_tasks(items)
+    def mark_stopped(self) -> None:
+        self._finish_message_line()
+        self._state.mark_stopped()
         self._emit()
 
     def info(self, title: str) -> None:
@@ -387,7 +383,11 @@ class CockpitSink:
             self._state.record_files(paths)
             if log_kind in {LogKind.WRITE, LogKind.EDIT}:
                 for path in paths:
-                    self._state.upsert_artifact(path, ready=ready)
+                    self._state.upsert_artifact(
+                        path,
+                        ready=ready,
+                        has_content=artifact_has_content(path, self._cwd),
+                    )
 
     def _maybe_enter_questionnaire_mode(self) -> None:
         if self._questionnaire_mode:

@@ -8,20 +8,20 @@ from typing import Any
 
 from pulse.prompts.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
+    FREE_TEXT_ANSWER_PREFIX,
     OTHER_OPTION_ID,
     build_ask_question_answers,
     build_ask_question_cancelled,
     format_option_label,
     is_other_option,
-    option_requires_description,
     parse_ask_question_params,
     parse_questionnaire_meta,
     resolve_question_progress,
     should_add_other_option,
 )
+from pulse.prompts.approval import answer_needs_description
 from pulse.prompts.permission import (
     PermissionPolicy,
-    deny_writes_allows_write,
     permission_cancelled,
     permission_selected,
     pick_permission_option,
@@ -279,7 +279,9 @@ class TextualPromptHandler:
         for letter, label in question.options:
             if value == letter:
                 return f"{letter}) {label}"
-        return value
+        # Não casou com nenhuma letra: é o texto que o usuário escreveu em
+        # "Outro". Marcado para não ser confundido com rótulo de opção.
+        return f"{FREE_TEXT_ANSWER_PREFIX}{value}"
 
     def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
         name = str(params.get("name") or "Plano").strip()
@@ -328,8 +330,9 @@ class TextualPromptHandler:
             return permission_selected(option_id)
 
         if policy == "deny_writes":
-            writing = "write" in kind or "edit" in kind
-            if writing and not deny_writes_allows_write(params):
+            # Sem exceção por caminho: o Pulse não sabe qual pasta é "dele".
+            # Step que precisa escrever é step com `ask` ou `auto_approve`.
+            if "write" in kind or "edit" in kind:
                 option_id = pick_permission_option(options, prefer="reject") or "reject-once"
                 return permission_selected(option_id)
             option_id = pick_permission_option(options, prefer="allow") or "allow-once"
@@ -344,6 +347,13 @@ class TextualPromptHandler:
         if selected is None:
             return permission_cancelled()
         return permission_selected(str(selected))
+
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
+        answer = self._bridge.text(prompt, title=title)
+        if answer is None:
+            return None
+        text = str(answer).strip()
+        return text or None
 
     def select_choice(
         self,
@@ -436,7 +446,9 @@ class TextualPromptHandler:
 
         selected_id = str(selected)
         selected_label = self._choice_label(choices, selected_id)
-        if selected_label and option_requires_description(selected_label):
+        if selected_label and answer_needs_description(
+            prompt=prompt, label=selected_label
+        ):
             custom = self._prompt_follow_up_text(prompt, selected_label, title=title)
             if custom is None:
                 return None

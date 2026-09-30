@@ -25,6 +25,54 @@ def load_agent_settings(project_id: str, agent_id: str, *, db_path=None) -> dict
     }
 
 
+#: Campos que o "global" das configurações escreve em todos os agents.
+GLOBAL_FIELDS = ("runtime", "model", "permission_policy")
+
+
+def apply_setting_to_all_agents(
+    project_id: str,
+    *,
+    field: str,
+    value: str,
+    agent_ids: list[str] | tuple[str, ...] = (),
+    db_path=None,
+) -> None:
+    """Escreve um valor global em todo agent do projeto.
+
+    O global sobrescreve o que já estava lá — inclusive os específicos. Depois
+    dele, trocar um agent sozinho volta a valer só para aquele agent, porque a
+    escrita é ponto no tempo e não uma camada que fica por cima.
+    """
+    if field not in GLOBAL_FIELDS or not value:
+        return
+    connection = connect(db_path or default_db_path())
+    try:
+        existing = [
+            str(row["agent_id"])
+            for row in connection.execute(
+                "SELECT agent_id FROM agent_settings WHERE project_id = ?", (project_id,)
+            )
+        ]
+        if existing:
+            connection.execute(
+                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ?",  # noqa: S608
+                (value, project_id),
+            )
+        missing = [agent_id for agent_id in agent_ids if agent_id not in existing]
+        for agent_id in missing:
+            connection.execute(
+                "INSERT INTO agent_settings (project_id, agent_id) VALUES (?, ?)",
+                (project_id, agent_id),
+            )
+            connection.execute(
+                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ? AND agent_id = ?",  # noqa: S608
+                (value, project_id, agent_id),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def upsert_agent_settings(
     project_id: str,
     agent_id: str,

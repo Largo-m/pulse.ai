@@ -36,6 +36,8 @@ class PromptPort(Protocol):
 
     def run_text_questionnaire(self, text: str) -> str | None: ...
 
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None: ...
+
 
 class NullStreamSink:
     def __init__(self) -> None:
@@ -76,12 +78,6 @@ class NullStreamSink:
     def apply_phase_statuses(self, **kwargs: Any) -> None:
         return None
 
-    def apply_routed_flow(self, flow: str) -> None:
-        return None
-
-    def set_tasks(self, items: list[tuple[str, str, str]]) -> None:
-        return None
-
     def set_session_id(self, session_id: str) -> None:
         return None
 
@@ -106,6 +102,9 @@ class NullPromptPort:
         return None
 
     def run_text_questionnaire(self, text: str) -> str | None:
+        return None
+
+    def ask_text(self, prompt: str, *, title: str = "") -> str | None:
         return None
 
     def select_choice(
