@@ -6,6 +6,7 @@ from pulse.prompts.approval import (
     picked_answers,
 )
 from pulse.prompts.ask_question import (
+    build_question_choices,
     is_other_option,
     option_requires_description,
     should_add_other_option,
@@ -93,13 +94,12 @@ def test_handler_format_answer_with_follow_up_detail():
 
 
 def test_build_choices_suppresses_other_for_migration():
-    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Reduzir o escopo"},
         {"id": "B", "label": "Reutilizar o adapter"},
         {"id": "C", "label": "Cancelar"},
     ]
-    choices = handler._build_choices(
+    choices = build_question_choices(
         options,
         prompt="1. Este pedido excede o escopo do step. Como deseja prosseguir?",
     )
@@ -129,7 +129,6 @@ def test_should_not_add_other_when_label_already_exists():
 
 
 def test_build_choices_does_not_duplicate_existing_other():
-    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Produto / plataforma com usuários"},
         {"id": "B", "label": "API / serviço backend"},
@@ -137,7 +136,7 @@ def test_build_choices_does_not_duplicate_existing_other():
         {"id": "D", "label": "Automação / script / CLI"},
         {"id": "E", "label": "Outro (descreva)"},
     ]
-    choices = handler._build_choices(
+    choices = build_question_choices(
         options,
         prompt="1. O que você está construindo?",
     )
@@ -147,12 +146,11 @@ def test_build_choices_does_not_duplicate_existing_other():
 
 
 def test_textual_build_choices_does_not_duplicate_existing_other():
-    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Produto / plataforma com usuários"},
         {"id": "E", "label": "Outro (descreva)"},
     ]
-    choices = handler._build_choices(
+    choices = build_question_choices(
         options,
         prompt="1. O que você está construindo?",
     )
@@ -162,12 +160,11 @@ def test_textual_build_choices_does_not_duplicate_existing_other():
 
 
 def test_build_choices_adds_other_for_open_questions():
-    handler = TextualPromptHandler(PromptBridge())
     options = [
         {"id": "A", "label": "Paper trading"},
         {"id": "B", "label": "Gestão de portfólio"},
     ]
-    choices = handler._build_choices(options, prompt="1. O que você está construindo?")
+    choices = build_question_choices(options, prompt="1. O que você está construindo?")
     assert any(choice[0] == "__other__" for choice in choices)
 
 

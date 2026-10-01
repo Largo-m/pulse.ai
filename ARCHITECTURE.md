@@ -513,6 +513,17 @@ O que vai para `run_events` é o **mesmo rótulo** que a tela ao vivo mostra:
 `Shell`, `Write`…), o alvo e o detalhe são os da sessão viva — e o caminho do
 artefato é gravado relativo ao workspace, que é como o painel o abre.
 
+O **diálogo** segue junto: toda pergunta feita à pessoa — `AskQuestion`,
+questionário, aprovação de fase, permissão, menu de retry — atravessa o proxy
+`_WatchedPrompts` do `session_runner`, e de lá vai para `run_events` como o par
+`Pergunta`/`Você` que a tela desenha, com o texto montado por
+`history/prompt_detail.build_prompt_qa`. Quem grava é o daemon, não a TUI: a tela
+só desenha, e duas janelas anexadas na mesma run gravariam a mesma resposta duas
+vezes. Permissão que a política resolve sozinha não vira linha — não foi pergunta,
+ninguém a viu. E o bloco de questionário que o agente escreve em texto não entra
+como fala dele: vira a linha `Questionário interativo`, como no cockpit, senão as
+mesmas perguntas apareceriam duas vezes.
+
 ---
 
 ## 7. O que pode / não pode misturar

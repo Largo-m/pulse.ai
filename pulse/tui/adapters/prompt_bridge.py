@@ -12,20 +12,19 @@ from pulse.prompts.ask_question import (
     OTHER_OPTION_ID,
     build_ask_question_answers,
     build_ask_question_cancelled,
-    format_option_label,
-    is_other_option,
+    build_question_choices,
     parse_ask_question_params,
     parse_questionnaire_meta,
     resolve_question_progress,
-    should_add_other_option,
 )
 from pulse.prompts.approval import answer_needs_description
 from pulse.prompts.permission import (
     PermissionPolicy,
+    build_permission_choices,
     decide_permission,
     permission_cancelled,
+    permission_prompt_text,
     permission_selected,
-    pick_permission_option,
 )
 from pulse.prompts.text_questionnaire import (
     TextQuestion,
@@ -40,55 +39,6 @@ class PromptKind(str, Enum):
     MULTI_SELECT = "multi_select"
     TEXT = "text"
     CONFIRM = "confirm"
-
-
-_PERMISSION_KIND_LABELS = {
-    "allow_once": "Permitir esta vez",
-    "allow_always": "Sempre permitir",
-    "reject_once": "Recusar",
-    "reject_always": "Sempre recusar",
-}
-
-
-def _permission_choice_label(option: dict[str, Any]) -> str:
-    name = str(option.get("name") or option.get("label") or "").strip()
-    if name:
-        return name
-    kind = str(option.get("kind", "")).lower().replace("-", "_")
-    return _PERMISSION_KIND_LABELS.get(kind, kind.replace("_", " ").strip() or "Opção")
-
-
-def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
-    choices: list[tuple[str, str]] = []
-    index = 0
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        option_id = str(option.get("optionId") or option.get("id") or "")
-        if not option_id:
-            continue
-        label = format_option_label(index, _permission_choice_label(option))
-        choices.append((option_id, label))
-        index += 1
-    if not choices:
-        return [
-            ("allow-once", format_option_label(0, "Permitir esta vez")),
-            ("reject-once", format_option_label(1, "Recusar")),
-        ]
-    return choices
-
-
-def _permission_prompt_text(permission: dict[str, Any], tool_call: dict[str, Any]) -> str:
-    title = str(permission.get("title") or "").strip()
-    description = str(permission.get("description") or "").strip()
-    tool_title = str(tool_call.get("title") or "").strip()
-    parts: list[str] = []
-    for part in (title, description, tool_title):
-        if part and part not in parts:
-            parts.append(part)
-    if not parts:
-        return "O agente pede permissão para continuar."
-    return "\n".join(parts)
 
 
 @dataclass
@@ -361,7 +311,7 @@ class TextualPromptHandler:
 
         choices = build_permission_choices(options)
         selected = self._bridge.select(
-            _permission_prompt_text(permission, tool_call),
+            permission_prompt_text(permission, tool_call),
             choices,
             title="Permissão",
         )
@@ -429,7 +379,7 @@ class TextualPromptHandler:
                 "selectedOptionIds": [free_text.strip()],
             }
 
-        choices = self._build_choices(options, prompt=prompt)
+        choices = build_question_choices(options, prompt=prompt)
         if not choices:
             return None
 
@@ -479,37 +429,6 @@ class TextualPromptHandler:
             }
 
         return {"questionId": question_id, "selectedOptionIds": [selected_id]}
-
-    def _build_choices(self, options: list[Any], *, prompt: str = "") -> list[tuple[str, str]]:
-        choices: list[tuple[str, str]] = []
-        has_other = False
-        option_index = 0
-        option_labels: list[str] = []
-
-        for option in options:
-            if not isinstance(option, dict):
-                continue
-            option_id = str(option.get("id", option.get("label", "")))
-            label = str(option.get("label", option_id))
-            option_labels.append(label)
-            if is_other_option(option_id, label):
-                has_other = True
-                option_id = OTHER_OPTION_ID
-                label = format_option_label(option_index, "Outro (descreva)")
-                option_index += 1
-            else:
-                label = format_option_label(option_index, label)
-                option_index += 1
-            choices.append((option_id, label))
-
-        if choices and not has_other and should_add_other_option(
-            prompt=prompt,
-            option_labels=option_labels,
-        ):
-            other_label = format_option_label(option_index, "Outro (descreva)")
-            choices.append((OTHER_OPTION_ID, other_label))
-
-        return choices
 
     @staticmethod
     def _choice_label(choices: list[tuple[str, str]], selected_id: str) -> str | None:

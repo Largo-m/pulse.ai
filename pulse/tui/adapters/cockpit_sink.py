@@ -4,7 +4,10 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from pulse.prompts.text_questionnaire import extract_questionnaire_block
+from pulse.prompts.text_questionnaire import (
+    QUESTIONNAIRE_NOTICE,
+    extract_questionnaire_block,
+)
 from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
@@ -432,7 +435,7 @@ class CockpitSink:
         if self._questionnaire_announced:
             return
         self._questionnaire_announced = True
-        self._state.add_info("Questionário interativo")
+        self._state.add_info(QUESTIONNAIRE_NOTICE)
         self._emit()
 
     def _finish_message_line(self) -> None:

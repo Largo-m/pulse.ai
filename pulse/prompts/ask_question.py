@@ -161,6 +161,48 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
     return not any(marker in prompt_lower for marker in closed_prompt_markers)
 
 
+def build_question_choices(
+    options: list[Any],
+    *,
+    prompt: str = "",
+) -> list[tuple[str, str]]:
+    """As opções como o dock as mostra: `(id, "A) rótulo")`, na ordem.
+
+    Mora aqui, e não na TUI, porque o log gravado precisa nomear a resposta
+    exatamente como a tela a nomeou — uma numeração que divergisse faria o
+    histórico mostrar "Produto" onde a pessoa escolheu "A) Produto".
+    """
+    choices: list[tuple[str, str]] = []
+    has_other = False
+    option_index = 0
+    option_labels: list[str] = []
+
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        option_id = str(option.get("id", option.get("label", "")))
+        label = str(option.get("label", option_id))
+        option_labels.append(label)
+        if is_other_option(option_id, label):
+            has_other = True
+            option_id = OTHER_OPTION_ID
+            label = format_option_label(option_index, "Outro (descreva)")
+            option_index += 1
+        else:
+            label = format_option_label(option_index, label)
+            option_index += 1
+        choices.append((option_id, label))
+
+    if choices and not has_other and should_add_other_option(
+        prompt=prompt,
+        option_labels=option_labels,
+    ):
+        other_label = format_option_label(option_index, "Outro (descreva)")
+        choices.append((OTHER_OPTION_ID, other_label))
+
+    return choices
+
+
 def build_ask_question_answer(
     question_id: str,
     selected_option_ids: list[str],
