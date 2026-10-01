@@ -64,13 +64,23 @@ class StepRecord:
 class RunRecord:
     id: str
     workflow_id: str
+    #: Raiz do projeto — a identidade da run, e o que o histórico casa.
     workspace_root: str
     user_prompt: str = ""
     status: str = PENDING
     current_step: str = ""
     created_at: str = ""
     updated_at: str = ""
+    #: Worktree desta run, quando ela não rodou na raiz do projeto.
+    worktree_path: str = ""
+    #: Branch em que a run aconteceu — com ou sem worktree.
+    branch: str = ""
     steps: list[StepRecord] = field(default_factory=list)
+
+    @property
+    def exec_root(self) -> str:
+        """Onde o agente trabalhou: o worktree, ou a raiz quando não houve um."""
+        return self.worktree_path or self.workspace_root
 
     def step(self, step_id: str) -> StepRecord | None:
         for item in self.steps:
@@ -121,6 +131,8 @@ def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
         current_step=str(row["current_step"] or ""),
         created_at=str(row["created_at"] or ""),
         updated_at=str(row["updated_at"] or ""),
+        worktree_path=str(row["worktree_path"] or ""),
+        branch=str(row["branch"] or ""),
         steps=steps,
     )
 
@@ -255,6 +267,33 @@ def update_run(
     connection = connect(db_path or default_db_path())
     try:
         connection.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", values)
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def set_workspace_context(
+    run_id: str,
+    *,
+    worktree_path: str = "",
+    branch: str = "",
+    db_path: Path | None = None,
+) -> None:
+    """Grava onde esta run trabalha e em que branch.
+
+    Separado de `create_run` porque o worktree só existe depois que a run tem
+    id: é o id que batiza o diretório. Separado de `update_run` porque não é
+    estado de execução — não muda enquanto a run anda, e retomar depende de
+    reler exatamente o que ficou aqui.
+    """
+    if not run_id:
+        return
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "UPDATE runs SET worktree_path = ?, branch = ?, updated_at = ? WHERE id = ?",
+            (worktree_path, branch, utc_now(), run_id),
+        )
         connection.commit()
     finally:
         connection.close()

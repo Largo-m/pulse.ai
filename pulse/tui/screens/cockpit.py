@@ -81,12 +81,18 @@ class CockpitScreen(Screen[None]):
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
-        self._cwd = str(workspace or Path.cwd())
+        #: A raiz do projeto: é com ela que o daemon resolve a config e é por
+        #: ela que as runs deste workspace são encontradas.
+        self._workspace = str(workspace or Path.cwd())
+        #: Onde a run trabalha — igual à raiz, até o `run.context` dizer que é
+        #: um worktree. Só o painel de artefatos e os caminhos de arquivo usam.
+        self._cwd = self._workspace
         self.sink = CockpitSink(
             self.state,
             on_change=self._on_state_change,
             cwd=self._cwd,
             on_replay_end=self._on_replay_end,
+            on_context=self._on_context,
         )
         self.prompt_handler = TextualPromptHandler(self.bridge)
         self._worker = None
@@ -144,7 +150,10 @@ class CockpitScreen(Screen[None]):
         from pulse.tui.hydrate import restore_run
 
         try:
-            restore_run(self.state, self.resume_run_id, Path(self._cwd))
+            exec_root = restore_run(self.state, self.resume_run_id, Path(self._workspace))
+            if exec_root:
+                self._cwd = exec_root
+                self.sink.set_cwd(exec_root)
         except (OSError, ValueError):
             # Histórico é contexto, não requisito: não vale impedir a run de
             # continuar porque o banco não abriu.
@@ -167,6 +176,17 @@ class CockpitScreen(Screen[None]):
             pass
         self._dirty = True
 
+    def _on_context(self, cwd: str) -> None:
+        """A run disse onde trabalha — o painel de artefatos tem que ir junto.
+
+        Chega da thread da run, então nada de `query_one` aqui: o painel é
+        reapontado no próximo `_sync_ui`, que roda no laço da tela.
+        """
+        if not cwd or cwd == self._cwd:
+            return
+        self._cwd = cwd
+        self._dirty = True
+
     def _on_state_change(self) -> None:
         self._dirty = True
 
@@ -186,7 +206,9 @@ class CockpitScreen(Screen[None]):
         self.query_one(AppHeader).sync_from_state(self.state)
         self.query_one(PhaseSidebar).sync_from_state(self.state)
         self.query_one(LogStream).sync_from_state(self.state, force=force)
-        self.query_one(ArtifactPane).sync_from_state(self.state, force=force)
+        pane = self.query_one(ArtifactPane)
+        pane.set_cwd(self._cwd)
+        pane.sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -250,7 +272,7 @@ class CockpitScreen(Screen[None]):
                 code = session.run(
                     workflow_id=self.workflow_id,
                     user_prompt=self.user_prompt,
-                    workspace=self._cwd,
+                    workspace=self._workspace,
                     resume_run_id=self.resume_run_id,
                 )
         except PromptAbandoned:
@@ -349,7 +371,9 @@ class CockpitScreen(Screen[None]):
                 record = run_store.load_run(known)
                 pending = [record] if record is not None and record.is_incomplete() else []
             else:
-                pending = run_store.find_resumable(Path(self._cwd))
+                # Pela raiz do projeto, não pelo `_cwd`: com worktree o `_cwd`
+                # é o diretório da run, e nenhuma run é indexada por ele.
+                pending = run_store.find_resumable(Path(self._workspace))
         except (OSError, ValueError):
             return None
         if not pending:

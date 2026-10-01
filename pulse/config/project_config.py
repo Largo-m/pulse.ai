@@ -24,6 +24,10 @@ class ProjectConfig:
     permission_policy: str | None = None
     workspace: Path | None = None
     default_agent: str | None = None
+    #: Cada run abre o próprio `git worktree` em vez de escrever na árvore de
+    #: trabalho do projeto. Só por projeto: isolar é decisão de um repositório,
+    #: não da máquina.
+    use_worktree: bool = False
     agents: dict[str, AgentConfig] = field(default_factory=dict)
     workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
 
@@ -121,6 +125,7 @@ def _load_project(root: Path, *, db_path: Path | None = None) -> ProjectConfig |
             permission_policy=policy,
             workspace=workspace_path,
             default_agent=str(default_agent) if default_agent else None,
+            use_worktree=bool(settings["use_worktree"]) if settings else False,
             agents=agents,
             workflows=workflows,
         )
@@ -151,10 +156,11 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
         connection.execute(
             """
             INSERT INTO project_settings (
-              project_id, model, permission_policy, workspace_root, default_agent
-            ) VALUES (?, ?, ?, ?, ?)
+              project_id, model, permission_policy, workspace_root, default_agent,
+              use_worktree
+            ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (project_id, "claude-sonnet-4-6", "deny_writes", None, "cursor"),
+            (project_id, "claude-sonnet-4-6", "deny_writes", None, "cursor", 0),
         )
         for workflow_id, defaults in DEFAULT_PROJECT_WORKFLOWS.items():
             connection.execute(
@@ -195,13 +201,14 @@ def update_project_defaults(
     model: str | None = None,
     permission_policy: str | None = None,
     agent: str | None = None,
+    use_worktree: bool | None = None,
     db_path: Path | None = None,
 ) -> Path:
     init_project_config(root, db_path=db_path)
     config = _load_project(root.resolve(), db_path=db_path)
     if config is None:
         return root.resolve()
-    updates: dict[str, str | None] = {}
+    updates: dict[str, str | bool | None] = {}
     if model is not None:
         updates["model"] = model
     if permission_policy is not None:
@@ -210,6 +217,8 @@ def update_project_defaults(
         updates["permission_policy"] = permission_policy
     if agent is not None:
         updates["default_agent"] = agent
+    if use_worktree is not None:
+        updates["use_worktree"] = bool(use_worktree)
     if updates:
         _save_project(replace(config, **updates), db_path=db_path)
     return root.resolve()
@@ -279,13 +288,15 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
         connection.execute(
             """
             INSERT INTO project_settings (
-              project_id, model, permission_policy, workspace_root, default_agent
-            ) VALUES (?, ?, ?, ?, ?)
+              project_id, model, permission_policy, workspace_root, default_agent,
+              use_worktree
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id) DO UPDATE SET
               model = excluded.model,
               permission_policy = excluded.permission_policy,
               workspace_root = excluded.workspace_root,
-              default_agent = excluded.default_agent
+              default_agent = excluded.default_agent,
+              use_worktree = excluded.use_worktree
             """,
             (
                 config.project_id,
@@ -293,6 +304,7 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
                 config.permission_policy,
                 workspace_root,
                 config.default_agent,
+                int(config.use_worktree),
             ),
         )
         connection.execute("DELETE FROM project_agents WHERE project_id = ?", (config.project_id,))

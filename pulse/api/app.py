@@ -67,6 +67,7 @@ def _project_to_dict(config: Any) -> dict[str, Any] | None:
         "permission_policy": config.permission_policy,
         "workspace": str(config.workspace) if config.workspace else None,
         "default_agent": config.default_agent,
+        "use_worktree": config.use_worktree,
     }
 
 
@@ -81,6 +82,8 @@ def _history_to_dict(item: Any) -> dict[str, Any]:
         "status": item.status.value,
         "updated_at": item.updated_at,
         "artifacts": list(item.artifacts),
+        "branch": item.branch,
+        "worktree_path": item.worktree_path,
         "steps": [
             {"id": step.id, "label": step.label, "status": step.status}
             for step in item.steps
@@ -150,6 +153,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "model": resolved.model,
             "permission_policy": resolved.permission_policy,
             "workspace": str(resolved.workspace_dir),
+            "use_worktree": resolved.use_worktree,
             "acp_command": list(resolved.acp_command),
             "auth_method": resolved.auth_method,
         }

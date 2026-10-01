@@ -39,6 +39,8 @@ class CockpitState:
     surface_title: str = "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
     agent_label: str = "Agent"
     model_label: str = ""
+    #: Branch em que a run trabalha. Vazio fora de repositório git.
+    branch_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
     artifacts: list[ArtifactItem] = field(default_factory=list)
@@ -265,6 +267,10 @@ class CockpitState:
 
     def set_agent(self, agent: str) -> None:
         self.agent_label = agent
+        self.notify()
+
+    def set_branch(self, branch: str) -> None:
+        self.branch_label = branch
         self.notify()
 
     def add_tool_entry(

@@ -19,8 +19,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from pulse import vcs
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import resolve_config
+from pulse.config.paths import worktrees_dir
 from pulse.doctor.checks import check_runtime_ready
 from pulse.orchestrator.cli_output import (
     print_workflow_banner,
@@ -127,20 +129,34 @@ def run_workflow(
         run_id=run_id,
     )
 
+    try:
+        exec_dir, branch = _prepare_workspace(run, workspace_root, resolved)
+    except vcs.GitError as error:
+        # Sem o worktree a run só poderia rodar na árvore de trabalho da pessoa
+        # — que é exatamente o que a chave pediu para não acontecer. Melhor não
+        # começar do que começar no lugar errado.
+        message = f"Não consegui abrir o worktree desta run: {error}"
+        if cockpit:
+            raise RuntimeError(message) from error
+        print(f"[pulse] {message}", file=sys.stderr)
+        return 1
+
+    _announce_context(stream, exec_dir, branch)
+
     if render_header and not cockpit:
-        print_workflow_banner(
-            title=definition.label,
-            lines=[
-                f"Workspace: {workspace_root}",
-                f"Run: {run.id}",
-                f"Steps: {len(run.steps)}",
-                f"Tarefa: {run.user_prompt.strip() or '—'}",
-            ],
-        )
+        lines = [
+            f"Workspace: {exec_dir}",
+            f"Run: {run.id}",
+            f"Steps: {len(run.steps)}",
+            f"Tarefa: {run.user_prompt.strip() or '—'}",
+        ]
+        if branch:
+            lines.insert(1, f"Branch: {branch}")
+        print_workflow_banner(title=definition.label, lines=lines)
 
     runner = AcpSessionRunner(
         resolved.acp_command,
-        cwd=str(workspace_root),
+        cwd=str(exec_dir),
         permission_policy=resolved.permission_policy,
         stream=stream or NullStreamSink(),
         prompt_handler=prompt_handler or NullPromptPort(),
@@ -156,6 +172,7 @@ def run_workflow(
             definition=definition,
             run=run,
             workspace=workspace_root,
+            exec_dir=exec_dir,
             fallback_model=resolved.model,
         )
     except Exception as error:  # noqa: BLE001
@@ -204,6 +221,73 @@ def _resolve_run(
     )
 
 
+def _prepare_workspace(
+    run: run_store.RunRecord,
+    workspace_root: Path,
+    resolved: Any,
+) -> tuple[Path, str]:
+    """Onde esta run trabalha, e em que branch.
+
+    Três casos, nesta ordem:
+
+    1. **Run retomada que já tem worktree.** Reusa o que está gravado. Abrir um
+       segundo worktree ao retomar jogaria fora o que o primeiro produziu — o
+       trabalho dos steps que já fecharam está lá dentro.
+    2. **Sem isolamento** (chave desligada, ou projeto fora de repositório git).
+       A run roda na raiz, como sempre rodou, e a branch é a que o projeto tem
+       agora. É este caso que faz a branch aparecer na tela de quem nem liga a
+       chave.
+    3. **Isolamento ligado.** `git worktree add` em `~/.pulse/worktrees/<run>`,
+       numa branch nova a partir do HEAD.
+
+    A raiz do projeto continua sendo a identidade da run (`workspace_root`): é
+    por ela que o histórico a encontra. O que muda é só onde o agente escreve.
+    """
+    if run.worktree_path and Path(run.worktree_path).exists():
+        return Path(run.worktree_path), run.branch
+
+    repo = vcs.repo_root(workspace_root) if getattr(resolved, "use_worktree", False) else None
+    if repo is None:
+        branch = vcs.current_branch(workspace_root)
+        if branch != run.branch:
+            run_store.set_workspace_context(run.id, branch=branch)
+        run.branch = branch
+        run.worktree_path = ""
+        return workspace_root, branch
+
+    target = worktrees_dir() / run.id
+    branch = vcs.add_worktree(repo, target, _branch_name(run))
+    run_store.set_workspace_context(run.id, worktree_path=str(target), branch=branch)
+    run.worktree_path = str(target)
+    run.branch = branch
+    return target, branch
+
+
+def _branch_name(run: run_store.RunRecord) -> str:
+    """`pulse/<workflow>-<run curto>`.
+
+    O prefixo `pulse/` agrupa na listagem do git e diz de onde a branch veio; o
+    pedaço do id da run é o que a liga de volta ao histórico. Nome do workflow e
+    não da tarefa: o que o usuário pediu é texto livre, e virar nome de ref
+    exigiria higienizar frase inteira.
+    """
+    slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in run.workflow_id)
+    slug = slug.strip("-") or "run"
+    return f"pulse/{slug}-{run.id[:8]}"
+
+
+def _announce_context(stream: Any | None, exec_dir: Path, branch: str) -> None:
+    """Diz à tela onde a run trabalha, antes de qualquer step começar.
+
+    Antes do primeiro `phase.begin` de propósito: é por este caminho que o
+    painel de artefatos descobre a pasta onde procurar os arquivos, e um
+    artefato gravado antes disso seria procurado na raiz errada.
+    """
+    set_context = getattr(stream, "set_context", None) if stream is not None else None
+    if callable(set_context):
+        set_context(cwd=str(exec_dir), branch=branch)
+
+
 def _execute(
     *,
     runner: AcpSessionRunner,
@@ -211,6 +295,7 @@ def _execute(
     definition: WorkflowDef,
     run: run_store.RunRecord,
     workspace: Path,
+    exec_dir: Path,
     fallback_model: str | None,
 ) -> int:
     runner.start()
@@ -256,6 +341,7 @@ def _execute(
                     step=step,
                     record=record,
                     workspace=workspace,
+                    exec_dir=exec_dir,
                     fallback_model=fallback_model,
                     item=item,
                 )
@@ -382,6 +468,7 @@ def _run_step(
     step: StepDef,
     record: StepRecord,
     workspace: Path,
+    exec_dir: Path,
     fallback_model: str | None,
     item: Item | None = None,
 ) -> int:
@@ -394,6 +481,7 @@ def _run_step(
             step=step,
             record=record,
             workspace=workspace,
+            exec_dir=exec_dir,
             fallback_model=fallback_model,
             guidance=guidance,
             item=item,
@@ -449,6 +537,7 @@ def _attempt_step(
     step: StepDef,
     record: StepRecord,
     workspace: Path,
+    exec_dir: Path,
     fallback_model: str | None,
     guidance: str,
     item: Item | None = None,
@@ -457,9 +546,12 @@ def _attempt_step(
     record.started_at = record.started_at or run_store.utc_now()
     run_store.save_step(run.id, record)
 
+    # `workspace` e não `exec_dir`: a config do projeto é achada pelo root
+    # registrado em `projects`, e um worktree não está lá. Resolver por ele
+    # faria as settings por agente sumirem sem erro nenhum.
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
     try:
-        prompt_text = render(step.prompt_template, _context(run, step, workspace, item))
+        prompt_text = render(step.prompt_template, _context(run, step, exec_dir, item))
     except TemplateError as error:
         _fail(run, record)
         return FAILED, str(error)
@@ -629,7 +721,7 @@ def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
 def _context(
     run: run_store.RunRecord,
     step: StepDef,
-    workspace: Path,
+    exec_dir: Path,
     item: Item | None = None,
 ) -> dict[str, str]:
     """Valores que o `prompt_template` pode citar.
@@ -637,6 +729,10 @@ def _context(
     Chaves genéricas de propósito: o motor não tem nome de artefato nem de fase
     para oferecer. O que um step produziu chega no seguinte como `previous_summary`
     e `artifacts` — o resto o agente descobre lendo o workspace.
+
+    `workspace` é onde o agente **trabalha**: o worktree da run, quando há um.
+    O agente não precisa saber que existe uma raiz de projeto em outro lugar —
+    para ele aquele diretório é o repositório.
 
     `item_*` só tem valor num step de fan-out. Fora dele são strings vazias e não
     chaves ausentes: o mesmo `prompt_template` roda nos dois modos, e chave
@@ -651,7 +747,7 @@ def _context(
     )
     return {
         "user_prompt": run.user_prompt.strip(),
-        "workspace": str(workspace),
+        "workspace": str(exec_dir),
         "workflow_id": run.workflow_id,
         "run_id": run.id,
         "step_id": step.step_id,

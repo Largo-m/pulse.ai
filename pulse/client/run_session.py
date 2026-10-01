@@ -158,6 +158,14 @@ class EngineRunSession:
                 payload = {key: value for key, value in event.items() if key != "type"}
                 apply(**payload)
             return
+        if kind == "run.context":
+            setter = getattr(self._stream, "set_context", None)
+            if callable(setter):
+                setter(
+                    cwd=str(event.get("cwd", "")),
+                    branch=str(event.get("branch", "")),
+                )
+            return
         if kind == "session.id":
             setter = getattr(self._stream, "set_session_id", None)
             if callable(setter):

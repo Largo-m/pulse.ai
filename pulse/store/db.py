@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS project_settings (
   model TEXT,
   permission_policy TEXT,
   workspace_root TEXT,
-  default_agent TEXT
+  default_agent TEXT,
+  -- 1 = cada run deste projeto abre um `git worktree` próprio, em branch nova,
+  -- em vez de escrever na árvore de trabalho de quem está usando o editor. Só
+  -- faz sentido com o root em repositório git. Ver [pulse.vcs].
+  use_worktree INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS project_agents (
@@ -144,12 +148,21 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   workflow_id TEXT NOT NULL,
+  -- A raiz do **projeto**, sempre — nunca o worktree. É por ela que o histórico
+  -- acha a run (`HistoryCatalog`), então gravar aqui o diretório onde o agente
+  -- trabalhou sumiria com a run da lista do projeto.
   workspace_root TEXT NOT NULL,
   user_prompt TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   current_step TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- Onde o agente de fato trabalhou, quando não foi na raiz: o worktree desta
+  -- run. Vazio = rodou no próprio projeto.
+  worktree_path TEXT NOT NULL DEFAULT '',
+  -- Branch em que a run aconteceu. Preenchida mesmo sem worktree: é a branch
+  -- que o projeto tinha quando a run começou.
+  branch TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_workspace
@@ -237,6 +250,13 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # Zero para o que já existia: run antiga não tem como saber quanto do tempo
     # dela foi espera, e zero é o que ela vinha mostrando.
     ("run_steps", "waiting_seconds", "REAL NOT NULL DEFAULT 0"),
+    # Desligado para quem já tinha banco: isolar a run em worktree muda onde o
+    # agente escreve, e isso não pode passar a valer por conta de um upgrade.
+    ("project_settings", "use_worktree", "INTEGER NOT NULL DEFAULT 0"),
+    # Vazio para run antiga, que é a verdade: ela rodou na raiz do projeto, e o
+    # Pulse não tinha como saber a branch.
+    ("runs", "worktree_path", "TEXT NOT NULL DEFAULT ''"),
+    ("runs", "branch", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

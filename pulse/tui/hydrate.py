@@ -42,6 +42,7 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
         for step in item.steps
     ]
     state.surface_title = item.title.upper()
+    state.branch_label = item.branch
     state.running = False
     state.acp_sessions = [
         {"phase_id": step.id, "label": step.label, "acp_session_id": step.acp_session_id}
@@ -53,7 +54,7 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
 
     _stamp_elapsed(state, item.run_id)
     state.entries = _load_entries(item.run_id, state.phases)
-    state.artifacts = _load_artifacts(item.run_id, workspace)
+    state.artifacts = _load_artifacts(item.run_id, Path(item.worktree_path or workspace))
     displayable = [artifact for artifact in state.artifacts if artifact.has_content]
     if displayable:
         state.selected_artifact_path = displayable[-1].path
@@ -71,7 +72,7 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     return state
 
 
-def restore_run(state: CockpitState, run_id: str, workspace: Path) -> None:
+def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
     """Põe no cockpit o que a run já tinha, antes de ela voltar a rodar.
 
     Retomar continua a **mesma** run: o `run_id` é o mesmo, e `run_events` guarda
@@ -80,10 +81,14 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> None:
 
     `sync_phases` preserva fase por id, então o que é posto aqui sobrevive ao
     `phases.sync` que o motor manda em seguida.
+
+    Devolve o diretório onde a run trabalha (o worktree dela, quando há um),
+    para a tela já nascer apontando para lá em vez de esperar o `run.context`
+    do motor — nessa janela o painel leria os artefatos da raiz errada.
     """
     record = run_store.load_run(run_id)
     if record is None:
-        return
+        return ""
 
     state.sync_phases([{"id": step.step_id, "label": step.label} for step in record.steps])
     status = {step.step_id: step.status for step in record.steps}
@@ -98,11 +103,15 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> None:
     _stamp_elapsed(state, run_id)
 
     state.entries = _load_entries(run_id, state.phases, placeholder=False)
-    state.artifacts = _load_artifacts(run_id, workspace)
+    # Os artefatos estão onde a run trabalhou — o worktree dela, quando houve
+    # um. Procurá-los na raiz do projeto acharia versão antiga ou nada.
+    state.artifacts = _load_artifacts(run_id, Path(record.exec_root or workspace))
+    state.branch_label = record.branch
     # Os ids continuam de onde pararam: entrada nova com id repetido faria o
     # stream reescrever uma linha antiga em vez de acrescentar a dela.
     state._next_entry_id = max((entry.entry_id for entry in state.entries), default=0) + 1
     state.notify()
+    return record.exec_root
 
 
 def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:

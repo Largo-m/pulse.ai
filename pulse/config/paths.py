@@ -28,6 +28,16 @@ def global_agents_dir() -> Path:
     return global_state_dir() / "agents"
 
 
+def worktrees_dir() -> Path:
+    """Onde ficam os worktrees das runs — fora do repositório, de propósito.
+
+    Dentro do projeto exigiria `.gitignore` de quem nunca pediu nada, e um
+    worktree aninhado no próprio repo confunde ferramenta que varre a árvore.
+    Em `~/.pulse/` ele fica junto do resto do estado do Pulse, e some junto.
+    """
+    return global_state_dir() / "worktrees"
+
+
 def project_config_file(root: Path) -> Path:
     return root.resolve()
 

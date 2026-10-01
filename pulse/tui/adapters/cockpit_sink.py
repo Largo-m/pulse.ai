@@ -27,6 +27,8 @@ _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
+#: Recebe o diretório onde a run trabalha — a tela repassa ao painel de artefatos.
+ContextFn = Callable[[str], None]
 
 
 def _is_placeholder(title: str, detail: str = "") -> bool:
@@ -66,10 +68,12 @@ class CockpitSink:
         cwd: str | None = None,
         session_id: str | None = None,
         on_replay_end: NotifyFn | None = None,
+        on_context: ContextFn | None = None,
     ) -> None:
         self._state = state
         self._on_change = on_change
         self._on_replay_end = on_replay_end
+        self._on_context = on_context
         self._cwd = cwd
         self._streaming_message = False
         self._agent_text = ""
@@ -82,6 +86,21 @@ class CockpitSink:
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
+
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        """A run disse onde trabalha: é daí que saem os caminhos dos artefatos.
+
+        A tela nasce apontando para a raiz do projeto; com worktree o agente
+        escreve em outro lugar, e sem reapontar aqui o painel procuraria cada
+        artefato numa pasta onde ele não está. `on_context` deixa o cockpit
+        repassar isso ao painel, que guarda o próprio cwd.
+        """
+        if cwd:
+            self._cwd = cwd
+        self._state.set_branch(branch)
+        if self._on_context is not None:
+            self._on_context(self._cwd or "")
+        self._emit()
 
     def set_session_id(self, session_id: str | None) -> None:
         self._store.set_session(session_id)
