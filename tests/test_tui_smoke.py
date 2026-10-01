@@ -506,6 +506,108 @@ def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
     asyncio.run(run())
 
 
+def _waiting_run(run_id: str = "run-7", *, held: float = 180.0) -> dict:
+    import time
+
+    return {
+        "id": run_id,
+        "workflow_id": "new-issue",
+        "workflow_label": "Nova spec",
+        "prompt": "fazer algo",
+        "workspace": "/repo",
+        "status": "awaiting_input",
+        "active": True,
+        "awaiting_prompt": True,
+        "awaiting_since": time.time() - held,
+        "current_step_label": "Especificar",
+        "started_at": time.time() - held - 60,
+    }
+
+
+def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
+    """O aviso é o que a Home não tinha: quem saiu do cockpit com uma pergunta
+    aberta não tinha como descobrir que a run estava parada esperando."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            # Sem daemon (ou sem nada esperando) o painel nem aparece.
+            panel = screen.query_one("#home-alerts", Static)
+            assert panel.display is False
+            assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
+
+            screen._apply_alerts([_waiting_run()])
+            await pilot.pause()
+            assert panel.display is True
+            text = str(panel.render())
+            assert "1 sessão precisa de você" in text
+            assert "Nova spec" in text
+            assert "Especificar" in text
+            assert "há 3min" in text
+            # O aviso entra acima de tudo que começa trabalho novo.
+            assert _home_option_ids(screen)[0] == "alerts"
+
+            screen.on_option_selected(_selected("alerts"))
+            await pilot.pause()
+            assert _home_option_ids(screen) == ["attach:run-7", "back"]
+
+            # Respondida em outra janela: o aviso some e a vista volta à raiz.
+            screen._apply_alerts([])
+            await pilot.pause()
+            assert panel.display is False
+            assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
+
+    asyncio.run(run())
+
+
+def test_home_opens_the_waiting_session_live(monkeypatch):
+    """Entrar pelo aviso é anexar à run — a pergunta continua de pé lá."""
+    from pathlib import Path as _Path
+
+    class _App:
+        def __init__(self) -> None:
+            self.opened: list = []
+
+        def open_cockpit(self, workflow_id, prompt, **kwargs):
+            self.opened.append((workflow_id, prompt, kwargs))
+
+    class _Screen(HomeScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen()
+    screen._alerts = [_waiting_run()]
+    screen.on_option_selected(_selected("attach:run-7"))
+
+    assert screen.fake_app.opened == [
+        (
+            "new-issue",
+            "fazer algo",
+            {"attach_run_id": "run-7", "workspace": _Path("/repo")},
+        )
+    ]
+
+
 def test_leaving_the_cockpit_does_not_cancel_the_run():
     """`q` solta o stream e larga as perguntas; ninguém manda parar."""
     make_workflow("demo", steps=[("a", "A")])

@@ -163,6 +163,11 @@ class EngineRunSession:
             if callable(setter):
                 setter(str(event.get("session_id", "")))
             return
+        if kind == "run.awaiting":
+            handler = getattr(self._stream, "mark_awaiting", None)
+            if callable(handler):
+                handler(bool(event.get("waiting")))
+            return
         if kind == "run.stopped":
             handler = getattr(self._stream, "mark_stopped", None)
             if callable(handler):

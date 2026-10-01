@@ -3,7 +3,12 @@ from __future__ import annotations
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.prompts.permission import decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
+
+#: Políticas que `decide_permission` conhece. Qualquer outra coisa é tratada
+#: como `ask` — na dúvida, quem decide é a pessoa.
+_POLICIES = frozenset({"ask", "auto_approve", "deny_writes"})
 
 
 class ApiStreamSink:
@@ -34,6 +39,18 @@ class ApiStreamSink:
 
     def finish_question_prompt(self) -> None:
         self._bus.publish({"type": "stream.finish_question"})
+
+    def begin_user_wait(self) -> None:
+        """A run parou de trabalhar: há pergunta aberta esperando alguém.
+
+        Vai pelo barramento como qualquer evento, então o replay entrega o par
+        `true`/`false` a quem anexa depois — e, numa espera em curso, entrega o
+        `true` sozinho, que é exatamente o estado da run.
+        """
+        self._bus.publish({"type": "run.awaiting", "waiting": True})
+
+    def end_user_wait(self) -> None:
+        self._bus.publish({"type": "run.awaiting", "waiting": False})
 
     def info(self, title: str) -> None:
         self._bus.publish({"type": "phase.info", "title": title})
@@ -71,6 +88,20 @@ class ApiPromptPort:
         policy: str,
         allow_terminal: bool = False,
     ) -> dict[str, Any]:
+        # O que a política resolve não vira pergunta. `auto_approve` e
+        # `deny_writes` decidem sem ninguém, e publicá-los mesmo assim fazia a
+        # run depender de haver um cliente ligado: com o cockpit fechado, um
+        # `edit` parava a run para sempre esperando uma resposta que ninguém
+        # tinha de dar — e a Home anunciava "precisa de você" para uma decisão
+        # que já estava tomada.
+        decided = decide_permission(
+            params,
+            policy=policy if policy in _POLICIES else "ask",
+            allow_terminal=allow_terminal,
+        )
+        if decided is not None:
+            return decided
+
         answer = self._correlator.request(
             "permission",
             {

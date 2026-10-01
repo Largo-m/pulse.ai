@@ -12,7 +12,7 @@ from textual.widgets.option_list import Option
 
 from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.models import HistoryItem, HistoryStatus
+from pulse.history.models import LIVE_STATUSES, HistoryItem
 from pulse.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
@@ -90,7 +90,7 @@ class HistoryListScreen(Screen[None]):
         # histórico: o id da run é o mesmo dos dois lados. Item `executando`
         # cujo daemon morreu não está nesta lista e cai no detalhe estático,
         # que é o que existe para ele.
-        if item.status is HistoryStatus.IN_PROGRESS and item.run_id in active_run_ids():
+        if item.status in LIVE_STATUSES and item.run_id in active_run_ids():
             self.app.open_cockpit(
                 item.workflow_id,
                 item.prompt,
@@ -161,7 +161,7 @@ def _delete_warning(item: HistoryItem) -> str:
         item.title,
         "Apaga a run, os logs e a lista de artefatos. Os arquivos no workspace ficam.",
     ]
-    if item.status is HistoryStatus.IN_PROGRESS:
+    if item.status in LIVE_STATUSES:
         lines.append("Atenção: esta run consta em andamento — remover pode derrubá-la.")
     return "\n".join(lines)
 

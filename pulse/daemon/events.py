@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -18,6 +19,9 @@ class PromptRequest:
     event: threading.Event = field(default_factory=threading.Event)
     answer: Any = None
     cancelled: bool = False
+    #: Quando a pergunta foi aberta, em tempo de parede — é o que permite dizer
+    #: "esperando há 7min" numa tela que nasceu depois da pergunta.
+    created_at: float = field(default_factory=time.time)
 
 
 class EventBus:
@@ -89,6 +93,17 @@ class PromptCorrelator:
         with self._lock:
             return list(self._pending.values())
 
+    def pending_since(self) -> float | None:
+        """Quando a espera começou: a pergunta aberta há mais tempo.
+
+        A mais antiga, e não a mais recente, porque é ela que mede há quanto
+        tempo a run está parada — uma segunda pergunta aberta depois não
+        rejuvenesce a espera.
+        """
+        with self._lock:
+            opened = [item.created_at for item in self._pending.values()]
+        return min(opened) if opened else None
+
     def request(self, kind: str, payload: dict[str, Any], *, timeout: float | None = None) -> Any:
         """Pergunta ao cliente e espera — sem prazo, por padrão.
 
@@ -125,6 +140,20 @@ class PromptCorrelator:
             req.event.set()
         self._bus.publish({"type": "prompt.answered", "id": prompt_id})
         return True
+
+    def cancel_all(self) -> int:
+        """Cancela toda pergunta aberta e devolve quantas eram.
+
+        Existe para a parada da run: o motor espera a resposta sem prazo, então
+        uma run parada enquanto perguntava algo ficaria com a thread presa em
+        `event.wait()` para sempre — o pedido de parada chegava, e nada nele
+        acordava quem estava bloqueado na pergunta.
+        """
+        with self._lock:
+            open_ids = list(self._pending)
+        for prompt_id in open_ids:
+            self.cancel(prompt_id)
+        return len(open_ids)
 
     def cancel(self, prompt_id: str) -> bool:
         with self._lock:

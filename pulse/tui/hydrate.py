@@ -119,6 +119,7 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
         return
     _stamp_elapsed(state, run_id)
     started = {step.step_id: step.started_at for step in record.steps}
+    waiting = {step.step_id: step.waiting_seconds for step in record.steps}
     now_wall = datetime.now(UTC)
     now_mono = time.monotonic()
     for phase in state.phases:
@@ -134,6 +135,12 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
             continue
         phase.started_at = now_mono - spent
         phase.ended_at = None
+        # A espera já fechada vem do banco; a que ainda está aberta o replay
+        # acabou de marcar em `awaiting_since`, e ela se fecha sozinha quando a
+        # pessoa responder.
+        phase.waiting_total = max(0.0, waiting.get(phase.id, 0.0))
+        if phase.awaiting_since is not None:
+            phase.awaiting_since = now_mono
     state.notify()
 
 
@@ -148,21 +155,28 @@ def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
     if record is None:
         return
     durations = {
-        step.step_id: _seconds(step.started_at, step.ended_at) for step in record.steps
+        step.step_id: _seconds(step.started_at, step.ended_at, step.waiting_seconds)
+        for step in record.steps
     }
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
             phase.started_at = 0.0
             phase.ended_at = seconds
+            # O desconto já está em `ended_at`; zerar evita descontá-lo de novo
+            # em `elapsed_label`.
+            phase.waiting_total = 0.0
 
 
-def _seconds(started_at: str, ended_at: str) -> float | None:
+def _seconds(started_at: str, ended_at: str, waiting_seconds: float = 0.0) -> float | None:
+    """Duração líquida do step: tempo de parede menos o que ficou esperando o
+    usuário responder. É o mesmo desconto que a sessão viva mostra — o histórico
+    não pode contar uma história diferente da que a tela contou na hora."""
     start = _parse_stamp(started_at)
     end = _parse_stamp(ended_at)
     if start is None or end is None:
         return None
-    delta = (end - start).total_seconds()
+    delta = (end - start).total_seconds() - max(0.0, waiting_seconds)
     return delta if delta >= 0 else None
 
 

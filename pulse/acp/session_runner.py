@@ -135,13 +135,61 @@ class AcpSessionRunner:
         self._activity = time.monotonic()
         #: Perguntas abertas na tela. Enquanto houver, o silêncio é nosso.
         self._user_waits = 0
+        #: Começo da espera em curso, para descontá-la da duração do step.
+        self._wait_started: float | None = None
 
     def _begin_user_wait(self) -> None:
+        """Abriu pergunta: a run para de trabalhar e passa a esperar alguém.
+
+        Só a borda (0→1) conta. Pergunta aninhada — um questionário que pede
+        uma permissão no meio — é a mesma espera, e contá-la duas vezes
+        descontaria o dobro do tempo da duração do step.
+        """
         self._user_waits += 1
+        if self._user_waits > 1:
+            return
+        self._wait_started = time.monotonic()
+        self._mark_run_status(awaiting=True)
+        self._notify_stream("begin_user_wait")
 
     def _end_user_wait(self) -> None:
+        """Respondeu (ou desistiu): o relógio do step volta a andar."""
         self._user_waits = max(0, self._user_waits - 1)
         self._activity = time.monotonic()
+        if self._user_waits > 0:
+            return
+        started, self._wait_started = self._wait_started, None
+        if started is not None and self._bound_run_id:
+            self._save_waiting(time.monotonic() - started)
+        self._mark_run_status(awaiting=False)
+        self._notify_stream("end_user_wait")
+
+    def _save_waiting(self, seconds: float) -> None:
+        try:
+            from pulse.store.runs import add_waiting_seconds
+
+            add_waiting_seconds(self._bound_run_id, self._phase_id, seconds)
+        except Exception:
+            # Contabilizar espera é acessório: falhar aqui não pode derrubar o
+            # step que a pessoa acabou de destravar.
+            pass
+
+    def _mark_run_status(self, *, awaiting: bool) -> None:
+        """Status da run no banco — é por ele que a Home e o histórico sabem
+        que esta sessão está esperando alguém."""
+        if not self._bound_run_id:
+            return
+        try:
+            from pulse.store.runs import AWAITING_INPUT, RUNNING, update_run
+
+            update_run(self._bound_run_id, status=AWAITING_INPUT if awaiting else RUNNING)
+        except Exception:
+            pass
+
+    def _notify_stream(self, method: str) -> None:
+        handler = getattr(self._stream, method, None)
+        if callable(handler):
+            handler()
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self._logger.log_event("run_prompt_start", {"cwd": self._cwd})

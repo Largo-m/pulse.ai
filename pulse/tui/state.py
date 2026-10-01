@@ -49,6 +49,8 @@ class CockpitState:
     focus_target: str = "phases"
     running: bool = False
     stopped: bool = False
+    #: Há pergunta aberta: a run parou de trabalhar e espera o usuário.
+    awaiting_input: bool = False
     #: Ligado por `configure_workflow`: fora de uma run não há o que parar.
     can_stop: bool = False
     exit_code: int | None = None
@@ -90,6 +92,7 @@ class CockpitState:
         self._follow_live = True
         self.running = False
         self.stopped = False
+        self.awaiting_input = False
         self.can_stop = True
         self.exit_code = None
         self.notify()
@@ -184,6 +187,27 @@ class CockpitState:
                 phase.status = PhaseStatus.DONE
         self.notify()
 
+    def begin_waiting(self) -> None:
+        """Abriu pergunta: congela o relógio do passo em curso.
+
+        Se nenhum passo está `running` — a pergunta veio entre dois steps, como
+        o menu de retomada — só a flag da run acende: não há cronômetro andando
+        para congelar.
+        """
+        self.awaiting_input = True
+        now = time.monotonic()
+        for phase in self.phases:
+            if phase.status == PhaseStatus.RUNNING:
+                phase.begin_waiting(now)
+        self.notify()
+
+    def end_waiting(self) -> None:
+        self.awaiting_input = False
+        now = time.monotonic()
+        for phase in self.phases:
+            phase.end_waiting(now)
+        self.notify()
+
     def complete_active_phase(self) -> None:
         now = time.monotonic()
         for phase in self.phases:
@@ -193,7 +217,9 @@ class CockpitState:
 
     def fail_active(self) -> None:
         now = time.monotonic()
+        self.awaiting_input = False
         for phase in self.phases:
+            phase.end_waiting(now)
             if phase.status == PhaseStatus.RUNNING:
                 if phase.started_at is not None:
                     phase.ended_at = now
@@ -208,12 +234,15 @@ class CockpitState:
         não conta para nada.
         """
         self.stopped = True
+        self.awaiting_input = False
         for item in self.phases:
+            item.awaiting_since = None
             if item.status != PhaseStatus.RUNNING:
                 continue
             item.status = PhaseStatus.PENDING
             item.started_at = None
             item.ended_at = None
+            item.waiting_total = 0.0
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:
@@ -225,6 +254,8 @@ class CockpitState:
         else:
             self.fail_active()
         self.running = False
+        # A run acabou: não há mais ninguém esperando resposta de ninguém.
+        self.awaiting_input = False
         self.exit_code = exit_code
         self.notify()
 

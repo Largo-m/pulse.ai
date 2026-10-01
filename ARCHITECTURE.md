@@ -270,6 +270,36 @@ como `failed` na hora, e nunca fica `running` no banco depois que a run acabou.
 
 Contrato completo: [`pulse/runcontrol.py`](pulse/runcontrol.py).
 
+### Esperar o usuário não é pausar a run — mas também não é trabalho do agente
+
+Quando o agente pede algo a quem está na frente da tela (permissão de tool,
+questionário, aprovação de step, menu de retry ou de bloqueio), a run não pausa:
+ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
+
+* a run é reportada com status `awaiting_input` (`/api/runs` e tabela `runs`), e
+  o evento `run.awaiting` vai pelo barramento para toda tela anexada;
+* o cronômetro do step congela, e o tempo esperado é somado em
+  `run_steps.waiting_seconds` — a duração que a sidebar e o histórico mostram é
+  sempre `ended_at - started_at - waiting_seconds`. Sem esse desconto, uma
+  aprovação deixada para o dia seguinte aparecia como um step de doze horas;
+* a Home anuncia a sessão no painel de avisos, com a mesma lista que o
+  `pulse daemon status` imprime.
+
+O ponto único onde isso é observado é
+[`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
+`PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
+caminho de pergunta que escape da contagem.
+
+**O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
+veto a terminal são regra, e regra o Pulse aplica onde a run roda:
+[`decide_permission`](pulse/prompts/permission.py) devolve a resposta e só cai
+no `None` — que é o que vira pergunta de verdade — quando a política é `ask`.
+Enquanto essa decisão morava só na TUI, uma run com o cockpit fechado parava
+para sempre num `edit`: o daemon publicava a pergunta, não havia tela para
+respondê-la, e a run ficava "precisando de você" para algo que já estava
+decidido. Quem fecha a tela não pode travar a run; quem decide por política não
+pode acordar ninguém.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional

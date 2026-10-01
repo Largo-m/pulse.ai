@@ -13,6 +13,7 @@ from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
+from pulse.store.runs import AWAITING_INPUT
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
 #: Quanto tempo uma run encerrada continua anexável em memória. Depois disso o
@@ -133,15 +134,21 @@ class RunManager:
 
     def _describe(self, state: RunState, labels: dict[str, str]) -> dict[str, Any]:
         awaiting = bool(state.correlator is not None and state.correlator.pending())
+        since = state.correlator.pending_since() if state.correlator is not None else None
         return {
             "id": state.id,
             "workflow_id": state.workflow_id,
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
             "prompt": state.prompt,
             "workspace": state.workspace,
-            "status": state.status,
+            # `awaiting_input` é derivado, não guardado: `RunState.status` é o
+            # desfecho da run, e esperar não é desfecho nenhum. Quem lista
+            # precisa ver a diferença entre uma run trabalhando e uma parada
+            # esperando resposta.
+            "status": AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
             "active": state.is_active(),
             "awaiting_prompt": awaiting,
+            "awaiting_since": since,
             "current_step_label": self._current_step_label(state),
             "started_at": state.started_at,
             "exit_code": state.exit_code,
@@ -190,6 +197,12 @@ class RunManager:
         if state is None:
             return False
         state.cancel_requested = True
+        # Antes do `stop`: uma run parada no meio de uma pergunta está bloqueada
+        # esperando resposta sem prazo, e o pedido de parada sozinho não acorda
+        # quem está nesse `wait`. Cancelar devolve `None` ao motor, que é o
+        # mesmo que a pessoa fechar a pergunta.
+        if state.correlator is not None:
+            state.correlator.cancel_all()
         if state.control is not None:
             state.control.stop()
         state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})

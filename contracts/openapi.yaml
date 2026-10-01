@@ -66,8 +66,13 @@ paths:
         "200":
           description: >-
             Each run: id, workflow_id, workflow_label, prompt, workspace,
-            status, active, awaiting_prompt, current_step_label, started_at,
-            exit_code
+            status, active, awaiting_prompt, awaiting_since,
+            current_step_label, started_at, exit_code.
+            status is awaiting_input while an active run has an open question
+            waiting on the user (tool permission, questionnaire, approval,
+            retry menu); awaiting_since is when that wait started, in epoch
+            seconds. Both are derived from the open questions, not stored: a
+            run that is waiting is not finished, it is just not working.
   /api/runs/{run_id}:
     get:
       summary: Get run status
@@ -88,6 +93,9 @@ paths:
         stream.replay_end, then live events. That is what lets a client reopen a
         run it walked away from and see exactly what was on screen.
         stream.ping marks an idle stream and carries no run data.
+        run.awaiting carries waiting: true when the run stops to ask the user
+        something and waiting: false when it is answered, so a client can
+        freeze the step clock for exactly as long as the question is open.
       parameters:
         - name: run_id
           in: path

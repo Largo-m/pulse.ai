@@ -168,6 +168,11 @@ CREATE TABLE IF NOT EXISTS run_steps (
   acp_session_id TEXT NOT NULL DEFAULT '',
   started_at TEXT NOT NULL DEFAULT '',
   ended_at TEXT NOT NULL DEFAULT '',
+  -- Segundos em que o step ficou parado esperando o usuário responder algo
+  -- (permissão, questionário, aprovação, menu de retry). `ended_at - started_at`
+  -- é tempo de parede; a duração que interessa é essa menos isto aqui — senão
+  -- uma aprovação que demorou a noite inteira vira "trabalho do agente".
+  waiting_seconds REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, step_id)
 );
 
@@ -229,6 +234,9 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # como `done` por encerrar o turno é exatamente o que precisa passar a
     # declarar o desfecho.
     ("workflow_steps", "requires_outcome", "INTEGER NOT NULL DEFAULT 1"),
+    # Zero para o que já existia: run antiga não tem como saber quanto do tempo
+    # dela foi espera, e zero é o que ela vinha mostrando.
+    ("run_steps", "waiting_seconds", "REAL NOT NULL DEFAULT 0"),
 )
 
 

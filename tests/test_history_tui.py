@@ -211,6 +211,30 @@ def test_the_history_only_removes_runs_from_its_own_workspace(tmp_path: Path):
     assert run_store.load_run(run_id) is None
 
 
+def test_a_run_waiting_for_the_user_is_listed_as_live(tmp_path: Path):
+    """`precisa de você` é run viva: vai para o topo e abre ao vivo.
+
+    Sem isso ela cairia no meio do passado com o rótulo errado — e abrir pelo
+    histórico daria a página estática, de onde não dá para responder nada.
+    """
+    from pulse.history.models import LIVE_STATUSES, HistoryStatus
+
+    _finished_run(tmp_path, "run-velha", "Já acabou")
+    _finished_run(tmp_path, "run-espera", "Esperando resposta")
+    run_store.update_run("run-espera", status="awaiting_input")
+
+    items = HistoryCatalog(tmp_path).list_items()
+
+    assert items[0].run_id == "run-espera"
+    assert items[0].status is HistoryStatus.AWAITING_INPUT
+    assert items[0].status in LIVE_STATUSES
+    assert items[0].status_label == "precisa de você"
+    # Busca pelo rótulo acha a run: é por ele que a pessoa vai procurá-la.
+    assert [item.run_id for item in HistoryCatalog(tmp_path).search("precisa")] == [
+        "run-espera"
+    ]
+
+
 def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
     """Run travada como `executando` precisa poder sair — mas avisada."""
     from pulse.tui.screens.history import _delete_warning

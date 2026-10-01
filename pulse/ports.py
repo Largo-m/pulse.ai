@@ -17,6 +17,10 @@ class StreamSink(Protocol):
 
     def finish_question_prompt(self) -> None: ...
 
+    def begin_user_wait(self) -> None: ...
+
+    def end_user_wait(self) -> None: ...
+
 
 @runtime_checkable
 class PromptPort(Protocol):
@@ -67,6 +71,12 @@ class NullStreamSink:
         return None
 
     def finish_question_prompt(self) -> None:
+        return None
+
+    def begin_user_wait(self) -> None:
+        return None
+
+    def end_user_wait(self) -> None:
         return None
 
     def info(self, title: str) -> None:

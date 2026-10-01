@@ -259,6 +259,16 @@ HomeScreen .home-sub {{
     margin-bottom: 2;
 }}
 
+HomeScreen #home-alerts {{
+    width: 60;
+    max-width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: solid #D4AF37;
+    padding: 0 1;
+    margin-bottom: 1;
+}}
+
 HomeScreen OptionList {{
     width: 60;
     max-width: 100%;

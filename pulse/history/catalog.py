@@ -10,13 +10,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
+from pulse.history.models import LIVE_STATUSES, HistoryItem, HistoryStatus, HistoryStep
 from pulse.store import runs as run_store
 from pulse.store.workflow_defs import get_workflow
 
 _RUN_TO_HISTORY = {
     "pending": HistoryStatus.PENDING,
     "running": HistoryStatus.IN_PROGRESS,
+    "awaiting_input": HistoryStatus.AWAITING_INPUT,
     "completed": HistoryStatus.DONE,
     "failed": HistoryStatus.FAILED,
     "stopped": HistoryStatus.STOPPED,
@@ -33,12 +34,13 @@ class HistoryCatalog:
 
         Dentro de cada grupo a ordem continua sendo a mais recente no topo, que
         é como `run_store.list_runs` entrega. O que muda é a prioridade: uma run
-        em andamento é a única da lista em que ainda dá para entrar e participar
-        — procurá-la no meio do passado era o caminho errado para o único item
-        que não é passado.
+        viva é a única da lista em que ainda dá para entrar e participar —
+        procurá-la no meio do passado era o caminho errado para o único item
+        que não é passado. Run esperando resposta conta como viva, e é a que
+        mais precisa estar à mão.
         """
         items = [_item(record) for record in run_store.list_runs(self.workspace)]
-        return sorted(items, key=lambda item: item.status is not HistoryStatus.IN_PROGRESS)
+        return sorted(items, key=lambda item: item.status not in LIVE_STATUSES)
 
     def search(self, query: str = "") -> list[HistoryItem]:
         items = self.list_items()

@@ -192,6 +192,25 @@ class CockpitSink:
             self._on_replay_end()
         self._emit()
 
+    def mark_awaiting(self, waiting: bool) -> None:
+        """Pergunta aberta/fechada: congela ou solta o relógio do step.
+
+        Quem manda é o motor, não o dock desta tela: duas janelas anexadas na
+        mesma run precisam parar o cronômetro juntas, mesmo a que não está
+        mostrando a pergunta.
+        """
+        if waiting:
+            self._state.begin_waiting()
+        else:
+            self._state.end_waiting()
+        self._emit()
+
+    def begin_user_wait(self) -> None:
+        self.mark_awaiting(True)
+
+    def end_user_wait(self) -> None:
+        self.mark_awaiting(False)
+
     def mark_stopped(self) -> None:
         self._finish_message_line()
         self._state.mark_stopped()

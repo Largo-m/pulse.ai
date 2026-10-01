@@ -25,6 +25,11 @@ MAX_DETAIL = 20_000
 
 PENDING = "pending"
 RUNNING = "running"
+#: A run existe, o agente está vivo, e nada avança porque há uma pergunta aberta
+#: na tela de alguém. Status da **run**, não do step: o step continua `running`
+#: — ele não terminou, só parou de consumir tempo de agente. Ver
+#: [pulse.acp.session_runner._begin_user_wait].
+AWAITING_INPUT = "awaiting_input"
 DONE = "done"
 SKIPPED = "skipped"
 FAILED = "failed"
@@ -51,6 +56,8 @@ class StepRecord:
     acp_session_id: str = ""
     started_at: str = ""
     ended_at: str = ""
+    #: Tempo que este step passou esperando o usuário, descontado da duração.
+    waiting_seconds: float = 0.0
 
 
 @dataclass
@@ -100,6 +107,7 @@ def _step(row: Any) -> StepRecord:
         acp_session_id=str(row["acp_session_id"] or ""),
         started_at=str(row["started_at"] or ""),
         ended_at=str(row["ended_at"] or ""),
+        waiting_seconds=float(row["waiting_seconds"] or 0.0),
     )
 
 
@@ -262,12 +270,17 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
         # Em conflito, só o estado é reescrito. `position`, `label` e `agent_id`
         # foram copiados da definição quando a run começou, e editar o workflow
         # depois não pode reescrever o que já aconteceu.
+        #
+        # `waiting_seconds` fica de fora do `DO UPDATE` de propósito: quem o
+        # move é `add_waiting_seconds`, chamado da thread da sessão enquanto o
+        # motor segura um `StepRecord` que não sabe da espera. Reescrevê-lo aqui
+        # zeraria o tempo de espera recém-somado no primeiro `save_step`.
         connection.execute(
             """
             INSERT INTO run_steps
               (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               status, summary, acp_session_id, started_at, ended_at, waiting_seconds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, step_id) DO UPDATE SET
               status = excluded.status,
               summary = excluded.summary,
@@ -286,10 +299,42 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
                 step.acp_session_id,
                 step.started_at,
                 step.ended_at,
+                step.waiting_seconds,
             ),
         )
         connection.execute(
             "UPDATE runs SET updated_at = ? WHERE id = ?", (utc_now(), run_id)
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def add_waiting_seconds(
+    run_id: str,
+    step_id: str,
+    seconds: float,
+    *,
+    db_path: Path | None = None,
+) -> None:
+    """Soma tempo de espera do usuário ao step. Soma, e não atribui: um step
+    pode parar várias vezes — uma permissão, depois um questionário — e cada
+    parada tira o seu pedaço da duração.
+
+    Step que ainda não existe na tabela é ignorado em silêncio: a espera pode
+    acontecer antes do primeiro `save_step` (o menu de retomada, por exemplo),
+    e perder a contabilidade vale mais do que criar linha sem dono.
+    """
+    if not run_id or not step_id or seconds <= 0:
+        return
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            """
+            UPDATE run_steps SET waiting_seconds = waiting_seconds + ?
+            WHERE run_id = ? AND step_id = ?
+            """,
+            (float(seconds), run_id, step_id),
         )
         connection.commit()
     finally:

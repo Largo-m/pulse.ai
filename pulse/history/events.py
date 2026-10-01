@@ -55,6 +55,10 @@ class PhaseItem:
     status: PhaseStatus = PhaseStatus.PENDING
     started_at: float | None = None
     ended_at: float | None = None
+    #: Começo da espera em curso pelo usuário. Preenchido = relógio congelado.
+    awaiting_since: float | None = None
+    #: Espera já contabilizada neste passo, descontada da duração.
+    waiting_total: float = 0.0
     files: int = 0
     issues: int = 0
     _seen_files: set[str] = field(default_factory=set, repr=False, compare=False)
@@ -67,18 +71,51 @@ class PhaseItem:
         histórico chega com a fase marcada como `running` e a duração já gravada
         em `ended_at` — sem essa ordem, a coluna voltava a contar do zero do
         processo e crescia sozinha numa tela que não está rodando nada.
+
+        Espera do usuário não é trabalho do agente: enquanto há pergunta aberta
+        o relógio congela em `awaiting_since`, e o que já foi esperado sai da
+        conta por `waiting_total`. Sem isso, uma aprovação deixada para o dia
+        seguinte aparecia como um passo que levou doze horas.
         """
         if self.started_at is None:
             return ""
         if self.ended_at is not None:
             end = self.ended_at
+        elif self.awaiting_since is not None:
+            end = self.awaiting_since
         elif self.status == PhaseStatus.RUNNING:
             end = now or time.monotonic()
         else:
             return ""
-        return format_elapsed(end - self.started_at)
+        return format_elapsed(end - self.started_at - self.waiting_total)
+
+    def display_status(self) -> str:
+        """O status como a tela deve nomeá-lo.
+
+        `awaiting_input` não é estado de step no banco — o step continua
+        `running`, porque não terminou. É sobreposto só na exibição, para a
+        sidebar poder dizer "precisa de você" sem que a máquina de estados
+        ganhe um estado a mais para tratar em todo lugar.
+        """
+        if self.awaiting_since is not None:
+            return "awaiting_input"
+        return self.status.value
+
+    def begin_waiting(self, now: float | None = None) -> None:
+        if self.awaiting_since is None:
+            self.awaiting_since = now if now is not None else time.monotonic()
+
+    def end_waiting(self, now: float | None = None) -> None:
+        if self.awaiting_since is None:
+            return
+        end = now if now is not None else time.monotonic()
+        self.waiting_total += max(0.0, end - self.awaiting_since)
+        self.awaiting_since = None
 
     def finish(self, ended_at: float | None = None) -> None:
+        # Fecha a espera antes de fechar o passo: um passo que termina com o
+        # relógio congelado ficaria para sempre na duração em que parou.
+        self.end_waiting(ended_at)
         if self.status == PhaseStatus.RUNNING and self.started_at is not None:
             self.ended_at = ended_at if ended_at is not None else time.monotonic()
         if self.status == PhaseStatus.RUNNING:

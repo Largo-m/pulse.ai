@@ -251,6 +251,8 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     assert [item["id"] for item in listed] == [run_id]
     assert listed[0]["active"] is True
     assert listed[0]["awaiting_prompt"] is False
+    assert listed[0]["status"] == "running"
+    assert listed[0]["awaiting_since"] is None
     assert listed[0]["prompt"] == "tarefa"
 
     release.set()
@@ -263,11 +265,103 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     else:
         raise AssertionError("a run nunca apareceu esperando resposta")
 
+    # Esperar resposta não é "executando": é o estado que a Home anuncia e o
+    # histórico mostra como `precisa de você`.
+    assert listed[0]["status"] == "awaiting_input"
+    assert listed[0]["awaiting_since"] is not None
+
     state = manager.get(run_id)
     assert state is not None and state.correlator is not None
     pending = state.correlator.pending()
     assert len(pending) == 1
     manager.answer_prompt(pending[0].id, "ok")
+
+
+def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeypatch):
+    """Com o cockpit fechado, a run só pode parar no que exige uma pessoa.
+
+    Era aqui que a run morria de pé: `deny_writes` recusa escrita sozinho, mas
+    a decisão morava no cliente — sem cliente ligado, o daemon publicava a
+    pergunta e esperava para sempre uma resposta que ninguém tinha de dar. A
+    Home então anunciava "precisa de você", e quem entrava não via pendência
+    nenhuma: o cliente respondia calado pela política e o log voltava a andar.
+    """
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    decided: list = []
+    done = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        decided.append(
+            kwargs["prompt_handler"].respond_to_permission(
+                {
+                    "permission": {"title": "Editar app.py", "kind": "edit"},
+                    "toolCall": {"kind": "edit", "rawInput": {"path": "/repo/app.py"}},
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+                policy="deny_writes",
+            )
+        )
+        done.set()
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post(
+        "/api/workflows/default/runs", json={"prompt": "tarefa"}
+    ).json()["id"]
+
+    # Ninguém chamou `/events`: não há tela nenhuma ligada nesta run.
+    assert done.wait(timeout=5), "a run travou numa permissão que a política resolve"
+    assert decided[0]["outcome"]["optionId"] == "reject-once"
+
+    state = manager.get(run_id)
+    assert state is not None and state.correlator is not None
+    assert state.correlator.pending() == []
+    listed = client.get("/api/runs").json()["runs"]
+    assert listed[0]["awaiting_prompt"] is False
+
+
+def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
+    """Parar uma run parada numa pergunta tem de acordar quem espera.
+
+    O motor espera a resposta sem prazo, então `stop` sozinho não resolvia: a
+    thread ficava presa no `wait` da pergunta e a run nunca encerrava.
+    """
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    asked = threading.Event()
+    answer: list[object] = []
+
+    def fake_run_workflow(**kwargs):
+        asked.set()
+        answer.append(kwargs["prompt_handler"].ask_text("e agora?"))
+        return RUN_STOPPED
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post(
+        "/api/workflows/default/runs", json={"prompt": "tarefa"}
+    ).json()["id"]
+    assert asked.wait(timeout=5)
+
+    state = manager.get(run_id)
+    assert state is not None and state.correlator is not None
+    deadline = time.monotonic() + 5
+    while not state.correlator.pending() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert state.correlator.pending()
+
+    assert client.post(f"/api/runs/{run_id}/cancel").json() == {"ok": True}
+
+    deadline = time.monotonic() + 5
+    while state.is_active() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not state.is_active()
+    # Pergunta cancelada chega ao motor como "ninguém respondeu", igual a
+    # fechar o dock — não como uma resposta inventada.
+    assert answer == [None]
 
 
 def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):

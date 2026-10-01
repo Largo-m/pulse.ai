@@ -22,6 +22,7 @@ from pulse.prompts.ask_question import (
 from pulse.prompts.approval import answer_needs_description
 from pulse.prompts.permission import (
     PermissionPolicy,
+    decide_permission,
     permission_cancelled,
     permission_selected,
     pick_permission_option,
@@ -347,30 +348,16 @@ class TextualPromptHandler:
         if not isinstance(options, list):
             options = []
 
-        kind = str(permission.get("kind", "")).lower()
+        # A política decide sozinha quando dá: a mesma função que o daemon usa
+        # antes de publicar a pergunta. Aqui ela cobre o caminho direto (CLI,
+        # teste) e o dock que reabre uma pergunta que sobrou de antes.
+        decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
+        if decided is not None:
+            return decided
+
         tool_call = params.get("toolCall", {})
         if not isinstance(tool_call, dict):
             tool_call = {}
-        kind = kind or str(tool_call.get("kind", "")).lower()
-
-        if not allow_terminal and (
-            "terminal" in kind or "shell" in kind or "bash" in kind or "command" in kind
-        ):
-            option_id = pick_permission_option(options, prefer="reject") or "reject-once"
-            return permission_selected(option_id)
-
-        if policy == "auto_approve":
-            option_id = pick_permission_option(options, prefer="allow") or "allow-once"
-            return permission_selected(option_id)
-
-        if policy == "deny_writes":
-            # Sem exceção por caminho: o Pulse não sabe qual pasta é "dele".
-            # Step que precisa escrever é step com `ask` ou `auto_approve`.
-            if "write" in kind or "edit" in kind:
-                option_id = pick_permission_option(options, prefer="reject") or "reject-once"
-                return permission_selected(option_id)
-            option_id = pick_permission_option(options, prefer="allow") or "allow-once"
-            return permission_selected(option_id)
 
         choices = build_permission_choices(options)
         selected = self._bridge.select(

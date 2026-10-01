@@ -150,6 +150,56 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
     assert state.phases[1].ended_at is None
 
 
+def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path):
+    """Quem volta para uma run que está esperando encontra o relógio parado.
+
+    O `run.awaiting` vem pelo replay junto com o resto do passado, então a tela
+    reconstruída já nasce sabendo que a run não está trabalhando — e os minutos
+    que a pergunta passou aberta não entram na duração do step.
+    """
+    from unittest.mock import MagicMock
+
+    from pulse.tui.adapters.cockpit_sink import CockpitSink
+
+    _seed_run(tmp_path, run_id="run-wait")
+    now = datetime.now(UTC).replace(microsecond=0)
+    run_store.save_step(
+        "run-wait",
+        StepRecord(
+            step_id="one",
+            position=1,
+            label="Um",
+            agent_id="tester",
+            status="running",
+            started_at=(now - timedelta(seconds=300)).isoformat(),
+        ),
+    )
+    run_store.add_waiting_seconds("run-wait", "one", 240.0)
+
+    state = CockpitState()
+    state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
+    sink = CockpitSink(state, on_change=MagicMock(), cwd=str(tmp_path))
+    session = EngineRunSession(stream=sink, prompt_handler=MagicMock(), client=MagicMock())
+
+    # Como o replay entrega: o step começou e a run parou para perguntar algo.
+    session._dispatch({"type": "phase.begin", "title": "Um"})
+    session._dispatch({"type": "run.awaiting", "waiting": True})
+
+    assert state.awaiting_input is True
+    assert state.phases[0].display_status() == "awaiting_input"
+
+    stamp_live_elapsed(state, "run-wait")
+
+    # Cinco minutos de parede, quatro esperando: o passo levou um.
+    assert state.phases[0].elapsed_label() == "01:00"
+    # E segue congelado: o relógio só volta quando alguém responder.
+    assert state.phases[0].elapsed_label(now=time.monotonic() + 120) == "01:00"
+
+    session._dispatch({"type": "run.awaiting", "waiting": False})
+    assert state.awaiting_input is False
+    assert state.phases[0].display_status() == PhaseStatus.RUNNING.value
+
+
 def test_history_puts_what_is_running_above_the_past(tmp_path: Path):
     """Em andamento é o único item da lista em que ainda dá para entrar."""
     from pulse.history.catalog import HistoryCatalog
