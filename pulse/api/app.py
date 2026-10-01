@@ -16,7 +16,7 @@ from pulse.config.global_config import (
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
-from pulse.daemon.runs import RunManager
+from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
 
@@ -185,6 +185,8 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 workspace=body.workspace,
                 resume_run_id=body.resume_run_id,
             )
+        except RunAlreadyActive as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return {
@@ -193,6 +195,10 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "status": state.status,
             "workspace": state.workspace,
         }
+
+    @app.get("/api/runs")
+    def list_runs() -> dict[str, Any]:
+        return {"runs": runs.list_runs()}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
@@ -215,13 +221,19 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/runs/{run_id}/events")
-    async def run_events(run_id: str) -> StreamingResponse:
+    async def run_events(run_id: str, after: int = 0) -> StreamingResponse:
+        """O stream da run: o passado dela e depois o vivo.
+
+        `after` pula os N primeiros eventos, para quem já tem parte do histórico.
+        Sem ele, anexar entrega a run inteira desde `run.started` — é assim que o
+        cockpit reabre idêntico ao que era antes de o usuário sair.
+        """
         state = runs.get(run_id)
         if state is None:
             raise HTTPException(status_code=404, detail="run não encontrado")
 
         def event_stream():
-            for event in state.bus.subscribe():
+            for event in state.bus.subscribe(after=max(0, after)):
                 payload = json.dumps(event, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
                 if event.get("type") == "run.finished":

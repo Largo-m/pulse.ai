@@ -29,7 +29,16 @@ class HistoryCatalog:
         self.workspace = workspace
 
     def list_items(self) -> list[HistoryItem]:
-        return [_item(record) for record in run_store.list_runs(self.workspace)]
+        """As runs deste workspace: o que está executando primeiro.
+
+        Dentro de cada grupo a ordem continua sendo a mais recente no topo, que
+        é como `run_store.list_runs` entrega. O que muda é a prioridade: uma run
+        em andamento é a única da lista em que ainda dá para entrar e participar
+        — procurá-la no meio do passado era o caminho errado para o único item
+        que não é passado.
+        """
+        items = [_item(record) for record in run_store.list_runs(self.workspace)]
+        return sorted(items, key=lambda item: item.status is not HistoryStatus.IN_PROGRESS)
 
     def search(self, query: str = "") -> list[HistoryItem]:
         items = self.list_items()

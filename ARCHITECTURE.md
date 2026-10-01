@@ -204,9 +204,45 @@ orientação do usuário no prompt da tentativa seguinte. Sem ninguém para
 perguntar (CLI, daemon), os dois param a run: o que ninguém vê não segue
 adiante sozinho.
 
-### Parar e retomar
+### Sair, voltar e parar
 
-Há um comando só, `parar` (`s` no cockpit). Ele corta o turno em voo
+São três coisas diferentes, e só a última toca na run.
+
+**Sair** (`q`/`Esc` no cockpit) fecha a tela. A run não é da tela: ela roda numa
+thread do daemon, que é outro processo. Sair solta o stream SSE
+([`EngineRunSession.detach`](pulse/client/run_session.py)) e **larga** a ponte de
+prompts ([`PromptBridge.abandon`](pulse/tui/adapters/prompt_bridge.py)) em vez de
+fechá-la — fechar resolveria a pergunta aberta com `None`, que para o agente é
+"cancelado". Com `abandon` a pergunta continua pendente no daemon, esperando a
+pessoa voltar; quem morre é a thread da tela, com `PromptAbandoned`.
+
+É por isso que `PromptCorrelator.request` não tem prazo. O limite de uma hora que
+existia ali matava a premissa: a pessoa saía, a pergunta expirava sozinha e o
+agente recebia "cancelado" sem ninguém ter decidido nada.
+
+**Voltar** é anexar à run viva, e a porta é o **Histórico** — que é onde as runs
+já moravam. Ele passa a listar as `executando` no topo (`HistoryCatalog.list_items`
+reordena, de forma estável, mantendo a mais recente primeiro dentro de cada
+grupo) e abre ao vivo, em vez da página estática, aquela que o daemon ainda tem
+(`GET /api/runs`). A Home não lista run nenhuma: ela é o menu do que se pode
+começar, e uma lista que muda sozinha ali competia com isso.
+
+Reabrir **não reidrata do banco**: o `EventBus` reenvia todo
+o histórico da run antes do vivo, então o mesmo `CockpitSink` que desenharia a
+run ao vivo a reconstrói inteira, pelo mesmo caminho. O marcador
+`stream.replay_end` separa passado de presente, e serve para duas coisas:
+
+- não reabrir pergunta já respondida — no replay o `prompt.request` é guardado e
+  o `prompt.answered` o descarta; só o que sobra no fim está vivo;
+- acertar o relógio ([`hydrate.stamp_live_elapsed`](pulse/tui/hydrate.py)), porque
+  os `phase.begin` reaplicados marcariam "agora" como início de cada step.
+
+Rodam **N runs ao mesmo tempo**. Daí o id da run ser único: `RunState.id` é o
+mesmo `runs.id` do SQLite (o daemon batiza a run e passa o id ao motor em
+`run_workflow(run_id=…)`). Antes eram dois ids diferentes, e "reabrir a run X"
+só podia ser o chute "a mais recente deste workspace".
+
+**Parar** (`s` no cockpit) é o único que mexe na run. Ele corta o turno em voo
 (`session/cancel`), devolve o step em curso para `pending` — não terminou, logo
 não é `done` nem `failed` — e encerra a run com exit code `RUN_STOPPED` (130),
 que não é falha: o cockpit oferece retomar na hora.
@@ -291,14 +327,15 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (UDS preferido; TCP fallback); pode auto-iniciar o daemon |
-| [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria run → escuta SSE → responde `prompt.request` → devolve exit code |
+| [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria (ou **anexa**) → escuta SSE → responde `prompt.request` → devolve exit code |
+| [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
 
 ### 3.4 Engine — daemon (composition root)
 
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run; cancel |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
@@ -310,7 +347,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Runtime | `GET /status`, `GET /doctor`, `POST /doctor/acp-probe` |
 | Config | `GET /config`, `GET /config/resolved`, `PATCH /config/global`, `POST /config/project` |
 | Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
-| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE) |
+| Runs | `GET /runs` (o que está vivo), `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=N` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
 | History | `GET /history`, `GET /history/{id}` |
 
@@ -319,7 +356,13 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 `run.started` · `run.stopped` ·
 `run.cancel_requested` · `run.finished` · `phase.begin` · `phase.info` ·
 `phase.error` · `phases.sync` · `session.update` · `session.id` ·
-`stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered`
+`stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered` ·
+`stream.replay_end` · `stream.ping`
+
+Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o
+passado reenviado acaba (ver §Sair, voltar e parar) e `stream.ping` é o
+batimento do stream ocioso, que dá ao cliente um ponto de retorno regular para
+largar o stream sem a run precisar emitir nada.
 
 ### 3.5 Domínio
 
@@ -425,7 +468,12 @@ tão artefato quanto `docs/PLANO.md`.
 12. run.finished → o que permanece são os arquivos que o agente escreveu
 ```
 
-Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
+Em qualquer ponto de 8 a 11 o usuário pode sair (`q`): a run segue no daemon e o
+Histórico a mostra no topo, como `executando`. Entrar de volta refaz os passos 9
+a 11 desde o começo da run, reenviados pelo barramento — a tela volta como
+estava, e só então o vivo continua.
+
+Reabrir uma run **encerrada** pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
 `run_events` dá o stream, `run_artifacts` dá o painel — sem ler o store do
 runtime nem varrer pasta.
 
@@ -522,6 +570,11 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
   `AcpSessionRunner`, no pré-voo. Uma run inteira roda no mesmo backend; o que
   varia por step é modelo, política e instruções.
 - **Gates de shell** — o Pulse não roda comando de verificação entre steps.
+- **Replay sobrevive só enquanto o daemon vive** — o histórico de eventos de uma
+  run está na memória do `EventBus`, e cresce sem teto durante a run. Daemon
+  reiniciado (inclusive por divergência de `ENGINE_PROTOCOL` no
+  `ensure_daemon`) derruba as runs vivas; o passado delas continua no banco, mas
+  reabrir ao vivo deixa de existir.
 - App Desktop (consumirá a mesma API HTTP), gateway remoto / pairing.
 - Monorepo físico (`engine/` e `cli/` como packages separados).
 

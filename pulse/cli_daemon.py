@@ -5,6 +5,7 @@ import signal
 import time
 from pathlib import Path
 
+from pulse.client.active_runs import active_runs, describe
 from pulse.client.engine_client import EngineClient
 from pulse.daemon.paths import clear_daemon_meta, read_daemon_meta
 from pulse.daemon.server import is_daemon_alive
@@ -31,9 +32,22 @@ def _status() -> int:
         if meta.get("socket"):
             print(f"  socket: {meta['socket']}")
         print(f"  http: {meta.get('http_host', '127.0.0.1')}:{meta.get('http_port', 8787)}")
+        for run in active_runs():
+            print(f"  run: {describe(run)}")
         return 0
     print("pulse-engine: stopped")
     return 1
+
+
+def _warn_about_live_runs() -> None:
+    running = active_runs()
+    if not running:
+        return
+    count = len(running)
+    noun = "run" if count == 1 else "runs"
+    print(f"[pulse] Atenção: {count} {noun} em execução — parar o engine encerra:")
+    for run in running:
+        print(f"  - {describe(run)}")
 
 
 def _start() -> int:
@@ -53,6 +67,9 @@ def _start() -> int:
 
 
 def _stop() -> int:
+    # Parar o engine leva junto o que ele está rodando. Enquanto a run era
+    # atrelada ao cockpit isso era óbvio; agora que ela sobrevive à TUI, não é.
+    _warn_about_live_runs()
     meta = read_daemon_meta() or {}
     pid = meta.get("pid")
     if isinstance(pid, int):

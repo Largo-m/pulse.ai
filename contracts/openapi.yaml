@@ -46,12 +46,28 @@ paths:
                   nullable: true
                   description: >-
                     Resume a previous run instead of creating one; it picks up at
-                    the first step that is not done or skipped
+                    the first step that is not done or skipped. The resumed run
+                    keeps its id, so the run id is stable across resumes
       responses:
         "200":
           description: Run created
         "404":
           description: Unknown workflow id
+        "409":
+          description: That run is already executing
+  /api/runs:
+    get:
+      summary: Runs the engine holds in memory, active ones first
+      description: >-
+        How a client finds what is still running in the background and reopens
+        it. Finished runs linger for a while so they stay attachable, then drop
+        out; the database keeps the past either way.
+      responses:
+        "200":
+          description: >-
+            Each run: id, workflow_id, workflow_label, prompt, workspace,
+            status, active, awaiting_prompt, current_step_label, started_at,
+            exit_code
   /api/runs/{run_id}:
     get:
       summary: Get run status
@@ -66,13 +82,25 @@ paths:
           description: Run state
   /api/runs/{run_id}/events:
     get:
-      summary: SSE event stream for a run
+      summary: SSE event stream for a run, replayed from the start
+      description: >-
+        A new subscriber receives the whole run since run.started, then
+        stream.replay_end, then live events. That is what lets a client reopen a
+        run it walked away from and see exactly what was on screen.
+        stream.ping marks an idle stream and carries no run data.
       parameters:
         - name: run_id
           in: path
           required: true
           schema:
             type: string
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Skip the first N events, for a client that already has them
       responses:
         "200":
           description: text/event-stream
@@ -90,7 +118,11 @@ paths:
           description: Accepted
   /api/history:
     get:
-      summary: List history items
+      summary: List history items, runs still executing first
+      description: >-
+        In-progress runs are listed before the past, newest first within each
+        group. They are the only items a client can still enter and take part
+        in, so they do not belong buried in the history.
       responses:
         "200":
           description: History list

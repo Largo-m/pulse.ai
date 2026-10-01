@@ -10,6 +10,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem, HistoryStatus
 from pulse.status_labels import LABEL_WIDTH, status_color
@@ -84,6 +85,18 @@ class HistoryListScreen(Screen[None]):
             return
         item = self._items.get(str(option_id))
         if item is None:
+            return
+        # Run que ainda está rodando no daemon abre ao vivo, não como página de
+        # histórico: o id da run é o mesmo dos dois lados. Item `executando`
+        # cujo daemon morreu não está nesta lista e cai no detalhe estático,
+        # que é o que existe para ele.
+        if item.status is HistoryStatus.IN_PROGRESS and item.run_id in active_run_ids():
+            self.app.open_cockpit(
+                item.workflow_id,
+                item.prompt,
+                attach_run_id=item.run_id,
+                workspace=self._workspace,
+            )
             return
         self.app.push_screen(HistoryDetailScreen(item, workspace=self._workspace))
 

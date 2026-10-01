@@ -88,6 +88,7 @@ def run_workflow(
     render_header: bool = True,
     resume_run_id: str | None = None,
     control: RunControl | None = None,
+    run_id: str | None = None,
 ) -> int:
     cockpit = is_cockpit_stream(stream)
     if not cockpit and not is_interactive():
@@ -123,6 +124,7 @@ def run_workflow(
         workspace_root,
         user_prompt,
         resume_run_id=resume_run_id,
+        run_id=run_id,
     )
 
     if render_header and not cockpit:
@@ -174,13 +176,19 @@ def _resolve_run(
     user_prompt: str,
     *,
     resume_run_id: str | None,
+    run_id: str | None = None,
 ) -> run_store.RunRecord:
+    """A run no banco. `run_id` deixa quem chama batizá-la.
+
+    O daemon passa o id dele: sem isso a run tinha dois nomes — um na API, outro
+    no SQLite — e "reabrir a run X" virava chute pela mais recente do workspace.
+    """
     if resume_run_id:
         existing = run_store.load_run(resume_run_id)
         if existing is not None:
             return existing
     return run_store.create_run(
-        run_id=str(uuid.uuid4()),
+        run_id=run_id or str(uuid.uuid4()),
         workflow_id=definition.id,
         workspace=workspace,
         user_prompt=user_prompt,

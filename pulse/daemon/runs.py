@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
@@ -11,7 +12,14 @@ from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
+from pulse.store import runs as run_store
 from pulse.store.workflow_defs import get_workflow, list_workflows
+
+#: Quanto tempo uma run encerrada continua anexável em memória. Depois disso o
+#: replay some e quem quiser revê-la usa o histórico, que lê do banco.
+FINISHED_TTL = 15 * 60.0
+#: Teto de runs encerradas guardadas, independente do TTL.
+FINISHED_KEEP = 10
 
 
 @dataclass
@@ -28,6 +36,15 @@ class RunState:
     control: RunControl | None = None
     #: Run anterior a retomar, do primeiro step que não fechou.
     resume_run_id: str | None = None
+    started_at: float = field(default_factory=time.time)
+    finished_at: float | None = None
+
+    def is_active(self) -> bool:
+        return self.finished_at is None
+
+
+class RunAlreadyActive(Exception):
+    """Retomar uma run que já está rodando. O id é o mesmo; a run também."""
 
 
 class RunManager:
@@ -61,7 +78,15 @@ class RunManager:
     ) -> RunState:
         if get_workflow(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
-        run_id = str(uuid.uuid4())
+        # Retomar continua a mesma run, então ela mantém o id — é isso que faz
+        # `RunState.id` e `runs.id` no SQLite serem a mesma coisa, e o que
+        # permite anexar numa run pelo id em vez de chutar a mais recente.
+        run_id = resume_run_id or str(uuid.uuid4())
+        with self._lock:
+            existing = self._runs.get(run_id)
+            if existing is not None and existing.is_active():
+                raise RunAlreadyActive(f"run já está em execução: {run_id}")
+        self._prune()
         bus = EventBus()
         correlator = PromptCorrelator(bus)
 
@@ -92,6 +117,72 @@ class RunManager:
     def get(self, run_id: str) -> RunState | None:
         with self._lock:
             return self._runs.get(run_id)
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        """As runs que o daemon tem em memória — ativas primeiro, mais nova no topo.
+
+        É o que a Home consulta para saber que há algo rodando em background e o
+        que o cockpit usa para reabrir sem recriar nada.
+        """
+        with self._lock:
+            states = list(self._runs.values())
+        labels = {item.id: item.label for item in list_workflows()}
+        items = [self._describe(state, labels) for state in states]
+        items.sort(key=lambda item: (not item["active"], -item["started_at"]))
+        return items
+
+    def _describe(self, state: RunState, labels: dict[str, str]) -> dict[str, Any]:
+        awaiting = bool(state.correlator is not None and state.correlator.pending())
+        return {
+            "id": state.id,
+            "workflow_id": state.workflow_id,
+            "workflow_label": labels.get(state.workflow_id, state.workflow_id),
+            "prompt": state.prompt,
+            "workspace": state.workspace,
+            "status": state.status,
+            "active": state.is_active(),
+            "awaiting_prompt": awaiting,
+            "current_step_label": self._current_step_label(state),
+            "started_at": state.started_at,
+            "exit_code": state.exit_code,
+        }
+
+    @staticmethod
+    def _current_step_label(state: RunState) -> str:
+        """Em que passo a run está, lido do banco — a fonte que o motor atualiza.
+
+        Banco indisponível não vale derrubar a listagem: a Home mostra a run sem
+        o passo em vez de não mostrar a run.
+        """
+        try:
+            record = run_store.load_run(state.id)
+        except (OSError, ValueError):
+            return ""
+        if record is None:
+            return ""
+        step = record.step(record.current_step) if record.current_step else None
+        return step.label if step is not None else ""
+
+    def _prune(self) -> None:
+        """Solta as runs encerradas que ninguém vai mais anexar.
+
+        O replay vive no `EventBus` de cada run; guardar todas para sempre é
+        vazamento. O passado continua no banco — o que se perde aqui é só a
+        possibilidade de reabrir a run *ao vivo*, que para run encerrada não
+        existe mesmo.
+        """
+        now = time.time()
+        with self._lock:
+            finished = [
+                state
+                for state in self._runs.values()
+                if state.finished_at is not None
+            ]
+            finished.sort(key=lambda state: state.finished_at or 0.0, reverse=True)
+            for index, state in enumerate(finished):
+                stale = now - (state.finished_at or now) > FINISHED_TTL
+                if stale or index >= FINISHED_KEEP:
+                    self._runs.pop(state.id, None)
 
     def cancel(self, run_id: str) -> bool:
         """Corta o step em voo e encerra a run. Retomável por `resume_run_id`."""
@@ -133,6 +224,7 @@ class RunManager:
                 render_header=False,
                 resume_run_id=state.resume_run_id,
                 control=state.control,
+                run_id=state.id,
             )
         except Exception as error:
             # O traceback vai para o stderr do daemon (`~/.pulse/daemon.log`):
@@ -141,6 +233,7 @@ class RunManager:
             traceback.print_exc()
             state.status = "failed"
             state.exit_code = 1
+            state.finished_at = time.time()
             state.bus.publish(
                 {
                     "type": "run.finished",
@@ -162,6 +255,7 @@ class RunManager:
             state.status = "blocked"
         else:
             state.status = "failed"
+        state.finished_at = time.time()
         state.bus.publish(
             {
                 "type": "run.finished",

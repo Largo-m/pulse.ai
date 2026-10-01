@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any
 
+from pulse.daemon.protocol import PING, REPLAY_END
+
 
 @dataclass
 class PromptRequest:
@@ -40,15 +42,27 @@ class EventBus:
                 if queue in self._subscribers:
                     self._subscribers.remove(queue)
 
-    def subscribe(self, *, after: int = 0) -> Iterator[dict[str, Any]]:
+    def subscribe(self, *, after: int = 0, poll: float = 5.0) -> Iterator[dict[str, Any]]:
+        """O passado da run e depois o vivo, na mesma sequência.
+
+        `stream.replay_end` separa os dois: quem anexa no meio da run precisa
+        saber onde o passado acaba para não reabrir uma pergunta já respondida.
+        `stream.ping` é o batimento — dá ao consumidor um ponto de retorno
+        regular para largar o stream sem que a run precise emitir nada.
+        """
         queue: Queue[dict[str, Any] | None] = Queue()
         with self._lock:
             for event in self._history[after:]:
                 queue.put_nowait(event)
+            queue.put_nowait({"type": REPLAY_END, "count": len(self._history)})
             self._subscribers.append(queue)
         try:
             while True:
-                item = queue.get()
+                try:
+                    item = queue.get(timeout=poll)
+                except Empty:
+                    yield {"type": PING}
+                    continue
                 if item is None:
                     break
                 yield item
@@ -70,7 +84,19 @@ class PromptCorrelator:
         self._pending: dict[str, PromptRequest] = {}
         self._lock = threading.Lock()
 
-    def request(self, kind: str, payload: dict[str, Any], *, timeout: float = 3600.0) -> Any:
+    def pending(self) -> list[PromptRequest]:
+        """Perguntas sem resposta. É o que faz a Home dizer "aguardando você"."""
+        with self._lock:
+            return list(self._pending.values())
+
+    def request(self, kind: str, payload: dict[str, Any], *, timeout: float | None = None) -> Any:
+        """Pergunta ao cliente e espera — sem prazo, por padrão.
+
+        O prazo de uma hora que existia aqui matava a premissa do background: a
+        pessoa saía do cockpit, a pergunta expirava sozinha e o agente recebia
+        "cancelado" sem ninguém ter decidido nada. Sem ninguém para responder, a
+        run espera; quem encerra isso é `parar`, que é uma decisão.
+        """
         prompt_id = str(uuid.uuid4())
         req = PromptRequest(id=prompt_id, kind=kind, payload=payload)
         with self._lock:
@@ -107,4 +133,7 @@ class PromptCorrelator:
                 return False
             req.cancelled = True
             req.event.set()
+        # Mesmo evento de quem respondeu: para o replay o que importa é que o id
+        # morreu, não como. Sem isto, anexar depois reabria a pergunta cancelada.
+        self._bus.publish({"type": "prompt.answered", "id": prompt_id})
         return True

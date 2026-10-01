@@ -10,7 +10,11 @@ from textual.screen import Screen
 from pulse.orchestrator.engine import RUN_BLOCKED
 from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
-from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
+from pulse.tui.adapters.prompt_bridge import (
+    PromptAbandoned,
+    PromptBridge,
+    TextualPromptHandler,
+)
 from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
@@ -27,11 +31,13 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 _PROMPT_BLOCKED = {
     # Com um prompt aberto quem está travado é o usuário, não o agente: cortar
     # o turno aqui deixaria a pergunta sem ninguém para respondê-la.
+    #
+    # Sair (`escape_back`/`back_to_menu`) não está nesta lista de propósito: a
+    # run segue no daemon e a pergunta continua pendente, esperando a pessoa
+    # voltar. Parar, que decide pelo agente, continua bloqueado.
     "stop_run",
     "toggle_artifact_pane",
     "close_artifact_pane",
-    "escape_back",
-    "back_to_menu",
     "artifact_left",
     "artifact_right",
     "artifact_prev",
@@ -64,11 +70,14 @@ class CockpitScreen(Screen[None]):
         *,
         workspace: Path | None = None,
         resume_run_id: str | None = None,
+        attach_run_id: str | None = None,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
         self.resume_run_id = resume_run_id
+        #: Run que já está rodando no daemon. A tela escuta em vez de criar.
+        self.attach_run_id = attach_run_id
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
@@ -77,6 +86,7 @@ class CockpitScreen(Screen[None]):
             self.state,
             on_change=self._on_state_change,
             cwd=self._cwd,
+            on_replay_end=self._on_replay_end,
         )
         self.prompt_handler = TextualPromptHandler(self.bridge)
         self._worker = None
@@ -84,6 +94,8 @@ class CockpitScreen(Screen[None]):
         self._prompt_open = False
         #: Criada na thread da run; as teclas de controle falam com ela por HTTP.
         self._session = None
+        #: Ligado ao sair: a run continua, esta tela é que acabou.
+        self._detached = False
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -102,6 +114,20 @@ class CockpitScreen(Screen[None]):
         self._worker = self.run_worker(self._run_workflow, exclusive=True, thread=True)
 
     def on_unmount(self) -> None:
+        """A tela morreu. Se a run não morreu junto, nada aqui a responde.
+
+        Vale tanto para o `q` (que já desanexou) quanto para sair do Pulse com
+        o cockpit aberto: o daemon é outro processo, a run continua lá e a
+        pergunta aberta tem que continuar esperando. Só quando a run já acabou
+        é que cancelar o que sobrou é a verdade.
+        """
+        if self.state.running:
+            self._detached = True
+            session = self._session
+            if session is not None:
+                session.detach()
+            self.bridge.abandon()
+            return
         self.bridge.close()
 
     def _restore_previous_run(self) -> None:
@@ -109,8 +135,11 @@ class CockpitScreen(Screen[None]):
 
         Sem isto o cockpit nascia vazio e os steps que já tinham fechado voltavam
         como "concluído" e nada mais — sem log, sem tool e sem duração.
+
+        Anexar não passa por aqui: lá quem reconstrói é o replay do barramento,
+        que devolve a run inteira pelo mesmo caminho do vivo.
         """
-        if not self.resume_run_id:
+        if self.attach_run_id or not self.resume_run_id:
             return
         from pulse.tui.hydrate import restore_run
 
@@ -120,6 +149,23 @@ class CockpitScreen(Screen[None]):
             # Histórico é contexto, não requisito: não vale impedir a run de
             # continuar porque o banco não abriu.
             pass
+
+    def _on_replay_end(self) -> None:
+        """Fim do replay: acertar o relógio, que o replay não reproduz.
+
+        Os `phase.begin` reaplicados marcaram "agora" como início de cada step;
+        quem sabe a hora de verdade é `run_steps`.
+        """
+        if not self.attach_run_id:
+            return
+        from pulse.tui.hydrate import stamp_live_elapsed
+
+        try:
+            stamp_live_elapsed(self.state, self.attach_run_id)
+        except (OSError, ValueError):
+            # Duração é acabamento: não vale derrubar a run reanexada por isso.
+            pass
+        self._dirty = True
 
     def _on_state_change(self) -> None:
         self._dirty = True
@@ -190,7 +236,7 @@ class CockpitScreen(Screen[None]):
         self.query_one(LogStream).show_prompt(request, _finish)
 
     def _run_workflow(self) -> None:
-        from pulse.client.run_session import EngineRunSession
+        from pulse.client.run_session import DETACHED, EngineRunSession
 
         try:
             session = EngineRunSession(
@@ -198,16 +244,26 @@ class CockpitScreen(Screen[None]):
                 prompt_handler=self.prompt_handler,
             )
             self._session = session
-            code = session.run(
-                workflow_id=self.workflow_id,
-                user_prompt=self.user_prompt,
-                workspace=self._cwd,
-                resume_run_id=self.resume_run_id,
-            )
+            if self.attach_run_id:
+                code = session.attach(self.attach_run_id)
+            else:
+                code = session.run(
+                    workflow_id=self.workflow_id,
+                    user_prompt=self.user_prompt,
+                    workspace=self._cwd,
+                    resume_run_id=self.resume_run_id,
+                )
+        except PromptAbandoned:
+            # Saímos da tela com uma pergunta aberta. A run segue no daemon.
+            return
         except Exception as error:
+            if self._detached:
+                return
             self.state.add_error("Workflow falhou", str(error))
             self._dirty = True
             code = 1
+        if code == DETACHED:
+            return
         self.state.mark_finished(code)
         self._dirty = True
         try:
@@ -285,9 +341,12 @@ class CockpitScreen(Screen[None]):
         """Run parada que dá para retomar: a desta tela, ou a mais recente."""
         from pulse.store import runs as run_store
 
+        # Com N runs vivas, "a mais recente do workspace" pode ser a de outra
+        # tela. Quando esta run tem id conhecido é por ele que se pergunta.
+        known = self.attach_run_id or self.resume_run_id
         try:
-            if self.resume_run_id:
-                record = run_store.load_run(self.resume_run_id)
+            if known:
+                record = run_store.load_run(known)
                 pending = [record] if record is not None and record.is_incomplete() else []
             else:
                 pending = run_store.find_resumable(Path(self._cwd))
@@ -389,8 +448,18 @@ class CockpitScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def action_back_to_menu(self) -> None:
+        """Sair é largar a tela, não a run.
+
+        A run vive no daemon, então sair só desliga este observador: o stream é
+        solto e as perguntas abertas continuam pendentes lá, esperando a pessoa
+        voltar. A Home mostra a run e reabre por ela.
+        """
         if self.state.running:
-            self.bridge.close()
+            self._detached = True
+            session = self._session
+            if session is not None:
+                session.detach()
+            self.bridge.abandon()
         self.app.pop_screen()
 
 

@@ -189,3 +189,68 @@ def test_engine_run_session_maps_run_finished_error():
     stream.error.assert_called_with("Workflow falhou", "Falha na sessão ACP: timeout")
 
 
+
+
+def test_attach_does_not_reopen_a_question_already_answered():
+    """Anexar reexecuta o passado da run — menos as perguntas que já fecharam.
+
+    Sem isto, voltar ao cockpit reabria cada pergunta da run inteira e ainda
+    respondia a ids que o daemon já tinha esquecido.
+    """
+    from pulse.daemon.protocol import REPLAY_END
+
+    stream = MagicMock()
+    prompt_handler = MagicMock()
+    prompt_handler.ask_text.return_value = "resposta"
+    events = [
+        {"type": "run.started", "run_id": "run-1"},
+        {"type": "phase.begin", "title": "Um"},
+        {"type": "prompt.request", "id": "p1", "kind": "text", "payload": {"prompt": "a?"}},
+        {"type": "prompt.answered", "id": "p1"},
+        {"type": "prompt.request", "id": "p2", "kind": "text", "payload": {"prompt": "b?"}},
+        {"type": REPLAY_END, "count": 5},
+    ]
+    client = _FakeClient(events)
+    session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
+    session.attach("run-1")
+
+    # p1 fechou durante o replay; p2 é a que ainda espera alguém.
+    assert [prompt_id for prompt_id, _ in client.answers] == ["p2"]
+    assert prompt_handler.ask_text.call_count == 1
+
+
+def test_attach_lets_the_screen_know_where_the_past_ends():
+    from pulse.daemon.protocol import REPLAY_END
+
+    stream = MagicMock()
+    events = [
+        {"type": "phase.begin", "title": "Um"},
+        {"type": REPLAY_END, "count": 1},
+        {"type": "phase.info", "title": "vivo"},
+    ]
+    session = EngineRunSession(
+        stream=stream,
+        prompt_handler=MagicMock(),
+        client=_FakeClient(events),
+    )
+    session.attach("run-1")
+    stream.replay_finished.assert_called_once()
+
+
+def test_a_fresh_run_never_defers_a_prompt():
+    """Run recém-criada não tem passado: tudo que chega é agora."""
+    prompt_handler = MagicMock()
+    prompt_handler.ask_text.return_value = "ok"
+    client = _FakeClient(
+        [
+            {"type": "prompt.request", "id": "p1", "kind": "text", "payload": {"prompt": "a?"}},
+            {"type": "run.finished", "exit_code": 0},
+        ]
+    )
+    session = EngineRunSession(
+        stream=MagicMock(),
+        prompt_handler=prompt_handler,
+        client=client,
+    )
+    assert session.run(workflow_id="demo", user_prompt="x") == 0
+    assert [prompt_id for prompt_id, _ in client.answers] == ["p1"]

@@ -9,6 +9,7 @@ from textual.widgets.option_list import Option
 
 from pulse import __version__
 from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.client.active_runs import active_runs
 from pulse.config import global_config_exists
 from pulse.store.workflow_defs import list_workflows
 from pulse.runtime.ready import is_pulse_ready
@@ -144,7 +145,7 @@ class HomeScreen(Screen[None]):
             return
         action = str(option_id)
         if action == "exit":
-            self.app.exit()
+            self.action_quit_app()
             return
         if action == "init":
             self.app.open_onboarding()
@@ -204,6 +205,22 @@ class HomeScreen(Screen[None]):
         self.app.open_cockpit(workflow_id, text)
 
     def action_quit_app(self) -> None:
+        """Sair do CLI não encerra o que está rodando: o motor é outro processo.
+
+        A consulta é feita aqui, na saída, e não de tempos em tempos: a Home não
+        lista run nenhuma — quem oferece voltar para elas é o Histórico.
+        """
+        running = active_runs()
+        if running:
+            count = len(running)
+            noun = "run continua rodando" if count == 1 else "runs continuam rodando"
+            self.app.exit(
+                message=(
+                    f"[pulse] {count} {noun} em background — "
+                    "`pulse` → Histórico para voltar."
+                )
+            )
+            return
         self.app.exit()
 
     def on_screen_resume(self) -> None:

@@ -12,7 +12,8 @@ anteriores — sem log, sem tool, sem duração.
 
 from __future__ import annotations
 
-from datetime import datetime
+import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
@@ -101,6 +102,38 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> None:
     # Os ids continuam de onde pararam: entrada nova com id repetido faria o
     # stream reescrever uma linha antiga em vez de acrescentar a dela.
     state._next_entry_id = max((entry.entry_id for entry in state.entries), default=0) + 1
+    state.notify()
+
+
+def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
+    """Acerta o relógio depois de reconstruir uma run **que ainda roda**.
+
+    O replay reaplica `phase.begin` em milissegundos, então toda duração nasceria
+    contando do instante em que a pessoa voltou à tela, e não de quando o step
+    começou. Os steps fechados vêm de `run_steps` como no histórico; o step em
+    curso tem o `started_at` empurrado para trás pelo tempo que ele já gastou,
+    para o cronômetro continuar de onde estava em vez de reiniciar.
+    """
+    record = run_store.load_run(run_id)
+    if record is None:
+        return
+    _stamp_elapsed(state, run_id)
+    started = {step.step_id: step.started_at for step in record.steps}
+    now_wall = datetime.now(UTC)
+    now_mono = time.monotonic()
+    for phase in state.phases:
+        if phase.status != PhaseStatus.RUNNING:
+            continue
+        begin = _parse_stamp(started.get(phase.id, ""))
+        if begin is None:
+            continue
+        if begin.tzinfo is None:
+            begin = begin.replace(tzinfo=UTC)
+        spent = (now_wall - begin).total_seconds()
+        if spent < 0:
+            continue
+        phase.started_at = now_mono - spent
+        phase.ended_at = None
     state.notify()
 
 

@@ -116,20 +116,49 @@ def format_prompt_reply(request: PromptRequest, result: object | None) -> str:
     return lookup.get(str(result), str(result))
 
 
+class PromptAbandoned(Exception):
+    """A tela largou a pergunta sem respondê-la. Ver [PromptBridge.abandon]."""
+
+
 class PromptBridge:
     def __init__(self) -> None:
         self._queue: Queue[PromptRequest] = Queue()
         self._closed = False
+        #: Futures entregues e ainda não resolvidos — inclusive o da pergunta
+        #: que já saiu da fila e está na tela, que `abandon` precisa alcançar.
+        self._live: list[Future[Any]] = []
 
     def close(self) -> None:
+        """Fecha a ponte cancelando o que estiver aberto. Para run que acabou."""
         self._closed = True
+        for future in self._drain():
+            future.set_result(None)
+
+    def abandon(self) -> None:
+        """Larga a ponte **sem** responder nada — o usuário só saiu da tela.
+
+        Responder `None` significa "cancelado" para o agente, o que é certo
+        quando a run acabou e errado quando ela continua no daemon esperando a
+        pessoa voltar. Quem está bloqueado em `request` recebe `PromptAbandoned`
+        em vez de uma resposta: a thread do stream morre, a pergunta não.
+        """
+        self._closed = True
+        for future in self._drain():
+            future.set_exception(PromptAbandoned())
+
+    def _drain(self) -> list[Future[Any]]:
+        """Todo future ainda de pé: o da pergunta na tela e os que esperam fila."""
+        pending = [future for future in self._live if not future.done()]
+        self._live.clear()
         while True:
             try:
                 request = self._queue.get_nowait()
             except Empty:
                 break
             if request.future is not None and not request.future.done():
-                request.future.set_result(None)
+                if request.future not in pending:
+                    pending.append(request.future)
+        return pending
 
     def poll(self) -> PromptRequest | None:
         try:
@@ -158,8 +187,13 @@ class PromptBridge:
             default=default,
             future=future,
         )
+        self._live.append(future)
         self._queue.put(request)
-        return future.result(timeout=timeout)
+        try:
+            return future.result(timeout=timeout)
+        finally:
+            if future in self._live:
+                self._live.remove(future)
 
     def select(
         self,

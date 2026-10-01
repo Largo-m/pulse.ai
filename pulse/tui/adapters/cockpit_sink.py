@@ -62,9 +62,11 @@ class CockpitSink:
         on_change: NotifyFn | None = None,
         cwd: str | None = None,
         session_id: str | None = None,
+        on_replay_end: NotifyFn | None = None,
     ) -> None:
         self._state = state
         self._on_change = on_change
+        self._on_replay_end = on_replay_end
         self._cwd = cwd
         self._streaming_message = False
         self._agent_text = ""
@@ -177,6 +179,17 @@ class CockpitSink:
             failed_ids=failed_ids,
             blocked_ids=blocked_ids,
         )
+        self._emit()
+
+    def replay_finished(self) -> None:
+        """O passado da run acabou de ser reaplicado; daqui para frente é vivo.
+
+        Quem anexa precisa deste corte para acertar o que o replay não tem como
+        reproduzir — a duração dos steps, que o `phase.begin` remarcou agora.
+        """
+        self._finish_message_line()
+        if self._on_replay_end is not None:
+            self._on_replay_end()
         self._emit()
 
     def mark_stopped(self) -> None:

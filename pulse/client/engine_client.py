@@ -31,10 +31,14 @@ class EngineClient:
         prefer_uds: bool = True,
         http_base: str | None = None,
         socket_path: Path | None = None,
+        timeout: float = 30.0,
     ) -> None:
         self._prefer_uds = prefer_uds
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
         self._http_base = http_base
+        #: Curto para quem consulta de dentro do laço da TUI: socket órfão não
+        #: pode congelar a tela esperando um daemon que não existe mais.
+        self._timeout = timeout
         self._client: httpx.Client | None = None
 
     def ensure_daemon(self, *, timeout: float = 20.0) -> None:
@@ -78,8 +82,10 @@ class EngineClient:
         response.raise_for_status()
         return response.json()
 
-    def stream_events(self, run_id: str) -> Iterator[dict[str, Any]]:
+    def stream_events(self, run_id: str, *, after: int = 0) -> Iterator[dict[str, Any]]:
         path = f"/api/runs/{run_id}/events"
+        if after:
+            path = f"{path}?after={int(after)}"
         with self._http().stream("GET", path, timeout=None) as response:
             response.raise_for_status()
             buffer = ""
@@ -95,10 +101,26 @@ class EngineClient:
                                 continue
 
     def answer_prompt(self, prompt_id: str, answer: Any) -> dict[str, Any]:
-        return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})
+        """Responde a pergunta. 404 aqui não é erro: alguém chegou antes.
+
+        Duas janelas podem estar anexadas na mesma run; a primeira resposta
+        vence e a segunda encontra o prompt já resolvido.
+        """
+        try:
+            return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 404:
+                return {"ok": False, "stale": True}
+            raise
 
     def cancel_run(self, run_id: str) -> dict[str, Any]:
         return self.post(f"/api/runs/{run_id}/cancel")
+
+    def list_runs(self) -> list[dict[str, Any]]:
+        return list(self.get("/api/runs").get("runs", []))
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        return self.get(f"/api/runs/{run_id}")
 
     def start_run(
         self,
@@ -172,18 +194,18 @@ class EngineClient:
         if self._client is not None:
             return self._client
         if self._http_base:
-            self._client = httpx.Client(base_url=self._http_base.rstrip("/"), timeout=30.0)
+            self._client = httpx.Client(base_url=self._http_base.rstrip("/"), timeout=self._timeout)
             return self._client
         if self._prefer_uds and self._socket_path.exists():
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
             self._client = httpx.Client(
                 transport=transport,
                 base_url="http://pulse",
-                timeout=30.0,
+                timeout=self._timeout,
             )
             return self._client
         meta = read_daemon_meta() or {}
         host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
         port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        self._client = httpx.Client(base_url=f"http://{host}:{port}", timeout=30.0)
+        self._client = httpx.Client(base_url=f"http://{host}:{port}", timeout=self._timeout)
         return self._client

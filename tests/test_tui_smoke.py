@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("textual")
 
+from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptKind
 from pulse.tui.app import PulseApp
 from pulse.tui.screens.cockpit import CockpitScreen
 from tests.conftest import make_workflow
@@ -502,3 +504,102 @@ def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
             assert "Enter seleciona" in hint
 
     asyncio.run(run())
+
+
+def test_leaving_the_cockpit_does_not_cancel_the_run():
+    """`q` solta o stream e larga as perguntas; ninguém manda parar."""
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Session:
+        def __init__(self) -> None:
+            self.detached = False
+            self.stopped = False
+
+        def detach(self) -> None:
+            self.detached = True
+
+        def stop(self) -> bool:
+            self.stopped = True
+            return True
+
+    class _App:
+        def __init__(self) -> None:
+            self.popped = 0
+
+        def pop_screen(self) -> None:
+            self.popped += 1
+
+    class _Screen(CockpitScreen):
+        """Sem montar a tela: `action_back_to_menu` não depende de widget."""
+
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen("demo", "x")
+    session = _Session()
+    screen._session = session
+    screen.state.running = True
+    # A ponte tem que ser **largada**, não fechada: fechar responde "cancelado"
+    # à pergunta aberta, e a run continua no daemon esperando a pessoa voltar.
+    # (O efeito sobre quem está bloqueado está em `test_run_attach.py`.)
+    used: list[str] = []
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+
+    screen.action_back_to_menu()
+
+    assert session.detached is True
+    assert session.stopped is False, "sair não é parar"
+    assert screen.fake_app.popped == 1
+    assert used == ["abandon"]
+
+
+def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
+    """Run `executando` que o daemon ainda tem abre ao vivo, não como página."""
+    import pulse.tui.screens.history as history_module
+    from pulse.history.models import HistoryItem, HistoryStatus
+
+    item = HistoryItem(
+        run_id="run-9",
+        workflow_id="new-issue",
+        workflow_label="Nova spec",
+        title="algo",
+        prompt="fazer algo",
+        status=HistoryStatus.IN_PROGRESS,
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(history_module, "active_run_ids", lambda: {"run-9"})
+
+    class _App:
+        def __init__(self) -> None:
+            self.opened: list = []
+            self.pushed: list = []
+
+        def open_cockpit(self, workflow_id, prompt, **kwargs):
+            self.opened.append((workflow_id, prompt, kwargs))
+
+        def push_screen(self, screen):
+            self.pushed.append(screen)
+
+    class _Screen(history_module.HistoryListScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen(workspace=tmp_path)
+    screen._items = {"run-9": item}
+    screen.on_option_selected(_selected("run-9"))
+
+    assert screen.fake_app.pushed == []
+    assert screen.fake_app.opened == [
+        (
+            "new-issue",
+            "fazer algo",
+            {"attach_run_id": "run-9", "workspace": tmp_path},
+        )
+    ]
