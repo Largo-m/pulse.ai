@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -23,6 +24,9 @@ NAV_PHASE = "phase"
 #: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
 #: gerou. Ver [pulse.orchestrator.engine._units].
 FANOUT_SEP = ":"
+#: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
+#: [pulse.acp.session_runner].
+_CONTINUATION = re.compile(r"\s+—\s+continuação \(\d+\)$")
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -742,6 +746,19 @@ class CockpitState:
 
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
+        # Nome exato primeiro: o título é o rótulo do step, e casar por trecho
+        # sozinho fazia uma task chamada "… (TaskSearch)" acender o step `tasks`
+        # lá em cima — a task ficava pendente e o log dela ia para outro lugar.
+        base = _CONTINUATION.sub("", lowered).strip()
+        exact = [
+            phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
+        ]
+        if exact:
+            for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
+                for phase in exact:
+                    if phase.status == status:
+                        return phase
+            return exact[0]
         for phase in self.phases:
             if phase.id.lower() in lowered or phase.label.lower() in lowered:
                 return phase

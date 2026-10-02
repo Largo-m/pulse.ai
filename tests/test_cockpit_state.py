@@ -490,3 +490,31 @@ def test_an_empty_list_leaves_the_phases_alone():
     state.apply_phase_statuses(done_ids=["one"])
 
     assert [phase.id for phase in state.phases] == ["one", "two"]
+
+
+def test_a_task_whose_title_contains_an_earlier_step_id_lights_itself():
+    """`(TaskSearch)` tem `tasks` dentro: casar por trecho acendia o step errado."""
+    state = _state("chain", [("tasks", "Tasks"), ("implement", "Implementar")])
+    state.apply_phase_statuses(
+        steps=[
+            {"id": "tasks", "label": "Tasks"},
+            {"id": "implement:T1", "label": "Regra de destaque (TaskSearch)"},
+            {"id": "implement:T2", "label": "Negrito no título (TaskRow)"},
+        ],
+        done_ids=["tasks"],
+    )
+
+    state.begin_phase("Regra de destaque (TaskSearch)")
+    state.add_info("Regra de destaque (TaskSearch)")
+
+    assert [phase.status for phase in state.phases] == [
+        PhaseStatus.DONE,
+        PhaseStatus.RUNNING,
+        PhaseStatus.PENDING,
+    ]
+    assert state.selected_phase().id == "implement:T1"
+    assert [entry.phase_id for entry in state.visible_entries()] == ["implement:T1"]
+
+    state.begin_phase("Regra de destaque (TaskSearch) — continuação (2)")
+    assert state.phases[1].status == PhaseStatus.RUNNING
+    assert state.phases[0].status == PhaseStatus.DONE
