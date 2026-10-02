@@ -42,6 +42,12 @@ class StepDef:
     #: [pulse.orchestrator.outcome]. Sem efeito quando há aprovação: ali quem
     #: atesta a entrega é a pessoa.
     requires_outcome: bool = True
+    #: `step_id` de um step anterior. Preenchido, este step pode mandar a run
+    #: voltar até lá e repetir o trecho — ver [pulse.orchestrator.engine]. Quem
+    #: pede a volta é o agente (`next: repeat`); esta coluna é a permissão.
+    repeat_from: str = ""
+    #: Teto de voltas, contando a primeira. Zero = não repete.
+    repeat_max: int = 0
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,8 @@ def _step(row: Any) -> StepDef:
         requires_approval=bool(row["requires_approval"]),
         fan_out=bool(row["fan_out"]),
         requires_outcome=bool(row["requires_outcome"]),
+        repeat_from=str(row["repeat_from"] or ""),
+        repeat_max=int(row["repeat_max"] or 0),
     )
 
 
@@ -194,8 +202,8 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
             """
             INSERT INTO workflow_steps
               (workflow_id, step_id, position, label, agent_id, prompt_template,
-               requires_approval, fan_out, requires_outcome)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               requires_approval, fan_out, requires_outcome, repeat_from, repeat_max)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -208,6 +216,8 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
                     int(step.requires_approval),
                     int(step.fan_out),
                     int(step.requires_outcome),
+                    step.repeat_from,
+                    int(step.repeat_max),
                 )
                 for index, step in enumerate(workflow.steps, start=1)
             ],

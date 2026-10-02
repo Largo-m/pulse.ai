@@ -134,6 +134,15 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   -- aprovação: onde há aprovação, quem atesta a entrega é a pessoa. Desligar
   -- devolve o comportamento antigo — encerrar o turno conta como concluir.
   requires_outcome INTEGER NOT NULL DEFAULT 1,
+  -- Laço: preenchido com o `step_id` de um step anterior, este step pode mandar
+  -- a run voltar até lá e repetir o trecho. Quem pede a volta é o agente, no
+  -- campo `next` do bloco `pulse:outcome`; quem permite é esta coluna. Serve ao
+  -- caso "revisa, corrige, revisa de novo até não sobrar nada".
+  repeat_from TEXT NOT NULL DEFAULT '',
+  -- Teto de voltas, contando a primeira. Sem teto um agente que sempre pede
+  -- mais uma rodada deixa a run sem fim, e o motor não tem como julgar se a
+  -- rodada seguinte vale a pena.
+  repeat_max INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (workflow_id, step_id)
 );
 
@@ -257,6 +266,10 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # Pulse não tinha como saber a branch.
     ("runs", "worktree_path", "TEXT NOT NULL DEFAULT ''"),
     ("runs", "branch", "TEXT NOT NULL DEFAULT ''"),
+    # Vazio/zero para quem já tinha banco: nenhum step repetia antes, e um laço
+    # que passasse a valer por conta de um upgrade mudaria o custo de toda run.
+    ("workflow_steps", "repeat_from", "TEXT NOT NULL DEFAULT ''"),
+    ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

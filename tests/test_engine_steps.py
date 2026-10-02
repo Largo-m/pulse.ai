@@ -233,6 +233,42 @@ def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path
     assert runner.prompts[1] == "antes: escrevi o planosiga"
 
 
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        ({"approved": True, "outcome": "approve", "phaseSummary": "o review"}, "done"),
+        ({"approved": False, "outcome": "skip", "phaseSummary": "o review"}, "skipped"),
+    ],
+)
+def test_a_step_sees_how_the_previous_one_closed(
+    wired, monkeypatch, tmp_path: Path, outcome: dict, expected: str
+):
+    """Pulado e concluído não podem chegar indistinguíveis no step seguinte.
+
+    Sem o status, o pulo que o usuário deu num step só valeria para ele: o
+    próximo receberia o mesmo resumo nos dois casos e trabalharia por cima de
+    uma entrega que a pessoa acabou de dispensar.
+    """
+    make_workflow(
+        "demo",
+        steps=[("one", "Um"), ("two", "Dois")],
+        prompt_template="anterior: {{previous_status}}",
+    )
+    runner = _Runner([outcome, _approved()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert runner.prompts[0] == "anterior: "
+    assert runner.prompts[1] == f"anterior: {expected}"
+
+
 def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     runner = _Runner([{"approved": False, "outcome": "continue"}])
@@ -849,3 +885,151 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     assert len(second.prompts) == 2, "só os dois pendentes rodam; o que fechou não volta"
     record = run_store.load_run(run_id)
     assert [step.status for step in record.steps] == ["done", "done", "done"]
+
+
+def _repeating(summary: str = "corrigi") -> dict:
+    """Turno de um step que entregou e pede outra volta do laço."""
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\nnext: repeat\n```",
+    }
+
+
+def test_um_step_pode_mandar_a_run_voltar_e_repetir_o_trecho(wired, monkeypatch, tmp_path):
+    """O laço: revisa, corrige, revisa de novo — até ninguém pedir mais nada."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    # Volta 1 e 2 pedem outra; a 3ª entrega e fica quieta.
+    runner = _Runner(
+        [_delivered(), _repeating(), _delivered(), _repeating(), _delivered(), _delivered()]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    record = run_store.list_runs(tmp_path)[0]
+    # Cada volta tem registro próprio: reusar o id faria a rodada 2 sobrescrever
+    # a 1 e o histórico perderia o que aconteceu.
+    assert [step.step_id for step in record.steps] == [
+        "review",
+        "fix",
+        "review#2",
+        "fix#2",
+        "review#3",
+        "fix#3",
+    ]
+    assert all(step.status == "done" for step in record.steps)
+    assert record.step("review#2").label == "Review (2ª rodada)"
+
+
+def test_sem_pedido_o_laco_roda_uma_vez_so(wired, monkeypatch, tmp_path):
+    """`repeat_from` é permissão, não obrigação: quem não pede, não repete."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+
+
+def test_o_teto_de_rodadas_encerra_o_laco(wired, monkeypatch, tmp_path):
+    """Sem teto, um agente que sempre pede mais uma deixa a run sem fim."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 2),
+    )
+    # Pede sempre; o motor é quem para.
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _repeating()])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix", "review#2", "fix#2"]
+    assert record.status == "completed"
+
+
+def test_o_pedido_de_repetir_nao_vale_onde_o_workflow_nao_declarou_laco(
+    wired, monkeypatch, tmp_path
+):
+    """Um agente não cria laço onde a definição não abriu um."""
+    make_workflow(
+        "demo",
+        steps=[("one", "Um"), ("two", "Dois")],
+        requires_approval=False,
+    )
+    runner = _Runner([_repeating(), _repeating()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["one", "two"]
+
+
+def test_steps_depois_do_laco_nao_herdam_o_numero_da_rodada(wired, monkeypatch, tmp_path):
+    """A numeração é da faixa do laço, não de tudo que vem depois dele."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix"), ("ship", "Ship")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == [
+        "review",
+        "fix",
+        "review#2",
+        "fix#2",
+        "ship",
+    ]
