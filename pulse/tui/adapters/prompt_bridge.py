@@ -75,6 +75,8 @@ class PromptBridge:
     def __init__(self) -> None:
         self._queue: Queue[PromptRequest] = Queue()
         self._closed = False
+        #: Largada por `abandon`: ninguém mais vai responder por esta ponte.
+        self._abandoned = False
         #: Futures entregues e ainda não resolvidos — inclusive o da pergunta
         #: que já saiu da fila e está na tela, que `abandon` precisa alcançar.
         self._live: list[Future[Any]] = []
@@ -92,8 +94,11 @@ class PromptBridge:
         quando a run acabou e errado quando ela continua no daemon esperando a
         pessoa voltar. Quem está bloqueado em `request` recebe `PromptAbandoned`
         em vez de uma resposta: a thread do stream morre, a pergunta não.
+        Vale também para quem perguntar **depois**: devolver `None` ali seria
+        responder "cancelado" em nome de uma tela que já não existe.
         """
         self._closed = True
+        self._abandoned = True
         for future in self._drain():
             future.set_exception(PromptAbandoned())
 
@@ -127,6 +132,8 @@ class PromptBridge:
         default: str | bool | None = None,
         timeout: float | None = None,
     ) -> Any:
+        if self._abandoned:
+            raise PromptAbandoned()
         if self._closed:
             return None
         future: Future[Any] = Future()

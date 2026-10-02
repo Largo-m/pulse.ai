@@ -250,3 +250,50 @@ def test_searching_keeps_the_running_run_on_top(tmp_path: Path):
 
     found = HistoryCatalog(tmp_path).search("alfa")
     assert [item.run_id for item in found] == ["alfa-viva", "alfa-velha"]
+
+
+def test_an_abandoned_bridge_never_answers_later_questions():
+    """Pergunta que chega depois de largar a ponte não vira "cancelado"."""
+    bridge = PromptBridge()
+    bridge.abandon()
+    with pytest.raises(PromptAbandoned):
+        bridge.request(PromptKind.TEXT, title="t", prompt="?")
+
+
+class _OnePromptClient:
+    """Stream que entrega uma pergunta e anota o que voltou para o daemon."""
+
+    def __init__(self) -> None:
+        self.answers: list = []
+
+    def stream_events(self, run_id: str, *, after: int = 0):
+        yield {
+            "type": "prompt.request",
+            "id": "p1",
+            "kind": "text",
+            "payload": {"prompt": "?", "title": ""},
+        }
+
+    def close(self) -> None:
+        pass
+
+    def answer_prompt(self, prompt_id: str, answer):
+        self.answers.append((prompt_id, answer))
+        return {"ok": True}
+
+
+def test_a_detached_session_does_not_answer_for_the_screen():
+    """Desanexada no meio da pergunta, a sessão não manda o `None` ao daemon."""
+    client = _OnePromptClient()
+    handler = MagicMock()
+    session = EngineRunSession(stream=MagicMock(), prompt_handler=handler, client=client)
+
+    def _left_while_asking(prompt: str, *, title: str = ""):
+        session.detach()
+        return None
+
+    handler.ask_text.side_effect = _left_while_asking
+    session.run_id = "run-1"
+    session.listen()
+
+    assert client.answers == []

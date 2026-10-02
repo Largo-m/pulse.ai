@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.config.paths import find_project_config_file
+from pulse.config.paths import find_project_config_file, safe_cwd
 from pulse.config.project_config import init_project_config
 from pulse.config.resolved import resolve_config
 
@@ -13,7 +13,7 @@ def run_config_command(
     workflow: str | None = None,
     cwd: Path | None = None,
 ) -> int:
-    base = (cwd or Path.cwd()).resolve()
+    base = (cwd or safe_cwd()).resolve()
     if action == "init":
         return _init_project(base)
     return _show(base, workflow)

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pulse.config.agents import AgentConfig, WorkflowConfig
 from pulse.config.global_config import PERMISSION_POLICIES
+from pulse.config.paths import safe_cwd
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
 
@@ -41,7 +42,7 @@ def _db(path: Path | None = None) -> Path:
 
 
 def find_project_root(start: Path | None = None, *, db_path: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
+    current = (start or safe_cwd()).resolve()
     connection = connect(_db(db_path))
     try:
         rows = connection.execute("SELECT root_path FROM projects").fetchall()

@@ -24,6 +24,27 @@ def global_state_dir() -> Path:
     return GLOBAL_CONFIG_DIR
 
 
+def safe_cwd() -> Path:
+    """O diretório atual, ou o estado do Pulse quando não dá para lê-lo.
+
+    `os.getcwd()` não é infalível. No macOS ele devolve `EPERM` quando o
+    processo está parado dentro de uma pasta protegida — a Lixeira é a comum:
+    basta alguém apagar o projeto de onde o engine subiu. Some com `ENOENT`
+    quando a pasta foi removida de vez. Quem tropeça nisto é o daemon: ele vive
+    destacado, com o cwd que herdou de quem o iniciou, e esse diretório pode
+    desaparecer debaixo dele semanas depois.
+
+    O fallback é `~/.pulse` e não um palpite de projeto: nenhum workspace mora
+    ali, então quem usava o cwd para descobrir o projeto não descobre nada e cai
+    no caminho de "sem projeto", que já existe. É pior do que acertar e muito
+    melhor do que levantar — a run morria antes do primeiro step.
+    """
+    try:
+        return Path.cwd()
+    except OSError:
+        return global_state_dir()
+
+
 def global_agents_dir() -> Path:
     return global_state_dir() / "agents"
 

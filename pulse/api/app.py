@@ -13,6 +13,7 @@ from pulse.config.global_config import (
     load_global_config,
     update_global_defaults,
 )
+from pulse.config.paths import safe_cwd
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
@@ -124,7 +125,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
     def acp_probe(workspace: str | None = None) -> dict[str, Any]:
         from pulse.acp.client import probe_acp_connection
 
-        cwd = workspace or str(Path.cwd())
+        cwd = workspace or str(safe_cwd())
         ws = Path(workspace).resolve() if workspace else None
         result = probe_acp_connection(
             command=list(resolve_config(workspace=ws).acp_command),
@@ -253,14 +254,14 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/history")
     def history(workspace: str | None = None, query: str = "") -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         catalog = HistoryCatalog(root)
         items = catalog.search(query) if query else catalog.list_items()
         return {"items": [_history_to_dict(item) for item in items]}
 
     @app.get("/api/history/{item_id}")
     def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         item = HistoryCatalog(root).get(item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="item não encontrado")
@@ -268,7 +269,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.delete("/api/history/{item_id}")
     def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         if not HistoryCatalog(root).delete(item_id):
             raise HTTPException(status_code=404, detail="item não encontrado")
         return {"ok": True}

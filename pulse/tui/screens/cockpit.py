@@ -102,6 +102,9 @@ class CockpitScreen(Screen[None]):
         self._session = None
         #: Ligado ao sair: a run continua, esta tela é que acabou.
         self._detached = False
+        #: Ligado quando o stream da run acabou de verdade (`run.finished` ou
+        #: erro). Até lá a run está viva no daemon, tenha ela aberto step ou não.
+        self._run_over = False
 
     def compose(self) -> ComposeResult:
         yield AppHeader()
@@ -127,7 +130,7 @@ class CockpitScreen(Screen[None]):
         pergunta aberta tem que continuar esperando. Só quando a run já acabou
         é que cancelar o que sobrou é a verdade.
         """
-        if self.state.running:
+        if self._run_alive():
             self._detached = True
             session = self._session
             if session is not None:
@@ -135,6 +138,17 @@ class CockpitScreen(Screen[None]):
             self.bridge.abandon()
             return
         self.bridge.close()
+
+    def _run_alive(self) -> bool:
+        """A run ainda existe no daemon — a pergunta é se esta tela a solta.
+
+        Não é `state.running`: esse só liga no primeiro `phase.begin`. Antes
+        dele a run já está no daemon (resolvendo config, abrindo o worktree), e
+        sair nessa janela fechava a ponte sem desanexar — a sessão seguia
+        ouvindo com a ponte fechada e respondia "cancelado" sozinha a toda
+        pergunta que a run fizesse depois, inclusive às da tela reanexada.
+        """
+        return not self._run_over
 
     def _restore_previous_run(self) -> None:
         """Retomar continua a mesma run: a tela abre com o passado dela.
@@ -286,6 +300,7 @@ class CockpitScreen(Screen[None]):
             code = 1
         if code == DETACHED:
             return
+        self._run_over = True
         self.state.mark_finished(code)
         self._dirty = True
         try:
@@ -478,7 +493,7 @@ class CockpitScreen(Screen[None]):
         solto e as perguntas abertas continuam pendentes lá, esperando a pessoa
         voltar. A Home mostra a run e reabre por ela.
         """
-        if self.state.running:
+        if self._run_alive():
             self._detached = True
             session = self._session
             if session is not None:

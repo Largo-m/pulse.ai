@@ -278,6 +278,10 @@ class EngineRunSession:
                 answer = None
         else:
             answer = {"outcome": {"outcome": "cancelled"}}
+        if self._detached:
+            # A tela saiu enquanto a pergunta estava aberta: o que veio de lá
+            # não é resposta de ninguém. A pergunta fica no daemon esperando.
+            return
         self._client.answer_prompt(prompt_id, answer)
 
     def _handle_questionnaire(self, payload: dict[str, Any]) -> Any:

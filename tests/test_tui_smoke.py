@@ -659,6 +659,46 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
     assert used == ["abandon"]
 
 
+def test_leaving_before_the_first_step_still_detaches():
+    """Run que ainda não abriu step também está viva: sair larga, não fecha.
+
+    Antes do primeiro `phase.begin` (`state.running` ainda falso) sair fechava
+    a ponte sem desanexar, e a sessão órfã respondia "cancelado" sozinha às
+    perguntas da run — inclusive às que a tela reanexada estava mostrando.
+    """
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Session:
+        detached = False
+
+        def detach(self) -> None:
+            self.detached = True
+
+    class _App:
+        def pop_screen(self) -> None:
+            pass
+
+    class _Screen(CockpitScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen("demo", "x")
+    session = _Session()
+    screen._session = session
+    assert screen.state.running is False
+    used: list[str] = []
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+
+    screen.action_back_to_menu()
+
+    assert session.detached is True
+    assert used == ["abandon"]
+
+
 def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
     """Run `executando` que o daemon ainda tem abre ao vivo, não como página."""
     import pulse.tui.screens.history as history_module
