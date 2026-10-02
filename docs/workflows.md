@@ -36,7 +36,7 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 
 | Loop | Steps |
 | --- | --- |
-| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → review ⇄ review-fix (laço, até 3 rodadas) |
 | `quick-fix` — Correção rápida | quick-plan → quick-implement |
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
 | `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
@@ -66,10 +66,16 @@ uma preferência: vazio significa "use o padrão da máquina", e um valor concre
 congelaria a escolha feita no `pulse init`. Quem quiser fixar o par por agente
 usa a tela de configurações, que grava em `agent_settings`.
 
-Não há ramificação: `workflow_steps` é uma lista, e o motor a percorre. Quem
-escolhe entre spec completa e correção rápida é o usuário, no menu **Nova
-sessão** — e o `quick-plan` refaz a checagem de escopo, então um pedido grande
-que entrou pelo loop errado para no primeiro step em vez de seguir.
+Não há ramificação nem condição sobre id de workflow: `workflow_steps` é uma
+lista, e o motor a percorre. Quem escolhe entre spec completa e correção rápida é
+o usuário, no menu **Nova sessão** — e o `quick-plan` refaz a checagem de escopo,
+então um pedido grande que entrou pelo loop errado para no primeiro step em vez
+de seguir.
+
+O único desvio do caminho reto é o **laço**, e ele também é dado: um step com
+`repeat_from` preenchido pode mandar a run voltar a um step anterior e repetir o
+trecho. Quem pede a volta é o agente, no campo `next` do bloco de desfecho; quem
+permite é a coluna, e `repeat_max` é o teto. Ver §2.3.
 
 ## 2. O laço do motor
 
@@ -202,6 +208,53 @@ aconteceu. Fica fora de `SETTLED`, então retomar refaz o step que travou e só
 ele. Pular é registrado como `skipped`, nunca como `done`, e o step pulado não
 passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fechou.
 
+### 2.3 Laço: um trecho que se repete até ninguém pedir mais
+
+Duas colunas em `workflow_steps`, e nenhuma delas conhece fase por nome:
+
+| Coluna | O que faz |
+| --- | --- |
+| `repeat_from` | `step_id` de um step **anterior** deste loop. Vazio = não repete. |
+| `repeat_max` | teto de voltas, contando a primeira. |
+
+Quem **pede** a volta é o agente, no mesmo bloco de desfecho da §2.2:
+
+````text
+```pulse:outcome
+status: done
+next: repeat
+```
+````
+
+Quem **permite** é a coluna. Os dois são necessários: um agente não cria laço
+onde a definição não abriu um, e uma definição não repete um step que entregou e
+ficou quieto. É o que o `new-issue` usa na camada de merge — `review-fix` aponta
+para `review` com teto 3, então "corrigi algo" leva a run de volta ao revisor, e
+"não mudei nada" encerra.
+
+```
+step `review-fix` fechou com `next: repeat`
+  │
+  ├─ está dentro de uma faixa repetível?        não → segue a lista
+  ├─ já deu `repeat_max` voltas?                sim → avisa e segue a lista
+  └─ volta o índice para o step de `repeat_from`
+       a volta N renomeia os steps da faixa:    review#2, review-fix#2
+       e os reposiciona depois da volta anterior
+```
+
+O sufixo `#N` existe pela mesma razão do `implement:T1` do fan-out: `run_steps`
+tem chave `(run_id, step_id)`, então reusar o id faria a rodada 2 sobrescrever a
+1 e o histórico perderia o que aconteceu. Cada volta tem sessão, retry e retomada
+próprios.
+
+Só os steps **dentro** da faixa são renumerados; o que vem depois dela roda uma
+vez, com o id da definição. E `repeat_from` que aponte para a frente, ou para um
+id que não existe, é ignorado em silêncio: um laço que não fecha travaria a run,
+e rodar a lista reta é o comportamento menos pior.
+
+O teto não é opcional. Sem ele, um agente que sempre pede mais uma rodada deixa
+a run sem fim, e o motor não tem como julgar se a próxima volta vale a pena.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
@@ -214,6 +267,7 @@ passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fech
 | `workspace` | diretório da run |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resumo do último step que **fechou** (`done`/`skipped`) |
+| `previous_status` | como aquele step fechou: `done` ou `skipped` |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 | `item_id` / `item_label` | o item deste step, num step de fan-out |
 | `item_index` / `item_total` | "2 de 7", para o prompt situar o agente |

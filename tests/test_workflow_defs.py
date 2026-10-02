@@ -35,11 +35,15 @@ def test_a_fresh_database_already_has_the_factory_loops():
         "techspec",
         "tasks",
         "implement",
+        "review",
+        "review-fix",
     ]
     # O último step de um pipeline executa: não há o que aprovar depois dele.
     assert [step.requires_approval for step in workflows["new-issue"].steps] == [
         True,
         True,
+        True,
+        False,
         True,
         False,
     ]
@@ -59,12 +63,13 @@ def test_every_factory_step_renders_with_what_the_engine_offers():
             "step_id",
             "step_label",
             "previous_summary",
+            "previous_status",
             "artifacts",
         ),
         "x",
     )
     # Primeiro step de uma run: não há resumo anterior nem artefato ainda.
-    first_step = dict(context, previous_summary="", artifacts="")
+    first_step = dict(context, previous_summary="", previous_status="", artifacts="")
 
     for workflow in list_workflows():
         for step in workflow.steps:
@@ -273,6 +278,8 @@ def test_os_loops_sem_ninguem_olhando_nao_pedem_aprovacao():
         True,
         True,
         False,
+        True,
+        False,
     ]
 
 
@@ -332,3 +339,128 @@ def test_template_reescrito_pelo_usuario_nao_e_tocado(tmp_path: Path):
     )
     assert step.prompt_template == "Explore do meu jeito."
     assert factory.APPROVAL_MARK  # o guarda existe e é o que protegeu a edição
+
+
+def test_banco_ja_semeado_ganha_a_fase_de_merge_na_abertura(tmp_path: Path):
+    """A camada de merge precisa chegar a quem já tinha banco.
+
+    `seed` é `INSERT OR IGNORE` e nem chega a rodar num banco já semeado — quem
+    destrava isso é o `is_seeded`, que conta os ids de fábrica e derruba o teste
+    quando a fábrica ganha linhas novas. Sem esse caminho, acrescentar um agente
+    de fábrica só valeria para quem instalasse o Pulse do zero.
+    """
+    from pulse.store.db import connect
+
+    db_path = tmp_path / "antigo.db"
+    connection = connect(db_path)
+    # Volta o banco ao que era antes de `review`/`review-fix` existirem, e marca
+    # um dos steps antigos para provar que a re-semeadura não o reescreve.
+    connection.execute(
+        "DELETE FROM workflow_steps WHERE step_id IN ('review', 'review-fix')"
+    )
+    connection.execute("DELETE FROM agent_defs WHERE id IN ('review', 'review-fix')")
+    connection.execute(
+        """
+        UPDATE workflow_steps SET prompt_template = ?
+         WHERE workflow_id = 'new-issue' AND step_id = 'prd'
+        """,
+        ("PRD do meu jeito.",),
+    )
+    connection.commit()
+    connection.close()
+
+    connect(db_path).close()
+
+    workflows = {item.id: item for item in list_workflows(db_path=db_path)}
+    steps = {step.step_id: step for step in workflows["new-issue"].steps}
+    assert (steps["review"].position, steps["review-fix"].position) == (5, 6)
+    assert steps["review"].requires_approval is True
+    assert steps["review-fix"].requires_approval is False
+    assert get_agent("review", db_path=db_path) is not None
+    assert get_agent("review-fix", db_path=db_path) is not None
+    # E o que já estava lá continua como o usuário deixou.
+    assert steps["prd"].prompt_template == "PRD do meu jeito."
+
+
+def test_quem_escreve_artefato_nao_roda_com_deny_writes():
+    """`deny_writes` recusa `write`/`edit` sem olhar o caminho.
+
+    A fase de review existe para produzir `reviews/round-NNN.md`; com a política
+    das fases de spec, o arquivo nunca chegaria ao disco — e, sem tool-call de
+    escrita, nunca apareceria no painel de artefatos. É o que
+    [pulse.prompts.permission] já diz: step que precisa escrever é `ask` ou
+    `auto_approve`.
+    """
+    from pulse.prompts.permission import decide_permission
+
+    params = {
+        "toolCall": {"kind": "write"},
+        "options": [
+            {"optionId": "allow-once", "kind": "allow_once"},
+            {"optionId": "reject-once", "kind": "reject_once"},
+        ],
+    }
+
+    for agent_id in ("review", "review-fix"):
+        agent = get_agent(agent_id)
+        assert agent is not None
+        assert decide_permission(params, policy=agent.permission_policy) != {
+            "outcome": {"outcome": "selected", "optionId": "reject-once"}
+        }, f"{agent_id} não consegue escrever o que a fase dele existe para produzir"
+
+
+def test_so_o_review_oferece_pular():
+    """Pular a spec é outra conversa: PRD/Techspec/Tasks seguem com três opções.
+
+    O rótulo e o motor não podem discordar — é `classify_outcome` que transforma
+    a escolha em `skipped`, e ele casa por substring. Um rótulo redigido sem
+    "Pular" renderizaria um menu que promete algo que o motor não faz.
+    """
+    from pulse.prompts.approval import SKIP, classify_outcome
+
+    workflows = {item.id: item for item in list_workflows()}
+    offering = [
+        step.step_id
+        for workflow in workflows.values()
+        for step in workflow.steps
+        if step.requires_approval and "Pular" in step.prompt_template
+    ]
+
+    assert offering == ["review"]
+
+    step = next(s for s in workflows["new-issue"].steps if s.step_id == "review")
+    option = next(
+        line.strip()
+        for line in step.prompt_template.splitlines()
+        if line.strip().startswith("C)")
+    )
+    assert classify_outcome(f"→ {option}") == SKIP
+
+
+def test_a_camada_de_merge_e_um_laco_com_teto():
+    """Revisa, corrige, revisa de novo — até ninguém pedir mais nada.
+
+    O teto é o mesmo do contrato de convergência que o playbook carrega: round 2
+    só aceita o que um fix quebrou, round 3 fecha, round 4 não existe. Teto e
+    playbook têm de dizer a mesma coisa, senão o motor para onde o texto promete
+    continuar.
+    """
+    steps = {step.step_id: step for step in get_workflow("new-issue").steps}
+
+    assert steps["review-fix"].repeat_from == "review"
+    assert steps["review-fix"].repeat_max == 3
+    # O alvo existe e vem antes: um laço que aponta para a frente nunca fecha.
+    assert steps["review"].position < steps["review-fix"].position
+    # Nenhum outro step de fábrica repete — laço é exceção, não default.
+    repeating = [
+        step.step_id
+        for workflow in list_workflows()
+        for step in workflow.steps
+        if step.repeat_from
+    ]
+    assert repeating == ["review-fix"]
+
+    # E os dois lados do protocolo combinam: o review sabe que pode rodar de
+    # novo, e o fix sabe como pedir.
+    assert "repeats" in steps["review"].prompt_template.lower()
+    assert "next: repeat" in steps["review-fix"].prompt_template

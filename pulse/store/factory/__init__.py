@@ -35,8 +35,17 @@ class FactoryStep:
     fan_out: bool = False
     #: Default = o id do agente, que é único dentro de cada loop de fábrica.
     #: Explícito só onde já existe linha gravada com outro id — trocar o id
-    #: criaria um segundo step em vez de atualizar o primeiro.
+    #: criaria um segundo step em vez de atualizar o primeiro. Também é o que
+    #: permite o mesmo agente aparecer duas vezes no mesmo loop.
     step_id: str = ""
+    #: `step_id` de um step anterior deste mesmo loop. Preenchido, este step
+    #: pode mandar a run voltar até lá e repetir o trecho — ver
+    #: [pulse.orchestrator.engine]. Quem pede a volta é o agente; isto é a
+    #: permissão.
+    repeat_from: str = ""
+    #: Teto de voltas, contando a primeira. Sem teto, um agente que sempre pede
+    #: mais uma rodada deixa a run sem fim.
+    repeat_max: int = 0
 
     def id(self) -> str:
         return self.step_id or self.agent_id
@@ -61,6 +70,8 @@ AGENT_LABELS: dict[str, str] = {
     "techspec": "Techspec",
     "tasks": "Tasks",
     "implement": "Implementar",
+    "review": "Review",
+    "review-fix": "Fix review",
     "quick-plan": "Quick plan",
     "quick-implement": "Quick implement",
     "setup-interview": "Setup — entrevista",
@@ -84,6 +95,27 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("techspec", "Techspec", True),
             FactoryStep("tasks", "Tasks", True),
             FactoryStep("implement", "Implementar", False, fan_out=True),
+            # A camada de merge: quem implementou não é quem revisa, e quem
+            # revisa não é quem conserta. O review aprova porque é ali que a
+            # pessoa decide o que vira correção — inclusive decidir que nada
+            # vira, pulando os dois.
+            #
+            # Os dois rodam com `ask`, e não com o `deny_writes` das fases de
+            # spec: o review **escreve** a rodada, e `deny_writes` recusa
+            # qualquer `write`/`edit` sem olhar o caminho — o artefato nunca
+            # chegaria ao disco nem ao painel. Ver [pulse.prompts.permission].
+            FactoryStep("review", "Review", True),
+            # O laço: corrigiu algo, volta ao revisor para conferir se o reparo
+            # valeu e se não sobrou nada crítico; não corrigiu nada, a run acaba
+            # aqui. O teto de 3 é o mesmo do contrato de convergência — round 2
+            # só aceita o que um fix quebrou, round 3 fecha, round 4 não existe.
+            FactoryStep(
+                "review-fix",
+                "Fix review",
+                False,
+                repeat_from="review",
+                repeat_max=3,
+            ),
         ),
     ),
     FactoryWorkflow(
@@ -168,6 +200,16 @@ class FactoryAgent:
     prompt_template: str
 
 
+@lru_cache(maxsize=None)
+def load_phase(agent_id: str) -> str:
+    """O `prompt_template` de um step: o `PHASE.md` da pasta do agente.
+
+    Em cache: a semeadura pede o mesmo arquivo uma vez por step que o cita, e um
+    agente pode aparecer em mais de um step.
+    """
+    return _expand_includes(_read(factory_dir() / "agents" / agent_id / "PHASE.md")).strip()
+
+
 @lru_cache(maxsize=1)
 def load_agents() -> tuple[FactoryAgent, ...]:
     """Lê os `.md` de fábrica. Em cache: só a semeadura precisa disso.
@@ -189,7 +231,7 @@ def load_agents() -> tuple[FactoryAgent, ...]:
                 label=label,
                 permission_policy=meta.get("permission_policy", "ask"),
                 instructions=body.strip(),
-                prompt_template=_expand_includes(_read(directory / "PHASE.md")).strip(),
+                prompt_template=load_phase(agent_id),
             )
         )
     return tuple(agents)
@@ -217,8 +259,12 @@ def seed(connection: Any) -> None:
         agents,
     )
 
-    templates = {agent.id: agent.prompt_template for agent in load_agents()}
-    templates["default"] = "{{user_prompt}}"
+    def template(step: FactoryStep) -> str:
+        # O agente genérico não tem pasta nem fase: o pedido vai cru.
+        if step.agent_id == "default":
+            return "{{user_prompt}}"
+        return load_phase(step.agent_id)
+
     connection.executemany(
         """
         INSERT OR IGNORE INTO workflow_defs
@@ -234,8 +280,8 @@ def seed(connection: Any) -> None:
         """
         INSERT OR IGNORE INTO workflow_steps
           (workflow_id, step_id, position, label, agent_id, prompt_template,
-           requires_approval, fan_out)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           requires_approval, fan_out, repeat_from, repeat_max)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -244,9 +290,11 @@ def seed(connection: Any) -> None:
                 position,
                 step.label,
                 step.agent_id,
-                templates[step.agent_id],
+                template(step),
                 int(step.requires_approval),
                 int(step.fan_out),
+                step.repeat_from,
+                int(step.repeat_max),
             )
             for workflow in WORKFLOWS
             for position, step in enumerate(workflow.steps, start=1)
