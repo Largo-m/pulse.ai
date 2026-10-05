@@ -58,6 +58,8 @@ class StepRecord:
     ended_at: str = ""
     #: Tempo que este step passou esperando o usuário, descontado da duração.
     waiting_seconds: float = 0.0
+    #: Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço.
+    rounds: int = 1
 
 
 @dataclass
@@ -118,6 +120,7 @@ def _step(row: Any) -> StepRecord:
         started_at=str(row["started_at"] or ""),
         ended_at=str(row["ended_at"] or ""),
         waiting_seconds=float(row["waiting_seconds"] or 0.0),
+        rounds=int(row["rounds"] or 1),
     )
 
 
@@ -318,14 +321,16 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
             """
             INSERT INTO run_steps
               (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at, waiting_seconds)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
+               rounds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, step_id) DO UPDATE SET
               status = excluded.status,
               summary = excluded.summary,
               acp_session_id = excluded.acp_session_id,
               started_at = excluded.started_at,
-              ended_at = excluded.ended_at
+              ended_at = excluded.ended_at,
+              rounds = excluded.rounds
             """,
             (
                 run_id,
@@ -339,6 +344,7 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
                 step.started_at,
                 step.ended_at,
                 step.waiting_seconds,
+                step.rounds,
             ),
         )
         connection.execute(

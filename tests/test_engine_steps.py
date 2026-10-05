@@ -919,18 +919,13 @@ def test_um_step_pode_mandar_a_run_voltar_e_repetir_o_trecho(wired, monkeypatch,
 
     assert code == 0
     record = run_store.list_runs(tmp_path)[0]
-    # Cada volta tem registro próprio: reusar o id faria a rodada 2 sobrescrever
-    # a 1 e o histórico perderia o que aconteceu.
-    assert [step.step_id for step in record.steps] == [
-        "review",
-        "fix",
-        "review#2",
-        "fix#2",
-        "review#3",
-        "fix#3",
-    ]
+    # Uma linha por step, não por volta: o painel mostra `Review ×3`, e o log e
+    # os artefatos das três rodadas ficam sob o mesmo step.
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert all(step.status == "done" for step in record.steps)
-    assert record.step("review#2").label == "Review (2ª rodada)"
+    # O contador vai em quem abre a faixa — é ele que tem um artefato por volta.
+    assert record.step("review").rounds == 3
+    assert record.step("fix").rounds == 1
 
 
 def test_sem_pedido_o_laco_roda_uma_vez_so(wired, monkeypatch, tmp_path):
@@ -954,6 +949,7 @@ def test_sem_pedido_o_laco_roda_uma_vez_so(wired, monkeypatch, tmp_path):
 
     record = run_store.list_runs(tmp_path)[0]
     assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 1
 
 
 def test_o_teto_de_rodadas_encerra_o_laco(wired, monkeypatch, tmp_path):
@@ -978,7 +974,8 @@ def test_o_teto_de_rodadas_encerra_o_laco(wired, monkeypatch, tmp_path):
 
     assert code == 0
     record = run_store.list_runs(tmp_path)[0]
-    assert [step.step_id for step in record.steps] == ["review", "fix", "review#2", "fix#2"]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 2, "parou na segunda, como o teto manda"
     assert record.status == "completed"
 
 
@@ -1006,8 +1003,8 @@ def test_o_pedido_de_repetir_nao_vale_onde_o_workflow_nao_declarou_laco(
     assert [step.step_id for step in record.steps] == ["one", "two"]
 
 
-def test_steps_depois_do_laco_nao_herdam_o_numero_da_rodada(wired, monkeypatch, tmp_path):
-    """A numeração é da faixa do laço, não de tudo que vem depois dele."""
+def test_steps_depois_do_laco_nao_contam_rodada(wired, monkeypatch, tmp_path):
+    """O contador é da faixa do laço, não de tudo que vem depois dele."""
     make_workflow(
         "demo",
         steps=[("review", "Review"), ("fix", "Fix"), ("ship", "Ship")],
@@ -1026,10 +1023,59 @@ def test_steps_depois_do_laco_nao_herdam_o_numero_da_rodada(wired, monkeypatch, 
     )
 
     record = run_store.list_runs(tmp_path)[0]
-    assert [step.step_id for step in record.steps] == [
-        "review",
-        "fix",
-        "review#2",
-        "fix#2",
-        "ship",
+    assert [step.step_id for step in record.steps] == ["review", "fix", "ship"]
+    assert record.step("review").rounds == 2
+    # Quem está fora da faixa roda uma vez e não conta volta nenhuma.
+    assert record.step("ship").rounds == 1
+
+
+def test_as_voltas_do_laco_ficam_sob_o_mesmo_step(wired, monkeypatch, tmp_path):
+    """Uma linha por step no painel, com log e artefatos de todas as voltas.
+
+    É o que faz `Review` mostrar `round-001.md` e `round-002.md` lado a lado:
+    `visible_artifacts()` filtra por `phase_id`, então as rodadas só aparecem
+    juntas se compartilharem o `step_id`.
+    """
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    rounds: list[int] = []
+    original = engine._run_step
+
+    def spy(**kwargs):
+        # Grava um artefato por volta, como o runtime faria ao escrever a rodada.
+        if kwargs["step"].step_id == "review":
+            rounds.append(len(rounds) + 1)
+            run_store.record_artifact(
+                kwargs["run"].id,
+                f"reviews/round-00{len(rounds)}.md",
+                step_id="review",
+            )
+        return original(**kwargs)
+
+    monkeypatch.setattr(engine, "_run_step", spy)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 2
+
+    # As duas rodadas sob o mesmo step: é isso que o painel navega.
+    artifacts = run_store.list_artifacts(record.id)
+    assert artifacts == [
+        {"path": "reviews/round-001.md", "step_id": "review"},
+        {"path": "reviews/round-002.md", "step_id": "review"},
     ]

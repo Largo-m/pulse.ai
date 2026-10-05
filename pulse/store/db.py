@@ -195,6 +195,10 @@ CREATE TABLE IF NOT EXISTS run_steps (
   -- é tempo de parede; a duração que interessa é essa menos isto aqui — senão
   -- uma aprovação que demorou a noite inteira vira "trabalho do agente".
   waiting_seconds REAL NOT NULL DEFAULT 0,
+  -- Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço
+  -- (`workflow_steps.repeat_from`), e é o que deixa o painel mostrar uma linha
+  -- só com o contador do lado em vez de uma linha por volta.
+  rounds INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY (run_id, step_id)
 );
 
@@ -270,6 +274,8 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # que passasse a valer por conta de um upgrade mudaria o custo de toda run.
     ("workflow_steps", "repeat_from", "TEXT NOT NULL DEFAULT ''"),
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
+    # 1 para o que já existia, que é a verdade: nenhum step repetia antes.
+    ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
 )
 
 

@@ -59,6 +59,9 @@ class PhaseItem:
     awaiting_since: float | None = None
     #: Espera já contabilizada neste passo, descontada da duração.
     waiting_total: float = 0.0
+    #: Quantas vezes este step rodou. Passa de 1 só dentro de um laço, e é o que
+    #: a sidebar mostra como contador — uma linha por step, não por volta.
+    rounds: int = 1
     files: int = 0
     issues: int = 0
     _seen_files: set[str] = field(default_factory=set, repr=False, compare=False)

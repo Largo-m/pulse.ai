@@ -237,20 +237,30 @@ step `review-fix` fechou com `next: repeat`
   │
   ├─ está dentro de uma faixa repetível?        não → segue a lista
   ├─ já deu `repeat_max` voltas?                sim → avisa e segue a lista
-  └─ volta o índice para o step de `repeat_from`
-       a volta N renomeia os steps da faixa:    review#2, review-fix#2
-       e os reposiciona depois da volta anterior
+  └─ devolve os steps da faixa para `pending`
+       incrementa `run_steps.rounds` de quem ABRE a faixa
+       volta o índice para o step de `repeat_from`
 ```
 
-O sufixo `#N` existe pela mesma razão do `implement:T1` do fan-out: `run_steps`
-tem chave `(run_id, step_id)`, então reusar o id faria a rodada 2 sobrescrever a
-1 e o histórico perderia o que aconteceu. Cada volta tem sessão, retry e retomada
-próprios.
+**A volta reusa os mesmos `step_id`** — não há `review#2`. É o oposto do
+fan-out, e de propósito: o fan-out numera porque cada item é um trabalho
+diferente, enquanto as voltas de um laço são o mesmo trabalho repetido. Reusar o
+id é o que mantém **uma linha por step** no painel, com o contador do lado, e o
+que deixa o log e os artefatos de todas as voltas sob o mesmo step —
+`visible_artifacts()` filtra por `phase_id`, então é assim que `Review` mostra
+`round-001.md` e `round-002.md` lado a lado, navegáveis.
 
-Só os steps **dentro** da faixa são renumerados; o que vem depois dela roda uma
-vez, com o id da definição. E `repeat_from` que aponte para a frente, ou para um
-id que não existe, é ignorado em silêncio: um laço que não fecha travaria a run,
-e rodar a lista reta é o comportamento menos pior.
+O preço é explícito: `run_steps` guarda o estado da **última** volta, não de cada
+uma. O que de fato distingue uma rodada da outra está no arquivo que ela escreveu
+e nos eventos da run, que são append-only.
+
+O contador (`run_steps.rounds`) vai no step que **abre** a faixa, não no que a
+fecha: é ele que tem um artefato por volta para a pessoa abrir, e no outro o
+número seria ruído. Quem está fora da faixa fica em `rounds = 1`.
+
+`repeat_from` que aponte para a frente, ou para um id que não existe, é ignorado
+em silêncio: um laço que não fecha travaria a run, e rodar a lista reta é o
+comportamento menos pior.
 
 O teto não é opcional. Sem ele, um agente que sempre pede mais uma rodada deixa
 a run sem fim, e o motor não tem como julgar se a próxima volta vale a pena.

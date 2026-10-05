@@ -79,12 +79,6 @@ RUN_BLOCKED = 131
 #: do laço. Não é status de banco — em `run_steps` ele é `done` como qualquer
 #: outro, porque entregou mesmo. Só o laço do motor precisa saber a diferença.
 REPEAT = "repeat"
-#: Espaço entre as voltas de um laço, dentro do stride do último step dele.
-ROUND_STRIDE = 100
-#: Separador do número da volta no `step_id` de um step repetido: `review#2`.
-#: `#` e não `:` porque `:` já é do fan-out (`implement:T1`), e a varredura de
-#: `_previous_settled` corta no primeiro filho pelo prefixo `step_id:`.
-ROUND_MARK = "#"
 
 
 class UnknownWorkflow(ValueError):
@@ -331,9 +325,7 @@ def _execute(
             # Um step de fan-out só sabe quantos trabalhos tem depois que o
             # anterior rodou — por isso a expansão acontece aqui, e não ao criar
             # a run.
-            units = _units(
-                run, _round_step(definition_step, at, loops, rounds, definition)
-            )
+            units = _units(run, definition_step)
             _sync_steps(runner, run)
 
             for step, item in units:
@@ -386,7 +378,9 @@ def _execute(
                         )
                     else:
                         rounds[loop.closer] = number + 1
+                        _reopen_loop(run, definition, loop)
                         index = loop.start
+                        _sync_steps(runner, run)
                         _notify(runner, f"{record.label} pediu a {number + 1}ª rodada")
                         break
 
@@ -429,42 +423,34 @@ def _loops(definition: WorkflowDef) -> dict[int, _Loop]:
     return found
 
 
-def _round_step(
-    step: StepDef,
-    index: int,
-    loops: dict[int, _Loop],
-    rounds: dict[str, int],
-    definition: WorkflowDef,
-) -> StepDef:
-    """O step como ele existe **nesta volta** do laço.
+def _reopen_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: _Loop) -> None:
+    """Devolve os steps da faixa para `pending` e conta mais uma volta.
 
-    Da segunda volta em diante o `step_id` ganha `#N`, e é isso que dá registro
-    próprio a cada rodada: `run_steps` tem chave `(run_id, step_id)`, então
-    reusar o id faria a rodada 2 sobrescrever a 1 e o histórico perderia o que
-    aconteceu. É a mesma razão pela qual o fan-out numera `implement:T1`.
+    A volta reusa os mesmos `step_id`, de propósito: é o que mantém **uma linha
+    por step** no painel, com o contador do lado, em vez de uma linha por
+    rodada. Também é o que faz o log e os artefatos de todas as voltas ficarem
+    sob o mesmo step — selecionar `Review` mostra `round-001.md` e
+    `round-002.md` lado a lado.
 
-    A posição também muda, e por isso a volta aparece **depois** da anterior no
-    painel em vez de embaralhada com ela: as rodadas 2+ ocupam o espaço entre o
-    último step do laço e o próximo da definição, que o `POSITION_STRIDE` deixou
-    livre. Cabem `ROUND_STRIDE` steps por volta e ~9 voltas antes de encostar no
-    step seguinte — folga de sobra para um teto de 3.
+    O preço é conhecido: `run_steps` guarda o estado da **última** volta, não de
+    cada uma. O que de fato distingue uma rodada da outra está no arquivo que
+    ela escreveu e nos eventos da run, que são append-only.
 
-    Só os steps dentro da faixa do laço são numerados. Quem vem depois dela roda
-    uma vez, com o id e a posição que a definição deu.
+    O contador vai no step que **abre** a faixa, não no que a fecha: é ele que
+    tem um artefato por volta para a pessoa abrir.
     """
-    loop = loops.get(index)
-    if loop is None:
-        return step
-    number = rounds.get(loop.closer, 1)
-    if number <= 1:
-        return step
-    base = definition.steps[loop.end].position * POSITION_STRIDE
-    return replace(
-        step,
-        step_id=f"{step.step_id}{ROUND_MARK}{number}",
-        label=f"{step.label} ({number}ª rodada)",
-        position=base + (number - 2) * ROUND_STRIDE + (index - loop.start) + 1,
-    )
+    for step in definition.steps[loop.start : loop.end + 1]:
+        record = run.step(step.step_id)
+        if record is None:
+            continue
+        if step.step_id == definition.steps[loop.start].step_id:
+            record.rounds += 1
+        record.status = PENDING
+        record.summary = ""
+        record.started_at = ""
+        record.ended_at = ""
+        record.acp_session_id = ""
+        run_store.save_step(run.id, record)
 
 
 def _run_status(exit_code: int) -> str:
@@ -1074,7 +1060,10 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
     if not callable(apply):
         return
     apply(
-        steps=[{"id": item.step_id, "label": item.label} for item in run.steps],
+        steps=[
+            {"id": item.step_id, "label": item.label, "rounds": item.rounds}
+            for item in run.steps
+        ],
         done_ids=[item.step_id for item in run.steps if item.status == DONE],
         skipped_ids=[item.step_id for item in run.steps if item.status == SKIPPED],
         failed_ids=[item.step_id for item in run.steps if item.status == FAILED],

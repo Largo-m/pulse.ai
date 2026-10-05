@@ -149,6 +149,7 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps):
             phase.label = str(step.get("label", "")) or phase.label
+            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
         # depois dele para baixo.
         if selected is not None:
