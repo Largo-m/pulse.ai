@@ -106,7 +106,7 @@ class Outcome:
         """O agente diz que o laço acabou: nada mais a corrigir.
 
         Só tem efeito no step que abre um laço — ver
-        [pulse.orchestrator.engine._close_loop].
+        [pulse.orchestrator.loops.close_loop].
         """
         return self.delivered and self.next in _CLOSE_WORDS
 

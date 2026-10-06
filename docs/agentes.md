@@ -279,7 +279,7 @@ _sync_steps()           ← manda a lista de fases para o painel
 
 para cada definition_step em definition.steps:
   │
-  ├─ units = _units(run, step)        ← 1 unidade, ou N se fan_out
+  ├─ units = expand(run, step, …)     ← 1 unidade, ou N se fan_out
   ├─ _sync_steps()                    ← o painel vê o fan-out expandir
   │
   └─ para cada (step, item) em units:
@@ -511,7 +511,7 @@ limpo) e o cancelamento dentro do `session/prompt` (corte no meio do turno).
 `workflow_steps.fan_out = 1` significa "rode este step uma vez por item que o
 step anterior enumerou". Quantos são só se sabe **depois** que o step anterior
 rodou — por isso a expansão acontece dentro do laço
-([`_units`](../pulse/orchestrator/engine.py)), não ao criar a run.
+([`expand`](../pulse/orchestrator/fanout.py)), não ao criar a run.
 
 Quem enumera é o agente, num bloco cercado
 ([`fanout.py`](../pulse/orchestrator/fanout.py)):

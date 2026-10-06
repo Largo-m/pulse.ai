@@ -357,37 +357,6 @@ def test_template_reescrito_pelo_usuario_nao_e_tocado(tmp_path: Path):
     assert factory.APPROVAL_MARK  # o guarda existe e é o que protegeu a edição
 
 
-def test_banco_antigo_ganha_o_review_que_encerra_o_laco(tmp_path: Path):
-    """O review de fábrica antigo pedia aprovação mesmo limpo — a abertura o troca."""
-    from pulse.store import factory
-    from pulse.store.db import connect
-
-    db_path = tmp_path / "antigo.db"
-    connection = connect(db_path)
-    connection.execute(
-        "UPDATE workflow_steps SET prompt_template = ? WHERE step_id = 'review'",
-        (f"{factory.REVIEW_PHASE_MARK} review what was implemented (do NOT fix)",),
-    )
-    connection.execute(
-        """
-        UPDATE workflow_steps SET prompt_template = 'Revise do meu jeito.'
-         WHERE workflow_id = 'review' AND step_id = 'review'
-        """
-    )
-    connection.commit()
-    connection.close()
-
-    connect(db_path).close()
-
-    workflows = {item.id: item for item in list_workflows(db_path=db_path)}
-    pipeline = next(s for s in workflows["new-issue"].steps if s.step_id == "review")
-    assert factory.REVIEW_CLOSE_MARK in pipeline.prompt_template
-    assert pipeline.prompt_template == factory.load_phase("review")
-    # Sem o cabeçalho de fábrica, a linha é do usuário.
-    mine = next(s for s in workflows["review"].steps if s.step_id == "review")
-    assert mine.prompt_template == "Revise do meu jeito."
-
-
 def test_banco_ja_semeado_ganha_a_fase_de_merge_na_abertura(tmp_path: Path):
     """A camada de merge precisa chegar a quem já tinha banco.
 

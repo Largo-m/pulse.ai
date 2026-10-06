@@ -391,49 +391,6 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
     )
 
 
-#: Cabeçalho da fase de review de fábrica — nas duas versões, a do pipeline e a
-#: avulsa. Sem ele, a linha foi reescrita pelo usuário e não é tocada.
-REVIEW_PHASE_MARK = "## Review phase —"
-#: O que o review de fábrica aprendeu depois: encerrar o laço sem pedir
-#: aprovação quando não sobra nada a corrigir. Presente = linha já atualizada.
-REVIEW_CLOSE_MARK = "next: close"
-
-
-def teach_review_to_close_the_loop(connection: Any) -> None:
-    """Leva a saída do laço pelo review aos bancos já semeados.
-
-    Sem isto, quem já usa o Pulse continuaria com o review antigo: ele pede
-    aprovação mesmo limpo, e o laço só acaba depois de um fix que não tinha o
-    que fazer. Mesmo guarda de `drop_approval_from_unattended_steps`: só a linha
-    que ainda é a de fábrica, e sai cedo pelo `SELECT` depois da primeira vez.
-    """
-    rows = connection.execute(
-        """
-        SELECT workflow_id, step_id FROM workflow_steps
-         WHERE agent_id = 'review'
-           AND instr(prompt_template, ?) > 0 AND instr(prompt_template, ?) = 0
-        """,
-        (REVIEW_PHASE_MARK, REVIEW_CLOSE_MARK),
-    ).fetchall()
-    if not rows:
-        return
-
-    factory = {
-        (workflow.id, step.id()): load_phase(step.agent_id, step.phase or "PHASE")
-        for workflow in WORKFLOWS
-        for step in workflow.steps
-        if step.agent_id == "review"
-    }
-    connection.executemany(
-        "UPDATE workflow_steps SET prompt_template = ? WHERE workflow_id = ? AND step_id = ?",
-        [
-            (factory[(row[0], row[1])], row[0], row[1])
-            for row in rows
-            if (row[0], row[1]) in factory
-        ],
-    )
-
-
 def _count_present(connection: Any, table: str, column: str, ids: tuple[str, ...]) -> int:
     placeholders = ",".join("?" * len(ids))
     query = f"SELECT count(*) FROM {table} WHERE {column} IN ({placeholders})"  # noqa: S608

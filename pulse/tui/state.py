@@ -22,7 +22,7 @@ Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 #: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
-#: gerou. Ver [pulse.orchestrator.engine._units].
+#: gerou. Ver [pulse.orchestrator.fanout.expand].
 FANOUT_SEP = ":"
 #: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
 #: [pulse.acp.session_runner].

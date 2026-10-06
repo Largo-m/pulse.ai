@@ -16,7 +16,6 @@ from __future__ import annotations
 import sys
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,8 @@ from pulse.orchestrator.cli_output import (
     print_workflow_error,
     print_workflow_result,
 )
-from pulse.orchestrator.fanout import Item, parse_items
+from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
+from pulse.orchestrator.loops import CLOSE, REPEAT, close_loop, find_loops, repeat_loop
 from pulse.orchestrator.outcome import MISSING, Outcome, parse_outcome
 from pulse.orchestrator.prompts import (
     build_continuation_prompt,
@@ -67,21 +67,11 @@ _POLICIES: dict[str, PermissionPolicy] = {
 }
 #: Fallback para runner sem controle (CLI, testes): nunca para.
 _NEVER_INTERRUPTED = RunControl()
-#: Espaço entre as posições da definição, para o fan-out caber no meio sem
-#: renumerar o resto: o step 4 vira 4001, 4002… e continua antes do step 5.
-POSITION_STRIDE = 1000
 #: Código de saída de uma run que parou num step bloqueado. Não é falha nem
 #: parada do usuário: nada quebrou e ninguém apertou nada — um step declarou que
 #: não tinha como entregar, e a run não passa por cima disso. Vizinho de
 #: `RUN_STOPPED`, e como ele: quem vê oferece retomar, não erro.
 RUN_BLOCKED = 131
-#: Desfecho interno de `_attempt_step`: o step entregou **e** pediu outra volta
-#: do laço. Não é status de banco — em `run_steps` ele é `done` como qualquer
-#: outro, porque entregou mesmo. Só o laço do motor precisa saber a diferença.
-REPEAT = "repeat"
-#: Desfecho interno de `_attempt_step`: quem abre o laço entregou e declarou que
-#: não sobrou nada a corrigir. O laço termina nele, e o resto da faixa não roda.
-CLOSE = "close"
 
 
 class UnknownWorkflow(ValueError):
@@ -317,7 +307,7 @@ def _execute(
         # não há condição sobre id de workflow nem sobre nome de fase: o motor lê
         # um pedido declarado no bloco de desfecho e um teto gravado na
         # definição, e os dois vêm do banco.
-        loops = _loops(definition)
+        loops = find_loops(definition)
         index = 0
         while index < len(definition.steps):
             definition_step = definition.steps[index]
@@ -326,7 +316,7 @@ def _execute(
             # Um step de fan-out só sabe quantos trabalhos tem depois que o
             # anterior rodou — por isso a expansão acontece aqui, e não ao criar
             # a run.
-            units = _units(run, definition_step)
+            units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
             _sync_steps(runner, run)
 
             for step, item in units:
@@ -371,38 +361,17 @@ def _execute(
                     return exit_code
 
                 if signal == CLOSE and opens_loop:
-                    _close_loop(run, definition, loops[at])
-                    index = loops[at].end + 1
+                    index = close_loop(run, definition, loops[at])
                     _sync_steps(runner, run)
                     _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
-                if signal == REPEAT and at in loops:
-                    loop = loops[at]
-                    # O teto conta as rodadas de quem **abre** a faixa, lidas do
-                    # banco: um contador em memória voltava a 1 ao retomar a
-                    # run, e o laço ganhava voltas que o teto não permitia.
-                    opener = run.step(definition.steps[loop.start].step_id)
-                    number = opener.rounds if opener is not None else 1
-                    if number >= definition_step.repeat_max:
-                        _notify(
-                            runner,
-                            f"{record.label}: teto de {definition_step.repeat_max} "
-                            "rodadas atingido — o que sobrou vai no relatório",
-                        )
-                    else:
-                        last = number + 1 >= definition_step.repeat_max
-                        _reopen_loop(run, definition, loop, last=last)
-                        index = loop.start
+                if signal == REPEAT and at in loops and loops[at].end == at:
+                    target, message = repeat_loop(run, definition, loops[at], record.label)
+                    _notify(runner, message)
+                    if target is not None:
+                        index = target
                         _sync_steps(runner, run)
-                        if last:
-                            _notify(
-                                runner,
-                                f"{record.label} pediu a {number + 1}ª rodada — a última: "
-                                f"só {opener.label if opener else 'o início do laço'} roda",
-                            )
-                        else:
-                            _notify(runner, f"{record.label} pediu a {number + 1}ª rodada")
                         break
 
         run_store.update_run(run.id, status="completed")
@@ -411,108 +380,6 @@ def _execute(
         return 0
     finally:
         runner.close()
-
-
-@dataclass(frozen=True)
-class _Loop:
-    """Uma faixa repetível da definição."""
-
-    start: int
-    #: Índice do step que fecha o trecho e pode pedir a volta.
-    end: int
-
-
-def _loops(definition: WorkflowDef) -> dict[int, _Loop]:
-    """Faixas repetíveis da definição, por índice de step.
-
-    Lido uma vez por run. Um `repeat_from` que não aponta para um step **antes**
-    deste é ignorado em silêncio: um alvo à frente, ou inexistente, seria um laço
-    que nunca fecha, e o motor prefere rodar a lista reta a travar a run.
-    """
-    found: dict[int, _Loop] = {}
-    at = {step.step_id: index for index, step in enumerate(definition.steps)}
-    for end, step in enumerate(definition.steps):
-        if not step.repeat_from or step.repeat_max < 2:
-            continue
-        start = at.get(step.repeat_from)
-        if start is None or start >= end:
-            continue
-        loop = _Loop(start=start, end=end)
-        for index in range(start, end + 1):
-            found[index] = loop
-    return found
-
-
-def _reopen_loop(
-    run: run_store.RunRecord,
-    definition: WorkflowDef,
-    loop: _Loop,
-    *,
-    last: bool = False,
-) -> None:
-    """Devolve os steps da faixa para `pending` e conta mais uma volta.
-
-    A volta reusa os mesmos `step_id`, de propósito: é o que mantém **uma linha
-    por step** no painel, com o contador do lado, em vez de uma linha por
-    rodada. Também é o que faz o log e os artefatos de todas as voltas ficarem
-    sob o mesmo step — selecionar `Review` mostra `round-001.md` e
-    `round-002.md` lado a lado.
-
-    O preço é conhecido: `run_steps` guarda o estado da **última** volta, não de
-    cada uma. O que de fato distingue uma rodada da outra está no arquivo que
-    ela escreveu e nos eventos da run, que são append-only.
-
-    O contador vai no step que **abre** a faixa, não no que a fecha: é ele que
-    tem um artefato por volta para a pessoa abrir.
-
-    **A última volta (`last`) reabre só quem abre a faixa.** Quem fecha o laço
-    pede a volta porque mexeu em algo que ninguém conferiu ainda — deixá-lo
-    rodar de novo no teto daria a ele a última palavra sobre o próprio reparo.
-    Os demais steps da faixa continuam `done` da volta anterior, e o laço
-    principal os pula como qualquer step já fechado.
-
-    O tempo **soma** entre as voltas: o que a volta anterior gastou vai para
-    `carried_seconds` antes de `started_at`/`ended_at` reabrirem. Ver
-    [pulse.store.runs.carry_round].
-    """
-    steps = definition.steps[loop.start : loop.start + 1 if last else loop.end + 1]
-    for step in steps:
-        record = run.step(step.step_id)
-        if record is None:
-            continue
-        if step.step_id == definition.steps[loop.start].step_id:
-            record.rounds += 1
-        record.carried_seconds = run_store.carry_round(run.id, step.step_id)
-        record.waiting_seconds = 0.0
-        record.status = PENDING
-        record.summary = ""
-        record.started_at = ""
-        record.ended_at = ""
-        record.acp_session_id = ""
-        run_store.save_step(run.id, record)
-
-
-def _close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: _Loop) -> None:
-    """Fecha o resto da faixa sem rodar: quem abre o laço não achou o que corrigir.
-
-    É o fim do laço que o desenho pede — quem atesta que não sobrou nada é quem
-    revisa, não quem conserta. Sem isto, um review limpo ainda pedia aprovação
-    e mandava um fix rodar só para confirmar que não havia rodada nova.
-
-    Um step que já rodou numa volta anterior fica `done` — ele entregou, e o
-    painel não pode dizer o contrário. Só o que nunca rodou nesta run vira
-    `skipped`.
-    """
-    opener = run.step(definition.steps[loop.start].step_id)
-    ran_before = opener is not None and opener.rounds > 1
-    for step in definition.steps[loop.start + 1 : loop.end + 1]:
-        record = run.step(step.step_id)
-        if record is None or record.status in SETTLED:
-            continue
-        record.status = DONE if ran_before else SKIPPED
-        record.summary = ""
-        record.ended_at = record.ended_at or run_store.utc_now()
-        run_store.save_step(run.id, record)
 
 
 def _run_status(exit_code: int) -> str:
@@ -526,72 +393,6 @@ def _run_status(exit_code: int) -> str:
     if exit_code == RUN_BLOCKED:
         return BLOCKED
     return FAILED
-
-
-def _units(
-    run: run_store.RunRecord, step: StepDef
-) -> list[tuple[StepDef, Item | None]]:
-    """O step da definição vira os steps que a run vai mesmo rodar.
-
-    Sem `fan_out`, é ele mesmo. Com, é um por item que o step anterior
-    enumerou — cada um com `step_id` próprio, porque cada um quer sessão
-    isolada, linha no painel e a chance de ser refeito sozinho.
-
-    Lista vazia (o agente não emitiu o bloco, ou emitiu vazio) roda o step uma
-    vez, como se `fan_out` não existisse: um protocolo que o agente não seguiu
-    não é motivo para a run parar.
-    """
-    if not step.fan_out:
-        return [(step, None)]
-
-    items = parse_items(_previous_summary(run, step.step_id))
-    if not items:
-        return [(step, None)]
-
-    base = run.step(step.step_id)
-    base_position = base.position if base is not None else step.position * POSITION_STRIDE
-    at = len(run.steps)
-    if base is not None:
-        # O placeholder cumpriu o papel de mostrar que o step existe; agora os
-        # N filhos tomam o lugar dele — no mesmo ponto da lista, senão o painel
-        # mostraria as tasks depois de um step que ainda nem rodou.
-        at = run.steps.index(base)
-        run.steps.remove(base)
-        run_store.delete_step(run.id, step.step_id)
-
-    units: list[tuple[StepDef, Item | None]] = []
-    for index, item in enumerate(items, start=1):
-        step_id = f"{step.step_id}:{item.id}"
-        label = item.label or item.id
-        position = base_position + index
-        units.append(
-            (
-                StepDef(
-                    workflow_id=step.workflow_id,
-                    step_id=step_id,
-                    position=position,
-                    label=label,
-                    agent_id=step.agent_id,
-                    prompt_template=step.prompt_template,
-                    requires_approval=step.requires_approval,
-                ),
-                item,
-            )
-        )
-        if run.step(step_id) is None:
-            child = StepRecord(
-                step_id=step_id,
-                position=position,
-                label=label,
-                agent_id=step.agent_id,
-            )
-            run.steps.insert(at + index - 1, child)
-            # Grava os N na hora, não quando cada um começar. Filho que só
-            # existe na memória some se a run cair no meio do fan-out: o
-            # histórico reabria com as tasks que já tinham rodado e mais
-            # nenhuma, como se o agente tivesse enumerado menos do que enumerou.
-            run_store.save_step(run.id, child)
-    return units
 
 
 def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
