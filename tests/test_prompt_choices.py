@@ -190,6 +190,10 @@ def test_o_campo_nao_abre_em_rotulo_que_so_menciona_o_verbo():
         "C) Cancelar workflow",
         "B) A documentação que descreve o fluxo está correta",
         "B) Quick fix: reutilizar TokenResponseAdapter",
+        # A explicação depois dos dois-pontos fala de descrição; não pede uma.
+        "A) Sim: busca no título e na descrição; o trecho fica em negrito nos dois",
+        "A) Sim: a tarefa aparece se cada palavra estiver no título OU na descrição",
+        "B) Não (só o título, a descrição fica de fora)",
     ):
         assert not option_requires_description(label), label
 

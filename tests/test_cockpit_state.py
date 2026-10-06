@@ -70,6 +70,22 @@ def test_begin_phase_preserves_timer_across_same_phase_tasks():
     assert state.phases[3].started_at == last_started
 
 
+def test_a_new_round_of_the_loop_keeps_counting_from_the_previous_one(monkeypatch):
+    """O laço devolve `Review` a rodar: o cronômetro soma, não recomeça do zero."""
+    clock = iter([100.0, 130.0, 200.0])
+    monkeypatch.setattr("pulse.tui.state.time.monotonic", lambda: next(clock))
+    state = _state("pair", PAIR)
+
+    state.begin_phase("Planejar")  # 100
+    state.begin_phase("Construir")  # 130: Planejar fecha com 30s
+    assert state.phases[0].closed_seconds() == 30.0
+
+    state.begin_phase("Planejar")  # 200: segunda volta, parte dos 30s já gastos
+    assert state.phases[0].ended_at is None
+    # Aos 250: 30s da primeira volta + 50s da segunda.
+    assert state.phases[0].elapsed_label(250.0) == "01:20"
+
+
 def test_apply_phase_statuses_hydrates_resume_state():
     state = _state()
     state.apply_phase_statuses(done_ids=("one", "three"), skipped_ids=("two",))

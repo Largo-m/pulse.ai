@@ -367,6 +367,7 @@ a run sair errada.
 | `workspace` | diretório onde o agente trabalha (o worktree, quando há um) |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resposta do último step que produziu resumo |
+| `previous_status` | como aquele step fechou: `done` ou `skipped` |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 
 Note o que **não** existe: nenhuma chave com nome de artefato ou de fase. O motor

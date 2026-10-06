@@ -465,3 +465,53 @@ def test_log_stream_renders_only_selected_step():
     state.select_phase(3)
     empty_plain = _render_plain(state)
     assert "Aguardando atividade do agente…" in empty_plain
+
+
+def test_o_laco_mostra_uma_linha_com_contador_e_nao_uma_por_volta():
+    """Três voltas de review são uma linha `Review ×3`, não `Review (2ª rodada)`.
+
+    O contador fica em quem abre a faixa do laço: é esse step que tem um
+    artefato por volta para a pessoa abrir. Quem fecha roda tanto quanto, e não
+    conta nada — o número ali seria ruído.
+    """
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+
+        from pulse.tui.widgets.phase_sidebar import PhaseSidebar
+
+        holder: dict = {}
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                state = _configure("many")
+                holder["state"] = state
+                yield PhaseSidebar(state, id="phase-sidebar")
+
+            def on_mount(self) -> None:
+                state = holder["state"]
+                state.apply_phase_statuses(
+                    steps=[
+                        {"id": "review", "label": "Review", "rounds": 3},
+                        {"id": "fix", "label": "Fix review", "rounds": 1},
+                    ],
+                    done_ids=["review", "fix"],
+                )
+                self.query_one(PhaseSidebar).sync_from_state(state)
+
+        app = Harness()
+        async with app.run_test(size=(60, 24)) as pilot:
+            await pilot.pause()
+            phases = str(app.query_one("#phase-content").render())
+
+            assert "Review ×3" in phases
+            assert "Fix review" in phases
+            # Quem fecha o laço não ganha contador.
+            assert "Fix review ×" not in phases
+            # E nenhuma linha por volta.
+            assert "rodada" not in phases
+            assert "review#2" not in phases
+
+    asyncio.run(run())

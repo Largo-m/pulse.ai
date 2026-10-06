@@ -121,6 +121,8 @@ lista canônica — id da pasta → rótulo na UI:
 | `techspec` | Techspec | `new-issue` |
 | `tasks` | Tasks | `new-issue` |
 | `implement` | Implementar | `new-issue` (fan-out) |
+| `review` | Review | `new-issue` (laço), `review` (fase `STANDALONE.md`) |
+| `review-fix` | Fix review | `new-issue` (laço, fecha e pede a volta), `review` (fase `STANDALONE.md`) |
 | `quick-plan` | Quick plan | `quick-fix` |
 | `quick-implement` | Quick implement | `quick-fix` |
 | `setup-interview` | Setup — entrevista | `setup-project` |
@@ -214,11 +216,17 @@ silencioso.
 | `workspace` | diretório resolvido da run |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | `summary` do último step anterior que produziu resumo |
+| `previous_status` | como **aquele** step fechou: `done` ou `skipped` |
 | `artifacts` | `run_artifacts` da run, um caminho por linha |
 | `item_id` / `item_label` / `item_index` / `item_total` | o item, num step de fan-out |
 
 As `item_*` vêm **vazias** fora de um fan-out (não ausentes): o mesmo template
 roda nos dois modos.
+
+`previous_status` anda junto com `previous_summary` — é o desfecho do step de
+onde aquele texto veio, não um canal novo. Existe porque pular é escolha do
+usuário, e sem ela o step seguinte recebe o mesmo resumo tendo o anterior fechado
+ou tendo sido dispensado: o pulo valeria só para quem o deu.
 
 Note o que não existe: nenhuma chave com nome de artefato ou de fase. O motor não
 tem nenhum para oferecer — ele não sabe o que é um PRD.
@@ -271,7 +279,7 @@ _sync_steps()           ← manda a lista de fases para o painel
 
 para cada definition_step em definition.steps:
   │
-  ├─ units = _units(run, step)        ← 1 unidade, ou N se fan_out
+  ├─ units = expand(run, step, …)     ← 1 unidade, ou N se fan_out
   ├─ _sync_steps()                    ← o painel vê o fan-out expandir
   │
   └─ para cada (step, item) em units:
@@ -374,10 +382,18 @@ C) Cancelar workflow
 ```
 ````
 
+Há uma variante com quatro opções,
+[`shared/approval-skip.md`](../pulse/store/factory/shared/approval-skip.md), que
+acrescenta `C) Pular` antes do cancelar. Hoje só o `review` a usa: a fase existe
+para a pessoa decidir o que vira correção, e "nada" é uma das respostas. As
+fases de spec continuam com três — pular o PRD é outra conversa.
+
 [`classify_outcome`](../pulse/prompts/approval.py) lê só as linhas que começam
 com `→` (as escolhas do usuário). Texto livre é tratado como orientação, não como
 escolha: "revise o fluxo de aprovação" não aprova o step só porque contém
-"aprov".
+"aprov". O rótulo do pulo precisa conter "Pular" ou "skip" — é por substring que
+`SKIP_WORDS` casa, e um rótulo redigido de outro jeito renderizaria um menu que
+promete algo que o motor não faz.
 
 Ele nunca abre um arquivo que o agente escreveu, nunca valida formato, nunca
 espera nome conhecido: o que o motor interpreta são os três blocos cercados que
@@ -495,7 +511,7 @@ limpo) e o cancelamento dentro do `session/prompt` (corte no meio do turno).
 `workflow_steps.fan_out = 1` significa "rode este step uma vez por item que o
 step anterior enumerou". Quantos são só se sabe **depois** que o step anterior
 rodou — por isso a expansão acontece dentro do laço
-([`_units`](../pulse/orchestrator/engine.py)), não ao criar a run.
+([`expand`](../pulse/orchestrator/fanout.py)), não ao criar a run.
 
 Quem enumera é o agente, num bloco cercado
 ([`fanout.py`](../pulse/orchestrator/fanout.py)):
@@ -643,6 +659,7 @@ Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
 
 | Quero… | Mexo em… |
 | --- | --- |
+| Fazer um trecho se repetir | `repeat_from`/`repeat_max` no step que fecha o trecho + `next: repeat` no `PHASE.md` dele |
 | Mudar o playbook de um agente | `factory/agents/<id>/AGENT.md` — e apagar a linha de `agent_defs` para re-semear |
 | Mudar o prompt de uma fase | `factory/agents/<id>/PHASE.md` — idem, `workflow_steps` |
 | Mudar um bloco repetido (aprovação, isolamento) | `factory/shared/<nome>.md` |

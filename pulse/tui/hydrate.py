@@ -129,6 +129,7 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
     _stamp_elapsed(state, run_id)
     started = {step.step_id: step.started_at for step in record.steps}
     waiting = {step.step_id: step.waiting_seconds for step in record.steps}
+    carried = {step.step_id: step.carried_seconds for step in record.steps}
     now_wall = datetime.now(UTC)
     now_mono = time.monotonic()
     for phase in state.phases:
@@ -142,7 +143,9 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
         spent = (now_wall - begin).total_seconds()
         if spent < 0:
             continue
-        phase.started_at = now_mono - spent
+        # As voltas anteriores do laço entram no começo: o cronômetro da volta
+        # em curso continua de onde a anterior parou.
+        phase.started_at = now_mono - spent - max(0.0, carried.get(phase.id, 0.0))
         phase.ended_at = None
         # A espera já fechada vem do banco; a que ainda está aberta o replay
         # acabou de marcar em `awaiting_since`, e ela se fecha sozinha quando a
@@ -163,10 +166,7 @@ def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
     record = run_store.load_run(run_id)
     if record is None:
         return
-    durations = {
-        step.step_id: _seconds(step.started_at, step.ended_at, step.waiting_seconds)
-        for step in record.steps
-    }
+    durations = {step.step_id: _step_seconds(step) for step in record.steps}
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
@@ -175,6 +175,20 @@ def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
             # O desconto já está em `ended_at`; zerar evita descontá-lo de novo
             # em `elapsed_label`.
             phase.waiting_total = 0.0
+
+
+def _step_seconds(step: run_store.StepRecord) -> float | None:
+    """Duração do step somando as voltas do laço.
+
+    A volta em curso (ou ainda não começada) não tem fim gravado; o que as
+    anteriores gastaram continua valendo, senão o step reaparecia zerado no
+    meio de uma rodada.
+    """
+    current = _seconds(step.started_at, step.ended_at, step.waiting_seconds)
+    carried = max(0.0, step.carried_seconds)
+    if current is None:
+        return carried or None
+    return carried + current
 
 
 def _seconds(started_at: str, ended_at: str, waiting_seconds: float = 0.0) -> float | None:

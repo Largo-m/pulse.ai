@@ -414,7 +414,7 @@ def test_new_session_lists_pipelines_and_hides_the_generic_loop():
 
     assert "default" in everything, "o loop genérico continua no banco"
     assert "default" not in listed
-    assert {"new-issue", "quick-fix"} <= set(listed)
+    assert {"new-issue", "quick-fix", "review"} <= set(listed)
 
     labels = [item.label for item in _session_workflows()]
     assert labels == sorted(labels), "o menu é alfabético"
@@ -461,9 +461,14 @@ def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
             await pilot.pause()
             assert screen.query_one("#workflow-prompt", Input).display is False
 
+            screen.on_option_selected(_selected("workflow:review"))
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+
             assert opened == [
                 ("analyze-codebase", "Mapear codebase existente"),
                 ("setup-project", "Novo projeto"),
+                ("review", "Revisar a branch atual"),
             ]
 
     asyncio.run(run())

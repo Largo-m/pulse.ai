@@ -22,7 +22,7 @@ Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 #: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
-#: gerou. Ver [pulse.orchestrator.engine._units].
+#: gerou. Ver [pulse.orchestrator.fanout.expand].
 FANOUT_SEP = ":"
 #: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
 #: [pulse.acp.session_runner].
@@ -121,8 +121,11 @@ class CockpitState:
                 phase.finish(now)
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
-                matched.started_at = now
+                # Um step que volta a rodar (outra volta do laço, um retry)
+                # continua do tempo que já tinha, em vez de recomeçar do zero.
+                matched.started_at = now - matched.closed_seconds()
                 matched.ended_at = None
+                matched.waiting_total = 0.0
             matched.status = PhaseStatus.RUNNING
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
@@ -149,6 +152,7 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps):
             phase.label = str(step.get("label", "")) or phase.label
+            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
         # depois dele para baixo.
         if selected is not None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widget import Widget
@@ -46,7 +46,10 @@ class PromptDock(Widget):
                     yield Button("Confirmar", variant="primary", id="ok")
                     yield Button("Cancelar", id="cancel")
             else:
-                yield Static("↑↓ escolhe · Enter confirma · Esc cancela", classes="prompt-hint")
+                yield Static(
+                    "↑↓ escolhe · letra vai direto · Enter confirma · Esc cancela",
+                    classes="prompt-hint",
+                )
         elif kind == PromptKind.TEXT:
             default = str(self._request.default or "")
             yield Input(value=default, placeholder="Resposta…", id="prompt-input")
@@ -72,6 +75,46 @@ class PromptDock(Widget):
 
     def action_cancel(self) -> None:
         self._finish(None)
+
+    def hotkeys(self) -> dict[str, int]:
+        """Tecla → índice da opção, lida do rótulo que está na tela.
+
+        O dock já rotula toda opção como `A)`, `B)`, `C)`
+        ([pulse.prompts.ask_question.format_option_label]), então a tecla é a
+        própria letra que a pessoa está lendo. Derivar do rótulo, e não de um
+        alfabeto próprio, é o que garante que a tecla nunca discorde do texto —
+        um rótulo que o agente já tenha numerado continua valendo a letra dele.
+
+        Rótulo sem o prefixo `X)` simplesmente não ganha atalho: inventar uma
+        letra que não está escrita seria um atalho invisível.
+        """
+        keys: dict[str, int] = {}
+        for index, (_option_id, label) in enumerate(self._request.choices):
+            head = str(label).strip().split(")", 1)[0].strip().lower()
+            if len(head) == 1 and head.isalnum() and head not in keys:
+                keys[head] = index
+        return keys
+
+    def on_key(self, event: events.Key) -> None:
+        """A letra da opção escolhe direto, sem passar pelas setas.
+
+        Vale para qualquer questionário — o bloco de aprovação é só o caso mais
+        frequente, e é onde mais pesa: aprovar, ajustar, pular ou cancelar vira
+        uma tecla em vez de navegar até a linha.
+
+        Só em `SELECT`. Em `MULTI_SELECT` a tecla teria de alternar a marcação, e
+        o dock ainda não desenha marca nenhuma — o atalho pareceria não ter
+        funcionado.
+        """
+        if self._request.kind is not PromptKind.SELECT:
+            return
+        index = self.hotkeys().get(event.key.lower())
+        if index is None:
+            return
+        event.stop()
+        event.prevent_default()
+        option_id, _label = self._request.choices[index]
+        self._finish(str(option_id) if option_id else None)
 
     @on(Button.Pressed, "#cancel")
     def on_cancel(self) -> None:

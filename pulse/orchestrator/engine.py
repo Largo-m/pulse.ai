@@ -29,7 +29,8 @@ from pulse.orchestrator.cli_output import (
     print_workflow_error,
     print_workflow_result,
 )
-from pulse.orchestrator.fanout import Item, parse_items
+from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
+from pulse.orchestrator.loops import CLOSE, REPEAT, close_loop, find_loops, repeat_loop
 from pulse.orchestrator.outcome import MISSING, Outcome, parse_outcome
 from pulse.orchestrator.prompts import (
     build_continuation_prompt,
@@ -66,9 +67,6 @@ _POLICIES: dict[str, PermissionPolicy] = {
 }
 #: Fallback para runner sem controle (CLI, testes): nunca para.
 _NEVER_INTERRUPTED = RunControl()
-#: Espaço entre as posições da definição, para o fan-out caber no meio sem
-#: renumerar o resto: o step 4 vira 4001, 4002… e continua antes do step 5.
-POSITION_STRIDE = 1000
 #: Código de saída de uma run que parou num step bloqueado. Não é falha nem
 #: parada do usuário: nada quebrou e ninguém apertou nada — um step declarou que
 #: não tinha como entregar, e a run não passa por cima disso. Vizinho de
@@ -304,11 +302,21 @@ def _execute(
         runner.authenticate()
         _sync_steps(runner, run)
 
-        for definition_step in definition.steps:
+        # Índice, e não `for`: um step pode mandar a run voltar para um anterior
+        # e repetir o trecho (`repeat_from`). O laço continua sem ramificação —
+        # não há condição sobre id de workflow nem sobre nome de fase: o motor lê
+        # um pedido declarado no bloco de desfecho e um teto gravado na
+        # definição, e os dois vêm do banco.
+        loops = find_loops(definition)
+        index = 0
+        while index < len(definition.steps):
+            definition_step = definition.steps[index]
+            at = index
+            index += 1
             # Um step de fan-out só sabe quantos trabalhos tem depois que o
             # anterior rodou — por isso a expansão acontece aqui, e não ao criar
             # a run.
-            units = _units(run, definition_step)
+            units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
             _sync_steps(runner, run)
 
             for step, item in units:
@@ -334,7 +342,8 @@ def _execute(
                     return RUN_STOPPED
 
                 run_store.update_run(run.id, status=RUNNING, current_step=step.step_id)
-                exit_code = _run_step(
+                opens_loop = at in loops and loops[at].start == at
+                exit_code, signal = _run_step(
                     runner=runner,
                     cockpit=cockpit,
                     run=run,
@@ -344,11 +353,26 @@ def _execute(
                     exec_dir=exec_dir,
                     fallback_model=fallback_model,
                     item=item,
+                    may_close=opens_loop,
                 )
                 _sync_steps(runner, run)
                 if exit_code != 0:
                     run_store.update_run(run.id, status=_run_status(exit_code))
                     return exit_code
+
+                if signal == CLOSE and opens_loop:
+                    index = close_loop(run, definition, loops[at])
+                    _sync_steps(runner, run)
+                    _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
+                    break
+
+                if signal == REPEAT and at in loops and loops[at].end == at:
+                    target, message = repeat_loop(run, definition, loops[at], record.label)
+                    _notify(runner, message)
+                    if target is not None:
+                        index = target
+                        _sync_steps(runner, run)
+                        break
 
         run_store.update_run(run.id, status="completed")
         if not cockpit:
@@ -371,74 +395,8 @@ def _run_status(exit_code: int) -> str:
     return FAILED
 
 
-def _units(
-    run: run_store.RunRecord, step: StepDef
-) -> list[tuple[StepDef, Item | None]]:
-    """O step da definição vira os steps que a run vai mesmo rodar.
-
-    Sem `fan_out`, é ele mesmo. Com, é um por item que o step anterior
-    enumerou — cada um com `step_id` próprio, porque cada um quer sessão
-    isolada, linha no painel e a chance de ser refeito sozinho.
-
-    Lista vazia (o agente não emitiu o bloco, ou emitiu vazio) roda o step uma
-    vez, como se `fan_out` não existisse: um protocolo que o agente não seguiu
-    não é motivo para a run parar.
-    """
-    if not step.fan_out:
-        return [(step, None)]
-
-    items = parse_items(_previous_summary(run, step.step_id))
-    if not items:
-        return [(step, None)]
-
-    base = run.step(step.step_id)
-    base_position = base.position if base is not None else step.position * POSITION_STRIDE
-    at = len(run.steps)
-    if base is not None:
-        # O placeholder cumpriu o papel de mostrar que o step existe; agora os
-        # N filhos tomam o lugar dele — no mesmo ponto da lista, senão o painel
-        # mostraria as tasks depois de um step que ainda nem rodou.
-        at = run.steps.index(base)
-        run.steps.remove(base)
-        run_store.delete_step(run.id, step.step_id)
-
-    units: list[tuple[StepDef, Item | None]] = []
-    for index, item in enumerate(items, start=1):
-        step_id = f"{step.step_id}:{item.id}"
-        label = item.label or item.id
-        position = base_position + index
-        units.append(
-            (
-                StepDef(
-                    workflow_id=step.workflow_id,
-                    step_id=step_id,
-                    position=position,
-                    label=label,
-                    agent_id=step.agent_id,
-                    prompt_template=step.prompt_template,
-                    requires_approval=step.requires_approval,
-                ),
-                item,
-            )
-        )
-        if run.step(step_id) is None:
-            child = StepRecord(
-                step_id=step_id,
-                position=position,
-                label=label,
-                agent_id=step.agent_id,
-            )
-            run.steps.insert(at + index - 1, child)
-            # Grava os N na hora, não quando cada um começar. Filho que só
-            # existe na memória some se a run cair no meio do fan-out: o
-            # histórico reabria com as tasks que já tinham rodado e mais
-            # nenhuma, como se o agente tivesse enumerado menos do que enumerou.
-            run_store.save_step(run.id, child)
-    return units
-
-
-def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
-    """Resumo do último step **que fechou** antes deste.
+def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
+    """O último step **que fechou** antes deste e deixou resumo.
 
     Só `done` e `skipped` contam. Um step que falhou ou travou também deixa
     texto gravado, e passar esse texto adiante era o que fazia o step seguinte
@@ -449,15 +407,24 @@ def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
     `run`): ao retomar, o step pai já não existe na run, e sem isto a varredura
     ia até o fim e devolvia o resumo da última task — o bloco `pulse:items`
     sumia, o fan-out desmontava e a run voltava a rodar o step pai inteiro.
+
+    O registro inteiro, e não só o texto, porque o step seguinte precisa saber
+    **como** o anterior fechou: um step pulado e um concluído entregam o mesmo
+    tipo de resumo, e sem o status o pulo só valeria para quem o deu.
     """
     child = f"{step_id}:"
-    previous = ""
+    previous: StepRecord | None = None
     for record in run.steps:
         if record.step_id == step_id or record.step_id.startswith(child):
             break
         if record.summary and record.status in SETTLED:
-            previous = record.summary
+            previous = record
     return previous
+
+
+def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
+    record = _previous_settled(run, step_id)
+    return record.summary if record is not None else ""
 
 
 def _run_step(
@@ -471,7 +438,9 @@ def _run_step(
     exec_dir: Path,
     fallback_model: str | None,
     item: Item | None = None,
-) -> int:
+    may_close: bool = False,
+) -> tuple[int, str]:
+    """`(código de saída, desfecho)` — `REPEAT` e `CLOSE` mexem no laço."""
     guidance = ""
     while True:
         outcome, reason = _attempt_step(
@@ -485,16 +454,17 @@ def _run_step(
             fallback_model=fallback_model,
             guidance=guidance,
             item=item,
+            may_close=may_close,
         )
-        if outcome in {DONE, SKIPPED}:
-            return 0
+        if outcome in {DONE, SKIPPED, REPEAT, CLOSE}:
+            return 0, outcome
 
         # O step não terminou porque o usuário parou a run, não porque falhou:
         # não faz sentido perguntar "quer tentar de novo?" — é só encerrar
         # deixando o step pendente para quem retomar.
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED
+            return RUN_STOPPED, FAILED
 
         if outcome == BLOCKED:
             choice, guidance = _offer_blocked(
@@ -514,14 +484,14 @@ def _run_step(
                 run_store.save_step(run.id, record)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
-                return 0
+                return 0, SKIPPED
             if choice != "retry":
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
-                return RUN_BLOCKED
+                return RUN_BLOCKED, BLOCKED
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
             if choice != "retry":
-                return 1
+                return 1, FAILED
         _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
@@ -541,6 +511,7 @@ def _attempt_step(
     fallback_model: str | None,
     guidance: str,
     item: Item | None = None,
+    may_close: bool = False,
 ) -> tuple[str, str]:
     record.status = RUNNING
     record.started_at = record.started_at or run_store.utc_now()
@@ -622,27 +593,50 @@ def _attempt_step(
             print_workflow_result(f"⏭  {record.label} pulado")
         return SKIPPED, ""
 
+    # Quem abre o laço e não achou nada a corrigir não pede aprovação: não há o
+    # que aprovar. Declara o fim no bloco de desfecho, e o laço acaba nele.
+    if may_close and not result.get("approved") and parse_outcome(agent_text).closes:
+        return _settle(run, record, cockpit, CLOSE)
+
     if step.requires_approval and not bool(result.get("approved")):
         _fail(run, record)
+        if not str(result.get("approvalAnswers", "")).strip():
+            # Nenhuma pergunta chegou à pessoa: quem não aprovou foi o formato,
+            # não ela. Dizer "não aprovado" aqui mandava procurar o erro errado.
+            return FAILED, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
         return FAILED, "step não aprovado"
 
     if not step.requires_approval and not _prompt_succeeded(result):
         _fail(run, record)
         return FAILED, str(result.get("stopReason") or "o agente não concluiu o step")
 
+    repeats = False
     if declares_outcome:
         # Lido do texto cru, não de `record.summary`: o resumo é truncado no
         # fim, e é justamente no fim que o bloco de desfecho fica.
         declared = parse_outcome(agent_text)
         if not declared.delivered:
             return _block(run, record, _blocked_reason(declared))
+        # `repeat_from` é a permissão, `next: repeat` é o pedido. Sem os dois, o
+        # campo não quer dizer nada: um agente não cria laço onde o workflow não
+        # declarou um.
+        repeats = bool(step.repeat_from) and declared.repeats
+        if may_close and declared.closes:
+            return _settle(run, record, cockpit, CLOSE)
 
+    return _settle(run, record, cockpit, REPEAT if repeats else DONE)
+
+
+def _settle(
+    run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
+) -> tuple[str, str]:
+    """Grava o step como entregue e devolve o desfecho para o laço do motor."""
     record.status = DONE
     record.ended_at = run_store.utc_now()
     run_store.save_step(run.id, record)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
-    return DONE, ""
+    return outcome, ""
 
 
 def _unblock_continuation(step: StepDef) -> Callable[..., str]:
@@ -737,6 +731,17 @@ def _context(
     `item_*` só tem valor num step de fan-out. Fora dele são strings vazias e não
     chaves ausentes: o mesmo `prompt_template` roda nos dois modos, e chave
     ausente é `TemplateError`.
+
+    `previous_status` acompanha `previous_summary`: é o desfecho do step de onde
+    aquele texto veio (`done` ou `skipped`), não um canal novo de informação.
+    Existe porque pular é uma escolha do usuário que o step seguinte precisa
+    poder respeitar — sem ela, pulado e concluído chegam indistinguíveis no
+    prompt do próximo. Vazio quando nenhum step anterior deixou resumo.
+
+    O pulo pelo menu de bloqueio limpa `summary` de propósito, então aquele step
+    some da varredura e o status reportado é o do anterior a ele. É o que a chave
+    promete — "o que o step anterior me entregou" —, e é diferente do pulo na
+    aprovação, que preserva o resumo.
     """
     artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
     # Irmãos do fan-out: mesmo step da definição, item diferente. Serve para o
@@ -745,6 +750,7 @@ def _context(
     siblings = (
         [record for record in run.steps if record.step_id.startswith(prefix)] if prefix else []
     )
+    previous = _previous_settled(run, step.step_id)
     return {
         "user_prompt": run.user_prompt.strip(),
         "workspace": str(exec_dir),
@@ -752,7 +758,8 @@ def _context(
         "run_id": run.id,
         "step_id": step.step_id,
         "step_label": step.label,
-        "previous_summary": _previous_summary(run, step.step_id),
+        "previous_summary": previous.summary if previous is not None else "",
+        "previous_status": previous.status if previous is not None else "",
         "artifacts": "\n".join(f"- {path}" for path in artifacts),
         "item_id": item.id if item else "",
         "item_label": item.label if item else "",
@@ -937,7 +944,10 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
     if not callable(apply):
         return
     apply(
-        steps=[{"id": item.step_id, "label": item.label} for item in run.steps],
+        steps=[
+            {"id": item.step_id, "label": item.label, "rounds": item.rounds}
+            for item in run.steps
+        ],
         done_ids=[item.step_id for item in run.steps if item.status == DONE],
         skipped_ids=[item.step_id for item in run.steps if item.status == SKIPPED],
         failed_ids=[item.step_id for item in run.steps if item.status == FAILED],

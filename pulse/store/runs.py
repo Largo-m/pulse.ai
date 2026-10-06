@@ -58,6 +58,10 @@ class StepRecord:
     ended_at: str = ""
     #: Tempo que este step passou esperando o usuário, descontado da duração.
     waiting_seconds: float = 0.0
+    #: Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço.
+    rounds: int = 1
+    #: Duração líquida das voltas anteriores do laço. Ver `carry_round`.
+    carried_seconds: float = 0.0
 
 
 @dataclass
@@ -118,6 +122,8 @@ def _step(row: Any) -> StepRecord:
         started_at=str(row["started_at"] or ""),
         ended_at=str(row["ended_at"] or ""),
         waiting_seconds=float(row["waiting_seconds"] or 0.0),
+        rounds=int(row["rounds"] or 1),
+        carried_seconds=float(row["carried_seconds"] or 0.0),
     )
 
 
@@ -314,18 +320,21 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
         # move é `add_waiting_seconds`, chamado da thread da sessão enquanto o
         # motor segura um `StepRecord` que não sabe da espera. Reescrevê-lo aqui
         # zeraria o tempo de espera recém-somado no primeiro `save_step`.
+        # `carried_seconds` também, pelo mesmo motivo: só `carry_round` o move.
         connection.execute(
             """
             INSERT INTO run_steps
               (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at, waiting_seconds)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
+               rounds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, step_id) DO UPDATE SET
               status = excluded.status,
               summary = excluded.summary,
               acp_session_id = excluded.acp_session_id,
               started_at = excluded.started_at,
-              ended_at = excluded.ended_at
+              ended_at = excluded.ended_at,
+              rounds = excluded.rounds
             """,
             (
                 run_id,
@@ -339,6 +348,7 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
                 step.started_at,
                 step.ended_at,
                 step.waiting_seconds,
+                step.rounds,
             ),
         )
         connection.execute(
@@ -378,6 +388,61 @@ def add_waiting_seconds(
         connection.commit()
     finally:
         connection.close()
+
+
+def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:
+    """Fecha a volta do step no relógio e devolve o tempo acumulado até aqui.
+
+    Uma volta nova do laço reabre `started_at`/`ended_at`. Sem guardar antes o
+    que a volta anterior gastou, o step voltava a zero a cada rodada — e um
+    review que rodou três vezes aparecia com o tempo só da última.
+
+    A duração líquida (parede menos espera) vai para `carried_seconds`, e a
+    espera zera junto: ela já foi descontada ali, e descontá-la de novo da volta
+    seguinte comeria tempo de trabalho.
+
+    Lido e escrito no banco, e não no `StepRecord`: a espera só existe lá — quem
+    a soma é a thread da sessão (ver `add_waiting_seconds`).
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        row = connection.execute(
+            """
+            SELECT started_at, ended_at, waiting_seconds, carried_seconds
+            FROM run_steps WHERE run_id = ? AND step_id = ?
+            """,
+            (run_id, step_id),
+        ).fetchone()
+        if row is None:
+            return 0.0
+        carried = float(row["carried_seconds"] or 0.0)
+        carried += _net_seconds(
+            str(row["started_at"] or ""),
+            str(row["ended_at"] or ""),
+            float(row["waiting_seconds"] or 0.0),
+        )
+        connection.execute(
+            """
+            UPDATE run_steps
+            SET carried_seconds = ?, waiting_seconds = 0, started_at = '', ended_at = ''
+            WHERE run_id = ? AND step_id = ?
+            """,
+            (carried, run_id, step_id),
+        )
+        connection.commit()
+        return carried
+    finally:
+        connection.close()
+
+
+def _net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
+    """Parede menos espera; zero quando a volta não tem começo e fim gravados."""
+    try:
+        start = datetime.fromisoformat(started_at)
+        end = datetime.fromisoformat(ended_at)
+    except ValueError:
+        return 0.0
+    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
 
 
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
