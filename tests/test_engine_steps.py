@@ -1113,6 +1113,93 @@ def test_o_tempo_das_voltas_soma_em_vez_de_zerar(wired, monkeypatch, tmp_path):
     assert _step_seconds(review) > review.carried_seconds
 
 
+def _clean(summary: str = "nada a corrigir", *, approval: bool = False) -> dict:
+    """Turno de quem abre o laço e não achou o que corrigir: sem aprovação."""
+    result = {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\nnext: close\n```",
+    }
+    if approval:
+        # O questionário não apareceu, então o runner devolve não-aprovado.
+        result.update(approved=False, outcome="unknown")
+    return result
+
+
+def test_review_limpo_encerra_o_laco_sem_pedir_aprovacao(wired, monkeypatch, tmp_path):
+    """O laço termina em quem revisa: review sem findings não chama o fix."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix"), ("after", "Depois")],
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_clean(approval=True), _approved("depois")])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert len(runner.prompts) == 2, "review e o step depois do laço; o fix não roda"
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.status == "completed"
+    assert [step.status for step in record.steps] == ["done", "skipped", "done"]
+    assert any("laço encerrado" in message for message in runner._stream.messages)
+
+
+def test_review_limpo_numa_volta_seguinte_mantem_o_fix_que_ja_rodou(
+    wired, monkeypatch, tmp_path
+):
+    """Review → fix → review limpo: o fix da volta 1 entregou e continua `done`."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered("r1"), _repeating("f1"), _clean("r2")])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert len(runner.prompts) == 3
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("review").rounds == 2
+    assert [step.status for step in record.steps] == ["done", "done"]
+
+
+def test_so_quem_abre_o_laco_pode_dispensar_a_aprovacao(wired, monkeypatch, tmp_path):
+    """Fora da abertura de um laço, `next: close` não vale como aprovação."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    runner = _Runner([_clean(approval=True)])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("one").status == "failed"
+    assert record.step("two").status == "pending"
+    # Ninguém viu pergunta: o motivo diz que faltou o bloco, não que a pessoa recusou.
+    assert any("sem o bloco de aprovação" in prompt for prompt in runner._prompt_handler.prompts)
+
+
 def test_o_pedido_de_repetir_nao_vale_onde_o_workflow_nao_declarou_laco(
     wired, monkeypatch, tmp_path
 ):

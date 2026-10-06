@@ -47,6 +47,9 @@ class FactoryStep:
     #: ele roda. Sem teto, um agente que sempre pede mais uma rodada deixa a run
     #: sem fim.
     repeat_max: int = 0
+    #: Arquivo de fase na pasta do agente, sem `.md`. Vazio = `PHASE.md`. Existe
+    #: para o mesmo agente rodar fora do loop para o qual a fase dele foi escrita.
+    phase: str = ""
 
     def id(self) -> str:
         return self.step_id or self.agent_id
@@ -129,6 +132,26 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("quick-implement", "Implementar", False),
         ),
     ),
+    # A mesma camada de merge do "Nova spec", fora do pipeline: revisa a branch
+    # atual contra a principal, sem PRD nem tasks. Por isso a fase é outra — a
+    # de fábrica lê artefatos de spec que aqui não existem.
+    FactoryWorkflow(
+        id="review",
+        label="Review",
+        description="branch atual vs main",
+        steps=(
+            FactoryStep("review", "Review", True, phase="STANDALONE"),
+            FactoryStep(
+                "review-fix",
+                "Fix review",
+                False,
+                repeat_from="review",
+                repeat_max=3,
+                phase="STANDALONE",
+            ),
+        ),
+        default_prompt="Revisar a branch atual",
+    ),
     FactoryWorkflow(
         id="setup-project",
         label="Setup do projeto",
@@ -203,13 +226,13 @@ class FactoryAgent:
 
 
 @lru_cache(maxsize=None)
-def load_phase(agent_id: str) -> str:
-    """O `prompt_template` de um step: o `PHASE.md` da pasta do agente.
+def load_phase(agent_id: str, phase: str = "PHASE") -> str:
+    """O `prompt_template` de um step: o `<phase>.md` da pasta do agente.
 
     Em cache: a semeadura pede o mesmo arquivo uma vez por step que o cita, e um
     agente pode aparecer em mais de um step.
     """
-    return _expand_includes(_read(factory_dir() / "agents" / agent_id / "PHASE.md")).strip()
+    return _expand_includes(_read(factory_dir() / "agents" / agent_id / f"{phase}.md")).strip()
 
 
 @lru_cache(maxsize=1)
@@ -265,7 +288,7 @@ def seed(connection: Any) -> None:
         # O agente genérico não tem pasta nem fase: o pedido vai cru.
         if step.agent_id == "default":
             return "{{user_prompt}}"
-        return load_phase(step.agent_id)
+        return load_phase(step.agent_id, step.phase or "PHASE")
 
     connection.executemany(
         """
@@ -364,6 +387,49 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
         [
             (templates[step_id], workflow_id, step_id, APPROVAL_MARK)
             for workflow_id, step_id in UNATTENDED_STEPS
+        ],
+    )
+
+
+#: Cabeçalho da fase de review de fábrica — nas duas versões, a do pipeline e a
+#: avulsa. Sem ele, a linha foi reescrita pelo usuário e não é tocada.
+REVIEW_PHASE_MARK = "## Review phase —"
+#: O que o review de fábrica aprendeu depois: encerrar o laço sem pedir
+#: aprovação quando não sobra nada a corrigir. Presente = linha já atualizada.
+REVIEW_CLOSE_MARK = "next: close"
+
+
+def teach_review_to_close_the_loop(connection: Any) -> None:
+    """Leva a saída do laço pelo review aos bancos já semeados.
+
+    Sem isto, quem já usa o Pulse continuaria com o review antigo: ele pede
+    aprovação mesmo limpo, e o laço só acaba depois de um fix que não tinha o
+    que fazer. Mesmo guarda de `drop_approval_from_unattended_steps`: só a linha
+    que ainda é a de fábrica, e sai cedo pelo `SELECT` depois da primeira vez.
+    """
+    rows = connection.execute(
+        """
+        SELECT workflow_id, step_id FROM workflow_steps
+         WHERE agent_id = 'review'
+           AND instr(prompt_template, ?) > 0 AND instr(prompt_template, ?) = 0
+        """,
+        (REVIEW_PHASE_MARK, REVIEW_CLOSE_MARK),
+    ).fetchall()
+    if not rows:
+        return
+
+    factory = {
+        (workflow.id, step.id()): load_phase(step.agent_id, step.phase or "PHASE")
+        for workflow in WORKFLOWS
+        for step in workflow.steps
+        if step.agent_id == "review"
+    }
+    connection.executemany(
+        "UPDATE workflow_steps SET prompt_template = ? WHERE workflow_id = ? AND step_id = ?",
+        [
+            (factory[(row[0], row[1])], row[0], row[1])
+            for row in rows
+            if (row[0], row[1]) in factory
         ],
     )
 

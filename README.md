@@ -121,6 +121,7 @@ loops de fábrica, que aparecem no menu **Nova sessão**:
 | --- | --- |
 | Nova spec | PRD → Techspec → Tasks → Implementar → Review ⇄ Fix review (laço, até 3 rodadas) |
 | Correção rápida | Quick plan → Quick implement |
+| Review | Review ⇄ Fix review (laço, até 3 rodadas) da branch atual vs `main`, roda direto |
 | Setup do projeto | Entrevista → Artefatos (roda direto, sem aprovar) |
 | Analisar codebase | Exploração → Documentação (roda direto, sem aprovar) |
 

@@ -38,6 +38,7 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 | --- | --- |
 | `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → review ⇄ review-fix (laço, até 3 rodadas) |
 | `quick-fix` — Correção rápida | quick-plan → quick-implement |
+| `review` — Review | review ⇄ review-fix (laço, até 3 rodadas) sobre a branch atual vs `main` + não commitado; fase `STANDALONE.md`, rodadas em `.pulse/reviews/NNN-slug/` |
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
 | `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
 | `default` — Executar | um step, sem pipeline (fora do menu) |
@@ -230,8 +231,23 @@ Quem **permite** é a coluna. Os dois são necessários: um agente não cria la�
 onde a definição não abriu um, e uma definição não repete um step que entregou e
 ficou quieto. É o que o `new-issue` usa na camada de merge — `review-fix` aponta
 para `review` com teto 3, e todo fix que trabalhou uma rodada leva a run de volta
-ao revisor. Quem encerra o laço é o review, nunca o fix: uma rodada limpa não
-deixa nada para o fix trabalhar, e ele fecha sem pedir volta.
+ao revisor. Quem encerra o laço é o review, nunca o fix.
+
+**Encerrar é de quem abre a faixa.** Sem nada a corrigir — review limpo, todo ID
+já terminal numa volta seguinte, ou a última volta —, o review não pede
+aprovação: declara o fim no mesmo bloco.
+
+````text
+```pulse:outcome
+status: done
+next: close
+```
+````
+
+O motor fecha o step `done` e não roda o resto da faixa: o que nunca rodou nesta
+run vira `skipped`, o que já rodou numa volta anterior continua `done`. Num step
+com aprovação, `next: close` só dispensa o portão em quem abre um laço — em
+qualquer outro step, resposta sem aprovação continua sendo falha.
 
 ```
 step `review-fix` fechou com `next: repeat`

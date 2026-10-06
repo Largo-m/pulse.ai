@@ -320,10 +320,11 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         factory.seed(connection)
     else:
         # Banco já semeado não recebe `seed` de novo: mudança em linha que já
-        # existe chega por estes dois, cada um com o seu próprio guarda.
+        # existe chega por estes, cada um com o seu próprio guarda.
         if ("workflow_defs", "default_prompt") in added:
             factory.backfill_default_prompts(connection)
         factory.drop_approval_from_unattended_steps(connection)
+        factory.teach_review_to_close_the_loop(connection)
     connection.commit()
     return connection
 

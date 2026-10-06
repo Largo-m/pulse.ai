@@ -60,7 +60,8 @@ Do not touch application code in this phase — identifying is this step's whole
 job, and repairing belongs to the next one.
 
 **Nothing found means no file.** Report a clean review, verdict `approved`, and
-stop. An empty round file is worse than no round file.
+close the loop as described below. An empty round file is worse than no round
+file.
 
 Before presenting, run the Step 6 self-check against every finding you wrote.
 
@@ -76,8 +77,10 @@ opening the round file. Close with:
 - the path of the round file, when there is one;
 - every `critical` and `high`, one line each: what is wrong and where.
 
-Then one line making the skip option concrete: choosing **Pular** keeps this
-round file on disk and corrects nothing in this run.
+<!-- include: review-close -->
+
+Otherwise, one line making the skip option concrete: choosing **Pular** keeps
+this round file on disk and corrects nothing in this run.
 
 <!-- include: approval-skip -->
 

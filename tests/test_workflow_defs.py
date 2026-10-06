@@ -25,6 +25,7 @@ def test_a_fresh_database_already_has_the_factory_loops():
         "default",
         "new-issue",
         "quick-fix",
+        "review",
         "setup-project",
         "analyze-codebase",
     }
@@ -48,6 +49,21 @@ def test_a_fresh_database_already_has_the_factory_loops():
         False,
     ]
     assert get_agent("prd") is not None
+
+
+def test_the_review_loop_runs_outside_the_spec_pipeline():
+    """Mesmos agentes do "Nova spec", outra fase: aqui não há PRD nem tasks."""
+    review = get_workflow("review")
+
+    assert review is not None
+    assert review.default_prompt, "revisa a branch atual — não há o que perguntar"
+    assert [step.agent_id for step in review.steps] == ["review", "review-fix"]
+    assert [step.requires_approval for step in review.steps] == [True, False]
+    fix = review.steps[1]
+    assert (fix.repeat_from, fix.repeat_max) == ("review", 3)
+    for step in review.steps:
+        assert ".pulse/reviews/" in step.prompt_template
+        assert "<slug>/reviews/" not in step.prompt_template
 
 
 def test_every_factory_step_renders_with_what_the_engine_offers():
@@ -341,6 +357,37 @@ def test_template_reescrito_pelo_usuario_nao_e_tocado(tmp_path: Path):
     assert factory.APPROVAL_MARK  # o guarda existe e é o que protegeu a edição
 
 
+def test_banco_antigo_ganha_o_review_que_encerra_o_laco(tmp_path: Path):
+    """O review de fábrica antigo pedia aprovação mesmo limpo — a abertura o troca."""
+    from pulse.store import factory
+    from pulse.store.db import connect
+
+    db_path = tmp_path / "antigo.db"
+    connection = connect(db_path)
+    connection.execute(
+        "UPDATE workflow_steps SET prompt_template = ? WHERE step_id = 'review'",
+        (f"{factory.REVIEW_PHASE_MARK} review what was implemented (do NOT fix)",),
+    )
+    connection.execute(
+        """
+        UPDATE workflow_steps SET prompt_template = 'Revise do meu jeito.'
+         WHERE workflow_id = 'review' AND step_id = 'review'
+        """
+    )
+    connection.commit()
+    connection.close()
+
+    connect(db_path).close()
+
+    workflows = {item.id: item for item in list_workflows(db_path=db_path)}
+    pipeline = next(s for s in workflows["new-issue"].steps if s.step_id == "review")
+    assert factory.REVIEW_CLOSE_MARK in pipeline.prompt_template
+    assert pipeline.prompt_template == factory.load_phase("review")
+    # Sem o cabeçalho de fábrica, a linha é do usuário.
+    mine = next(s for s in workflows["review"].steps if s.step_id == "review")
+    assert mine.prompt_template == "Revise do meu jeito."
+
+
 def test_banco_ja_semeado_ganha_a_fase_de_merge_na_abertura(tmp_path: Path):
     """A camada de merge precisa chegar a quem já tinha banco.
 
@@ -426,7 +473,8 @@ def test_so_o_review_oferece_pular():
         if step.requires_approval and "Pular" in step.prompt_template
     ]
 
-    assert offering == ["review"]
+    # O mesmo review, no "Nova spec" e no loop avulso.
+    assert offering == ["review", "review"]
 
     step = next(s for s in workflows["new-issue"].steps if s.step_id == "review")
     option = next(
@@ -458,9 +506,15 @@ def test_a_camada_de_merge_e_um_laco_com_teto():
         for step in workflow.steps
         if step.repeat_from
     ]
-    assert repeating == ["review-fix"]
+    assert repeating == ["review-fix", "review-fix"]
 
     # E os dois lados do protocolo combinam: o review sabe que pode rodar de
-    # novo, e o fix sabe como pedir.
-    assert "repeats" in steps["review"].prompt_template.lower()
-    assert "next: repeat" in steps["review-fix"].prompt_template
+    # novo, e o fix sabe como pedir — também no loop avulso, de outra fase.
+    for workflow_id in ("new-issue", "review"):
+        steps = {step.step_id: step for step in get_workflow(workflow_id).steps}
+        assert steps["review-fix"].repeat_max == 3
+        assert "repeats" in steps["review"].prompt_template.lower()
+        assert "next: repeat" in steps["review-fix"].prompt_template
+        # E só o review encerra: limpo, ele declara o fim em vez de pedir aprovação.
+        assert "next: close" in steps["review"].prompt_template
+        assert "next: close" not in steps["review-fix"].prompt_template

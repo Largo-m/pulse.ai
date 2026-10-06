@@ -67,6 +67,9 @@ _NEEDS_USER = frozenset(
 #: [pulse.store.workflow_defs]. Num step comum, o campo é ignorado: quem decide
 #: que um laço existe é o workflow, não o agente.
 _REPEAT_WORDS = frozenset({"repeat", "repetir", "again", "denovo", "nova-rodada", "loop"})
+#: Palavras com que quem **abre** o laço diz que não sobrou nada a corrigir, no
+#: mesmo campo `next`. O laço termina ali, e o resto da faixa não roda.
+_CLOSE_WORDS = frozenset({"close", "fechar", "encerrar", "end", "clean", "limpo"})
 
 #: Um motivo de bloqueio vira título de menu e linha de log: sem teto, um agente
 #: que cola o stack trace inteiro no `reason` estoura os dois.
@@ -97,6 +100,15 @@ class Outcome:
         entregou: um step bloqueado não pede rodada nova, ele pede gente.
         """
         return self.delivered and self.next in _REPEAT_WORDS
+
+    @property
+    def closes(self) -> bool:
+        """O agente diz que o laço acabou: nada mais a corrigir.
+
+        Só tem efeito no step que abre um laço — ver
+        [pulse.orchestrator.engine._close_loop].
+        """
+        return self.delivered and self.next in _CLOSE_WORDS
 
     @property
     def needs_user(self) -> bool:

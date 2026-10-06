@@ -25,7 +25,7 @@ def test_status_and_workflows():
     listed = workflows.json()["workflows"]
     ids = {item["id"] for item in listed}
     # Só o que está no banco: o Pulse não tem catálogo em código.
-    assert ids >= {"default", "new-issue", "quick-fix"}
+    assert ids >= {"default", "new-issue", "quick-fix", "review"}
     pipeline = next(item for item in listed if item["id"] == "new-issue")
     assert [step["agent"] for step in pipeline["steps"]] == [
         "prd",

@@ -79,6 +79,9 @@ RUN_BLOCKED = 131
 #: do laço. Não é status de banco — em `run_steps` ele é `done` como qualquer
 #: outro, porque entregou mesmo. Só o laço do motor precisa saber a diferença.
 REPEAT = "repeat"
+#: Desfecho interno de `_attempt_step`: quem abre o laço entregou e declarou que
+#: não sobrou nada a corrigir. O laço termina nele, e o resto da faixa não roda.
+CLOSE = "close"
 
 
 class UnknownWorkflow(ValueError):
@@ -349,7 +352,8 @@ def _execute(
                     return RUN_STOPPED
 
                 run_store.update_run(run.id, status=RUNNING, current_step=step.step_id)
-                exit_code, repeats = _run_step(
+                opens_loop = at in loops and loops[at].start == at
+                exit_code, signal = _run_step(
                     runner=runner,
                     cockpit=cockpit,
                     run=run,
@@ -359,13 +363,21 @@ def _execute(
                     exec_dir=exec_dir,
                     fallback_model=fallback_model,
                     item=item,
+                    may_close=opens_loop,
                 )
                 _sync_steps(runner, run)
                 if exit_code != 0:
                     run_store.update_run(run.id, status=_run_status(exit_code))
                     return exit_code
 
-                if repeats and at in loops:
+                if signal == CLOSE and opens_loop:
+                    _close_loop(run, definition, loops[at])
+                    index = loops[at].end + 1
+                    _sync_steps(runner, run)
+                    _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
+                    break
+
+                if signal == REPEAT and at in loops:
                     loop = loops[at]
                     # O teto conta as rodadas de quem **abre** a faixa, lidas do
                     # banco: um contador em memória voltava a 1 ao retomar a
@@ -477,6 +489,29 @@ def _reopen_loop(
         record.started_at = ""
         record.ended_at = ""
         record.acp_session_id = ""
+        run_store.save_step(run.id, record)
+
+
+def _close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: _Loop) -> None:
+    """Fecha o resto da faixa sem rodar: quem abre o laço não achou o que corrigir.
+
+    É o fim do laço que o desenho pede — quem atesta que não sobrou nada é quem
+    revisa, não quem conserta. Sem isto, um review limpo ainda pedia aprovação
+    e mandava um fix rodar só para confirmar que não havia rodada nova.
+
+    Um step que já rodou numa volta anterior fica `done` — ele entregou, e o
+    painel não pode dizer o contrário. Só o que nunca rodou nesta run vira
+    `skipped`.
+    """
+    opener = run.step(definition.steps[loop.start].step_id)
+    ran_before = opener is not None and opener.rounds > 1
+    for step in definition.steps[loop.start + 1 : loop.end + 1]:
+        record = run.step(step.step_id)
+        if record is None or record.status in SETTLED:
+            continue
+        record.status = DONE if ran_before else SKIPPED
+        record.summary = ""
+        record.ended_at = record.ended_at or run_store.utc_now()
         run_store.save_step(run.id, record)
 
 
@@ -602,8 +637,9 @@ def _run_step(
     exec_dir: Path,
     fallback_model: str | None,
     item: Item | None = None,
-) -> tuple[int, bool]:
-    """`(código de saída, o agente pediu outra volta do laço)`."""
+    may_close: bool = False,
+) -> tuple[int, str]:
+    """`(código de saída, desfecho)` — `REPEAT` e `CLOSE` mexem no laço."""
     guidance = ""
     while True:
         outcome, reason = _attempt_step(
@@ -617,16 +653,17 @@ def _run_step(
             fallback_model=fallback_model,
             guidance=guidance,
             item=item,
+            may_close=may_close,
         )
-        if outcome in {DONE, SKIPPED, REPEAT}:
-            return 0, outcome == REPEAT
+        if outcome in {DONE, SKIPPED, REPEAT, CLOSE}:
+            return 0, outcome
 
         # O step não terminou porque o usuário parou a run, não porque falhou:
         # não faz sentido perguntar "quer tentar de novo?" — é só encerrar
         # deixando o step pendente para quem retomar.
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED, False
+            return RUN_STOPPED, FAILED
 
         if outcome == BLOCKED:
             choice, guidance = _offer_blocked(
@@ -646,14 +683,14 @@ def _run_step(
                 run_store.save_step(run.id, record)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
-                return 0, False
+                return 0, SKIPPED
             if choice != "retry":
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
-                return RUN_BLOCKED, False
+                return RUN_BLOCKED, BLOCKED
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
             if choice != "retry":
-                return 1, False
+                return 1, FAILED
         _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
@@ -673,6 +710,7 @@ def _attempt_step(
     fallback_model: str | None,
     guidance: str,
     item: Item | None = None,
+    may_close: bool = False,
 ) -> tuple[str, str]:
     record.status = RUNNING
     record.started_at = record.started_at or run_store.utc_now()
@@ -754,8 +792,17 @@ def _attempt_step(
             print_workflow_result(f"⏭  {record.label} pulado")
         return SKIPPED, ""
 
+    # Quem abre o laço e não achou nada a corrigir não pede aprovação: não há o
+    # que aprovar. Declara o fim no bloco de desfecho, e o laço acaba nele.
+    if may_close and not result.get("approved") and parse_outcome(agent_text).closes:
+        return _settle(run, record, cockpit, CLOSE)
+
     if step.requires_approval and not bool(result.get("approved")):
         _fail(run, record)
+        if not str(result.get("approvalAnswers", "")).strip():
+            # Nenhuma pergunta chegou à pessoa: quem não aprovou foi o formato,
+            # não ela. Dizer "não aprovado" aqui mandava procurar o erro errado.
+            return FAILED, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
         return FAILED, "step não aprovado"
 
     if not step.requires_approval and not _prompt_succeeded(result):
@@ -773,13 +820,22 @@ def _attempt_step(
         # campo não quer dizer nada: um agente não cria laço onde o workflow não
         # declarou um.
         repeats = bool(step.repeat_from) and declared.repeats
+        if may_close and declared.closes:
+            return _settle(run, record, cockpit, CLOSE)
 
+    return _settle(run, record, cockpit, REPEAT if repeats else DONE)
+
+
+def _settle(
+    run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
+) -> tuple[str, str]:
+    """Grava o step como entregue e devolve o desfecho para o laço do motor."""
     record.status = DONE
     record.ended_at = run_store.utc_now()
     run_store.save_step(run.id, record)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
-    return (REPEAT if repeats else DONE), ""
+    return outcome, ""
 
 
 def _unblock_continuation(step: StepDef) -> Callable[..., str]:
