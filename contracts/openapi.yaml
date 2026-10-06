@@ -96,6 +96,11 @@ paths:
         run.awaiting carries waiting: true when the run stops to ask the user
         something and waiting: false when it is answered, so a client can
         freeze the step clock for exactly as long as the question is open.
+        run.context carries cwd and branch: where this run works — its own git
+        worktree, when the project has that turned on — and the branch it works
+        on. It is published before the first step, so a client that attaches
+        later gets it from the replay and reads artifacts from the right
+        directory.
       parameters:
         - name: run_id
           in: path
@@ -133,7 +138,11 @@ paths:
         in, so they do not belong buried in the history.
       responses:
         "200":
-          description: History list
+          description: >-
+            History items. Each carries branch and worktree_path: the branch the
+            run worked on, and its own worktree when it ran isolated. Both are
+            empty for a run that predates worktree support or a project outside
+            git.
   /api/history/{item_id}:
     get:
       summary: One history item
@@ -166,4 +175,9 @@ paths:
       summary: Global and project config
       responses:
         "200":
-          description: Config payload
+          description: >-
+            Config payload. The project side carries use_worktree: with it on,
+            every run of that project opens its own git worktree on a new
+            branch instead of writing in the working tree. It is a project
+            setting only — the machine does not get to isolate someone else's
+            repository.

@@ -17,6 +17,11 @@ from pulse.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 
+#: De quanto em quanto tempo a lista relê o banco. O status de uma run muda no
+#: daemon, outro processo: sem reler, a linha ficava em "executando" até a tela
+#: ser reaberta.
+REFRESH_SECONDS = 2.0
+
 
 class HistoryListScreen(Screen[None]):
     BINDINGS = [
@@ -48,13 +53,51 @@ class HistoryListScreen(Screen[None]):
     def on_mount(self) -> None:
         self._refresh()
         self.query_one("#history-search", Input).focus()
+        self.set_interval(REFRESH_SECONDS, self._poll)
+
+    def on_screen_resume(self) -> None:
+        # Voltar do cockpit ou do detalhe é quando o status mais mudou.
+        self._refresh()
+
+    def _poll(self) -> None:
+        """Relê o histórico fora do laço da tela — banco ocupado não trava nada."""
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        query = self._query
+        try:
+            items = self._catalog.search(query)
+        except Exception:
+            # Leitura que falhou agora é só um tique perdido: o próximo tenta de novo.
+            return
+        try:
+            self.app.call_from_thread(self._apply, items, query)
+        except Exception:
+            # A tela saiu enquanto o banco respondia.
+            pass
 
     def _hint_text(self) -> str:
         return "/ busca  ·  Enter abre  ·  d remove"
 
     def _refresh(self) -> None:
-        items = self._catalog.search(self._query)
+        self._apply(self._catalog.search(self._query), self._query, force=True)
+
+    def _apply(self, items: list[HistoryItem], query: str, *, force: bool = False) -> None:
+        """Põe `items` na lista — redesenhando só se alguma linha mudou.
+
+        Redesenhar sempre faria o cursor pular para o topo a cada tique; e um
+        resultado de busca que chegou depois de a pessoa digitar outra coisa
+        já não é o que ela pediu.
+        """
+        if query != self._query or not self.is_mounted:
+            return
+        rows = [_row_key(item) for item in items]
+        unchanged = rows == [_row_key(item) for item in self._items.values()]
+        # Antes de trocar `_items`: é por eles que o cursor vira uma run.
+        selected = self._highlighted()
         self._items = {item.item_id: item for item in items}
+        if unchanged and not force:
+            return
         options = self.query_one("#history-options", OptionList)
         options.clear_options()
         empty = self.query_one("#history-empty", Static)
@@ -68,6 +111,10 @@ class HistoryListScreen(Screen[None]):
         empty.display = False
         for item in items:
             options.add_option(Option(_format_item(item), id=item.item_id))
+        if selected is not None:
+            ids = [item.item_id for item in items]
+            if selected.item_id in ids:
+                options.highlighted = ids.index(selected.item_id)
 
     @on(Input.Changed, "#history-search")
     def on_search_changed(self, event: Input.Changed) -> None:
@@ -164,6 +211,11 @@ def _delete_warning(item: HistoryItem) -> str:
     if item.status in LIVE_STATUSES:
         lines.append("Atenção: esta run consta em andamento — remover pode derrubá-la.")
     return "\n".join(lines)
+
+
+def _row_key(item: HistoryItem) -> tuple[str, ...]:
+    """O que a linha mostra — mudou isto, a lista é redesenhada."""
+    return (item.item_id, item.workflow_label, str(item.status), item.title)
 
 
 def _format_item(item: HistoryItem) -> Text:

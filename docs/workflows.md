@@ -36,8 +36,9 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 
 | Loop | Steps |
 | --- | --- |
-| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → review ⇄ review-fix (laço, até 3 rodadas) |
 | `quick-fix` — Correção rápida | quick-plan → quick-implement |
+| `review` — Review | review ⇄ review-fix (laço, até 3 rodadas) sobre a branch atual vs `main` + não commitado; fase `STANDALONE.md`, rodadas em `.pulse/reviews/NNN-slug/` |
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
 | `analyze-codebase` — Analisar codebase | codebase-explore → codebase-docs |
 | `default` — Executar | um step, sem pipeline (fora do menu) |
@@ -66,10 +67,16 @@ uma preferência: vazio significa "use o padrão da máquina", e um valor concre
 congelaria a escolha feita no `pulse init`. Quem quiser fixar o par por agente
 usa a tela de configurações, que grava em `agent_settings`.
 
-Não há ramificação: `workflow_steps` é uma lista, e o motor a percorre. Quem
-escolhe entre spec completa e correção rápida é o usuário, no menu **Nova
-sessão** — e o `quick-plan` refaz a checagem de escopo, então um pedido grande
-que entrou pelo loop errado para no primeiro step em vez de seguir.
+Não há ramificação nem condição sobre id de workflow: `workflow_steps` é uma
+lista, e o motor a percorre. Quem escolhe entre spec completa e correção rápida é
+o usuário, no menu **Nova sessão** — e o `quick-plan` refaz a checagem de escopo,
+então um pedido grande que entrou pelo loop errado para no primeiro step em vez
+de seguir.
+
+O único desvio do caminho reto é o **laço**, e ele também é dado: um step com
+`repeat_from` preenchido pode mandar a run voltar a um step anterior e repetir o
+trecho. Quem pede a volta é o agente, no campo `next` do bloco de desfecho; quem
+permite é a coluna, e `repeat_max` é o teto. Ver §2.3.
 
 ## 2. O laço do motor
 
@@ -202,6 +209,93 @@ aconteceu. Fica fora de `SETTLED`, então retomar refaz o step que travou e só
 ele. Pular é registrado como `skipped`, nunca como `done`, e o step pulado não
 passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fechou.
 
+### 2.3 Laço: um trecho que se repete até ninguém pedir mais
+
+Duas colunas em `workflow_steps`, e nenhuma delas conhece fase por nome:
+
+| Coluna | O que faz |
+| --- | --- |
+| `repeat_from` | `step_id` de um step **anterior** deste loop. Vazio = não repete. |
+| `repeat_max` | teto de voltas de quem **abre** a faixa, contando a primeira. Na última, só ele roda. |
+
+Quem **pede** a volta é o agente, no mesmo bloco de desfecho da §2.2:
+
+````text
+```pulse:outcome
+status: done
+next: repeat
+```
+````
+
+Quem **permite** é a coluna. Os dois são necessários: um agente não cria laço
+onde a definição não abriu um, e uma definição não repete um step que entregou e
+ficou quieto. É o que o `new-issue` usa na camada de merge — `review-fix` aponta
+para `review` com teto 3, e todo fix que trabalhou uma rodada leva a run de volta
+ao revisor. Quem encerra o laço é o review, nunca o fix.
+
+**Encerrar é de quem abre a faixa.** Sem nada a corrigir — review limpo, todo ID
+já terminal numa volta seguinte, ou a última volta —, o review não pede
+aprovação: declara o fim no mesmo bloco.
+
+````text
+```pulse:outcome
+status: done
+next: close
+```
+````
+
+O motor fecha o step `done` e não roda o resto da faixa: o que nunca rodou nesta
+run vira `skipped`, o que já rodou numa volta anterior continua `done`. Num step
+com aprovação, `next: close` só dispensa o portão em quem abre um laço — em
+qualquer outro step, resposta sem aprovação continua sendo falha.
+
+```
+step `review-fix` fechou com `next: repeat`
+  │
+  ├─ está dentro de uma faixa repetível?        não → segue a lista
+  ├─ quem abre a faixa já rodou `repeat_max`?   sim → avisa e segue a lista
+  ├─ a próxima volta é a última?                sim → reabre SÓ quem abre a faixa
+  └─ devolve os steps da faixa para `pending`
+       incrementa `run_steps.rounds` de quem ABRE a faixa
+       guarda o tempo da volta em `run_steps.carried_seconds`
+       volta o índice para o step de `repeat_from`
+```
+
+**A última palavra é de quem abre a faixa.** Quem fecha o laço pede a volta
+porque mexeu em algo que ninguém conferiu; se ele rodasse também na última
+volta, a run acabaria num reparo sem conferência. Com teto 3, o `new-issue` roda
+review → fix → review → fix → review. O teto conta pelo `rounds` gravado no
+banco, então retomar a run no meio do laço não devolve voltas que já foram
+gastas.
+
+**O tempo soma entre as voltas.** Reabrir zera `started_at`/`ended_at`, então a
+duração líquida da volta anterior vai antes para `carried_seconds`, e a espera
+(`waiting_seconds`) zera junto — já foi descontada ali. O painel e o histórico
+mostram a soma, e o cronômetro de uma volta nova parte de onde a anterior parou.
+
+**A volta reusa os mesmos `step_id`** — não há `review#2`. É o oposto do
+fan-out, e de propósito: o fan-out numera porque cada item é um trabalho
+diferente, enquanto as voltas de um laço são o mesmo trabalho repetido. Reusar o
+id é o que mantém **uma linha por step** no painel, com o contador do lado, e o
+que deixa o log e os artefatos de todas as voltas sob o mesmo step —
+`visible_artifacts()` filtra por `phase_id`, então é assim que `Review` mostra
+`round-001.md` e `round-002.md` lado a lado, navegáveis.
+
+O preço é explícito: `run_steps` guarda o estado da **última** volta, não de cada
+uma — o tempo é a exceção, e soma. O que de fato distingue uma rodada da outra está no arquivo que ela escreveu
+e nos eventos da run, que são append-only.
+
+O contador (`run_steps.rounds`) vai no step que **abre** a faixa, não no que a
+fecha: é ele que tem um artefato por volta para a pessoa abrir, e no outro o
+número seria ruído. Quem está fora da faixa fica em `rounds = 1`.
+
+`repeat_from` que aponte para a frente, ou para um id que não existe, é ignorado
+em silêncio: um laço que não fecha travaria a run, e rodar a lista reta é o
+comportamento menos pior.
+
+O teto não é opcional. Sem ele, um agente que sempre pede mais uma rodada deixa
+a run sem fim, e o motor não tem como julgar se a próxima volta vale a pena.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
@@ -214,6 +308,7 @@ passa resumo nenhum ao seguinte — `previous_summary` só enxerga step que fech
 | `workspace` | diretório da run |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resumo do último step que **fechou** (`done`/`skipped`) |
+| `previous_status` | como aquele step fechou: `done` ou `skipped` |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 | `item_id` / `item_label` | o item deste step, num step de fan-out |
 | `item_index` / `item_total` | "2 de 7", para o prompt situar o agente |

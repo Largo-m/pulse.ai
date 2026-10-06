@@ -2,9 +2,60 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pulse.prompts.ask_question import format_option_label
+
 PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
 
 _PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"})
+
+_PERMISSION_KIND_LABELS = {
+    "allow_once": "Permitir esta vez",
+    "allow_always": "Sempre permitir",
+    "reject_once": "Recusar",
+    "reject_always": "Sempre recusar",
+}
+
+
+def _permission_choice_label(option: dict[str, Any]) -> str:
+    name = str(option.get("name") or option.get("label") or "").strip()
+    if name:
+        return name
+    kind = str(option.get("kind", "")).lower().replace("-", "_")
+    return _PERMISSION_KIND_LABELS.get(kind, kind.replace("_", " ").strip() or "Opção")
+
+
+def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
+    """As opções do pedido de permissão, numeradas como o dock as mostra."""
+    choices: list[tuple[str, str]] = []
+    index = 0
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        option_id = str(option.get("optionId") or option.get("id") or "")
+        if not option_id:
+            continue
+        label = format_option_label(index, _permission_choice_label(option))
+        choices.append((option_id, label))
+        index += 1
+    if not choices:
+        return [
+            ("allow-once", format_option_label(0, "Permitir esta vez")),
+            ("reject-once", format_option_label(1, "Recusar")),
+        ]
+    return choices
+
+
+def permission_prompt_text(permission: dict[str, Any], tool_call: dict[str, Any]) -> str:
+    title = str(permission.get("title") or "").strip()
+    description = str(permission.get("description") or "").strip()
+    tool_title = str(tool_call.get("title") or "").strip()
+    parts: list[str] = []
+    for part in (title, description, tool_title):
+        if part and part not in parts:
+            parts.append(part)
+    if not parts:
+        return "O agente pede permissão para continuar."
+    return "\n".join(parts)
 
 
 def permission_selected(option_id: str) -> dict[str, Any]:

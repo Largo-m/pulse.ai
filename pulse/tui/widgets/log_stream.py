@@ -157,7 +157,11 @@ class LogStream(Widget):
         else:
             surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
         header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
-        right = state.model_label or state.agent_label or "Agent"
+        # Modelo e branch no mesmo canto: são as duas coisas que mudam o
+        # resultado de um step e que a pessoa não escolheu nesta tela.
+        right = " · ".join(
+            part for part in (state.model_label or state.agent_label or "Agent", state.branch_label) if part
+        )
         visible = state.visible_entries()
         count = len(visible)
         position = (state.selected_phase_index + 1) if state.phases else 0
@@ -191,6 +195,7 @@ class LogStream(Widget):
                 nav_id,
                 state.selected_phase_index,
                 state.model_label,
+                state.branch_label,
             )
         last = entries[-1]
         pending = any(entry.pending for entry in entries)
@@ -204,6 +209,7 @@ class LogStream(Widget):
             last.pending,
             pending,
             state.model_label,
+            state.branch_label,
             nav_id,
             state.selected_phase_index,
         )

@@ -7,8 +7,11 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
+from pulse import vcs
+from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
 from pulse.tui.hydrate import hydrate_history_item
+from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -26,6 +29,7 @@ class HistoryDetailScreen(Screen[None]):
     BINDINGS = [
         Binding("q", "back_list", "Voltar"),
         Binding("r", "resume_workflow", "Retomar"),
+        Binding("w", "remove_worktree", "Remover worktree"),
         Binding("b", "back_list", "Voltar"),
         Binding("tab", "toggle_focus", "Focus"),
         Binding("a", "toggle_artifact_pane", "Artifacts"),
@@ -43,7 +47,11 @@ class HistoryDetailScreen(Screen[None]):
     def __init__(self, item: HistoryItem, workspace: Path | None = None) -> None:
         super().__init__()
         self.item = item
-        self._cwd = str(workspace or Path.cwd())
+        #: A raiz do projeto — é por ela que o histórico acha a run.
+        self._workspace = Path(workspace or Path.cwd())
+        # Onde esta run trabalhou, que pode não ser a raiz do projeto: o painel
+        # de artefatos lê arquivo do disco, e o worktree é onde eles estão.
+        self._cwd = item.worktree_path or str(self._workspace)
         self.state = hydrate_history_item(item, Path(self._cwd))
         self._pending = _pending_run(item)
 
@@ -79,6 +87,44 @@ class HistoryDetailScreen(Screen[None]):
             callback=_chosen,
         )
 
+    def action_remove_worktree(self) -> None:
+        """Desfaz o worktree desta run, depois de confirmar.
+
+        A remoção é manual porque o worktree **é** a entrega: ele guarda o que
+        o agente escreveu, na branch onde escreveu. Quem decide que já tirou o
+        que queria de lá é quem revisou.
+        """
+        path = self.item.worktree_path
+        if not path or not Path(path).exists():
+            return
+        dirty = vcs.has_changes(path)
+        detail = [path, f"Branch: {self.item.branch or '—'}"]
+        if dirty:
+            detail.append(
+                "Há mudança não commitada aqui. O git vai recusar a remoção — "
+                "commite ou descarte antes."
+            )
+        else:
+            detail.append("A branch continua no repositório; só o diretório sai.")
+
+        def _answered(confirmed: bool | None) -> None:
+            if not confirmed:
+                return
+            catalog = HistoryCatalog(self._workspace)
+            if catalog.remove_worktree(self.item):
+                self.notify("Worktree removido")
+            else:
+                self.notify("Worktree mantido — o git recusou a remoção")
+
+        self.app.push_screen(
+            ConfirmScreen(
+                title="REMOVER WORKTREE",
+                detail="\n".join(detail),
+                confirm_label="Remover",
+            ),
+            callback=_answered,
+        )
+
     def _sync_ui(self, *, force: bool = False) -> None:
         body = self.query_one("#cockpit-body")
         body.set_class(self.state.artifact_pane_open, "artifacts-open")
@@ -95,6 +141,8 @@ class HistoryDetailScreen(Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         if action == "resume_workflow":
             return self._pending is not None
+        if action == "remove_worktree":
+            return bool(self.item.worktree_path) and Path(self.item.worktree_path).exists()
         if action == "close_artifact_pane":
             return self.state.artifact_pane_open
         if action == "toggle_artifact_pane":

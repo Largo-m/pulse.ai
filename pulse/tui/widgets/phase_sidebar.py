@@ -184,11 +184,16 @@ class PhaseSidebar(Widget):
         name_style = tone if shown in _ATTENTION else (
             "#E0E0E0" if accent else "#888888"
         )
+        # O contador das voltas de um laço fica fora do corte do rótulo: ele é
+        # curto, e é justamente o que não pode sumir num nome comprido.
+        rounds = f" ×{item.rounds}" if item.rounds > 1 else ""
         label = f"{status_icon(shown)} {self._item_label(item, nested=nested)}"
-        max_len = 24 if nested else 28
+        max_len = (24 if nested else 28) - len(rounds)
         if len(label) > max_len:
             label = f"{label[: max_len - 1]}…"
         output.append(label, style=name_style)
+        if rounds:
+            output.append(rounds, style="#D4AF37")
         output.append("\n")
         timer = item.elapsed_label(now) or "--:--"
         meta_indent = "     " if nested else "   "

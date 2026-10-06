@@ -280,3 +280,45 @@ def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
     assert item.status_label == "falhou"
     assert item.is_incomplete
     assert _pending_run(item) == (record.id, "Construir · steps 1/2")
+
+
+def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, monkeypatch):
+    """O daemon muda o status da run; a lista acompanha sem sair e voltar."""
+    import pulse.tui.screens.history as history_module
+
+    monkeypatch.setattr(history_module, "REFRESH_SECONDS", 0.05)
+    _finished_run(tmp_path, "run-old", "Primeira")
+    _finished_run(tmp_path, "run-live", "Segunda")
+    run_store.update_run("run-live", status="running")
+
+    async def run() -> None:
+        from textual.app import App
+        from textual.widgets import OptionList
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+            options = screen.query_one("#history-options", OptionList)
+            ids = [options.get_option_at_index(i).id for i in range(options.option_count)]
+            options.highlighted = ids.index("run-old")
+            before = screen._items["run-live"].status
+
+            run_store.update_run("run-live", status="completed")
+            for _ in range(40):
+                await pilot.pause(0.05)
+                if screen._items["run-live"].status != before:
+                    break
+
+            assert screen._items["run-live"].status != before
+            # Redesenhar não pode tirar o cursor de onde a pessoa o deixou.
+            assert options.get_option_at_index(options.highlighted).id == "run-old"
+
+    asyncio.run(run())

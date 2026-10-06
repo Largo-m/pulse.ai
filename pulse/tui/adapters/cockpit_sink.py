@@ -4,7 +4,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from pulse.prompts.text_questionnaire import extract_questionnaire_block
+from pulse.prompts.text_questionnaire import (
+    QUESTIONNAIRE_NOTICE,
+    QUESTIONNAIRE_START,
+    extract_questionnaire_block,
+)
 from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
@@ -15,15 +19,13 @@ from pulse.history.tool_detail import (
 )
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
-_QUESTIONNAIRE_START = re.compile(
-    r"```(?:text)?|Preciso de algumas informações|I need some information before continuing|Apresentando todas as perguntas",
-    re.IGNORECASE,
-)
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
+#: Recebe o diretório onde a run trabalha — a tela repassa ao painel de artefatos.
+ContextFn = Callable[[str], None]
 
 
 def _is_placeholder(title: str, detail: str = "") -> bool:
@@ -63,10 +65,12 @@ class CockpitSink:
         cwd: str | None = None,
         session_id: str | None = None,
         on_replay_end: NotifyFn | None = None,
+        on_context: ContextFn | None = None,
     ) -> None:
         self._state = state
         self._on_change = on_change
         self._on_replay_end = on_replay_end
+        self._on_context = on_context
         self._cwd = cwd
         self._streaming_message = False
         self._agent_text = ""
@@ -79,6 +83,21 @@ class CockpitSink:
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
+
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        """A run disse onde trabalha: é daí que saem os caminhos dos artefatos.
+
+        A tela nasce apontando para a raiz do projeto; com worktree o agente
+        escreve em outro lugar, e sem reapontar aqui o painel procuraria cada
+        artefato numa pasta onde ele não está. `on_context` deixa o cockpit
+        repassar isso ao painel, que guarda o próprio cwd.
+        """
+        if cwd:
+            self._cwd = cwd
+        self._state.set_branch(branch)
+        if self._on_context is not None:
+            self._on_context(self._cwd or "")
+        self._emit()
 
     def set_session_id(self, session_id: str | None) -> None:
         self._store.set_session(session_id)
@@ -424,7 +443,7 @@ class CockpitSink:
     def _maybe_enter_questionnaire_mode(self) -> None:
         if self._questionnaire_mode:
             return
-        if _QUESTIONNAIRE_START.search(self._agent_text):
+        if QUESTIONNAIRE_START.search(self._agent_text):
             self._questionnaire_mode = True
             self._finish_message_line()
 
@@ -432,7 +451,7 @@ class CockpitSink:
         if self._questionnaire_announced:
             return
         self._questionnaire_announced = True
-        self._state.add_info("Questionário interativo")
+        self._state.add_info(QUESTIONNAIRE_NOTICE)
         self._emit()
 
     def _finish_message_line(self) -> None:

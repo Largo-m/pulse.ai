@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse import vcs
 from pulse.history.models import LIVE_STATUSES, HistoryItem, HistoryStatus, HistoryStep
 from pulse.store import runs as run_store
 from pulse.store.workflow_defs import get_workflow
@@ -60,10 +61,40 @@ class HistoryCatalog:
 
         A checagem de workspace é a mesma do `get`: o histórico só mostra as
         runs daqui, então só essas ele pode apagar.
+
+        O worktree da run vai junto — ele só existia por causa dela. Mas só se
+        estiver limpo: trabalho não commitado lá dentro não é nosso para jogar
+        fora, e quem apaga uma linha do histórico não está pedindo isso. Sujo,
+        o diretório fica (`remove_worktree` recusa sem `--force`), e a run sai
+        da lista do mesmo jeito.
         """
-        if self.get(item_id) is None:
+        item = self.get(item_id)
+        if item is None:
             return False
+        self.remove_worktree(item)
         return run_store.delete_run(item_id)
+
+    def remove_worktree(self, item: HistoryItem, *, force: bool = False) -> bool:
+        """Desfaz o worktree da run. `False` = não havia, ou o git recusou.
+
+        Esquecer o caminho no banco mesmo quando o diretório já sumiu é de
+        propósito: o que sobrava ali era uma oferta de remover algo que não
+        existe mais.
+        """
+        path = item.worktree_path
+        if not path:
+            return False
+        repo = vcs.repo_root(self.workspace)
+        removed = False
+        if repo is not None and Path(path).exists():
+            try:
+                vcs.remove_worktree(repo, path, force=force)
+                removed = True
+            except vcs.GitError:
+                return False
+        run_store.set_workspace_context(item.run_id, worktree_path="", branch=item.branch)
+        item.worktree_path = ""
+        return removed or not Path(path).exists()
 
 
 def search_history(workspace: Path, query: str = "") -> list[HistoryItem]:
@@ -90,6 +121,8 @@ def _item(record: run_store.RunRecord) -> HistoryItem:
             for step in record.steps
         ],
         artifacts=[entry["path"] for entry in run_store.list_artifacts(record.id)],
+        branch=record.branch,
+        worktree_path=record.worktree_path,
     )
 
 

@@ -43,7 +43,11 @@ CREATE TABLE IF NOT EXISTS project_settings (
   model TEXT,
   permission_policy TEXT,
   workspace_root TEXT,
-  default_agent TEXT
+  default_agent TEXT,
+  -- 1 = cada run deste projeto abre um `git worktree` próprio, em branch nova,
+  -- em vez de escrever na árvore de trabalho de quem está usando o editor. Só
+  -- faz sentido com o root em repositório git. Ver [pulse.vcs].
+  use_worktree INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS project_agents (
@@ -130,6 +134,15 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   -- aprovação: onde há aprovação, quem atesta a entrega é a pessoa. Desligar
   -- devolve o comportamento antigo — encerrar o turno conta como concluir.
   requires_outcome INTEGER NOT NULL DEFAULT 1,
+  -- Laço: preenchido com o `step_id` de um step anterior, este step pode mandar
+  -- a run voltar até lá e repetir o trecho. Quem pede a volta é o agente, no
+  -- campo `next` do bloco `pulse:outcome`; quem permite é esta coluna. Serve ao
+  -- caso "revisa, corrige, revisa de novo até não sobrar nada".
+  repeat_from TEXT NOT NULL DEFAULT '',
+  -- Teto de voltas, contando a primeira. Sem teto um agente que sempre pede
+  -- mais uma rodada deixa a run sem fim, e o motor não tem como julgar se a
+  -- rodada seguinte vale a pena.
+  repeat_max INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (workflow_id, step_id)
 );
 
@@ -144,12 +157,21 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
   workflow_id TEXT NOT NULL,
+  -- A raiz do **projeto**, sempre — nunca o worktree. É por ela que o histórico
+  -- acha a run (`HistoryCatalog`), então gravar aqui o diretório onde o agente
+  -- trabalhou sumiria com a run da lista do projeto.
   workspace_root TEXT NOT NULL,
   user_prompt TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'pending',
   current_step TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  -- Onde o agente de fato trabalhou, quando não foi na raiz: o worktree desta
+  -- run. Vazio = rodou no próprio projeto.
+  worktree_path TEXT NOT NULL DEFAULT '',
+  -- Branch em que a run aconteceu. Preenchida mesmo sem worktree: é a branch
+  -- que o projeto tinha quando a run começou.
+  branch TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_workspace
@@ -173,6 +195,14 @@ CREATE TABLE IF NOT EXISTS run_steps (
   -- é tempo de parede; a duração que interessa é essa menos isto aqui — senão
   -- uma aprovação que demorou a noite inteira vira "trabalho do agente".
   waiting_seconds REAL NOT NULL DEFAULT 0,
+  -- Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço
+  -- (`workflow_steps.repeat_from`), e é o que deixa o painel mostrar uma linha
+  -- só com o contador do lado em vez de uma linha por volta.
+  rounds INTEGER NOT NULL DEFAULT 1,
+  -- Duração líquida das voltas anteriores do laço, já sem a espera. A volta
+  -- nova reabre `started_at`/`ended_at`, e sem isto o tempo do step voltava a
+  -- zero a cada rodada em vez de somar.
+  carried_seconds REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, step_id)
 );
 
@@ -237,6 +267,22 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # Zero para o que já existia: run antiga não tem como saber quanto do tempo
     # dela foi espera, e zero é o que ela vinha mostrando.
     ("run_steps", "waiting_seconds", "REAL NOT NULL DEFAULT 0"),
+    # Desligado para quem já tinha banco: isolar a run em worktree muda onde o
+    # agente escreve, e isso não pode passar a valer por conta de um upgrade.
+    ("project_settings", "use_worktree", "INTEGER NOT NULL DEFAULT 0"),
+    # Vazio para run antiga, que é a verdade: ela rodou na raiz do projeto, e o
+    # Pulse não tinha como saber a branch.
+    ("runs", "worktree_path", "TEXT NOT NULL DEFAULT ''"),
+    ("runs", "branch", "TEXT NOT NULL DEFAULT ''"),
+    # Vazio/zero para quem já tinha banco: nenhum step repetia antes, e um laço
+    # que passasse a valer por conta de um upgrade mudaria o custo de toda run.
+    ("workflow_steps", "repeat_from", "TEXT NOT NULL DEFAULT ''"),
+    ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
+    # 1 para o que já existia, que é a verdade: nenhum step repetia antes.
+    ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
+    # Zero para o que já existia: run antiga não guardou o tempo das voltas
+    # anteriores, e zero é o que ela vinha mostrando.
+    ("run_steps", "carried_seconds", "REAL NOT NULL DEFAULT 0"),
 )
 
 

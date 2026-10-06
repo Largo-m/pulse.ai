@@ -414,7 +414,7 @@ def test_new_session_lists_pipelines_and_hides_the_generic_loop():
 
     assert "default" in everything, "o loop genérico continua no banco"
     assert "default" not in listed
-    assert {"new-issue", "quick-fix"} <= set(listed)
+    assert {"new-issue", "quick-fix", "review"} <= set(listed)
 
     labels = [item.label for item in _session_workflows()]
     assert labels == sorted(labels), "o menu é alfabético"
@@ -461,9 +461,14 @@ def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
             await pilot.pause()
             assert screen.query_one("#workflow-prompt", Input).display is False
 
+            screen.on_option_selected(_selected("workflow:review"))
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+
             assert opened == [
                 ("analyze-codebase", "Mapear codebase existente"),
                 ("setup-project", "Novo projeto"),
+                ("review", "Revisar a branch atual"),
             ]
 
     asyncio.run(run())
@@ -656,6 +661,46 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
     assert session.detached is True
     assert session.stopped is False, "sair não é parar"
     assert screen.fake_app.popped == 1
+    assert used == ["abandon"]
+
+
+def test_leaving_before_the_first_step_still_detaches():
+    """Run que ainda não abriu step também está viva: sair larga, não fecha.
+
+    Antes do primeiro `phase.begin` (`state.running` ainda falso) sair fechava
+    a ponte sem desanexar, e a sessão órfã respondia "cancelado" sozinha às
+    perguntas da run — inclusive às que a tela reanexada estava mostrando.
+    """
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Session:
+        detached = False
+
+        def detach(self) -> None:
+            self.detached = True
+
+    class _App:
+        def pop_screen(self) -> None:
+            pass
+
+    class _Screen(CockpitScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen("demo", "x")
+    session = _Session()
+    screen._session = session
+    assert screen.state.running is False
+    used: list[str] = []
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+
+    screen.action_back_to_menu()
+
+    assert session.detached is True
     assert used == ["abandon"]
 
 
