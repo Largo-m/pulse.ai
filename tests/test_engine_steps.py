@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
+from pulse.tui.hydrate import _step_seconds
 
 
 class _Stream:
@@ -231,6 +233,42 @@ def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path
 
     assert runner.prompts[0] == "siga"
     assert runner.prompts[1] == "antes: escrevi o planosiga"
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        ({"approved": True, "outcome": "approve", "phaseSummary": "o review"}, "done"),
+        ({"approved": False, "outcome": "skip", "phaseSummary": "o review"}, "skipped"),
+    ],
+)
+def test_a_step_sees_how_the_previous_one_closed(
+    wired, monkeypatch, tmp_path: Path, outcome: dict, expected: str
+):
+    """Pulado e concluído não podem chegar indistinguíveis no step seguinte.
+
+    Sem o status, o pulo que o usuário deu num step só valeria para ele: o
+    próximo receberia o mesmo resumo nos dois casos e trabalharia por cima de
+    uma entrega que a pessoa acabou de dispensar.
+    """
+    make_workflow(
+        "demo",
+        steps=[("one", "Um"), ("two", "Dois")],
+        prompt_template="anterior: {{previous_status}}",
+    )
+    runner = _Runner([outcome, _approved()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert runner.prompts[0] == "anterior: "
+    assert runner.prompts[1] == f"anterior: {expected}"
 
 
 def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path: Path):
@@ -849,3 +887,453 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     assert len(second.prompts) == 2, "só os dois pendentes rodam; o que fechou não volta"
     record = run_store.load_run(run_id)
     assert [step.status for step in record.steps] == ["done", "done", "done"]
+
+
+def _repeating(summary: str = "corrigi") -> dict:
+    """Turno de um step que entregou e pede outra volta do laço."""
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\nnext: repeat\n```",
+    }
+
+
+def test_um_step_pode_mandar_a_run_voltar_e_repetir_o_trecho(wired, monkeypatch, tmp_path):
+    """O laço: revisa, corrige, revisa de novo — até ninguém pedir mais nada."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    # Volta 1 e 2 pedem outra; a 3ª entrega e fica quieta.
+    runner = _Runner(
+        [_delivered(), _repeating(), _delivered(), _repeating(), _delivered(), _delivered()]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    record = run_store.list_runs(tmp_path)[0]
+    # Uma linha por step, não por volta: o painel mostra `Review ×3`, e o log e
+    # os artefatos das três rodadas ficam sob o mesmo step.
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert all(step.status == "done" for step in record.steps)
+    # O contador vai em quem abre a faixa — é ele que tem um artefato por volta.
+    assert record.step("review").rounds == 3
+    assert record.step("fix").rounds == 1
+
+
+def test_sem_pedido_o_laco_roda_uma_vez_so(wired, monkeypatch, tmp_path):
+    """`repeat_from` é permissão, não obrigação: quem não pede, não repete."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 1
+
+
+def test_o_teto_de_rodadas_encerra_o_laco(wired, monkeypatch, tmp_path):
+    """Sem teto, um agente que sempre pede mais uma deixa a run sem fim."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 2),
+    )
+    # Pede sempre; o motor é quem para.
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _repeating()])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 2, "parou na segunda, como o teto manda"
+    assert record.status == "completed"
+
+
+def test_o_laco_termina_em_quem_abre_nunca_em_quem_fecha(wired, monkeypatch, tmp_path):
+    """Review → fix → review: no teto, o fix não roda depois da última revisão.
+
+    Quem fecha o laço pede a volta porque mexeu em algo que ninguém conferiu.
+    Deixá-lo rodar na última volta acabaria a run num reparo sem conferência.
+    """
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner(
+        [
+            _delivered("r1"),
+            _repeating("f1"),
+            _delivered("r2"),
+            _repeating("f2"),
+            _delivered("r3"),
+            _repeating("f3 — não deveria rodar"),
+        ]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    # Cinco turnos: review, fix, review, fix, review. O 3º fix ficou na fila.
+    assert len(runner.prompts) == 5
+    assert len(runner._results) == 1
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("review").rounds == 3
+    assert all(step.status == "done" for step in record.steps)
+    assert any("a última" in message for message in runner._stream.messages)
+
+
+def test_o_teto_conta_as_voltas_gravadas_ao_retomar(wired, monkeypatch, tmp_path):
+    """Retomar no meio do laço não devolve as voltas que já foram gastas."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    # Primeira run: review, fix pede volta, review 2… e para antes do fix 2.
+    control = RunControl()
+    first = _Runner([_delivered(), _repeating(), _delivered()], control=control)
+    original = engine._run_step
+
+    def stop_before_second_fix(**kwargs):
+        if kwargs["step"].step_id == "fix" and kwargs["run"].step("review").rounds == 2:
+            control.stop()
+            return RUN_STOPPED, False
+        return original(**kwargs)
+
+    monkeypatch.setattr(engine, "_run_step", stop_before_second_fix)
+    _install(monkeypatch, first)
+    assert (
+        run_workflow(
+            workflow_id="demo",
+            user_prompt="x",
+            stream=first._stream,
+            prompt_handler=first._prompt_handler,
+            render_header=False,
+        )
+        == RUN_STOPPED
+    )
+    run_id = run_store.list_runs(tmp_path)[0].id
+    monkeypatch.setattr(engine, "_run_step", original)
+
+    # Retomada: o fix 2 pede volta, e a 3ª é a última — só o review roda.
+    second = _Runner([_repeating(), _delivered(), _repeating("não deveria rodar")])
+    _install(monkeypatch, second)
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=second._stream,
+        prompt_handler=second._prompt_handler,
+        render_header=False,
+        resume_run_id=run_id,
+    )
+
+    assert code == 0
+    # Fix 2 e review 3; o 3º fix ficou na fila.
+    assert len(second.prompts) == 2
+    assert len(second._results) == 1
+    assert run_store.load_run(run_id).step("review").rounds == 3
+
+
+def test_o_tempo_das_voltas_soma_em_vez_de_zerar(wired, monkeypatch, tmp_path):
+    """Cada volta reabre o relógio, mas o que as anteriores gastaram fica."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    # Relógio de mentira: cada carimbo anda 10s.
+    start = datetime(2026, 10, 6, tzinfo=UTC)
+    seconds = iter(range(0, 10_000, 10))
+    monkeypatch.setattr(
+        run_store,
+        "utc_now",
+        lambda: (start + timedelta(seconds=next(seconds))).isoformat(),
+    )
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    review = record.step("review")
+    assert review.rounds == 2
+    # A volta 1 fechou com duração positiva e foi guardada; a volta 2 tem a dela.
+    assert review.carried_seconds > 0
+    assert review.started_at and review.ended_at
+    assert _step_seconds(review) > review.carried_seconds
+
+
+def _clean(summary: str = "nada a corrigir", *, approval: bool = False) -> dict:
+    """Turno de quem abre o laço e não achou o que corrigir: sem aprovação."""
+    result = {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\nnext: close\n```",
+    }
+    if approval:
+        # O questionário não apareceu, então o runner devolve não-aprovado.
+        result.update(approved=False, outcome="unknown")
+    return result
+
+
+def test_review_limpo_encerra_o_laco_sem_pedir_aprovacao(wired, monkeypatch, tmp_path):
+    """O laço termina em quem revisa: review sem findings não chama o fix."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix"), ("after", "Depois")],
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_clean(approval=True), _approved("depois")])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert len(runner.prompts) == 2, "review e o step depois do laço; o fix não roda"
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.status == "completed"
+    assert [step.status for step in record.steps] == ["done", "skipped", "done"]
+    assert any("laço encerrado" in message for message in runner._stream.messages)
+
+
+def test_review_limpo_numa_volta_seguinte_mantem_o_fix_que_ja_rodou(
+    wired, monkeypatch, tmp_path
+):
+    """Review → fix → review limpo: o fix da volta 1 entregou e continua `done`."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered("r1"), _repeating("f1"), _clean("r2")])
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    assert len(runner.prompts) == 3
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("review").rounds == 2
+    assert [step.status for step in record.steps] == ["done", "done"]
+
+
+def test_so_quem_abre_o_laco_pode_dispensar_a_aprovacao(wired, monkeypatch, tmp_path):
+    """Fora da abertura de um laço, `next: close` não vale como aprovação."""
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    runner = _Runner([_clean(approval=True)])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("one").status == "failed"
+    assert record.step("two").status == "pending"
+    # Ninguém viu pergunta: o motivo diz que faltou o bloco, não que a pessoa recusou.
+    assert any("sem o bloco de aprovação" in prompt for prompt in runner._prompt_handler.prompts)
+
+
+def test_o_pedido_de_repetir_nao_vale_onde_o_workflow_nao_declarou_laco(
+    wired, monkeypatch, tmp_path
+):
+    """Um agente não cria laço onde a definição não abriu um."""
+    make_workflow(
+        "demo",
+        steps=[("one", "Um"), ("two", "Dois")],
+        requires_approval=False,
+    )
+    runner = _Runner([_repeating(), _repeating()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["one", "two"]
+
+
+def test_steps_depois_do_laco_nao_contam_rodada(wired, monkeypatch, tmp_path):
+    """O contador é da faixa do laço, não de tudo que vem depois dele."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix"), ("ship", "Ship")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix", "ship"]
+    assert record.step("review").rounds == 2
+    # Quem está fora da faixa roda uma vez e não conta volta nenhuma.
+    assert record.step("ship").rounds == 1
+
+
+def test_as_voltas_do_laco_ficam_sob_o_mesmo_step(wired, monkeypatch, tmp_path):
+    """Uma linha por step no painel, com log e artefatos de todas as voltas.
+
+    É o que faz `Review` mostrar `round-001.md` e `round-002.md` lado a lado:
+    `visible_artifacts()` filtra por `phase_id`, então as rodadas só aparecem
+    juntas se compartilharem o `step_id`.
+    """
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    rounds: list[int] = []
+    original = engine._run_step
+
+    def spy(**kwargs):
+        # Grava um artefato por volta, como o runtime faria ao escrever a rodada.
+        if kwargs["step"].step_id == "review":
+            rounds.append(len(rounds) + 1)
+            run_store.record_artifact(
+                kwargs["run"].id,
+                f"reviews/round-00{len(rounds)}.md",
+                step_id="review",
+            )
+        return original(**kwargs)
+
+    monkeypatch.setattr(engine, "_run_step", spy)
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    assert [step.step_id for step in record.steps] == ["review", "fix"]
+    assert record.step("review").rounds == 2
+
+    # As duas rodadas sob o mesmo step: é isso que o painel navega.
+    artifacts = run_store.list_artifacts(record.id)
+    assert artifacts == [
+        {"path": "reviews/round-001.md", "step_id": "review"},
+        {"path": "reviews/round-002.md", "step_id": "review"},
+    ]
+
+
+def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
+    wired, monkeypatch, tmp_path: Path
+):
+    """`_fail` carimba `ended_at` antes do menu, e a espera no menu é descontada
+    deste step. Se a pessoa desiste, o fim tem de ser recarimbado depois do menu
+    — senão o desconto cai fora da janela e a duração some do histórico."""
+    make_workflow("demo", steps=[("one", "Um")])
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+    monkeypatch.setattr(run_store, "utc_now", lambda: clock[0].isoformat())
+
+    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    stamped_before_menu: list[str] = []
+
+    def stop_after_ten_minutes(prompt, choices, *, title=""):
+        stamped_before_menu.append(run_store.list_runs(tmp_path)[0].step("one").ended_at)
+        clock[0] += timedelta(minutes=10)
+        return "stop"
+
+    runner._prompt_handler.select_choice = stop_after_ten_minutes
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 1
+    step = run_store.list_runs(tmp_path)[0].step("one")
+    assert stamped_before_menu and stamped_before_menu[0]
+    assert datetime.fromisoformat(step.ended_at) - datetime.fromisoformat(
+        stamped_before_menu[0]
+    ) == timedelta(minutes=10)

@@ -10,11 +10,17 @@ from textual.screen import Screen
 from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
-from pulse.history.models import HistoryItem, HistoryStatus
+from pulse.history.models import LIVE_STATUSES, HistoryItem
 from pulse.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
+
+#: De quanto em quanto tempo a lista relê o banco. O status de uma run muda no
+#: daemon, outro processo: sem reler, a linha ficava em "executando" até a tela
+#: ser reaberta.
+REFRESH_SECONDS = 2.0
 
 
 class HistoryListScreen(Screen[None]):
@@ -47,13 +53,51 @@ class HistoryListScreen(Screen[None]):
     def on_mount(self) -> None:
         self._refresh()
         self.query_one("#history-search", Input).focus()
+        self.set_interval(REFRESH_SECONDS, self._poll)
+
+    def on_screen_resume(self) -> None:
+        # Voltar do cockpit ou do detalhe é quando o status mais mudou.
+        self._refresh()
+
+    def _poll(self) -> None:
+        """Relê o histórico fora do laço da tela — banco ocupado não trava nada."""
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        query = self._query
+        try:
+            items = self._catalog.search(query)
+        except Exception:
+            # Leitura que falhou agora é só um tique perdido: o próximo tenta de novo.
+            return
+        try:
+            self.app.call_from_thread(self._apply, items, query)
+        except Exception:
+            # A tela saiu enquanto o banco respondia.
+            pass
 
     def _hint_text(self) -> str:
         return "/ busca  ·  Enter abre  ·  d remove"
 
     def _refresh(self) -> None:
-        items = self._catalog.search(self._query)
+        self._apply(self._catalog.search(self._query), self._query, force=True)
+
+    def _apply(self, items: list[HistoryItem], query: str, *, force: bool = False) -> None:
+        """Põe `items` na lista — redesenhando só se alguma linha mudou.
+
+        Redesenhar sempre faria o cursor pular para o topo a cada tique; e um
+        resultado de busca que chegou depois de a pessoa digitar outra coisa
+        já não é o que ela pediu.
+        """
+        if query != self._query or not self.is_mounted:
+            return
+        rows = [_row_key(item) for item in items]
+        unchanged = rows == [_row_key(item) for item in self._items.values()]
+        # Antes de trocar `_items`: é por eles que o cursor vira uma run.
+        selected = self._highlighted()
         self._items = {item.item_id: item for item in items}
+        if unchanged and not force:
+            return
         options = self.query_one("#history-options", OptionList)
         options.clear_options()
         empty = self.query_one("#history-empty", Static)
@@ -67,6 +111,10 @@ class HistoryListScreen(Screen[None]):
         empty.display = False
         for item in items:
             options.add_option(Option(_format_item(item), id=item.item_id))
+        if selected is not None:
+            ids = [item.item_id for item in items]
+            if selected.item_id in ids:
+                options.highlighted = ids.index(selected.item_id)
 
     @on(Input.Changed, "#history-search")
     def on_search_changed(self, event: Input.Changed) -> None:
@@ -84,6 +132,18 @@ class HistoryListScreen(Screen[None]):
             return
         item = self._items.get(str(option_id))
         if item is None:
+            return
+        # Run que ainda está rodando no daemon abre ao vivo, não como página de
+        # histórico: o id da run é o mesmo dos dois lados. Item `executando`
+        # cujo daemon morreu não está nesta lista e cai no detalhe estático,
+        # que é o que existe para ele.
+        if item.status in LIVE_STATUSES and item.run_id in active_run_ids():
+            self.app.open_cockpit(
+                item.workflow_id,
+                item.prompt,
+                attach_run_id=item.run_id,
+                workspace=self._workspace,
+            )
             return
         self.app.push_screen(HistoryDetailScreen(item, workspace=self._workspace))
 
@@ -148,9 +208,14 @@ def _delete_warning(item: HistoryItem) -> str:
         item.title,
         "Apaga a run, os logs e a lista de artefatos. Os arquivos no workspace ficam.",
     ]
-    if item.status is HistoryStatus.IN_PROGRESS:
+    if item.status in LIVE_STATUSES:
         lines.append("Atenção: esta run consta em andamento — remover pode derrubá-la.")
     return "\n".join(lines)
+
+
+def _row_key(item: HistoryItem) -> tuple[str, ...]:
+    """O que a linha mostra — mudou isto, a lista é redesenhada."""
+    return (item.item_id, item.workflow_label, str(item.status), item.title)
 
 
 def _format_item(item: HistoryItem) -> Text:

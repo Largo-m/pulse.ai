@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.prompts.permission import decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
 
 
@@ -35,6 +37,21 @@ class ApiStreamSink:
     def finish_question_prompt(self) -> None:
         self._bus.publish({"type": "stream.finish_question"})
 
+    def begin_user_wait(self) -> None:
+        """A run parou de trabalhar: há pergunta aberta esperando alguém.
+
+        Vai pelo barramento como qualquer evento, então o replay entrega o par
+        `true`/`false` a quem anexa depois — e, numa espera em curso, entrega o
+        `true` sozinho, que é exatamente o estado da run.
+
+        `since` é a hora de parede em que a espera começou: quem anexa no meio
+        dela congela o relógio ali, e não no instante em que chegou à tela.
+        """
+        self._bus.publish({"type": "run.awaiting", "waiting": True, "since": time.time()})
+
+    def end_user_wait(self) -> None:
+        self._bus.publish({"type": "run.awaiting", "waiting": False})
+
     def info(self, title: str) -> None:
         self._bus.publish({"type": "phase.info", "title": title})
 
@@ -46,6 +63,15 @@ class ApiStreamSink:
 
     def set_session_id(self, session_id: str) -> None:
         self._bus.publish({"type": "session.id", "session_id": session_id})
+
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        """Onde a run trabalha e em que branch.
+
+        Vai pelo barramento como qualquer outro evento, então quem anexa depois
+        recebe isto no replay — e o painel de artefatos reaponta para o
+        worktree sem rota nova e sem a tela precisar perguntar nada.
+        """
+        self._bus.publish({"type": "run.context", "cwd": cwd, "branch": branch})
 
 
 class ApiPromptPort:
@@ -71,6 +97,14 @@ class ApiPromptPort:
         policy: str,
         allow_terminal: bool = False,
     ) -> dict[str, Any]:
+        # Quem decide primeiro é o runner, antes de abrir a espera
+        # ([pulse.acp.session_runner._WatchedPrompts]). Repetir aqui é a rede
+        # do daemon: publicar o que a política resolve faria a run esperar para
+        # sempre por uma resposta que, com o cockpit fechado, ninguém daria.
+        decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
+        if decided is not None:
+            return decided
+
         answer = self._correlator.request(
             "permission",
             {

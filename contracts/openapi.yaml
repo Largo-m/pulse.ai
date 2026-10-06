@@ -46,12 +46,33 @@ paths:
                   nullable: true
                   description: >-
                     Resume a previous run instead of creating one; it picks up at
-                    the first step that is not done or skipped
+                    the first step that is not done or skipped. The resumed run
+                    keeps its id, so the run id is stable across resumes
       responses:
         "200":
           description: Run created
         "404":
           description: Unknown workflow id
+        "409":
+          description: That run is already executing
+  /api/runs:
+    get:
+      summary: Runs the engine holds in memory, active ones first
+      description: >-
+        How a client finds what is still running in the background and reopens
+        it. Finished runs linger for a while so they stay attachable, then drop
+        out; the database keeps the past either way.
+      responses:
+        "200":
+          description: >-
+            Each run: id, workflow_id, workflow_label, prompt, workspace,
+            status, active, awaiting_prompt, awaiting_since,
+            current_step_label, started_at, exit_code.
+            status is awaiting_input while an active run has an open question
+            waiting on the user (tool permission, questionnaire, approval,
+            retry menu); awaiting_since is when that wait started, in epoch
+            seconds. Both are derived from the open questions, not stored: a
+            run that is waiting is not finished, it is just not working.
   /api/runs/{run_id}:
     get:
       summary: Get run status
@@ -66,13 +87,33 @@ paths:
           description: Run state
   /api/runs/{run_id}/events:
     get:
-      summary: SSE event stream for a run
+      summary: SSE event stream for a run, replayed from the start
+      description: >-
+        A new subscriber receives the whole run since run.started, then
+        stream.replay_end, then live events. That is what lets a client reopen a
+        run it walked away from and see exactly what was on screen.
+        stream.ping marks an idle stream and carries no run data.
+        run.awaiting carries waiting: true when the run stops to ask the user
+        something and waiting: false when it is answered, so a client can
+        freeze the step clock for exactly as long as the question is open.
+        run.context carries cwd and branch: where this run works — its own git
+        worktree, when the project has that turned on — and the branch it works
+        on. It is published before the first step, so a client that attaches
+        later gets it from the replay and reads artifacts from the right
+        directory.
       parameters:
         - name: run_id
           in: path
           required: true
           schema:
             type: string
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+          description: Skip the first N events, for a client that already has them
       responses:
         "200":
           description: text/event-stream
@@ -90,10 +131,18 @@ paths:
           description: Accepted
   /api/history:
     get:
-      summary: List history items
+      summary: List history items, runs still executing first
+      description: >-
+        In-progress runs are listed before the past, newest first within each
+        group. They are the only items a client can still enter and take part
+        in, so they do not belong buried in the history.
       responses:
         "200":
-          description: History list
+          description: >-
+            History items. Each carries branch and worktree_path: the branch the
+            run worked on, and its own worktree when it ran isolated. Both are
+            empty for a run that predates worktree support or a project outside
+            git.
   /api/history/{item_id}:
     get:
       summary: One history item
@@ -126,4 +175,9 @@ paths:
       summary: Global and project config
       responses:
         "200":
-          description: Config payload
+          description: >-
+            Config payload. The project side carries use_worktree: with it on,
+            every run of that project opens its own git worktree on a new
+            branch instead of writing in the working tree. It is a project
+            setting only — the machine does not get to isolate someone else's
+            repository.

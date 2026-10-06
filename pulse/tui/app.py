@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from textual.app import App
 
 from pulse.tui.screens.cockpit import CockpitScreen
@@ -23,12 +25,16 @@ class PulseApp(App[None]):
         user_prompt: str,
         *,
         resume_run_id: str | None = None,
+        attach_run_id: str | None = None,
+        workspace: Path | None = None,
     ) -> None:
         self.push_screen(
             CockpitScreen(
                 workflow_id,
                 user_prompt,
+                workspace=workspace,
                 resume_run_id=resume_run_id,
+                attach_run_id=attach_run_id,
             )
         )
 

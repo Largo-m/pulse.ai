@@ -25,13 +25,15 @@ def test_status_and_workflows():
     listed = workflows.json()["workflows"]
     ids = {item["id"] for item in listed}
     # Só o que está no banco: o Pulse não tem catálogo em código.
-    assert ids >= {"default", "new-issue", "quick-fix"}
+    assert ids >= {"default", "new-issue", "quick-fix", "review"}
     pipeline = next(item for item in listed if item["id"] == "new-issue")
     assert [step["agent"] for step in pipeline["steps"]] == [
         "prd",
         "techspec",
         "tasks",
         "implement",
+        "review",
+        "review-fix",
     ]
 
 
@@ -209,3 +211,241 @@ def test_history_delete_endpoint(tmp_path: Path):
 
     again = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
     assert again.status_code == 404
+
+
+def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
+    """`RunState.id` é o id do SQLite — sem isso "reabrir a run X" é chute."""
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    seen: dict[str, object] = {}
+    entered = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        seen.update(kwargs)
+        entered.set()
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
+    assert entered.wait(timeout=5)
+    assert seen["run_id"] == run_id
+
+
+def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    asking = threading.Event()
+    release = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        asking.set()
+        release.wait(timeout=5)
+        kwargs["prompt_handler"].ask_text("e agora?")
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post(
+        "/api/workflows/default/runs", json={"prompt": "tarefa"}
+    ).json()["id"]
+    assert asking.wait(timeout=5)
+
+    listed = client.get("/api/runs").json()["runs"]
+    assert [item["id"] for item in listed] == [run_id]
+    assert listed[0]["active"] is True
+    assert listed[0]["awaiting_prompt"] is False
+    assert listed[0]["status"] == "running"
+    assert listed[0]["awaiting_since"] is None
+    assert listed[0]["prompt"] == "tarefa"
+
+    release.set()
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        listed = client.get("/api/runs").json()["runs"]
+        if listed[0]["awaiting_prompt"]:
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("a run nunca apareceu esperando resposta")
+
+    # Esperar resposta não é "executando": é o estado que a Home anuncia e o
+    # histórico mostra como `precisa de você`.
+    assert listed[0]["status"] == "awaiting_input"
+    assert listed[0]["awaiting_since"] is not None
+
+    state = manager.get(run_id)
+    assert state is not None and state.correlator is not None
+    pending = state.correlator.pending()
+    assert len(pending) == 1
+    manager.answer_prompt(pending[0].id, "ok")
+
+
+def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeypatch):
+    """Com o cockpit fechado, a run só pode parar no que exige uma pessoa.
+
+    Era aqui que a run morria de pé: `deny_writes` recusa escrita sozinho, mas
+    a decisão morava no cliente — sem cliente ligado, o daemon publicava a
+    pergunta e esperava para sempre uma resposta que ninguém tinha de dar. A
+    Home então anunciava "precisa de você", e quem entrava não via pendência
+    nenhuma: o cliente respondia calado pela política e o log voltava a andar.
+    """
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    decided: list = []
+    done = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        decided.append(
+            kwargs["prompt_handler"].respond_to_permission(
+                {
+                    "permission": {"title": "Editar app.py", "kind": "edit"},
+                    "toolCall": {"kind": "edit", "rawInput": {"path": "/repo/app.py"}},
+                    "options": [
+                        {"optionId": "allow-once", "kind": "allow_once"},
+                        {"optionId": "reject-once", "kind": "reject_once"},
+                    ],
+                },
+                policy="deny_writes",
+            )
+        )
+        done.set()
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post(
+        "/api/workflows/default/runs", json={"prompt": "tarefa"}
+    ).json()["id"]
+
+    # Ninguém chamou `/events`: não há tela nenhuma ligada nesta run.
+    assert done.wait(timeout=5), "a run travou numa permissão que a política resolve"
+    assert decided[0]["outcome"]["optionId"] == "reject-once"
+
+    state = manager.get(run_id)
+    assert state is not None and state.correlator is not None
+    assert state.correlator.pending() == []
+    listed = client.get("/api/runs").json()["runs"]
+    assert listed[0]["awaiting_prompt"] is False
+
+
+def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
+    """Parar uma run parada numa pergunta tem de acordar quem espera.
+
+    O motor espera a resposta sem prazo, então `stop` sozinho não resolvia: a
+    thread ficava presa no `wait` da pergunta e a run nunca encerrava.
+    """
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    asked = threading.Event()
+    answer: list[object] = []
+
+    def fake_run_workflow(**kwargs):
+        asked.set()
+        answer.append(kwargs["prompt_handler"].ask_text("e agora?"))
+        return RUN_STOPPED
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post(
+        "/api/workflows/default/runs", json={"prompt": "tarefa"}
+    ).json()["id"]
+    assert asked.wait(timeout=5)
+
+    state = manager.get(run_id)
+    assert state is not None and state.correlator is not None
+    deadline = time.monotonic() + 5
+    while not state.correlator.pending() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert state.correlator.pending()
+
+    assert client.post(f"/api/runs/{run_id}/cancel").json() == {"ok": True}
+
+    deadline = time.monotonic() + 5
+    while state.is_active() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert not state.is_active()
+    # Pergunta cancelada chega ao motor como "ninguém respondeu", igual a
+    # fechar o dock — não como uma resposta inventada.
+    assert answer == [None]
+
+
+def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
+    """Mesmo id, mesma run: duas threads sobre ela é que não dá."""
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        entered.set()
+        release.wait(timeout=5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
+    assert entered.wait(timeout=5)
+
+    again = client.post(
+        "/api/workflows/default/runs",
+        json={"prompt": "x", "resume_run_id": run_id},
+    )
+    assert again.status_code == 409
+    release.set()
+
+
+def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
+    from pulse.daemon.protocol import REPLAY_END
+
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    streamed = threading.Event()
+    release = threading.Event()
+
+    def fake_run_workflow(**kwargs):
+        kwargs["stream"].begin_phase("Um")
+        kwargs["stream"].info("andando")
+        streamed.set()
+        release.wait(timeout=5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
+    assert streamed.wait(timeout=5)
+
+    state = manager.get(run_id)
+    assert state is not None
+    # Quem chega depois recebe o passado inteiro e só então o marcador.
+    replayed = []
+    for event in state.bus.subscribe():
+        replayed.append(event["type"])
+        if event["type"] == REPLAY_END:
+            break
+    assert replayed[:3] == ["run.started", "phase.begin", "phase.info"]
+    assert replayed[-1] == REPLAY_END
+
+    # `after` pula o que o cliente já viu.
+    resumed = []
+    for event in state.bus.subscribe(after=2):
+        resumed.append(event["type"])
+        if event["type"] == REPLAY_END:
+            break
+    assert resumed == ["phase.info", REPLAY_END]
+    release.set()
+
+
+def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
+    from pulse.daemon import runs as runs_module
+
+    manager = RunManager()
+    client = TestClient(create_app(manager))
+    monkeypatch.setattr("pulse.daemon.runs.run_workflow", lambda **kwargs: 0)
+
+    first = client.post("/api/workflows/default/runs", json={"prompt": "a"}).json()["id"]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and manager.get(first).finished_at is None:
+        time.sleep(0.02)
+    assert manager.get(first).finished_at is not None
+
+    # Recém-encerrada continua em memória: dá para reabrir e ver o replay.
+    assert first in {item["id"] for item in manager.list_runs()}
+
+    manager.get(first).finished_at -= runs_module.FINISHED_TTL + 1
+    client.post("/api/workflows/default/runs", json={"prompt": "b"})
+    assert manager.get(first) is None

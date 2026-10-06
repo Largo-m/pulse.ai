@@ -16,6 +16,10 @@ STATUS_LABELS: dict[str, str] = {
     "pending": "pendente",
     "in_progress": "executando",
     "running": "executando",
+    #: A run parou de trabalhar porque depende de alguém: há pergunta aberta
+    #: (permissão, questionário, aprovação, menu de retry). Vale para a run
+    #: inteira e para o step que ficou esperando.
+    "awaiting_input": "precisa de você",
     "awaiting_approval": "precisa de você",
     "approved": "aprovado",
     "blocked": "bloqueado",
@@ -30,6 +34,7 @@ STATUS_COLORS: dict[str, str] = {
     "pending": "#888888",
     "in_progress": "#A2D729",
     "running": "#A2D729",
+    "awaiting_input": "#D4AF37",
     "awaiting_approval": "#D4AF37",
     "approved": "#7FB069",
     "blocked": "#E8913A",
@@ -44,6 +49,7 @@ STATUS_ICONS: dict[str, str] = {
     "pending": "Ⅱ",
     "in_progress": "▸",
     "running": "▸",
+    "awaiting_input": "◆",
     "awaiting_approval": "◆",
     "approved": "✓",
     "blocked": "⊘",

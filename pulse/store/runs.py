@@ -25,6 +25,11 @@ MAX_DETAIL = 20_000
 
 PENDING = "pending"
 RUNNING = "running"
+#: A run existe, o agente está vivo, e nada avança porque há uma pergunta aberta
+#: na tela de alguém. Status da **run**, não do step: o step continua `running`
+#: — ele não terminou, só parou de consumir tempo de agente. Ver
+#: [pulse.acp.session_runner._begin_user_wait].
+AWAITING_INPUT = "awaiting_input"
 DONE = "done"
 SKIPPED = "skipped"
 FAILED = "failed"
@@ -51,19 +56,35 @@ class StepRecord:
     acp_session_id: str = ""
     started_at: str = ""
     ended_at: str = ""
+    #: Tempo que este step passou esperando o usuário, descontado da duração.
+    waiting_seconds: float = 0.0
+    #: Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço.
+    rounds: int = 1
+    #: Duração líquida das voltas anteriores do laço. Ver `carry_round`.
+    carried_seconds: float = 0.0
 
 
 @dataclass
 class RunRecord:
     id: str
     workflow_id: str
+    #: Raiz do projeto — a identidade da run, e o que o histórico casa.
     workspace_root: str
     user_prompt: str = ""
     status: str = PENDING
     current_step: str = ""
     created_at: str = ""
     updated_at: str = ""
+    #: Worktree desta run, quando ela não rodou na raiz do projeto.
+    worktree_path: str = ""
+    #: Branch em que a run aconteceu — com ou sem worktree.
+    branch: str = ""
     steps: list[StepRecord] = field(default_factory=list)
+
+    @property
+    def exec_root(self) -> str:
+        """Onde o agente trabalhou: o worktree, ou a raiz quando não houve um."""
+        return self.worktree_path or self.workspace_root
 
     def step(self, step_id: str) -> StepRecord | None:
         for item in self.steps:
@@ -100,6 +121,9 @@ def _step(row: Any) -> StepRecord:
         acp_session_id=str(row["acp_session_id"] or ""),
         started_at=str(row["started_at"] or ""),
         ended_at=str(row["ended_at"] or ""),
+        waiting_seconds=float(row["waiting_seconds"] or 0.0),
+        rounds=int(row["rounds"] or 1),
+        carried_seconds=float(row["carried_seconds"] or 0.0),
     )
 
 
@@ -113,6 +137,8 @@ def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
         current_step=str(row["current_step"] or ""),
         created_at=str(row["created_at"] or ""),
         updated_at=str(row["updated_at"] or ""),
+        worktree_path=str(row["worktree_path"] or ""),
+        branch=str(row["branch"] or ""),
         steps=steps,
     )
 
@@ -252,6 +278,33 @@ def update_run(
         connection.close()
 
 
+def set_workspace_context(
+    run_id: str,
+    *,
+    worktree_path: str = "",
+    branch: str = "",
+    db_path: Path | None = None,
+) -> None:
+    """Grava onde esta run trabalha e em que branch.
+
+    Separado de `create_run` porque o worktree só existe depois que a run tem
+    id: é o id que batiza o diretório. Separado de `update_run` porque não é
+    estado de execução — não muda enquanto a run anda, e retomar depende de
+    reler exatamente o que ficou aqui.
+    """
+    if not run_id:
+        return
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "UPDATE runs SET worktree_path = ?, branch = ?, updated_at = ? WHERE id = ?",
+            (worktree_path, branch, utc_now(), run_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
     connection = connect(db_path or default_db_path())
     try:
@@ -262,18 +315,26 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
         # Em conflito, só o estado é reescrito. `position`, `label` e `agent_id`
         # foram copiados da definição quando a run começou, e editar o workflow
         # depois não pode reescrever o que já aconteceu.
+        #
+        # `waiting_seconds` fica de fora do `DO UPDATE` de propósito: quem o
+        # move é `add_waiting_seconds`, chamado da thread da sessão enquanto o
+        # motor segura um `StepRecord` que não sabe da espera. Reescrevê-lo aqui
+        # zeraria o tempo de espera recém-somado no primeiro `save_step`.
+        # `carried_seconds` também, pelo mesmo motivo: só `carry_round` o move.
         connection.execute(
             """
             INSERT INTO run_steps
               (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
+               rounds)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_id, step_id) DO UPDATE SET
               status = excluded.status,
               summary = excluded.summary,
               acp_session_id = excluded.acp_session_id,
               started_at = excluded.started_at,
-              ended_at = excluded.ended_at
+              ended_at = excluded.ended_at,
+              rounds = excluded.rounds
             """,
             (
                 run_id,
@@ -286,6 +347,8 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
                 step.acp_session_id,
                 step.started_at,
                 step.ended_at,
+                step.waiting_seconds,
+                step.rounds,
             ),
         )
         connection.execute(
@@ -294,6 +357,92 @@ def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> 
         connection.commit()
     finally:
         connection.close()
+
+
+def add_waiting_seconds(
+    run_id: str,
+    step_id: str,
+    seconds: float,
+    *,
+    db_path: Path | None = None,
+) -> None:
+    """Soma tempo de espera do usuário ao step. Soma, e não atribui: um step
+    pode parar várias vezes — uma permissão, depois um questionário — e cada
+    parada tira o seu pedaço da duração.
+
+    Step que ainda não existe na tabela é ignorado em silêncio: a espera pode
+    acontecer antes do primeiro `save_step` (o menu de retomada, por exemplo),
+    e perder a contabilidade vale mais do que criar linha sem dono.
+    """
+    if not run_id or not step_id or seconds <= 0:
+        return
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            """
+            UPDATE run_steps SET waiting_seconds = waiting_seconds + ?
+            WHERE run_id = ? AND step_id = ?
+            """,
+            (float(seconds), run_id, step_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:
+    """Fecha a volta do step no relógio e devolve o tempo acumulado até aqui.
+
+    Uma volta nova do laço reabre `started_at`/`ended_at`. Sem guardar antes o
+    que a volta anterior gastou, o step voltava a zero a cada rodada — e um
+    review que rodou três vezes aparecia com o tempo só da última.
+
+    A duração líquida (parede menos espera) vai para `carried_seconds`, e a
+    espera zera junto: ela já foi descontada ali, e descontá-la de novo da volta
+    seguinte comeria tempo de trabalho.
+
+    Lido e escrito no banco, e não no `StepRecord`: a espera só existe lá — quem
+    a soma é a thread da sessão (ver `add_waiting_seconds`).
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        row = connection.execute(
+            """
+            SELECT started_at, ended_at, waiting_seconds, carried_seconds
+            FROM run_steps WHERE run_id = ? AND step_id = ?
+            """,
+            (run_id, step_id),
+        ).fetchone()
+        if row is None:
+            return 0.0
+        carried = float(row["carried_seconds"] or 0.0)
+        carried += _net_seconds(
+            str(row["started_at"] or ""),
+            str(row["ended_at"] or ""),
+            float(row["waiting_seconds"] or 0.0),
+        )
+        connection.execute(
+            """
+            UPDATE run_steps
+            SET carried_seconds = ?, waiting_seconds = 0, started_at = '', ended_at = ''
+            WHERE run_id = ? AND step_id = ?
+            """,
+            (carried, run_id, step_id),
+        )
+        connection.commit()
+        return carried
+    finally:
+        connection.close()
+
+
+def _net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
+    """Parede menos espera; zero quando a volta não tem começo e fim gravados."""
+    try:
+        start = datetime.fromisoformat(started_at)
+        end = datetime.fromisoformat(ended_at)
+    except ValueError:
+        return 0.0
+    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
 
 
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:

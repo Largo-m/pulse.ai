@@ -9,10 +9,17 @@ from pulse.status_labels import status_label
 class HistoryStatus(str, Enum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    #: Rodando, mas parada: há pergunta aberta esperando o usuário.
+    AWAITING_INPUT = "awaiting_input"
     DONE = "done"
     FAILED = "failed"
     STOPPED = "stopped"
     BLOCKED = "blocked"
+
+
+#: Runs em que ainda dá para entrar e participar — as que o cockpit abre ao
+#: vivo, e as que o histórico lista antes do passado.
+LIVE_STATUSES = frozenset({HistoryStatus.IN_PROGRESS, HistoryStatus.AWAITING_INPUT})
 
 
 @dataclass
@@ -41,6 +48,11 @@ class HistoryItem:
     updated_at: str
     steps: list[HistoryStep] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
+    #: Branch em que a run trabalhou. Vazio para run antiga e para projeto fora
+    #: de git — o Pulse não tinha como saber antes.
+    branch: str = ""
+    #: Worktree desta run, se ela rodou isolada. Vazio = rodou na raiz.
+    worktree_path: str = ""
 
     @property
     def item_id(self) -> str:
@@ -61,5 +73,5 @@ class HistoryItem:
         if self.status is HistoryStatus.DONE:
             return False
         if not self.steps:
-            return self.status in {HistoryStatus.PENDING, HistoryStatus.IN_PROGRESS}
+            return self.status is HistoryStatus.PENDING or self.status in LIVE_STATUSES
         return any(step.status not in {"done", "skipped"} for step in self.steps)

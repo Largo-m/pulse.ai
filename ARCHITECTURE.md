@@ -51,7 +51,9 @@ Você digita `pulse`
    pacote. O Pulse sequencia steps e lê um desfecho de aprovação; o resto é dado.
 2. **Nada em arquivo, exceto artefato** — config, definições e estado vivem em
    `~/.pulse/pulse.db`. O único conteúdo em disco é o que o **agente** escreve, e
-   desse o Pulse guarda só o caminho.
+   desse o Pulse guarda só o caminho. A única exceção é o `git worktree` de uma
+   run isolada (§Onde a run trabalha): diretório criado pelo git, em
+   `~/.pulse/worktrees/`, e nunca conteúdo escrito pelo Pulse.
 3. **Daemon = verdade única** — runs, config efetiva e estado vivem no Engine.
 4. **CLI é cliente fino** — a TUI não importa `orchestrator/` nem `acp/` para
    executar; fala com a API.
@@ -204,9 +206,45 @@ orientação do usuário no prompt da tentativa seguinte. Sem ninguém para
 perguntar (CLI, daemon), os dois param a run: o que ninguém vê não segue
 adiante sozinho.
 
-### Parar e retomar
+### Sair, voltar e parar
 
-Há um comando só, `parar` (`s` no cockpit). Ele corta o turno em voo
+São três coisas diferentes, e só a última toca na run.
+
+**Sair** (`q`/`Esc` no cockpit) fecha a tela. A run não é da tela: ela roda numa
+thread do daemon, que é outro processo. Sair solta o stream SSE
+([`EngineRunSession.detach`](pulse/client/run_session.py)) e **larga** a ponte de
+prompts ([`PromptBridge.abandon`](pulse/tui/adapters/prompt_bridge.py)) em vez de
+fechá-la — fechar resolveria a pergunta aberta com `None`, que para o agente é
+"cancelado". Com `abandon` a pergunta continua pendente no daemon, esperando a
+pessoa voltar; quem morre é a thread da tela, com `PromptAbandoned`.
+
+É por isso que `PromptCorrelator.request` não tem prazo. O limite de uma hora que
+existia ali matava a premissa: a pessoa saía, a pergunta expirava sozinha e o
+agente recebia "cancelado" sem ninguém ter decidido nada.
+
+**Voltar** é anexar à run viva, e a porta é o **Histórico** — que é onde as runs
+já moravam. Ele passa a listar as `executando` no topo (`HistoryCatalog.list_items`
+reordena, de forma estável, mantendo a mais recente primeiro dentro de cada
+grupo) e abre ao vivo, em vez da página estática, aquela que o daemon ainda tem
+(`GET /api/runs`). A Home não lista run nenhuma: ela é o menu do que se pode
+começar, e uma lista que muda sozinha ali competia com isso.
+
+Reabrir **não reidrata do banco**: o `EventBus` reenvia todo
+o histórico da run antes do vivo, então o mesmo `CockpitSink` que desenharia a
+run ao vivo a reconstrói inteira, pelo mesmo caminho. O marcador
+`stream.replay_end` separa passado de presente, e serve para duas coisas:
+
+- não reabrir pergunta já respondida — no replay o `prompt.request` é guardado e
+  o `prompt.answered` o descarta; só o que sobra no fim está vivo;
+- acertar o relógio ([`hydrate.stamp_live_elapsed`](pulse/tui/hydrate.py)), porque
+  os `phase.begin` reaplicados marcariam "agora" como início de cada step.
+
+Rodam **N runs ao mesmo tempo**. Daí o id da run ser único: `RunState.id` é o
+mesmo `runs.id` do SQLite (o daemon batiza a run e passa o id ao motor em
+`run_workflow(run_id=…)`). Antes eram dois ids diferentes, e "reabrir a run X"
+só podia ser o chute "a mais recente deste workspace".
+
+**Parar** (`s` no cockpit) é o único que mexe na run. Ele corta o turno em voo
 (`session/cancel`), devolve o step em curso para `pending` — não terminou, logo
 não é `done` nem `failed` — e encerra a run com exit code `RUN_STOPPED` (130),
 que não é falha: o cockpit oferece retomar na hora.
@@ -234,6 +272,88 @@ como `failed` na hora, e nunca fica `running` no banco depois que a run acabou.
 
 Contrato completo: [`pulse/runcontrol.py`](pulse/runcontrol.py).
 
+### Esperar o usuário não é pausar a run — mas também não é trabalho do agente
+
+Quando o agente pede algo a quem está na frente da tela (permissão de tool,
+questionário, aprovação de step, menu de retry ou de bloqueio), a run não pausa:
+ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
+
+* a run é reportada com status `awaiting_input` (`/api/runs` e tabela `runs`), e
+  o evento `run.awaiting` vai pelo barramento para toda tela anexada;
+* o cronômetro do step congela, e o tempo esperado é somado em
+  `run_steps.waiting_seconds` — a duração que a sidebar e o histórico mostram é
+  sempre `ended_at - started_at - waiting_seconds`. Sem esse desconto, uma
+  aprovação deixada para o dia seguinte aparecia como um step de doze horas;
+* a Home anuncia a sessão no painel de avisos, com a mesma lista que o
+  `pulse daemon status` imprime.
+
+O ponto único onde isso é observado é
+[`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
+`PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
+caminho de pergunta que escape da contagem.
+
+**O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
+veto a terminal são regra, e regra o Pulse aplica onde a run roda:
+[`decide_permission`](pulse/prompts/permission.py) devolve a resposta e só cai
+no `None` — que é o que vira pergunta de verdade — quando a política é `ask`.
+Enquanto essa decisão morava só na TUI, uma run com o cockpit fechado parava
+para sempre num `edit`: o daemon publicava a pergunta, não havia tela para
+respondê-la, e a run ficava "precisando de você" para algo que já estava
+decidido. Quem fecha a tela não pode travar a run; quem decide por política não
+pode acordar ninguém.
+
+### Onde a run trabalha
+
+Por padrão, onde sempre trabalhou: a raiz do projeto. Quem liga **"Worktree"**
+nas configurações do projeto (`project_settings.use_worktree`, e a opção só
+aparece se o root for repositório git) passa a ter **uma run, um worktree**:
+
+```
+~/.pulse/worktrees/<run_id>        branch `pulse/<workflow>-<run curto>`
+```
+
+O que isso resolve é a mistura: duas runs simultâneas escreviam na mesma árvore
+de trabalho, e qualquer run misturava a entrega do agente com o que a pessoa
+estava editando no editor. Com o worktree, revisar a entrega de uma run é um
+`git diff` de uma branch, e descartá-la é apagar um diretório.
+
+Dois caminhos saem daqui, e confundi-los quebra coisas diferentes:
+
+| Valor | É | Quem usa |
+|---|---|---|
+| `runs.workspace_root` | A **raiz do projeto** | histórico, `resolve_config`, `find_resumable` |
+| `runs.worktree_path` | Onde o **agente** escreveu | `AcpSessionRunner(cwd=…)`, `{{workspace}}`, painel de artefatos |
+
+`workspace_root` continua sendo a raiz mesmo com worktree porque é por ele que
+o histórico casa a run ([`HistoryCatalog`](pulse/history/catalog.py)); gravar o
+worktree ali sumiria com a run da lista do projeto. E a config é resolvida pela
+raiz porque `load_project_config` procura o root registrado em `projects` — um
+worktree não está lá, e resolver por ele faria as settings por agente sumirem
+sem erro nenhum.
+
+Quem decide é [`_prepare_workspace`](pulse/orchestrator/engine.py), em três
+casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
+fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
+isolamento, `git worktree add`. Falhar ao abrir o worktree **para a run** —
+rodar na árvore de trabalho da pessoa é justamente o que a chave pediu para não
+acontecer.
+
+A branch é lida nos três casos, inclusive sem worktree, e é isso que faz a
+sessão mostrar `modelo · branch` na linha de meta do stream. Ela chega à tela
+pelo evento `run.context` (cwd + branch), publicado antes do primeiro step:
+como vai pelo barramento, o replay o entrega a quem anexa depois, e o painel de
+artefatos reaponta sozinho para o diretório certo.
+
+**O worktree não é limpo sozinho.** Ele é a entrega — o código está lá, na
+branch onde foi escrito. Sai pelo detalhe do histórico (`w`), ou junto quando a
+run é apagada, e em nenhum dos dois com `--force`: worktree com mudança não
+commitada é mantido, porque quem apaga uma linha do histórico não está pedindo
+para jogar trabalho fora. A branch sempre fica.
+
+O git falado aqui é o CLI por `subprocess`, em [`pulse/vcs/`](pulse/vcs/).
+Leitura nunca levanta (sem git no PATH, a sessão só fica sem branch); só
+`worktree add` e `worktree remove` levantam.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
@@ -244,9 +364,10 @@ a run sair errada.
 | Chave | Conteúdo |
 |-------|----------|
 | `user_prompt` | o que o usuário pediu |
-| `workspace` | diretório da run |
+| `workspace` | diretório onde o agente trabalha (o worktree, quando há um) |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resposta do último step que produziu resumo |
+| `previous_status` | como aquele step fechou: `done` ou `skipped` |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 
 Note o que **não** existe: nenhuma chave com nome de artefato ou de fase. O motor
@@ -291,17 +412,27 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (UDS preferido; TCP fallback); pode auto-iniciar o daemon |
-| [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria run → escuta SSE → responde `prompt.request` → devolve exit code |
+| [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria (ou **anexa**) → escuta SSE → responde `prompt.request` → devolve exit code |
+| [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
 
 ### 3.4 Engine — daemon (composition root)
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run; cancel |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS; ancora o cwd em `~/.pulse` |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
+
+O daemon **não** usa o diretório de quem o iniciou. Ele sobe destacado e ficaria
+meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa
+pasta da Lixeira, onde o macOS nega até `getcwd()` — e toda run nova morria aí,
+antes do primeiro step. Por isso `run_daemon` faz `chdir` para `~/.pulse`, e
+quem ainda precisa perguntar "onde estamos?" usa
+[`safe_cwd`](pulse/config/paths.py), que cai no mesmo diretório em vez de
+levantar. Nada se perde: a run sempre roda com `cwd` explícito — o workspace que
+o cliente mandou, ou o worktree dela.
 
 #### API (`/api`)
 
@@ -310,16 +441,26 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Runtime | `GET /status`, `GET /doctor`, `POST /doctor/acp-probe` |
 | Config | `GET /config`, `GET /config/resolved`, `PATCH /config/global`, `POST /config/project` |
 | Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
-| Runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events` (SSE) |
+| Runs | `GET /runs` (o que está vivo), `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=N` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
 | History | `GET /history`, `GET /history/{id}` |
 
 #### Eventos no SSE
 
 `run.started` · `run.stopped` ·
-`run.cancel_requested` · `run.finished` · `phase.begin` · `phase.info` ·
-`phase.error` · `phases.sync` · `session.update` · `session.id` ·
-`stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered`
+`run.cancel_requested` · `run.finished` · `run.context` · `phase.begin` ·
+`phase.info` · `phase.error` · `phases.sync` · `session.update` · `session.id` ·
+`stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered` ·
+`stream.replay_end` · `stream.ping`
+
+`run.context` abre a run dizendo onde ela trabalha e em que branch (ver §Onde a
+run trabalha). Vem antes de qualquer `phase.begin` de propósito: é por ele que o
+painel de artefatos sabe em que pasta procurar arquivo.
+
+Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o
+passado reenviado acaba (ver §Sair, voltar e parar) e `stream.ping` é o
+batimento do stream ocioso, que dá ao cliente um ponto de retorno regular para
+largar o stream sem a run precisar emitir nada.
 
 ### 3.5 Domínio
 
@@ -359,6 +500,7 @@ enxergá-lo sem mudanças.
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
 | [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` (não confundir com `runtimes/`) |
+| [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run |
 
 ---
 
@@ -405,6 +547,10 @@ A descoberta é pelos **tool-calls do ACP**: um `write`/`edit`/`create` faz o
 Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
 tão artefato quanto `docs/PLANO.md`.
 
+O caminho é gravado **relativo ao diretório onde a run trabalhou**, que com
+isolamento é o worktree dela (§Onde a run trabalha). Por isso o painel precisa
+do `run.context`: é ele que diz a raiz sobre a qual esses caminhos se abrem.
+
 ---
 
 ## 6. Fluxo completo (uma run na TUI)
@@ -425,7 +571,12 @@ tão artefato quanto `docs/PLANO.md`.
 12. run.finished → o que permanece são os arquivos que o agente escreveu
 ```
 
-Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
+Em qualquer ponto de 8 a 11 o usuário pode sair (`q`): a run segue no daemon e o
+Histórico a mostra no topo, como `executando`. Entrar de volta refaz os passos 9
+a 11 desde o começo da run, reenviados pelo barramento — a tela volta como
+estava, e só então o vivo continua.
+
+Reabrir uma run **encerrada** pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
 `run_events` dá o stream, `run_artifacts` dá o painel — sem ler o store do
 runtime nem varrer pasta.
 
@@ -434,6 +585,17 @@ O que vai para `run_events` é o **mesmo rótulo** que a tela ao vivo mostra:
 `history/tool_detail.build_tool_labels` antes de gravar, então o tipo (`Read`,
 `Shell`, `Write`…), o alvo e o detalhe são os da sessão viva — e o caminho do
 artefato é gravado relativo ao workspace, que é como o painel o abre.
+
+O **diálogo** segue junto: toda pergunta feita à pessoa — `AskQuestion`,
+questionário, aprovação de fase, permissão, menu de retry — atravessa o proxy
+`_WatchedPrompts` do `session_runner`, e de lá vai para `run_events` como o par
+`Pergunta`/`Você` que a tela desenha, com o texto montado por
+`history/prompt_detail.build_prompt_qa`. Quem grava é o daemon, não a TUI: a tela
+só desenha, e duas janelas anexadas na mesma run gravariam a mesma resposta duas
+vezes. Permissão que a política resolve sozinha não vira linha — não foi pergunta,
+ninguém a viu. E o bloco de questionário que o agente escreve em texto não entra
+como fala dele: vira a linha `Questionário interativo`, como no cockpit, senão as
+mesmas perguntas apareceriam duas vezes.
 
 ---
 
@@ -503,6 +665,7 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
 | **Agente** | Linha em `agent_defs`: runtime + model + política + instruções |
 | **Runtime** | O backend que executa um agente (`cursor`, `claude`) |
 | **Artefato** | Arquivo que o agente escreveu, descoberto por tool-call |
+| **Worktree** | Cópia de trabalho isolada do repositório, uma por run, em branch própria |
 | **Daemon** | Processo em background (o Engine) |
 | **UDS** | Unix Domain Socket — arquivo local (`daemon.sock`); HTTP por cima |
 | **SSE** | Server-Sent Events — stream HTTP de eventos da run |
@@ -522,6 +685,11 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
   `AcpSessionRunner`, no pré-voo. Uma run inteira roda no mesmo backend; o que
   varia por step é modelo, política e instruções.
 - **Gates de shell** — o Pulse não roda comando de verificação entre steps.
+- **Replay sobrevive só enquanto o daemon vive** — o histórico de eventos de uma
+  run está na memória do `EventBus`, e cresce sem teto durante a run. Daemon
+  reiniciado (inclusive por divergência de `ENGINE_PROTOCOL` no
+  `ensure_daemon`) derruba as runs vivas; o passado delas continua no banco, mas
+  reabrir ao vivo deixa de existir.
 - App Desktop (consumirá a mesma API HTTP), gateway remoto / pairing.
 - Monorepo físico (`engine/` e `cli/` como packages separados).
 

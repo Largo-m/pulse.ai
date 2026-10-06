@@ -13,10 +13,11 @@ from pulse.config.global_config import (
     load_global_config,
     update_global_defaults,
 )
+from pulse.config.paths import safe_cwd
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
-from pulse.daemon.runs import RunManager
+from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
 
@@ -67,6 +68,7 @@ def _project_to_dict(config: Any) -> dict[str, Any] | None:
         "permission_policy": config.permission_policy,
         "workspace": str(config.workspace) if config.workspace else None,
         "default_agent": config.default_agent,
+        "use_worktree": config.use_worktree,
     }
 
 
@@ -81,6 +83,8 @@ def _history_to_dict(item: Any) -> dict[str, Any]:
         "status": item.status.value,
         "updated_at": item.updated_at,
         "artifacts": list(item.artifacts),
+        "branch": item.branch,
+        "worktree_path": item.worktree_path,
         "steps": [
             {"id": step.id, "label": step.label, "status": step.status}
             for step in item.steps
@@ -121,7 +125,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
     def acp_probe(workspace: str | None = None) -> dict[str, Any]:
         from pulse.acp.client import probe_acp_connection
 
-        cwd = workspace or str(Path.cwd())
+        cwd = workspace or str(safe_cwd())
         ws = Path(workspace).resolve() if workspace else None
         result = probe_acp_connection(
             command=list(resolve_config(workspace=ws).acp_command),
@@ -150,6 +154,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "model": resolved.model,
             "permission_policy": resolved.permission_policy,
             "workspace": str(resolved.workspace_dir),
+            "use_worktree": resolved.use_worktree,
             "acp_command": list(resolved.acp_command),
             "auth_method": resolved.auth_method,
         }
@@ -185,6 +190,8 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
                 workspace=body.workspace,
                 resume_run_id=body.resume_run_id,
             )
+        except RunAlreadyActive as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         return {
@@ -193,6 +200,10 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
             "status": state.status,
             "workspace": state.workspace,
         }
+
+    @app.get("/api/runs")
+    def list_runs() -> dict[str, Any]:
+        return {"runs": runs.list_runs()}
 
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
@@ -215,13 +226,19 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         return {"ok": True}
 
     @app.get("/api/runs/{run_id}/events")
-    async def run_events(run_id: str) -> StreamingResponse:
+    async def run_events(run_id: str, after: int = 0) -> StreamingResponse:
+        """O stream da run: o passado dela e depois o vivo.
+
+        `after` pula os N primeiros eventos, para quem já tem parte do histórico.
+        Sem ele, anexar entrega a run inteira desde `run.started` — é assim que o
+        cockpit reabre idêntico ao que era antes de o usuário sair.
+        """
         state = runs.get(run_id)
         if state is None:
             raise HTTPException(status_code=404, detail="run não encontrado")
 
         def event_stream():
-            for event in state.bus.subscribe():
+            for event in state.bus.subscribe(after=max(0, after)):
                 payload = json.dumps(event, ensure_ascii=False)
                 yield f"data: {payload}\n\n"
                 if event.get("type") == "run.finished":
@@ -237,14 +254,14 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/history")
     def history(workspace: str | None = None, query: str = "") -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         catalog = HistoryCatalog(root)
         items = catalog.search(query) if query else catalog.list_items()
         return {"items": [_history_to_dict(item) for item in items]}
 
     @app.get("/api/history/{item_id}")
     def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         item = HistoryCatalog(root).get(item_id)
         if item is None:
             raise HTTPException(status_code=404, detail="item não encontrado")
@@ -252,7 +269,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.delete("/api/history/{item_id}")
     def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
-        root = Path(workspace).resolve() if workspace else Path.cwd()
+        root = Path(workspace).resolve() if workspace else safe_cwd()
         if not HistoryCatalog(root).delete(item_id):
             raise HTTPException(status_code=404, detail="item não encontrado")
         return {"ok": True}

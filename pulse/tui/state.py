@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,8 +22,11 @@ Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 #: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
-#: gerou. Ver [pulse.orchestrator.engine._units].
+#: gerou. Ver [pulse.orchestrator.fanout.expand].
 FANOUT_SEP = ":"
+#: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
+#: [pulse.acp.session_runner].
+_CONTINUATION = re.compile(r"\s+—\s+continuação \(\d+\)$")
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -39,6 +43,8 @@ class CockpitState:
     surface_title: str = "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
     agent_label: str = "Agent"
     model_label: str = ""
+    #: Branch em que a run trabalha. Vazio fora de repositório git.
+    branch_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
     artifacts: list[ArtifactItem] = field(default_factory=list)
@@ -49,6 +55,8 @@ class CockpitState:
     focus_target: str = "phases"
     running: bool = False
     stopped: bool = False
+    #: Há pergunta aberta: a run parou de trabalhar e espera o usuário.
+    awaiting_input: bool = False
     #: Ligado por `configure_workflow`: fora de uma run não há o que parar.
     can_stop: bool = False
     exit_code: int | None = None
@@ -90,6 +98,7 @@ class CockpitState:
         self._follow_live = True
         self.running = False
         self.stopped = False
+        self.awaiting_input = False
         self.can_stop = True
         self.exit_code = None
         self.notify()
@@ -112,8 +121,11 @@ class CockpitState:
                 phase.finish(now)
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
-                matched.started_at = now
+                # Um step que volta a rodar (outra volta do laço, um retry)
+                # continua do tempo que já tinha, em vez de recomeçar do zero.
+                matched.started_at = now - matched.closed_seconds()
                 matched.ended_at = None
+                matched.waiting_total = 0.0
             matched.status = PhaseStatus.RUNNING
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
@@ -140,6 +152,7 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps):
             phase.label = str(step.get("label", "")) or phase.label
+            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
         # depois dele para baixo.
         if selected is not None:
@@ -184,6 +197,33 @@ class CockpitState:
                 phase.status = PhaseStatus.DONE
         self.notify()
 
+    def begin_waiting(self, *, since: float | None = None) -> None:
+        """Abriu pergunta: congela o relógio do passo em curso.
+
+        Se nenhum passo está `running` — a pergunta veio entre dois steps, como
+        o menu de retomada — só a flag da run acende: não há cronômetro andando
+        para congelar.
+
+        `since` é a hora de parede em que a espera começou. Sem ele, começou
+        agora; com ele, o relógio congela onde a run de fato parou, mesmo para
+        quem anexou horas depois.
+        """
+        self.awaiting_input = True
+        now = time.monotonic()
+        if since is not None:
+            now -= max(0.0, time.time() - since)
+        for phase in self.phases:
+            if phase.status == PhaseStatus.RUNNING:
+                phase.begin_waiting(now)
+        self.notify()
+
+    def end_waiting(self) -> None:
+        self.awaiting_input = False
+        now = time.monotonic()
+        for phase in self.phases:
+            phase.end_waiting(now)
+        self.notify()
+
     def complete_active_phase(self) -> None:
         now = time.monotonic()
         for phase in self.phases:
@@ -193,7 +233,9 @@ class CockpitState:
 
     def fail_active(self) -> None:
         now = time.monotonic()
+        self.awaiting_input = False
         for phase in self.phases:
+            phase.end_waiting(now)
             if phase.status == PhaseStatus.RUNNING:
                 if phase.started_at is not None:
                     phase.ended_at = now
@@ -208,12 +250,15 @@ class CockpitState:
         não conta para nada.
         """
         self.stopped = True
+        self.awaiting_input = False
         for item in self.phases:
+            item.awaiting_since = None
             if item.status != PhaseStatus.RUNNING:
                 continue
             item.status = PhaseStatus.PENDING
             item.started_at = None
             item.ended_at = None
+            item.waiting_total = 0.0
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:
@@ -225,6 +270,8 @@ class CockpitState:
         else:
             self.fail_active()
         self.running = False
+        # A run acabou: não há mais ninguém esperando resposta de ninguém.
+        self.awaiting_input = False
         self.exit_code = exit_code
         self.notify()
 
@@ -234,6 +281,10 @@ class CockpitState:
 
     def set_agent(self, agent: str) -> None:
         self.agent_label = agent
+        self.notify()
+
+    def set_branch(self, branch: str) -> None:
+        self.branch_label = branch
         self.notify()
 
     def add_tool_entry(
@@ -705,6 +756,19 @@ class CockpitState:
 
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
+        # Nome exato primeiro: o título é o rótulo do step, e casar por trecho
+        # sozinho fazia uma task chamada "… (TaskSearch)" acender o step `tasks`
+        # lá em cima — a task ficava pendente e o log dela ia para outro lugar.
+        base = _CONTINUATION.sub("", lowered).strip()
+        exact = [
+            phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
+        ]
+        if exact:
+            for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
+                for phase in exact:
+                    if phase.status == status:
+                        return phase
+            return exact[0]
         for phase in self.phases:
             if phase.id.lower() in lowered or phase.label.lower() in lowered:
                 return phase

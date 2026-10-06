@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pulse.acp.client import fetch_acp_available_models
 from pulse.config.global_config import PERMISSION_POLICIES
+from pulse.config.paths import safe_cwd
 from pulse.config.resolved import resolve_config
 
 def _default_models() -> list[str]:
@@ -38,7 +39,7 @@ def collect_available_models(
     *,
     agent_name: str | None = None,
 ) -> list[str]:
-    base = (cwd or Path.cwd()).resolve()
+    base = (cwd or safe_cwd()).resolve()
     resolved = resolve_config(base)
     models: list[str] = []
     workspace = str(resolved.workspace_dir)

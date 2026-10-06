@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
 pytest.importorskip("textual")
 
+from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptKind
 from pulse.tui.app import PulseApp
 from pulse.tui.screens.cockpit import CockpitScreen
 from tests.conftest import make_workflow
@@ -412,7 +414,7 @@ def test_new_session_lists_pipelines_and_hides_the_generic_loop():
 
     assert "default" in everything, "o loop genérico continua no banco"
     assert "default" not in listed
-    assert {"new-issue", "quick-fix"} <= set(listed)
+    assert {"new-issue", "quick-fix", "review"} <= set(listed)
 
     labels = [item.label for item in _session_workflows()]
     assert labels == sorted(labels), "o menu é alfabético"
@@ -459,9 +461,14 @@ def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
             await pilot.pause()
             assert screen.query_one("#workflow-prompt", Input).display is False
 
+            screen.on_option_selected(_selected("workflow:review"))
+            await pilot.pause()
+            assert screen.query_one("#workflow-prompt", Input).display is False
+
             assert opened == [
                 ("analyze-codebase", "Mapear codebase existente"),
                 ("setup-project", "Novo projeto"),
+                ("review", "Revisar a branch atual"),
             ]
 
     asyncio.run(run())
@@ -502,3 +509,244 @@ def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
             assert "Enter seleciona" in hint
 
     asyncio.run(run())
+
+
+def _waiting_run(run_id: str = "run-7", *, held: float = 180.0) -> dict:
+    import time
+
+    return {
+        "id": run_id,
+        "workflow_id": "new-issue",
+        "workflow_label": "Nova spec",
+        "prompt": "fazer algo",
+        "workspace": "/repo",
+        "status": "awaiting_input",
+        "active": True,
+        "awaiting_prompt": True,
+        "awaiting_since": time.time() - held,
+        "current_step_label": "Especificar",
+        "started_at": time.time() - held - 60,
+    }
+
+
+def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
+    """O aviso é o que a Home não tinha: quem saiu do cockpit com uma pergunta
+    aberta não tinha como descobrir que a run estava parada esperando."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+
+            # Sem daemon (ou sem nada esperando) o painel nem aparece.
+            panel = screen.query_one("#home-alerts", Static)
+            assert panel.display is False
+            assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
+
+            screen._apply_alerts([_waiting_run()])
+            await pilot.pause()
+            assert panel.display is True
+            text = str(panel.render())
+            assert "1 sessão precisa de você" in text
+            assert "Nova spec" in text
+            assert "Especificar" in text
+            assert "há 3min" in text
+            # O aviso entra acima de tudo que começa trabalho novo.
+            assert _home_option_ids(screen)[0] == "alerts"
+
+            screen.on_option_selected(_selected("alerts"))
+            await pilot.pause()
+            assert _home_option_ids(screen) == ["attach:run-7", "back"]
+
+            # Respondida em outra janela: o aviso some e a vista volta à raiz.
+            screen._apply_alerts([])
+            await pilot.pause()
+            assert panel.display is False
+            assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
+
+    asyncio.run(run())
+
+
+def test_home_opens_the_waiting_session_live(monkeypatch):
+    """Entrar pelo aviso é anexar à run — a pergunta continua de pé lá."""
+    from pathlib import Path as _Path
+
+    class _App:
+        def __init__(self) -> None:
+            self.opened: list = []
+
+        def open_cockpit(self, workflow_id, prompt, **kwargs):
+            self.opened.append((workflow_id, prompt, kwargs))
+
+    class _Screen(HomeScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen()
+    screen._alerts = [_waiting_run()]
+    screen.on_option_selected(_selected("attach:run-7"))
+
+    assert screen.fake_app.opened == [
+        (
+            "new-issue",
+            "fazer algo",
+            {"attach_run_id": "run-7", "workspace": _Path("/repo")},
+        )
+    ]
+
+
+def test_leaving_the_cockpit_does_not_cancel_the_run():
+    """`q` solta o stream e larga as perguntas; ninguém manda parar."""
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Session:
+        def __init__(self) -> None:
+            self.detached = False
+            self.stopped = False
+
+        def detach(self) -> None:
+            self.detached = True
+
+        def stop(self) -> bool:
+            self.stopped = True
+            return True
+
+    class _App:
+        def __init__(self) -> None:
+            self.popped = 0
+
+        def pop_screen(self) -> None:
+            self.popped += 1
+
+    class _Screen(CockpitScreen):
+        """Sem montar a tela: `action_back_to_menu` não depende de widget."""
+
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen("demo", "x")
+    session = _Session()
+    screen._session = session
+    screen.state.running = True
+    # A ponte tem que ser **largada**, não fechada: fechar responde "cancelado"
+    # à pergunta aberta, e a run continua no daemon esperando a pessoa voltar.
+    # (O efeito sobre quem está bloqueado está em `test_run_attach.py`.)
+    used: list[str] = []
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+
+    screen.action_back_to_menu()
+
+    assert session.detached is True
+    assert session.stopped is False, "sair não é parar"
+    assert screen.fake_app.popped == 1
+    assert used == ["abandon"]
+
+
+def test_leaving_before_the_first_step_still_detaches():
+    """Run que ainda não abriu step também está viva: sair larga, não fecha.
+
+    Antes do primeiro `phase.begin` (`state.running` ainda falso) sair fechava
+    a ponte sem desanexar, e a sessão órfã respondia "cancelado" sozinha às
+    perguntas da run — inclusive às que a tela reanexada estava mostrando.
+    """
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Session:
+        detached = False
+
+        def detach(self) -> None:
+            self.detached = True
+
+    class _App:
+        def pop_screen(self) -> None:
+            pass
+
+    class _Screen(CockpitScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen("demo", "x")
+    session = _Session()
+    screen._session = session
+    assert screen.state.running is False
+    used: list[str] = []
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+
+    screen.action_back_to_menu()
+
+    assert session.detached is True
+    assert used == ["abandon"]
+
+
+def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
+    """Run `executando` que o daemon ainda tem abre ao vivo, não como página."""
+    import pulse.tui.screens.history as history_module
+    from pulse.history.models import HistoryItem, HistoryStatus
+
+    item = HistoryItem(
+        run_id="run-9",
+        workflow_id="new-issue",
+        workflow_label="Nova spec",
+        title="algo",
+        prompt="fazer algo",
+        status=HistoryStatus.IN_PROGRESS,
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    monkeypatch.setattr(history_module, "active_run_ids", lambda: {"run-9"})
+
+    class _App:
+        def __init__(self) -> None:
+            self.opened: list = []
+            self.pushed: list = []
+
+        def open_cockpit(self, workflow_id, prompt, **kwargs):
+            self.opened.append((workflow_id, prompt, kwargs))
+
+        def push_screen(self, screen):
+            self.pushed.append(screen)
+
+    class _Screen(history_module.HistoryListScreen):
+        fake_app = _App()
+
+        @property
+        def app(self):  # type: ignore[override]
+            return self.fake_app
+
+    screen = _Screen(workspace=tmp_path)
+    screen._items = {"run-9": item}
+    screen.on_option_selected(_selected("run-9"))
+
+    assert screen.fake_app.pushed == []
+    assert screen.fake_app.opened == [
+        (
+            "new-issue",
+            "fazer algo",
+            {"attach_run_id": "run-9", "workspace": tmp_path},
+        )
+    ]

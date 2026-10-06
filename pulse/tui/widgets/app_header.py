@@ -39,5 +39,7 @@ class AppHeader(Widget):
         label = f"[{bar}] {done}/{total}" if total else "RUN 0/0"
         if state.stopped:
             label = f"{label} · PARADA"
+        elif state.awaiting_input:
+            label = f"{label} · PRECISA DE VOCÊ"
         self.run_label = label
         self.workflow_label = state.workflow_label

@@ -9,6 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse import vcs
 from pulse.config import (
     ensure_project_workflows,
     init_project_config,
@@ -87,13 +88,36 @@ class SettingsScreen(Screen[None]):
         self._workflow_id = None
         self._set_report("")
         self._set_status("Agents e ambiente")
-        self._set_options(
-            [
-                ("global", "Global — runtime, modelo e permissões de todos os agents"),
-                ("agents", "Agents — runtime, modelo e permissões"),
-                ("doctor", "Verificar ambiente"),
-                ("back", "Voltar"),
-            ]
+        options = [
+            ("global", "Global — runtime, modelo e permissões de todos os agents"),
+            ("agents", "Agents — runtime, modelo e permissões"),
+        ]
+        # Só aparece em repositório git: oferecer worktree onde não há git é
+        # oferecer uma chave que não liga nada.
+        if vcs.is_repo(self._cwd):
+            state = "ligado" if self._worktree_enabled() else "desligado"
+            options.append(("worktree", f"Worktree — isolar cada run em branch própria · {state}"))
+        options.append(("doctor", "Verificar ambiente"))
+        options.append(("back", "Voltar"))
+        self._set_options(options)
+
+    def _worktree_enabled(self) -> bool:
+        project = load_project_config(self._cwd)
+        return bool(project.use_worktree) if project is not None else False
+
+    def _toggle_worktree(self) -> None:
+        from pulse.config.project_config import update_project_defaults
+
+        enabled = not self._worktree_enabled()
+        update_project_defaults(self._cwd, use_worktree=enabled)
+        self._show_root()
+        self._set_report(
+            "As runs deste projeto passam a rodar num `git worktree` próprio, em "
+            "`~/.pulse/worktrees/`, numa branch `pulse/…` por run. A árvore de "
+            "trabalho do editor fica intocada."
+            if enabled
+            else "As runs voltam a rodar na árvore de trabalho do projeto. "
+            "Os worktrees já criados continuam onde estão."
         )
 
     def _show_scope(self, next_mode: str, title: str) -> None:
@@ -118,6 +142,8 @@ class SettingsScreen(Screen[None]):
                 self._show_global_fields()
             elif option_id == "agents":
                 self._show_pulse_agents()
+            elif option_id == "worktree":
+                self._toggle_worktree()
             elif option_id == "doctor":
                 self._run_doctor()
             return

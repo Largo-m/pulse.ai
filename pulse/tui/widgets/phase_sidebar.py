@@ -24,8 +24,17 @@ class NavSelected(Message):
 PhaseSelected = NavSelected
 
 #: Estados em que a cor do status manda no nome do step: os que pedem atenção.
-#: Nos demais, o realce é da seleção.
-_ATTENTION = frozenset({PhaseStatus.RUNNING, PhaseStatus.FAILED, PhaseStatus.BLOCKED})
+#: Nos demais, o realce é da seleção. Comparados como texto porque
+#: `awaiting_input` é sobreposição de exibição, não membro de `PhaseStatus` —
+#: ver [PhaseItem.display_status].
+_ATTENTION = frozenset(
+    {
+        PhaseStatus.RUNNING.value,
+        PhaseStatus.FAILED.value,
+        PhaseStatus.BLOCKED.value,
+        "awaiting_input",
+    }
+)
 
 
 class PhaseSidebar(Widget):
@@ -119,20 +128,28 @@ class PhaseSidebar(Widget):
         else:
             status = PhaseStatus.PENDING
 
+        # Uma task esperando o usuário manda no cabeçalho: é o grupo inteiro que
+        # não avança enquanto ninguém responde.
+        shown = (
+            "awaiting_input"
+            if any(phase.awaiting_since is not None for _index, phase in members)
+            else status.value
+        )
+
         output = Text()
         if status == PhaseStatus.RUNNING:
             output.append("▌ ", style="#D4AF37")
         else:
             output.append("  ", style="#333333")
-        tone = status_color(status)
-        name_style = tone if status in _ATTENTION else "#E0E0E0"
-        label = f"{status_icon(status)} {state.base_step_label(key) or key}"
+        tone = status_color(shown)
+        name_style = tone if shown in _ATTENTION else "#E0E0E0"
+        label = f"{status_icon(shown)} {state.base_step_label(key) or key}"
         if len(label) > 28:
             label = f"{label[:27]}…"
         output.append(label, style=name_style)
         output.append("\n")
         output.append("   ")
-        output.append(status_label(status), style=tone)
+        output.append(status_label(shown), style=tone)
         output.append(f" · {done}/{len(members)}\n", style="#888888")
         return output
 
@@ -160,22 +177,28 @@ class PhaseSidebar(Widget):
         else:
             output.append(f"{indent}  ", style="#333333")
 
-        # A cor do status manda no nome só quando ele pede atenção (rodando ou
-        # quebrado); nos demais, o realce é da seleção.
-        tone = status_color(item.status)
-        name_style = tone if item.status in _ATTENTION else (
+        # A cor do status manda no nome só quando ele pede atenção (rodando,
+        # esperando resposta ou quebrado); nos demais, o realce é da seleção.
+        shown = item.display_status()
+        tone = status_color(shown)
+        name_style = tone if shown in _ATTENTION else (
             "#E0E0E0" if accent else "#888888"
         )
-        label = f"{status_icon(item.status)} {self._item_label(item, nested=nested)}"
-        max_len = 24 if nested else 28
+        # O contador das voltas de um laço fica fora do corte do rótulo: ele é
+        # curto, e é justamente o que não pode sumir num nome comprido.
+        rounds = f" ×{item.rounds}" if item.rounds > 1 else ""
+        label = f"{status_icon(shown)} {self._item_label(item, nested=nested)}"
+        max_len = (24 if nested else 28) - len(rounds)
         if len(label) > max_len:
             label = f"{label[: max_len - 1]}…"
         output.append(label, style=name_style)
+        if rounds:
+            output.append(rounds, style="#D4AF37")
         output.append("\n")
         timer = item.elapsed_label(now) or "--:--"
         meta_indent = "     " if nested else "   "
         output.append(meta_indent)
-        output.append(status_label(item.status), style=tone)
+        output.append(status_label(shown), style=tone)
         output.append(f" · {timer}\n", style="#888888")
         if trailing_blank:
             output.append("\n")

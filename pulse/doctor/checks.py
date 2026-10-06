@@ -92,6 +92,29 @@ def run_doctor_checks(active: str | None = None) -> list[CheckResult]:
     return [*run_environment_checks([runtime_id]), *other_runtimes_summary(runtime_id)]
 
 
+def check_git() -> CheckResult:
+    """Git no PATH. Nunca `fail`: worktree é opcional.
+
+    Quem não liga a chave de isolamento roda perfeitamente sem git — reprovar o
+    doctor por isso seria cobrar uma dependência que o Pulse não tem.
+    """
+    from pulse import vcs
+
+    if vcs.git_available():
+        return CheckResult(
+            name="Git",
+            status="ok",
+            message="git disponível",
+            detail="worktree por run pode ser ligado nas configurações do projeto",
+        )
+    return CheckResult(
+        name="Git",
+        status="warn",
+        message="git não encontrado no PATH",
+        detail="sem ele as runs rodam sempre na árvore de trabalho do projeto",
+    )
+
+
 def run_environment_checks(runtimes: list[str] | None = None) -> list[CheckResult]:
     """Checks do(s) runtime(s) pedido(s); sem argumento, todos os registrados."""
     names = runtimes if runtimes is not None else [runtime.id for runtime in all_runtimes()]
@@ -103,4 +126,5 @@ def run_environment_checks(runtimes: list[str] | None = None) -> list[CheckResul
                 continue
             seen.add(check.name)
             results.append(check)
+    results.append(check_git())
     return results

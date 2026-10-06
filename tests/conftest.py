@@ -19,11 +19,15 @@ def make_workflow(
     prompt_template: str = "{{user_prompt}}",
     fan_out: tuple[str, ...] | set[str] = (),
     requires_outcome: bool = True,
+    repeat: tuple[str, str, int] | None = None,
 ) -> WorkflowDef:
     """Grava um workflow de teste no banco e devolve a definição.
 
     Os testes precisam de um workflow com forma conhecida; como o Pulse não
     traz nenhum além do `default` de um step, cada teste semeia o seu.
+
+    `repeat=(step_id, volta_para, teto)` marca um laço: aquele step pode mandar
+    a run voltar e repetir o trecho.
     """
     entries = steps or [("one", "Um"), ("two", "Dois")]
     save_agent(AgentDef(id="tester", label="Tester"))
@@ -41,6 +45,8 @@ def make_workflow(
                 requires_approval=requires_approval,
                 fan_out=step_id in fan_out,
                 requires_outcome=requires_outcome,
+                repeat_from=repeat[1] if repeat and repeat[0] == step_id else "",
+                repeat_max=repeat[2] if repeat and repeat[0] == step_id else 0,
             )
             for index, (step_id, step_label) in enumerate(entries, start=1)
         ),

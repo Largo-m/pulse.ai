@@ -44,6 +44,28 @@ def is_daemon_alive() -> bool:
         return False
 
 
+def _anchor_cwd() -> None:
+    """Ancora o daemon em `~/.pulse` em vez do diretório de quem o iniciou.
+
+    O engine sobe destacado (`start_new_session`) e herda o cwd do terminal que
+    o chamou — e aí fica, por semanas. Esse diretório não é dele: basta apagar o
+    projeto para o cwd do daemon virar uma pasta na Lixeira, onde o macOS nega
+    até `getcwd()` (`EPERM`). Toda run nova morria aí, antes do primeiro step,
+    porque resolver config começa perguntando onde estamos.
+
+    Ancorar não perde nada: a run roda com `cwd` explícito (o workspace, ou o
+    worktree dela), e o cwd do daemon só servia de chute para cliente que não
+    disse qual projeto queria — chute que já estava errado sempre que o engine
+    e a TUI nasceram em projetos diferentes.
+    """
+    try:
+        os.chdir(ensure_global_dir())
+    except OSError:
+        # Sem o diretório de estado o daemon tem problema maior que o cwd; quem
+        # precisa dele levanta mais à frente, com mensagem melhor que esta.
+        pass
+
+
 def run_daemon(
     *,
     host: str = DEFAULT_HTTP_HOST,
@@ -51,6 +73,7 @@ def run_daemon(
     socket_path: Path | None = None,
 ) -> None:
     ensure_global_dir()
+    _anchor_cwd()
     sock = socket_path or DAEMON_SOCKET
     if sock.exists():
         try:

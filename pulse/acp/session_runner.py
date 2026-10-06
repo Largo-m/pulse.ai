@@ -13,14 +13,19 @@ from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.logger import AcpLogger
 from pulse.acp.models import resolve_model_display_name
 from pulse.history.events import LogKind
+from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
 from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.prompts.permission import PermissionPolicy
-from pulse.prompts.text_questionnaire import parse_text_questionnaire
+from pulse.prompts.permission import PermissionPolicy, decide_permission
+from pulse.prompts.text_questionnaire import (
+    QUESTIONNAIRE_NOTICE,
+    parse_text_questionnaire,
+    strip_questionnaire_block,
+)
 from pulse.runcontrol import RunControl
 
 #: Teto de rodadas de pergunta/resposta dentro de um step. Um agente que
@@ -51,12 +56,17 @@ class _WatchedPrompts:
     que o relógio de `session/prompt` mede. Sem isto, uma aprovação que demorou
     mais que o timeout derrubava o step por "timeout", culpando o agente por
     uma espera que era nossa.
+
+    É também o único ponto por onde **toda** pergunta passa — a do agente, a do
+    questionário e a do menu de retry do motor —, e por isso o lugar de onde o
+    diálogo vai para o log da run (`on_answer`).
     """
 
-    def __init__(self, inner: Any, *, on_enter, on_exit) -> None:
+    def __init__(self, inner: Any, *, on_enter, on_exit, on_answer=None) -> None:
         self._inner = inner
         self._on_enter = on_enter
         self._on_exit = on_exit
+        self._on_answer = on_answer
 
     def __getattr__(self, name: str) -> Any:
         # AttributeError vaza de propósito: quem pergunta por `select_choice`
@@ -66,13 +76,45 @@ class _WatchedPrompts:
             return attr
 
         def watched(*args: Any, **kwargs: Any) -> Any:
+            # O que a política resolve não é pergunta: decidir aqui, antes de
+            # abrir a espera, é o que impede cada tool-call de um step
+            # `auto_approve` de piscar a run para `awaiting_input` e de volta.
+            if name == "respond_to_permission":
+                decided = _policy_decision(args, kwargs)
+                if decided is not None:
+                    return decided
             self._on_enter()
             try:
-                return attr(*args, **kwargs)
+                result = attr(*args, **kwargs)
+                self._record(name, args, kwargs, result)
+                return result
             finally:
                 self._on_exit()
 
         return watched
+
+    def _record(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> None:
+        if self._on_answer is None:
+            return
+        try:
+            self._on_answer(name, args, kwargs, result)
+        except Exception:
+            # Registrar o diálogo é acessório: não pode derrubar a pergunta que
+            # a pessoa acabou de responder.
+            pass
+
+
+def _policy_decision(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    """A resposta de `respond_to_permission(params, *, policy, allow_terminal)`
+    que a política dá sozinha. `None` = só uma pessoa decide."""
+    params = args[0] if args else kwargs.get("params")
+    if not isinstance(params, dict):
+        return None
+    return decide_permission(
+        params,
+        policy=kwargs.get("policy", "ask"),
+        allow_terminal=bool(kwargs.get("allow_terminal", False)),
+    )
 
 
 class AcpSessionRunner:
@@ -102,6 +144,7 @@ class AcpSessionRunner:
             prompt_handler or NullPromptPort(),
             on_enter=self._begin_user_wait,
             on_exit=self._end_user_wait,
+            on_answer=self._record_prompt_qa,
         )
         self._enable_mcp_ask = enable_mcp_ask
         self._pulse_agent = pulse_agent
@@ -135,13 +178,61 @@ class AcpSessionRunner:
         self._activity = time.monotonic()
         #: Perguntas abertas na tela. Enquanto houver, o silêncio é nosso.
         self._user_waits = 0
+        #: Começo da espera em curso, para descontá-la da duração do step.
+        self._wait_started: float | None = None
 
     def _begin_user_wait(self) -> None:
+        """Abriu pergunta: a run para de trabalhar e passa a esperar alguém.
+
+        Só a borda (0→1) conta. Pergunta aninhada — um questionário que pede
+        uma permissão no meio — é a mesma espera, e contá-la duas vezes
+        descontaria o dobro do tempo da duração do step.
+        """
         self._user_waits += 1
+        if self._user_waits > 1:
+            return
+        self._wait_started = time.monotonic()
+        self._mark_run_status(awaiting=True)
+        self._notify_stream("begin_user_wait")
 
     def _end_user_wait(self) -> None:
+        """Respondeu (ou desistiu): o relógio do step volta a andar."""
         self._user_waits = max(0, self._user_waits - 1)
         self._activity = time.monotonic()
+        if self._user_waits > 0:
+            return
+        started, self._wait_started = self._wait_started, None
+        if started is not None and self._bound_run_id:
+            self._save_waiting(time.monotonic() - started)
+        self._mark_run_status(awaiting=False)
+        self._notify_stream("end_user_wait")
+
+    def _save_waiting(self, seconds: float) -> None:
+        try:
+            from pulse.store.runs import add_waiting_seconds
+
+            add_waiting_seconds(self._bound_run_id, self._phase_id, seconds)
+        except Exception:
+            # Contabilizar espera é acessório: falhar aqui não pode derrubar o
+            # step que a pessoa acabou de destravar.
+            pass
+
+    def _mark_run_status(self, *, awaiting: bool) -> None:
+        """Status da run no banco — é por ele que a Home e o histórico sabem
+        que esta sessão está esperando alguém."""
+        if not self._bound_run_id:
+            return
+        try:
+            from pulse.store.runs import AWAITING_INPUT, RUNNING, update_run
+
+            update_run(self._bound_run_id, status=AWAITING_INPUT if awaiting else RUNNING)
+        except Exception:
+            pass
+
+    def _notify_stream(self, method: str) -> None:
+        handler = getattr(self._stream, method, None)
+        if callable(handler):
+            handler()
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self._logger.log_event("run_prompt_start", {"cwd": self._cwd})
@@ -826,11 +917,62 @@ class AcpSessionRunner:
         self._stream.begin_phase(label)
         self._save_event(kind="Info", title=label, detail=label)
 
+    def _record_prompt_qa(
+        self,
+        name: str,
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        result: Any,
+    ) -> None:
+        """Põe no log da run a pergunta que foi feita e a resposta que veio.
+
+        A tela viva desenha os dois balões ([pulse.tui.state.CockpitState.add_qa]),
+        mas quem os desenha não escreve no banco — gravar daqui é o que faz o
+        histórico reabrir com o questionário que decidiu o rumo da run, em vez
+        de só com a fala do agente e os tools.
+        """
+        if not self._bound_run_id:
+            return
+        try:
+            pairs = build_prompt_qa(name, args, kwargs, result)
+        except Exception as error:  # noqa: BLE001
+            # O `AcpLogger` não grava nada; sem esta linha, um payload que o
+            # montador não entende apagaria o diálogo do histórico sem rastro.
+            self._save_event(
+                kind="Info",
+                title="Diálogo não registrado",
+                detail=f"{name}: {type(error).__name__}: {error}",
+            )
+            return
+        for question, answer in pairs:
+            if not question.strip():
+                continue
+            # A fala que antecedeu a pergunta vai primeiro, senão ela desceria
+            # para debaixo do diálogo no próximo flush.
+            self._flush_text()
+            self._save_event(kind="Question", title="Pergunta", detail=question)
+            self._save_event(kind="Answer", title="Você", detail=answer)
+
     def _flush_text(self) -> None:
+        """Fecha a fala acumulada do agente numa linha do log.
+
+        O bloco de questionário não entra: ele vira dock na tela e balões de
+        Pergunta/Você aqui, então gravá-lo cru mostraria as mesmas perguntas
+        duas vezes. No lugar dele fica a mesma linha que o cockpit mostra.
+        """
         text = "".join(self._text_buffer).strip()
         self._text_buffer.clear()
-        if text:
-            self._save_event(kind="Assistant", title=text[:160], detail=text)
+        if not text:
+            return
+        spoken, had_questionnaire = strip_questionnaire_block(text)
+        if spoken:
+            self._save_event(kind="Assistant", title=spoken[:160], detail=spoken)
+        if had_questionnaire:
+            self._save_event(
+                kind="Info",
+                title=QUESTIONNAIRE_NOTICE,
+                detail=QUESTIONNAIRE_NOTICE,
+            )
 
     def _save_event(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:
         try:

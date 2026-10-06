@@ -14,11 +14,14 @@ _FREE_TEXT_VERB = re.compile(
     r"|describe|specify|explain|elaborate",
     re.IGNORECASE,
 )
-#: Onde cabe uma instrução ao usuário dentro de um rótulo: entre parênteses ou
-#: colchetes, ou na cauda depois de travessão/dois-pontos. Procurar o verbo solto
-#: no rótulo inteiro marcaria "Documentação que descreve o fluxo" como campo.
-_ANNOTATION = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
-_ANNOTATION_TAIL = re.compile(r"(?:[—–]|--|:)\s*(.*)$")
+#: Uma instrução ao usuário **abre** a anotação: logo depois de parêntese,
+#: colchete, travessão ou dois-pontos — "(descreva…)", "— especifique…". Bastar o
+#: verbo em qualquer ponto da anotação marcava como campo a explicação de uma
+#: opção comum: "Sim: busca no título e na descrição".
+_TEXT_REQUEST = re.compile(
+    rf"(?:[(\[—–:]|--)\s*(?:{_FREE_TEXT_VERB.pattern})",
+    re.IGNORECASE,
+)
 #: Perguntas em que o Pulse decide o rumo da run pela resposta. É o portão de
 #: aprovação de step — não o "Como deseja prosseguir?", que é escolha fechada.
 _APPROVAL_PROMPT = re.compile(r"\baprovar\b|\bapprove\b", re.IGNORECASE)
@@ -113,11 +116,7 @@ def option_requires_description(label: str) -> bool:
     escolha voltar ao agente sem dizer o que mudar.
     """
     text = label.strip()
-    for inside_parens, inside_brackets in _ANNOTATION.findall(text):
-        if _FREE_TEXT_VERB.search(inside_parens or inside_brackets):
-            return True
-    tail = _ANNOTATION_TAIL.search(text)
-    if tail and _FREE_TEXT_VERB.search(tail.group(1)):
+    if _TEXT_REQUEST.search(text):
         return True
     # "Descreva:" no fim não deixa cauda nenhuma — os dois-pontos são o convite.
     return text.endswith(":") and bool(_FREE_TEXT_VERB.search(text))
@@ -159,6 +158,71 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
         "não funciona (descreva",
     )
     return not any(marker in prompt_lower for marker in closed_prompt_markers)
+
+
+def build_question_choices(
+    options: list[Any],
+    *,
+    prompt: str = "",
+) -> list[tuple[str, str]]:
+    """As opções como o dock as mostra: `(id, "A) rótulo")`, na ordem.
+
+    Mora aqui, e não na TUI, porque o log gravado precisa nomear a resposta
+    exatamente como a tela a nomeou — uma numeração que divergisse faria o
+    histórico mostrar "Produto" onde a pessoa escolheu "A) Produto".
+    """
+    choices: list[tuple[str, str]] = []
+    has_other = False
+    option_index = 0
+    option_labels: list[str] = []
+
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        option_id = str(option.get("id", option.get("label", "")))
+        label = str(option.get("label", option_id))
+        option_labels.append(label)
+        if is_other_option(option_id, label):
+            has_other = True
+            option_id = OTHER_OPTION_ID
+            label = format_option_label(option_index, "Outro (descreva)")
+            option_index += 1
+        else:
+            label = format_option_label(option_index, label)
+            option_index += 1
+        choices.append((option_id, label))
+
+    if choices and not has_other and should_add_other_option(
+        prompt=prompt,
+        option_labels=option_labels,
+    ):
+        other_label = format_option_label(option_index, "Outro (descreva)")
+        choices.append((OTHER_OPTION_ID, other_label))
+
+    return choices
+
+
+def multi_select_prompt(prompt: str) -> str:
+    """O texto da pergunta de múltipla escolha como o dock o mostra."""
+    return f"{prompt}\n(escolha uma ou mais)"
+
+
+PLAN_APPROVAL_TITLE = "Aprovar plano?"
+#: Teto do plano no dock de aprovação — o resto não cabe na tela.
+PLAN_PREVIEW_CHARS = 1200
+
+
+def plan_prompt_text(params: dict[str, Any]) -> str:
+    """O corpo do dock de aprovação de plano (`cursor/create_plan`)."""
+    name = str(params.get("name") or "Plano").strip()
+    overview = str(params.get("overview") or "").strip()
+    plan = str(params.get("plan") or "").strip()
+    body = name
+    if overview:
+        body = f"{body}\n{overview}"
+    if plan:
+        body = f"{body}\n\n{plan[:PLAN_PREVIEW_CHARS]}"
+    return body
 
 
 def build_ask_question_answer(
