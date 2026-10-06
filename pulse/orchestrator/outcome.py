@@ -22,7 +22,8 @@ from dataclasses import dataclass
 #: código que o agente tenha citado no mesmo texto.
 BLOCK = re.compile(r"```pulse:outcome[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 FIELD = re.compile(
-    r"^[ \t>*-]*(status|reason|needs|motivo|precisa)[ \t]*:[ \t]*(.*)$", re.IGNORECASE
+    r"^[ \t>*-]*(status|reason|needs|motivo|precisa|next|proximo|próximo)[ \t]*:[ \t]*(.*)$",
+    re.IGNORECASE,
 )
 
 DONE = "done"
@@ -61,6 +62,15 @@ _NEEDS_USER = frozenset(
         "decisão",
     }
 )
+#: Palavras com que o agente pede mais uma volta do laço, no campo `next`. Só
+#: valem num step que a definição marcou como repetível — ver `repeat_from` em
+#: [pulse.store.workflow_defs]. Num step comum, o campo é ignorado: quem decide
+#: que um laço existe é o workflow, não o agente.
+_REPEAT_WORDS = frozenset({"repeat", "repetir", "again", "denovo", "nova-rodada", "loop"})
+#: Palavras com que quem **abre** o laço diz que não sobrou nada a corrigir, no
+#: mesmo campo `next`. O laço termina ali, e o resto da faixa não roda.
+_CLOSE_WORDS = frozenset({"close", "fechar", "encerrar", "end", "clean", "limpo"})
+
 #: Um motivo de bloqueio vira título de menu e linha de log: sem teto, um agente
 #: que cola o stack trace inteiro no `reason` estoura os dois.
 REASON_MAX_CHARS = 400
@@ -75,10 +85,30 @@ class Outcome:
     reason: str = ""
     #: Token do campo `needs`. Ver `needs_user`.
     needs: str = ""
+    #: Token do campo `next`. Ver `repeats`.
+    next: str = ""
 
     @property
     def delivered(self) -> bool:
         return self.status == DONE
+
+    @property
+    def repeats(self) -> bool:
+        """O agente pede outra volta do laço.
+
+        Só tem efeito onde a definição declarou um laço, e só quando o step
+        entregou: um step bloqueado não pede rodada nova, ele pede gente.
+        """
+        return self.delivered and self.next in _REPEAT_WORDS
+
+    @property
+    def closes(self) -> bool:
+        """O agente diz que o laço acabou: nada mais a corrigir.
+
+        Só tem efeito no step que abre um laço — ver
+        [pulse.orchestrator.loops.close_loop].
+        """
+        return self.delivered and self.next in _CLOSE_WORDS
 
     @property
     def needs_user(self) -> bool:
@@ -109,15 +139,21 @@ def parse_outcome(text: str) -> Outcome:
             continue
         key = match.group(1).lower()
         # O agente pode responder no idioma do prompt; o motor guarda um nome só.
-        key = {"motivo": "reason", "precisa": "needs"}.get(key, key)
+        key = {
+            "motivo": "reason",
+            "precisa": "needs",
+            "proximo": "next",
+            "próximo": "next",
+        }.get(key, key)
         fields.setdefault(key, _clean(match.group(2)))
 
     raw_status = fields.get("status", "").lower()
     reason = fields.get("reason", "")[:REASON_MAX_CHARS]
     needs = fields.get("needs", "").split()[0].lower().strip(".,;") if fields.get("needs") else ""
+    nxt = fields.get("next", "").split()[0].lower().strip(".,;") if fields.get("next") else ""
 
     if raw_status in _DONE_WORDS:
-        return Outcome(status=DONE)
+        return Outcome(status=DONE, next=nxt)
     if raw_status in _BLOCKED_WORDS:
         return Outcome(status=BLOCKED, reason=reason, needs=needs)
     if not raw_status:

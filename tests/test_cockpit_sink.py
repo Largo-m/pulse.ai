@@ -715,6 +715,48 @@ def test_model_info_sets_header_without_duplicate_entry():
     assert any(entry.title == "Questionário interativo" for entry in state.entries)
 
 
+def test_bloco_de_desfecho_nao_vira_questionario():
+    """`pulse:outcome` é cerca de código, não pergunta: a fala continua visível."""
+    state = CockpitState()
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
+    sink = CockpitSink(state)
+    sink.begin_phase("Fase 1")
+    for text in (
+        "Review limpo.\n\n```kotlin\nval x = 1\n```\n\n",
+        "```pulse:outcome\nstatus: done\nnext: close\n```",
+    ):
+        sink.handle_update(
+            {
+                "update": {
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": {"type": "text", "text": text},
+                }
+            }
+        )
+
+    assert not any(entry.title == "Questionário interativo" for entry in state.entries)
+    spoken = "\n".join(entry.body for entry in state.entries)
+    assert "next: close" in spoken
+
+
+def test_cerca_sem_nome_com_pergunta_ainda_e_questionario():
+    state = CockpitState()
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
+    sink = CockpitSink(state)
+    sink.begin_phase("Fase 1")
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "```\n1. Qual banco?\nA) Postgres\n"},
+            }
+        }
+    )
+    assert any(entry.title == "Questionário interativo" for entry in state.entries)
+
+
 def test_write_and_edit_register_spec_artifacts():
     state = CockpitState()
     make_workflow("demo", steps=FOUR)

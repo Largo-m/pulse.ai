@@ -14,11 +14,14 @@ _FREE_TEXT_VERB = re.compile(
     r"|describe|specify|explain|elaborate",
     re.IGNORECASE,
 )
-#: Onde cabe uma instrução ao usuário dentro de um rótulo: entre parênteses ou
-#: colchetes, ou na cauda depois de travessão/dois-pontos. Procurar o verbo solto
-#: no rótulo inteiro marcaria "Documentação que descreve o fluxo" como campo.
-_ANNOTATION = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
-_ANNOTATION_TAIL = re.compile(r"(?:[—–]|--|:)\s*(.*)$")
+#: Uma instrução ao usuário **abre** a anotação: logo depois de parêntese,
+#: colchete, travessão ou dois-pontos — "(descreva…)", "— especifique…". Bastar o
+#: verbo em qualquer ponto da anotação marcava como campo a explicação de uma
+#: opção comum: "Sim: busca no título e na descrição".
+_TEXT_REQUEST = re.compile(
+    rf"(?:[(\[—–:]|--)\s*(?:{_FREE_TEXT_VERB.pattern})",
+    re.IGNORECASE,
+)
 #: Perguntas em que o Pulse decide o rumo da run pela resposta. É o portão de
 #: aprovação de step — não o "Como deseja prosseguir?", que é escolha fechada.
 _APPROVAL_PROMPT = re.compile(r"\baprovar\b|\bapprove\b", re.IGNORECASE)
@@ -113,11 +116,7 @@ def option_requires_description(label: str) -> bool:
     escolha voltar ao agente sem dizer o que mudar.
     """
     text = label.strip()
-    for inside_parens, inside_brackets in _ANNOTATION.findall(text):
-        if _FREE_TEXT_VERB.search(inside_parens or inside_brackets):
-            return True
-    tail = _ANNOTATION_TAIL.search(text)
-    if tail and _FREE_TEXT_VERB.search(tail.group(1)):
+    if _TEXT_REQUEST.search(text):
         return True
     # "Descreva:" no fim não deixa cauda nenhuma — os dois-pontos são o convite.
     return text.endswith(":") and bool(_FREE_TEXT_VERB.search(text))

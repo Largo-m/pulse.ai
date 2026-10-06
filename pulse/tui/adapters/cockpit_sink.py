@@ -18,8 +18,14 @@ from pulse.history.tool_detail import (
 )
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
+#: Cerca `text`, ou cerca sem nome cuja primeira linha já é pergunta. Qualquer
+#: cerca valia antes, e o bloco `pulse:outcome` — ou um trecho de código citado —
+#: escondia o resto da fala atrás de um "Questionário interativo" que não existia.
 _QUESTIONNAIRE_START = re.compile(
-    r"```(?:text)?|Preciso de algumas informações|I need some information before continuing|Apresentando todas as perguntas",
+    r"```text"
+    r"|```[ \t]*\n[ \t]*(?:\d+\.[ \t]|Preciso de algumas informações|I need some information)"
+    r"|Preciso de algumas informações|I need some information before continuing"
+    r"|Apresentando todas as perguntas",
     re.IGNORECASE,
 )
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
@@ -27,6 +33,8 @@ _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
+#: Recebe o diretório onde a run trabalha — a tela repassa ao painel de artefatos.
+ContextFn = Callable[[str], None]
 
 
 def _is_placeholder(title: str, detail: str = "") -> bool:
@@ -66,10 +74,12 @@ class CockpitSink:
         cwd: str | None = None,
         session_id: str | None = None,
         on_replay_end: NotifyFn | None = None,
+        on_context: ContextFn | None = None,
     ) -> None:
         self._state = state
         self._on_change = on_change
         self._on_replay_end = on_replay_end
+        self._on_context = on_context
         self._cwd = cwd
         self._streaming_message = False
         self._agent_text = ""
@@ -82,6 +92,21 @@ class CockpitSink:
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
+
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        """A run disse onde trabalha: é daí que saem os caminhos dos artefatos.
+
+        A tela nasce apontando para a raiz do projeto; com worktree o agente
+        escreve em outro lugar, e sem reapontar aqui o painel procuraria cada
+        artefato numa pasta onde ele não está. `on_context` deixa o cockpit
+        repassar isso ao painel, que guarda o próprio cwd.
+        """
+        if cwd:
+            self._cwd = cwd
+        self._state.set_branch(branch)
+        if self._on_context is not None:
+            self._on_context(self._cwd or "")
+        self._emit()
 
     def set_session_id(self, session_id: str | None) -> None:
         self._store.set_session(session_id)

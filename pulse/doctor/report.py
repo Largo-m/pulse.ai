@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from pulse.acp.client import probe_acp_connection
 from pulse.config import (
     GLOBAL_CONFIG_FILE,
@@ -9,6 +7,7 @@ from pulse.config import (
     load_global_config,
     load_project_config,
 )
+from pulse.config.paths import safe_cwd
 from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
 from pulse.runtimes import get_runtime
@@ -84,7 +83,7 @@ def run_doctor(*, test_acp: bool = False) -> int:
             print(f"Testando conexão ACP com `{active}`…")
             probe = probe_acp_connection(
                 command=list(resolved.acp_command),
-                cwd=str(Path.cwd()),
+                cwd=str(safe_cwd()),
             )
             acp_message = probe.message if probe.success else probe.error or probe.message
             checks.append(

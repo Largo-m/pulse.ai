@@ -51,7 +51,9 @@ Você digita `pulse`
    pacote. O Pulse sequencia steps e lê um desfecho de aprovação; o resto é dado.
 2. **Nada em arquivo, exceto artefato** — config, definições e estado vivem em
    `~/.pulse/pulse.db`. O único conteúdo em disco é o que o **agente** escreve, e
-   desse o Pulse guarda só o caminho.
+   desse o Pulse guarda só o caminho. A única exceção é o `git worktree` de uma
+   run isolada (§Onde a run trabalha): diretório criado pelo git, em
+   `~/.pulse/worktrees/`, e nunca conteúdo escrito pelo Pulse.
 3. **Daemon = verdade única** — runs, config efetiva e estado vivem no Engine.
 4. **CLI é cliente fino** — a TUI não importa `orchestrator/` nem `acp/` para
    executar; fala com a API.
@@ -300,6 +302,58 @@ respondê-la, e a run ficava "precisando de você" para algo que já estava
 decidido. Quem fecha a tela não pode travar a run; quem decide por política não
 pode acordar ninguém.
 
+### Onde a run trabalha
+
+Por padrão, onde sempre trabalhou: a raiz do projeto. Quem liga **"Worktree"**
+nas configurações do projeto (`project_settings.use_worktree`, e a opção só
+aparece se o root for repositório git) passa a ter **uma run, um worktree**:
+
+```
+~/.pulse/worktrees/<run_id>        branch `pulse/<workflow>-<run curto>`
+```
+
+O que isso resolve é a mistura: duas runs simultâneas escreviam na mesma árvore
+de trabalho, e qualquer run misturava a entrega do agente com o que a pessoa
+estava editando no editor. Com o worktree, revisar a entrega de uma run é um
+`git diff` de uma branch, e descartá-la é apagar um diretório.
+
+Dois caminhos saem daqui, e confundi-los quebra coisas diferentes:
+
+| Valor | É | Quem usa |
+|---|---|---|
+| `runs.workspace_root` | A **raiz do projeto** | histórico, `resolve_config`, `find_resumable` |
+| `runs.worktree_path` | Onde o **agente** escreveu | `AcpSessionRunner(cwd=…)`, `{{workspace}}`, painel de artefatos |
+
+`workspace_root` continua sendo a raiz mesmo com worktree porque é por ele que
+o histórico casa a run ([`HistoryCatalog`](pulse/history/catalog.py)); gravar o
+worktree ali sumiria com a run da lista do projeto. E a config é resolvida pela
+raiz porque `load_project_config` procura o root registrado em `projects` — um
+worktree não está lá, e resolver por ele faria as settings por agente sumirem
+sem erro nenhum.
+
+Quem decide é [`_prepare_workspace`](pulse/orchestrator/engine.py), em três
+casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
+fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
+isolamento, `git worktree add`. Falhar ao abrir o worktree **para a run** —
+rodar na árvore de trabalho da pessoa é justamente o que a chave pediu para não
+acontecer.
+
+A branch é lida nos três casos, inclusive sem worktree, e é isso que faz a
+sessão mostrar `modelo · branch` na linha de meta do stream. Ela chega à tela
+pelo evento `run.context` (cwd + branch), publicado antes do primeiro step:
+como vai pelo barramento, o replay o entrega a quem anexa depois, e o painel de
+artefatos reaponta sozinho para o diretório certo.
+
+**O worktree não é limpo sozinho.** Ele é a entrega — o código está lá, na
+branch onde foi escrito. Sai pelo detalhe do histórico (`w`), ou junto quando a
+run é apagada, e em nenhum dos dois com `--force`: worktree com mudança não
+commitada é mantido, porque quem apaga uma linha do histórico não está pedindo
+para jogar trabalho fora. A branch sempre fica.
+
+O git falado aqui é o CLI por `subprocess`, em [`pulse/vcs/`](pulse/vcs/).
+Leitura nunca levanta (sem git no PATH, a sessão só fica sem branch); só
+`worktree add` e `worktree remove` levantam.
+
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
@@ -310,9 +364,10 @@ a run sair errada.
 | Chave | Conteúdo |
 |-------|----------|
 | `user_prompt` | o que o usuário pediu |
-| `workspace` | diretório da run |
+| `workspace` | diretório onde o agente trabalha (o worktree, quando há um) |
 | `workflow_id` / `run_id` / `step_id` / `step_label` | identidade do passo |
 | `previous_summary` | resposta do último step que produziu resumo |
+| `previous_status` | como aquele step fechou: `done` ou `skipped` |
 | `artifacts` | arquivos que a run já escreveu, um por linha |
 
 Note o que **não** existe: nenhuma chave com nome de artefato ou de fase. O motor
@@ -364,11 +419,20 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS; ancora o cwd em `~/.pulse` |
 | [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
+
+O daemon **não** usa o diretório de quem o iniciou. Ele sobe destacado e ficaria
+meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa
+pasta da Lixeira, onde o macOS nega até `getcwd()` — e toda run nova morria aí,
+antes do primeiro step. Por isso `run_daemon` faz `chdir` para `~/.pulse`, e
+quem ainda precisa perguntar "onde estamos?" usa
+[`safe_cwd`](pulse/config/paths.py), que cai no mesmo diretório em vez de
+levantar. Nada se perde: a run sempre roda com `cwd` explícito — o workspace que
+o cliente mandou, ou o worktree dela.
 
 #### API (`/api`)
 
@@ -384,10 +448,14 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 #### Eventos no SSE
 
 `run.started` · `run.stopped` ·
-`run.cancel_requested` · `run.finished` · `phase.begin` · `phase.info` ·
-`phase.error` · `phases.sync` · `session.update` · `session.id` ·
+`run.cancel_requested` · `run.finished` · `run.context` · `phase.begin` ·
+`phase.info` · `phase.error` · `phases.sync` · `session.update` · `session.id` ·
 `stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered` ·
 `stream.replay_end` · `stream.ping`
+
+`run.context` abre a run dizendo onde ela trabalha e em que branch (ver §Onde a
+run trabalha). Vem antes de qualquer `phase.begin` de propósito: é por ele que o
+painel de artefatos sabe em que pasta procurar arquivo.
 
 Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o
 passado reenviado acaba (ver §Sair, voltar e parar) e `stream.ping` é o
@@ -432,6 +500,7 @@ enxergá-lo sem mudanças.
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
 | [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` (não confundir com `runtimes/`) |
+| [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run |
 
 ---
 
@@ -477,6 +546,10 @@ A descoberta é pelos **tool-calls do ACP**: um `write`/`edit`/`create` faz o
 
 Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
 tão artefato quanto `docs/PLANO.md`.
+
+O caminho é gravado **relativo ao diretório onde a run trabalhou**, que com
+isolamento é o worktree dela (§Onde a run trabalha). Por isso o painel precisa
+do `run.context`: é ele que diz a raiz sobre a qual esses caminhos se abrem.
 
 ---
 
@@ -592,6 +665,7 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
 | **Agente** | Linha em `agent_defs`: runtime + model + política + instruções |
 | **Runtime** | O backend que executa um agente (`cursor`, `claude`) |
 | **Artefato** | Arquivo que o agente escreveu, descoberto por tool-call |
+| **Worktree** | Cópia de trabalho isolada do repositório, uma por run, em branch própria |
 | **Daemon** | Processo em background (o Engine) |
 | **UDS** | Unix Domain Socket — arquivo local (`daemon.sock`); HTTP por cima |
 | **SSE** | Server-Sent Events — stream HTTP de eventos da run |

@@ -82,11 +82,31 @@ defaults do código → machine (SQLite) → project_* (mesmo SQLite, por root_p
 `pulse init` e `pulse config init` cadastram o projeto com defaults: agent
 `cursor`, model `claude-sonnet-4-6`, `permission_policy` `deny_writes`.
 
-Campos por projeto: agent, model, permission_policy, workspace e `workflows.*`
-(override de agent/model por id de workflow — não definem pipeline).
+Campos por projeto: agent, model, permission_policy, workspace, use_worktree e
+`workflows.*` (override de agent/model por id de workflow — não definem
+pipeline).
 
 Agents do projeto podem sobrescrever ou estender os da máquina (binary, models,
 acp_command).
+
+### Worktree por run
+
+Projeto que é repositório git pode ligar **Worktree** em *Configurações*. Com a
+chave ligada, cada run abre a própria cópia de trabalho:
+
+```
+~/.pulse/worktrees/<run_id>     branch  pulse/<workflow>-<run curto>
+```
+
+A árvore de trabalho do editor fica intocada, duas runs simultâneas param de se
+atropelar, e revisar a entrega de uma run vira um `git diff` de uma branch.
+
+O worktree **fica** quando a run acaba — ele é a entrega. Sai pelo detalhe da
+run no Histórico (tecla `w`) ou junto quando a run é apagada; com mudança não
+commitada dentro, é mantido e o Pulse avisa. A branch sempre fica.
+
+Desligada a chave (o padrão), a run roda na raiz do projeto como sempre. Nos
+dois casos a sessão mostra a branch atual ao lado do modelo.
 
 ### Workflows
 
@@ -99,8 +119,9 @@ loops de fábrica, que aparecem no menu **Nova sessão**:
 
 | Loop | Steps |
 | --- | --- |
-| Nova spec | PRD → Techspec → Tasks → Implementar |
+| Nova spec | PRD → Techspec → Tasks → Implementar → Review ⇄ Fix review (laço, até 3 rodadas) |
 | Correção rápida | Quick plan → Quick implement |
+| Review | Review ⇄ Fix review (laço, até 3 rodadas) da branch atual vs `main`, roda direto |
 | Setup do projeto | Entrevista → Artefatos (roda direto, sem aprovar) |
 | Analisar codebase | Exploração → Documentação (roda direto, sem aprovar) |
 

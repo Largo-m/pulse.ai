@@ -64,6 +64,15 @@ class ApiStreamSink:
     def set_session_id(self, session_id: str) -> None:
         self._bus.publish({"type": "session.id", "session_id": session_id})
 
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        """Onde a run trabalha e em que branch.
+
+        Vai pelo barramento como qualquer outro evento, então quem anexa depois
+        recebe isto no replay — e o painel de artefatos reaponta para o
+        worktree sem rota nova e sem a tela precisar perguntar nada.
+        """
+        self._bus.publish({"type": "run.context", "cwd": cwd, "branch": branch})
+
 
 class ApiPromptPort:
     def __init__(self, correlator: PromptCorrelator) -> None:

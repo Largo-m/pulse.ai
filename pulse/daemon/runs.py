@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pulse.config.paths import safe_cwd
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
@@ -98,7 +99,7 @@ class RunManager:
             id=run_id,
             workflow_id=workflow_id,
             prompt=prompt,
-            workspace=workspace or str(Path.cwd()),
+            workspace=workspace or str(safe_cwd()),
             bus=bus,
             correlator=correlator,
             control=RunControl(on_change=_publish_control),

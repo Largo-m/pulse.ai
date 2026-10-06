@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+#: 5 — `next: close`: quem abre um laço encerra sem pedir aprovação. Daemon mais
+#: velho não conhece o desfecho e falha o review limpo como "não aprovado".
+#:
+#: 4 — `run.context`: onde a run trabalha (o worktree, quando há um) e em que
+#: branch. Daemon mais velho roda sempre na raiz do projeto e não emite o
+#: evento, então a tela mostraria artefato no lugar errado e branch nenhuma.
+#:
 #: 3 — anexar a uma run viva: `GET /api/runs`, `?after` no SSE, e os marcadores
 #: `stream.replay_end`/`stream.ping`. Daemon mais velho não sabe reabrir uma run,
 #: então o cliente o substitui em vez de conversar com ele.
-ENGINE_PROTOCOL = 3
+ENGINE_PROTOCOL = 5
 
 #: Fim do passado reenviado, começo do vivo. Um cliente que anexa a uma run em
 #: curso recebe o histórico dela primeiro; é este marcador que diz onde ele

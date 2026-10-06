@@ -263,3 +263,76 @@ def test_prompt_text_submit_and_confirm_cancel():
             assert confirm_future.result(timeout=1) is False
 
     asyncio.run(run())
+
+
+def test_a_letra_da_opcao_escolhe_direto():
+    """O dock já rotula `A)`, `B)`, `C)` — a tecla é a letra que está na tela.
+
+    É o que torna "pular o review" uma tecla: o bloco de aprovação vira
+    A) aprovar · B) ajustar · C) pular · D) cancelar, e `c` responde sem
+    navegar. Vale para qualquer questionário, não só para o de aprovação.
+    """
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+
+        holder: dict = {}
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                state_screen = CockpitScreen("demo", "demo")
+                holder["sink"] = CockpitSink(state_screen.state, cwd="/repo")
+                yield LogStream(state_screen.state, id="log-stream")
+
+            def on_mount(self) -> None:
+                sink: CockpitSink = holder["sink"]
+                sink.begin_phase("Review")
+                self.query_one(LogStream).sync_from_state(sink._state, force=True)
+
+        app = Harness()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await pilot.pause()
+            log = app.query_one(LogStream)
+            future: Future[object | None] = Future()
+            log.show_prompt(
+                PromptRequest(
+                    kind=PromptKind.SELECT,
+                    title="Questionário",
+                    prompt="1. Aprovar Review e avançar?",
+                    choices=[
+                        ("A", "A) Sim, aprovar e continuar"),
+                        ("B", "B) Não, preciso de ajustes (descreva)"),
+                        ("C", "C) Pular — seguir sem corrigir as findings agora"),
+                        ("D", "D) Cancelar workflow"),
+                    ],
+                    future=future,
+                ),
+                future.set_result,
+            )
+            await pilot.pause()
+
+            dock = log.query_one(PromptDock)
+            assert dock.hotkeys() == {"a": 0, "b": 1, "c": 2, "d": 3}
+
+            await pilot.press("c")
+            await pilot.pause()
+
+            assert future.result(timeout=1) == "C"
+            assert list(log.query(PromptDock)) == []
+
+    asyncio.run(run())
+
+
+def test_rotulo_sem_letra_nao_ganha_atalho():
+    """Atalho que não está escrito na tela é atalho invisível."""
+    request = PromptRequest(
+        kind=PromptKind.SELECT,
+        title="Questionário",
+        prompt="Qual?",
+        choices=[("x", "sem prefixo"), ("y", "B) com prefixo")],
+        future=None,
+    )
+
+    assert PromptDock(request, lambda _result: None).hotkeys() == {"b": 1}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,8 +22,11 @@ Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 #: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
-#: gerou. Ver [pulse.orchestrator.engine._units].
+#: gerou. Ver [pulse.orchestrator.fanout.expand].
 FANOUT_SEP = ":"
+#: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
+#: [pulse.acp.session_runner].
+_CONTINUATION = re.compile(r"\s+—\s+continuação \(\d+\)$")
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -39,6 +43,8 @@ class CockpitState:
     surface_title: str = "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
     agent_label: str = "Agent"
     model_label: str = ""
+    #: Branch em que a run trabalha. Vazio fora de repositório git.
+    branch_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
     artifacts: list[ArtifactItem] = field(default_factory=list)
@@ -115,8 +121,11 @@ class CockpitState:
                 phase.finish(now)
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
-                matched.started_at = now
+                # Um step que volta a rodar (outra volta do laço, um retry)
+                # continua do tempo que já tinha, em vez de recomeçar do zero.
+                matched.started_at = now - matched.closed_seconds()
                 matched.ended_at = None
+                matched.waiting_total = 0.0
             matched.status = PhaseStatus.RUNNING
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
@@ -143,6 +152,7 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps):
             phase.label = str(step.get("label", "")) or phase.label
+            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
         # depois dele para baixo.
         if selected is not None:
@@ -265,6 +275,10 @@ class CockpitState:
 
     def set_agent(self, agent: str) -> None:
         self.agent_label = agent
+        self.notify()
+
+    def set_branch(self, branch: str) -> None:
+        self.branch_label = branch
         self.notify()
 
     def add_tool_entry(
@@ -736,6 +750,19 @@ class CockpitState:
 
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
+        # Nome exato primeiro: o título é o rótulo do step, e casar por trecho
+        # sozinho fazia uma task chamada "… (TaskSearch)" acender o step `tasks`
+        # lá em cima — a task ficava pendente e o log dela ia para outro lugar.
+        base = _CONTINUATION.sub("", lowered).strip()
+        exact = [
+            phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
+        ]
+        if exact:
+            for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
+                for phase in exact:
+                    if phase.status == status:
+                        return phase
+            return exact[0]
         for phase in self.phases:
             if phase.id.lower() in lowered or phase.label.lower() in lowered:
                 return phase

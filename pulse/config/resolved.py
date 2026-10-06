@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
+from pulse.config.paths import safe_cwd
 from pulse.config.project_config import ProjectConfig, load_project_config
 
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, find_runtime, get_runtime
@@ -27,6 +28,9 @@ class ResolvedConfig:
     model: str
     permission_policy: str
     workspace_dir: Path
+    #: Cada run abre o próprio `git worktree`. Não tem cascata: vem do projeto
+    #: ou não vem — a máquina não decide isolar o repositório de ninguém.
+    use_worktree: bool = False
     workflow: str | None = None
     pulse_agent: str | None = None
     agents: dict[str, AgentConfig] = field(default_factory=dict)
@@ -134,7 +138,7 @@ def resolve_config(
     workflow: str | None = None,
     pulse_agent: str | None = None,
 ) -> ResolvedConfig:
-    base_cwd = (cwd or Path.cwd()).resolve()
+    base_cwd = (cwd or safe_cwd()).resolve()
     global_cfg = load_global_config()
     project_cfg = load_project_config(workspace.resolve() if workspace is not None else base_cwd)
     if project_cfg is None and workspace is not None:
@@ -190,6 +194,7 @@ def resolve_config(
         model=model,
         permission_policy=permission_policy,
         workspace_dir=workspace_dir,
+        use_worktree=bool(project_cfg.use_worktree) if project_cfg else False,
         workflow=workflow,
         pulse_agent=pulse_agent,
         agents=agents,

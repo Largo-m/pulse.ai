@@ -38,6 +38,20 @@ class ArtifactPane(Widget):
         self._fingerprint: tuple[object, ...] | None = None
         self._loaded_key: tuple[str, float, bool] | None = None
 
+    def set_cwd(self, cwd: str | None) -> None:
+        """Reaponta a pasta onde os artefatos são procurados.
+
+        A run pode trabalhar num worktree, que o painel só descobre quando o
+        `run.context` chega. `_loaded_key` cai junto: ele guarda o mtime do
+        arquivo já lido, e manter a chave faria o painel continuar mostrando o
+        conteúdo lido do caminho antigo.
+        """
+        if cwd == self._cwd:
+            return
+        self._cwd = cwd
+        self._loaded_key = None
+        self._fingerprint = None
+
     def compose(self) -> ComposeResult:
         yield Static("▸\nABRIR", id="artifact-open")
         with Horizontal(id="artifact-title-row"):

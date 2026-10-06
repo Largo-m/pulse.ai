@@ -15,6 +15,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from pulse.store import runs as run_store
+from pulse.store.runs import StepRecord
+from pulse.store.workflow_defs import StepDef
+
 #: ```pulse:items … ``` — cercado e nomeado para não colidir com um bloco de
 #: código que o agente tenha citado no mesmo texto.
 BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
@@ -25,6 +29,9 @@ ITEM = re.compile(r"^[ \t>*-]*([^\s:—–-][^:—–]*?)[ \t]*[:—–-][ \t]*(
 #: Teto de segurança. Um agente que devolve 200 itens errou a conta, e abrir 200
 #: sessões ACP sairia caro antes de alguém perceber.
 MAX_ITEMS = 40
+#: Espaço entre as posições da definição, para o fan-out caber no meio sem
+#: renumerar o resto: o step 4 vira 4001, 4002… e continua antes do step 5.
+POSITION_STRIDE = 1000
 
 
 @dataclass(frozen=True)
@@ -58,3 +65,69 @@ def parse_items(text: str) -> tuple[Item, ...]:
         if len(items) >= MAX_ITEMS:
             break
     return tuple(items)
+
+
+def expand(
+    run: run_store.RunRecord, step: StepDef, previous_summary: str
+) -> list[tuple[StepDef, Item | None]]:
+    """O step da definição vira os steps que a run vai mesmo rodar.
+
+    Sem `fan_out`, é ele mesmo. Com, é um por item que o step anterior
+    enumerou — cada um com `step_id` próprio, porque cada um quer sessão
+    isolada, linha no painel e a chance de ser refeito sozinho.
+
+    Lista vazia (o agente não emitiu o bloco, ou emitiu vazio) roda o step uma
+    vez, como se `fan_out` não existisse: um protocolo que o agente não seguiu
+    não é motivo para a run parar.
+    """
+    if not step.fan_out:
+        return [(step, None)]
+
+    items = parse_items(previous_summary)
+    if not items:
+        return [(step, None)]
+
+    base = run.step(step.step_id)
+    base_position = base.position if base is not None else step.position * POSITION_STRIDE
+    at = len(run.steps)
+    if base is not None:
+        # O placeholder cumpriu o papel de mostrar que o step existe; agora os
+        # N filhos tomam o lugar dele — no mesmo ponto da lista, senão o painel
+        # mostraria as tasks depois de um step que ainda nem rodou.
+        at = run.steps.index(base)
+        run.steps.remove(base)
+        run_store.delete_step(run.id, step.step_id)
+
+    units: list[tuple[StepDef, Item | None]] = []
+    for index, item in enumerate(items, start=1):
+        step_id = f"{step.step_id}:{item.id}"
+        label = item.label or item.id
+        position = base_position + index
+        units.append(
+            (
+                StepDef(
+                    workflow_id=step.workflow_id,
+                    step_id=step_id,
+                    position=position,
+                    label=label,
+                    agent_id=step.agent_id,
+                    prompt_template=step.prompt_template,
+                    requires_approval=step.requires_approval,
+                ),
+                item,
+            )
+        )
+        if run.step(step_id) is None:
+            child = StepRecord(
+                step_id=step_id,
+                position=position,
+                label=label,
+                agent_id=step.agent_id,
+            )
+            run.steps.insert(at + index - 1, child)
+            # Grava os N na hora, não quando cada um começar. Filho que só
+            # existe na memória some se a run cair no meio do fan-out: o
+            # histórico reabria com as tasks que já tinham rodado e mais
+            # nenhuma, como se o agente tivesse enumerado menos do que enumerou.
+            run_store.save_step(run.id, child)
+    return units

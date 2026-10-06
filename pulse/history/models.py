@@ -48,6 +48,11 @@ class HistoryItem:
     updated_at: str
     steps: list[HistoryStep] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
+    #: Branch em que a run trabalhou. Vazio para run antiga e para projeto fora
+    #: de git — o Pulse não tinha como saber antes.
+    branch: str = ""
+    #: Worktree desta run, se ela rodou isolada. Vazio = rodou na raiz.
+    worktree_path: str = ""
 
     @property
     def item_id(self) -> str:
