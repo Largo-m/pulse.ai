@@ -43,8 +43,9 @@ class FactoryStep:
     #: [pulse.orchestrator.engine]. Quem pede a volta é o agente; isto é a
     #: permissão.
     repeat_from: str = ""
-    #: Teto de voltas, contando a primeira. Sem teto, um agente que sempre pede
-    #: mais uma rodada deixa a run sem fim.
+    #: Teto de voltas de quem abre o trecho, contando a primeira. Na última, só
+    #: ele roda. Sem teto, um agente que sempre pede mais uma rodada deixa a run
+    #: sem fim.
     repeat_max: int = 0
 
     def id(self) -> str:
@@ -105,10 +106,11 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             # qualquer `write`/`edit` sem olhar o caminho — o artefato nunca
             # chegaria ao disco nem ao painel. Ver [pulse.prompts.permission].
             FactoryStep("review", "Review", True),
-            # O laço: corrigiu algo, volta ao revisor para conferir se o reparo
-            # valeu e se não sobrou nada crítico; não corrigiu nada, a run acaba
-            # aqui. O teto de 3 é o mesmo do contrato de convergência — round 2
-            # só aceita o que um fix quebrou, round 3 fecha, round 4 não existe.
+            # O laço: todo fix que trabalhou uma rodada volta ao revisor, porque
+            # só o review atesta que não sobrou nada a corrigir — o fix nunca
+            # fecha o laço. O teto de 3 é o mesmo do contrato de convergência:
+            # round 2 só aceita o que um fix quebrou, round 3 fecha e nenhum fix
+            # roda depois dele, round 4 não existe.
             FactoryStep(
                 "review-fix",
                 "Fix review",

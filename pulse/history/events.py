@@ -92,6 +92,16 @@ class PhaseItem:
             return ""
         return format_elapsed(end - self.started_at - self.waiting_total)
 
+    def closed_seconds(self) -> float:
+        """O tempo já fechado deste passo, líquido da espera. Zero se nunca fechou.
+
+        É o ponto de partida quando o passo volta a rodar: uma nova volta do
+        laço soma ao que as anteriores gastaram, como `carried_seconds` no banco.
+        """
+        if self.started_at is None or self.ended_at is None:
+            return 0.0
+        return max(0.0, self.ended_at - self.started_at - self.waiting_total)
+
     def display_status(self) -> str:
         """O status como a tela deve nomeá-lo.
 

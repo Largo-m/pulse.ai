@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
+from pulse.tui.hydrate import _step_seconds
 
 
 class _Stream:
@@ -977,6 +979,138 @@ def test_o_teto_de_rodadas_encerra_o_laco(wired, monkeypatch, tmp_path):
     assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert record.step("review").rounds == 2, "parou na segunda, como o teto manda"
     assert record.status == "completed"
+
+
+def test_o_laco_termina_em_quem_abre_nunca_em_quem_fecha(wired, monkeypatch, tmp_path):
+    """Review → fix → review: no teto, o fix não roda depois da última revisão.
+
+    Quem fecha o laço pede a volta porque mexeu em algo que ninguém conferiu.
+    Deixá-lo rodar na última volta acabaria a run num reparo sem conferência.
+    """
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner(
+        [
+            _delivered("r1"),
+            _repeating("f1"),
+            _delivered("r2"),
+            _repeating("f2"),
+            _delivered("r3"),
+            _repeating("f3 — não deveria rodar"),
+        ]
+    )
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 0
+    # Cinco turnos: review, fix, review, fix, review. O 3º fix ficou na fila.
+    assert len(runner.prompts) == 5
+    assert len(runner._results) == 1
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.step("review").rounds == 3
+    assert all(step.status == "done" for step in record.steps)
+    assert any("a última" in message for message in runner._stream.messages)
+
+
+def test_o_teto_conta_as_voltas_gravadas_ao_retomar(wired, monkeypatch, tmp_path):
+    """Retomar no meio do laço não devolve as voltas que já foram gastas."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    # Primeira run: review, fix pede volta, review 2… e para antes do fix 2.
+    control = RunControl()
+    first = _Runner([_delivered(), _repeating(), _delivered()], control=control)
+    original = engine._run_step
+
+    def stop_before_second_fix(**kwargs):
+        if kwargs["step"].step_id == "fix" and kwargs["run"].step("review").rounds == 2:
+            control.stop()
+            return RUN_STOPPED, False
+        return original(**kwargs)
+
+    monkeypatch.setattr(engine, "_run_step", stop_before_second_fix)
+    _install(monkeypatch, first)
+    assert (
+        run_workflow(
+            workflow_id="demo",
+            user_prompt="x",
+            stream=first._stream,
+            prompt_handler=first._prompt_handler,
+            render_header=False,
+        )
+        == RUN_STOPPED
+    )
+    run_id = run_store.list_runs(tmp_path)[0].id
+    monkeypatch.setattr(engine, "_run_step", original)
+
+    # Retomada: o fix 2 pede volta, e a 3ª é a última — só o review roda.
+    second = _Runner([_repeating(), _delivered(), _repeating("não deveria rodar")])
+    _install(monkeypatch, second)
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=second._stream,
+        prompt_handler=second._prompt_handler,
+        render_header=False,
+        resume_run_id=run_id,
+    )
+
+    assert code == 0
+    # Fix 2 e review 3; o 3º fix ficou na fila.
+    assert len(second.prompts) == 2
+    assert len(second._results) == 1
+    assert run_store.load_run(run_id).step("review").rounds == 3
+
+
+def test_o_tempo_das_voltas_soma_em_vez_de_zerar(wired, monkeypatch, tmp_path):
+    """Cada volta reabre o relógio, mas o que as anteriores gastaram fica."""
+    make_workflow(
+        "demo",
+        steps=[("review", "Review"), ("fix", "Fix")],
+        requires_approval=False,
+        repeat=("fix", "review", 3),
+    )
+    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
+    _install(monkeypatch, runner)
+
+    # Relógio de mentira: cada carimbo anda 10s.
+    start = datetime(2026, 10, 6, tzinfo=UTC)
+    seconds = iter(range(0, 10_000, 10))
+    monkeypatch.setattr(
+        run_store,
+        "utc_now",
+        lambda: (start + timedelta(seconds=next(seconds))).isoformat(),
+    )
+
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    record = run_store.list_runs(tmp_path)[0]
+    review = record.step("review")
+    assert review.rounds == 2
+    # A volta 1 fechou com duração positiva e foi guardada; a volta 2 tem a dela.
+    assert review.carried_seconds > 0
+    assert review.started_at and review.ended_at
+    assert _step_seconds(review) > review.carried_seconds
 
 
 def test_o_pedido_de_repetir_nao_vale_onde_o_workflow_nao_declarou_laco(

@@ -315,8 +315,6 @@ def _execute(
         # um pedido declarado no bloco de desfecho e um teto gravado na
         # definição, e os dois vêm do banco.
         loops = _loops(definition)
-        #: Quantas voltas cada laço já deu, por `step_id` de quem fecha o trecho.
-        rounds: dict[str, int] = {}
         index = 0
         while index < len(definition.steps):
             definition_step = definition.steps[index]
@@ -369,7 +367,11 @@ def _execute(
 
                 if repeats and at in loops:
                     loop = loops[at]
-                    number = rounds.get(loop.closer, 1)
+                    # O teto conta as rodadas de quem **abre** a faixa, lidas do
+                    # banco: um contador em memória voltava a 1 ao retomar a
+                    # run, e o laço ganhava voltas que o teto não permitia.
+                    opener = run.step(definition.steps[loop.start].step_id)
+                    number = opener.rounds if opener is not None else 1
                     if number >= definition_step.repeat_max:
                         _notify(
                             runner,
@@ -377,11 +379,18 @@ def _execute(
                             "rodadas atingido — o que sobrou vai no relatório",
                         )
                     else:
-                        rounds[loop.closer] = number + 1
-                        _reopen_loop(run, definition, loop)
+                        last = number + 1 >= definition_step.repeat_max
+                        _reopen_loop(run, definition, loop, last=last)
                         index = loop.start
                         _sync_steps(runner, run)
-                        _notify(runner, f"{record.label} pediu a {number + 1}ª rodada")
+                        if last:
+                            _notify(
+                                runner,
+                                f"{record.label} pediu a {number + 1}ª rodada — a última: "
+                                f"só {opener.label if opener else 'o início do laço'} roda",
+                            )
+                        else:
+                            _notify(runner, f"{record.label} pediu a {number + 1}ª rodada")
                         break
 
         run_store.update_run(run.id, status="completed")
@@ -399,7 +408,6 @@ class _Loop:
     start: int
     #: Índice do step que fecha o trecho e pode pedir a volta.
     end: int
-    closer: str
 
 
 def _loops(definition: WorkflowDef) -> dict[int, _Loop]:
@@ -417,13 +425,19 @@ def _loops(definition: WorkflowDef) -> dict[int, _Loop]:
         start = at.get(step.repeat_from)
         if start is None or start >= end:
             continue
-        loop = _Loop(start=start, end=end, closer=step.step_id)
+        loop = _Loop(start=start, end=end)
         for index in range(start, end + 1):
             found[index] = loop
     return found
 
 
-def _reopen_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: _Loop) -> None:
+def _reopen_loop(
+    run: run_store.RunRecord,
+    definition: WorkflowDef,
+    loop: _Loop,
+    *,
+    last: bool = False,
+) -> None:
     """Devolve os steps da faixa para `pending` e conta mais uma volta.
 
     A volta reusa os mesmos `step_id`, de propósito: é o que mantém **uma linha
@@ -438,13 +452,26 @@ def _reopen_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: _Loop)
 
     O contador vai no step que **abre** a faixa, não no que a fecha: é ele que
     tem um artefato por volta para a pessoa abrir.
+
+    **A última volta (`last`) reabre só quem abre a faixa.** Quem fecha o laço
+    pede a volta porque mexeu em algo que ninguém conferiu ainda — deixá-lo
+    rodar de novo no teto daria a ele a última palavra sobre o próprio reparo.
+    Os demais steps da faixa continuam `done` da volta anterior, e o laço
+    principal os pula como qualquer step já fechado.
+
+    O tempo **soma** entre as voltas: o que a volta anterior gastou vai para
+    `carried_seconds` antes de `started_at`/`ended_at` reabrirem. Ver
+    [pulse.store.runs.carry_round].
     """
-    for step in definition.steps[loop.start : loop.end + 1]:
+    steps = definition.steps[loop.start : loop.start + 1 if last else loop.end + 1]
+    for step in steps:
         record = run.step(step.step_id)
         if record is None:
             continue
         if step.step_id == definition.steps[loop.start].step_id:
             record.rounds += 1
+        record.carried_seconds = run_store.carry_round(run.id, step.step_id)
+        record.waiting_seconds = 0.0
         record.status = PENDING
         record.summary = ""
         record.started_at = ""

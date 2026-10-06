@@ -121,8 +121,11 @@ class CockpitState:
                 phase.finish(now)
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
-                matched.started_at = now
+                # Um step que volta a rodar (outra volta do laço, um retry)
+                # continua do tempo que já tinha, em vez de recomeçar do zero.
+                matched.started_at = now - matched.closed_seconds()
                 matched.ended_at = None
+                matched.waiting_total = 0.0
             matched.status = PhaseStatus.RUNNING
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index

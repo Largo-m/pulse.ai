@@ -23,8 +23,14 @@ Anything other than `skipped` means the review was approved and this step runs.
 ### When it runs
 
 The round file is the entire scope: the highest `round-NNN.md` in
-`.pulse/specs/features/<slug>/reviews/`. If there is no such file, the review
-found nothing — say so and close `done`. Do not go looking for work.
+`.pulse/specs/features/<slug>/reviews/` — **if the review that just ran wrote
+it**. Two cases mean the review found nothing, and you say so and close `done`
+without going looking for work:
+
+- there is no round file at all;
+- the highest round file was already closed by an earlier pass of this step
+  (every finding in a terminal state, `Fix:` lines already there). A clean review
+  writes no file, so the newest one on disk is the previous round's.
 
 Only the newest round is yours. Earlier rounds were closed by earlier passes of
 this same step, and reopening one would restart the loop this design exists to
@@ -48,11 +54,12 @@ Do not run git operations (no commit, no staging, no suggesting commit messages)
 
 ### How this step closes — and whether the review runs again
 
-There is no approval here, so you are the one attesting the delivery. **You also
-decide whether the merge layer is finished**, with the `next` field: the run goes
-back to the review step when you ask for it, and ends when you do not.
+There is no approval here, so you are the one attesting the delivery. **You do
+not decide whether the merge layer is finished — the review does.** A fix pass
+can never be the last word: only the next review round can confirm there is
+nothing left to correct.
 
-The rule is one line: **changed code means another review.**
+The rule is one line: **you worked a round, the review runs again.**
 
 ````text
 ```pulse:outcome
@@ -61,14 +68,16 @@ next: repeat
 ```
 ````
 
-Use `next: repeat` when you edited **any** file in this pass. Something you just
-repaired can break something else, and nobody has looked at the repair yet —
-that second look is the whole reason the loop exists. The next review will not
-re-review the feature from scratch; it checks your fixes and accepts only what a
-fix broke.
+Use `next: repeat` whenever this pass worked a round file — you edited files,
+or you triaged every finding as `invalid`, or anything in between. Something you
+repaired can break something else, and a triage nobody checked is still your
+word against the reviewer's; that second look is the whole reason the loop
+exists. The next review will not re-review the feature from scratch; it checks
+your pass and accepts only what a fix broke.
 
-Omit `next` when nothing changed: every finding was `invalid`, there was no round
-file, or the person skipped the review. There is nothing to look at again.
+Omit `next` only when there was no round for you to work: the review found
+nothing (see *When it runs*), or the person skipped it. That is the review
+closing the loop, not you.
 
 ````text
 ```pulse:outcome
@@ -90,8 +99,8 @@ Closing `done` with a blocker open would tell the pipeline the merge layer is
 finished when it is not — and asking for another round does not fix a blocker,
 because the next review cannot decide what only the person can.
 
-The loop has a ceiling of three rounds. At the ceiling the run moves on whatever
-you ask, so whatever is still open has to be in your report, not deferred to a
-round that will not happen.
+The loop has a ceiling of three review rounds, and the third is the last word:
+no fix runs after it. So your request for another round is always honoured —
+the run never ends on your pass.
 
 <!-- include: output-language -->

@@ -215,7 +215,7 @@ Duas colunas em `workflow_steps`, e nenhuma delas conhece fase por nome:
 | Coluna | O que faz |
 | --- | --- |
 | `repeat_from` | `step_id` de um step **anterior** deste loop. Vazio = não repete. |
-| `repeat_max` | teto de voltas, contando a primeira. |
+| `repeat_max` | teto de voltas de quem **abre** a faixa, contando a primeira. Na última, só ele roda. |
 
 Quem **pede** a volta é o agente, no mesmo bloco de desfecho da §2.2:
 
@@ -229,18 +229,33 @@ next: repeat
 Quem **permite** é a coluna. Os dois são necessários: um agente não cria laço
 onde a definição não abriu um, e uma definição não repete um step que entregou e
 ficou quieto. É o que o `new-issue` usa na camada de merge — `review-fix` aponta
-para `review` com teto 3, então "corrigi algo" leva a run de volta ao revisor, e
-"não mudei nada" encerra.
+para `review` com teto 3, e todo fix que trabalhou uma rodada leva a run de volta
+ao revisor. Quem encerra o laço é o review, nunca o fix: uma rodada limpa não
+deixa nada para o fix trabalhar, e ele fecha sem pedir volta.
 
 ```
 step `review-fix` fechou com `next: repeat`
   │
   ├─ está dentro de uma faixa repetível?        não → segue a lista
-  ├─ já deu `repeat_max` voltas?                sim → avisa e segue a lista
+  ├─ quem abre a faixa já rodou `repeat_max`?   sim → avisa e segue a lista
+  ├─ a próxima volta é a última?                sim → reabre SÓ quem abre a faixa
   └─ devolve os steps da faixa para `pending`
        incrementa `run_steps.rounds` de quem ABRE a faixa
+       guarda o tempo da volta em `run_steps.carried_seconds`
        volta o índice para o step de `repeat_from`
 ```
+
+**A última palavra é de quem abre a faixa.** Quem fecha o laço pede a volta
+porque mexeu em algo que ninguém conferiu; se ele rodasse também na última
+volta, a run acabaria num reparo sem conferência. Com teto 3, o `new-issue` roda
+review → fix → review → fix → review. O teto conta pelo `rounds` gravado no
+banco, então retomar a run no meio do laço não devolve voltas que já foram
+gastas.
+
+**O tempo soma entre as voltas.** Reabrir zera `started_at`/`ended_at`, então a
+duração líquida da volta anterior vai antes para `carried_seconds`, e a espera
+(`waiting_seconds`) zera junto — já foi descontada ali. O painel e o histórico
+mostram a soma, e o cronômetro de uma volta nova parte de onde a anterior parou.
 
 **A volta reusa os mesmos `step_id`** — não há `review#2`. É o oposto do
 fan-out, e de propósito: o fan-out numera porque cada item é um trabalho
@@ -251,7 +266,7 @@ que deixa o log e os artefatos de todas as voltas sob o mesmo step —
 `round-001.md` e `round-002.md` lado a lado, navegáveis.
 
 O preço é explícito: `run_steps` guarda o estado da **última** volta, não de cada
-uma. O que de fato distingue uma rodada da outra está no arquivo que ela escreveu
+uma — o tempo é a exceção, e soma. O que de fato distingue uma rodada da outra está no arquivo que ela escreveu
 e nos eventos da run, que são append-only.
 
 O contador (`run_steps.rounds`) vai no step que **abre** a faixa, não no que a

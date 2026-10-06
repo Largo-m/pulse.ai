@@ -199,6 +199,10 @@ CREATE TABLE IF NOT EXISTS run_steps (
   -- (`workflow_steps.repeat_from`), e é o que deixa o painel mostrar uma linha
   -- só com o contador do lado em vez de uma linha por volta.
   rounds INTEGER NOT NULL DEFAULT 1,
+  -- Duração líquida das voltas anteriores do laço, já sem a espera. A volta
+  -- nova reabre `started_at`/`ended_at`, e sem isto o tempo do step voltava a
+  -- zero a cada rodada em vez de somar.
+  carried_seconds REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, step_id)
 );
 
@@ -276,6 +280,9 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
     # 1 para o que já existia, que é a verdade: nenhum step repetia antes.
     ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
+    # Zero para o que já existia: run antiga não guardou o tempo das voltas
+    # anteriores, e zero é o que ela vinha mostrando.
+    ("run_steps", "carried_seconds", "REAL NOT NULL DEFAULT 0"),
 )
 
 

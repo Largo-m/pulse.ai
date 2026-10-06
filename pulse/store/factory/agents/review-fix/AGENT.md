@@ -531,10 +531,10 @@ stops counting.
 You do not. If the fix pass surfaces a new problem, it goes in your report to the
 user. The round is frozen; that freeze is why the review terminates.
 
-If the new problem is genuinely `critical`, say so in the report and let the user
-decide whether it is worth another review run. That decision is theirs, and round
-2 has its own rules: at most three new `critical` findings, each naming the fix
-that introduced it.
+If the new problem is genuinely `critical`, say so in the report. The next review
+round runs after your pass anyway, and it is the one that can accept it under its
+own rules: at most three new `critical` findings, each naming the fix that
+introduced it.
 
 ## Promoting findings
 

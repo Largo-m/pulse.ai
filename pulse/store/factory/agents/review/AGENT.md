@@ -956,17 +956,18 @@ The failure mode this document exists to kill: the review that never ends. Fix,
 find, fix, find, always something new, half of it nonsense. The cure is not
 discipline, it is arithmetic.
 
-## Two rounds, and the pipeline runs both
+## The loop ends on a review, never on a fix
 
-The loop is spelled out in the pipeline instead of looping: review → fix →
-review again → fix again, and then it ends. The second review is the same role
-with a different job, and it comes back to check that the repair held and that
-nothing `critical` is still open.
+review → fix → review → fix → review. A fix is never the last word: nobody has
+looked at a repair yet when it lands, so every fix pass sends the run back here.
+Only a review can say the merge layer is finished — by finding nothing left to
+correct, or by being round 3, the last one, after which no fix runs.
 
-Round 3 does not run. Anything still open when round 2 closes is reported to the
-user, who waives it, defers it to `STATE.md`, or starts a new run. The rules for
-round 3 below describe what a third round *would* have to do; they are the
-contract a manual round answers to, not a step that fires on its own.
+A later review is the same role with a different job: it comes back to check
+that the repair held and that nothing `critical` is still open.
+
+Anything still open when round 3 closes is reported to the user, who waives it,
+defers it to `STATE.md`, or starts a new run.
 
 That is why Non-Negotiable 2 is not negotiable: **round 1 is the whole review.**
 Round 2 cannot take new ground — it only accepts what a fix broke — so a finding
@@ -1001,7 +1002,7 @@ Budget by scope: 10 findings for `medium`, 20 for `large`, 25 for `complex`. Ove
 budget means prioritize by severity and fold the overflow into existing findings
 as additional locations. It does not mean file a 40-item report.
 
-## Round 2 (the pipeline's second review step): resolution, plus a narrow door
+## Round 2: resolution, plus a narrow door
 
 Exactly two jobs.
 
@@ -1030,12 +1031,14 @@ leak that lets the loop restart; it is "the fix broke something". A `critical`
 that was always there and you missed in round 1 does not qualify. You missed it.
 That is the deal.
 
-## Round 3: does not run on its own
+## Round 3: the last word
 
-The pipeline stops after round 2. If a user starts a third round by hand, it
-takes no new findings at all, and its Resolução table must bring **every** ID to
-a terminal state: `resolved`, `invalid`, `declined-accepted`, `waived`, or
-`deferred`. An ID still `open` has to be waived or deferred.
+Round 3 is the last review, and no fix runs after it — whatever it leaves open
+reaches the user, not another repair. It takes no new findings at all, and its
+Resolução table must bring **every** ID to a terminal state: `resolved`,
+`invalid`, `declined-accepted`, `waived`, or `deferred`. An ID still `open` has
+to be waived or deferred, and the reply says plainly which ones the person still
+has to decide.
 
 ## Round 4: does not exist
 
