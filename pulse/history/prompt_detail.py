@@ -16,8 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from pulse.prompts.ask_question import (
+    PLAN_APPROVAL_TITLE,
     build_question_choices,
+    multi_select_prompt,
     parse_ask_question_params,
+    plan_prompt_text,
 )
 from pulse.prompts.permission import (
     build_permission_choices,
@@ -100,8 +103,7 @@ def _question_prompt(question: dict[str, Any]) -> str:
     if not prompt:
         return ""
     multiple = bool(question.get("allow_multiple", question.get("allowMultiple", False)))
-    # O mesmo acréscimo que o dock faz no texto da pergunta.
-    return f"{prompt}\n(escolha uma ou mais)" if multiple else prompt
+    return multi_select_prompt(prompt) if multiple else prompt
 
 
 def _answers_by_question(result: Any) -> dict[str, list[str]] | None:
@@ -218,23 +220,15 @@ def _create_plan_qa(
     params = _arg(args, kwargs, 0, "params")
     if not isinstance(params, dict):
         return []
-    # O mesmo corpo que o dock mostra em `respond_to_create_plan`.
-    name = str(params.get("name") or "Plano").strip()
-    overview = str(params.get("overview") or "").strip()
-    plan = str(params.get("plan") or "").strip()
-    prompt = name
-    if overview:
-        prompt = f"{prompt}\n{overview}"
-    if plan:
-        prompt = f"{prompt}\n\n{plan[:1200]}"
+    prompt = f"{PLAN_APPROVAL_TITLE}\n{plan_prompt_text(params)}"
 
     outcome = result.get("outcome") if isinstance(result, dict) else None
     decision = outcome.get("outcome") if isinstance(outcome, dict) else ""
     if decision == "accepted":
-        return [(f"Aprovar plano?\n{prompt}", "Sim")]
+        return [(prompt, "Sim")]
     if decision == "rejected":
-        return [(f"Aprovar plano?\n{prompt}", "Não")]
-    return [(f"Aprovar plano?\n{prompt}", CANCELLED)]
+        return [(prompt, "Não")]
+    return [(prompt, CANCELLED)]
 
 
 def _text_qa(args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> list[QA]:

@@ -913,7 +913,18 @@ class AcpSessionRunner:
         """
         if not self._bound_run_id:
             return
-        for question, answer in build_prompt_qa(name, args, kwargs, result):
+        try:
+            pairs = build_prompt_qa(name, args, kwargs, result)
+        except Exception as error:  # noqa: BLE001
+            # O `AcpLogger` não grava nada; sem esta linha, um payload que o
+            # montador não entende apagaria o diálogo do histórico sem rastro.
+            self._save_event(
+                kind="Info",
+                title="Diálogo não registrado",
+                detail=f"{name}: {type(error).__name__}: {error}",
+            )
+            return
+        for question, answer in pairs:
             if not question.strip():
                 continue
             # A fala que antecedeu a pergunta vai primeiro, senão ela desceria

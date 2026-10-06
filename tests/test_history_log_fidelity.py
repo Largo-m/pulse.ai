@@ -371,6 +371,47 @@ def test_o_bloco_do_questionario_nao_volta_como_fala_do_agente(tmp_path: Path):
     ]
 
 
+def test_cerca_de_codigo_antes_do_questionario_fica_na_fala(tmp_path: Path):
+    """O log corta onde a tela viva corta: uma cerca qualquer não é questionário."""
+    run_id = _run(tmp_path)
+    runner = _runner(tmp_path, run_id)
+    tree = "Estrutura atual:\n```\npulse/\n  store/\n```"
+
+    runner._text_buffer.append(
+        f"{tree}\n"
+        "Preciso de algumas informações:\n"
+        "1. Qual banco usar?\n"
+        "A) Postgres\n"
+        "B) SQLite\n"
+    )
+    runner._flush_text()
+
+    events = [(event["kind"], event["detail"]) for event in run_store.list_events(run_id)]
+    assert [kind for kind, _detail in events] == ["Assistant", "Info"]
+    assert "pulse/\n  store/" in events[0][1]
+    assert events[1][1] == QUESTIONNAIRE_NOTICE
+
+
+def test_dialogo_que_nao_deu_para_montar_deixa_rastro(tmp_path: Path, monkeypatch):
+    """A resposta segue para o agente, e o histórico diz que faltou o diálogo."""
+    run_id = _run(tmp_path)
+
+    def _broken(*_args):
+        raise ValueError("payload estranho")
+
+    monkeypatch.setattr("pulse.acp.session_runner.build_prompt_qa", _broken)
+
+    class _Port:
+        def ask_text(self, prompt, *, title=""):
+            return "ok"
+
+    runner = _runner(tmp_path, run_id, port=_Port())
+    assert runner._prompt_handler.ask_text("Pergunta?") == "ok"
+
+    events = [(event["kind"], event["detail"]) for event in run_store.list_events(run_id)]
+    assert events == [("Info", "ask_text: ValueError: payload estranho")]
+
+
 def test_o_historico_reabre_com_os_baloes_de_pergunta_e_resposta(tmp_path: Path):
     run_id = _run(tmp_path)
 

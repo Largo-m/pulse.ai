@@ -13,6 +13,18 @@ _HEADER_PATTERN = re.compile(
 _FENCED_BLOCK = re.compile(r"```(?:text)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 _QUESTION_LINE = re.compile(r"^(\d+)\.\s+(.+)$")
 _OPTION_LINE = re.compile(r"^([A-Z])\)\s+(.+)$")
+#: Onde a fala do agente vira questionário: cerca `text`, ou cerca sem nome cuja
+#: primeira linha já é pergunta. Qualquer cerca valia antes, e o bloco
+#: `pulse:outcome` — ou um trecho de código citado — escondia o resto da fala
+#: atrás de um "Questionário interativo" que não existia. A tela viva e o log
+#: gravado cortam aqui, e só aqui, para mostrarem a mesma fala.
+QUESTIONNAIRE_START = re.compile(
+    r"```text"
+    r"|```[ \t]*\n[ \t]*(?:\d+\.[ \t]|Preciso de algumas informações|I need some information)"
+    r"|Preciso de algumas informações|I need some information before continuing"
+    r"|Apresentando todas as perguntas",
+    re.IGNORECASE,
+)
 #: A linha que a tela põe no lugar do bloco de perguntas. O cockpit nunca mostra
 #: o questionário cru — ele vira dock — e o log gravado faz o mesmo.
 QUESTIONNAIRE_NOTICE = "Questionário interativo"
@@ -73,17 +85,10 @@ def strip_questionnaire_block(text: str) -> tuple[str, bool]:
     Pergunta/Você no log. Gravá-lo cru fazia a run reaberta mostrar as mesmas
     perguntas duas vezes — uma no balão do assistente, outra no diálogo.
     """
-    if extract_questionnaire_block(text) is None:
+    start = QUESTIONNAIRE_START.search(text)
+    if start is None:
         return text.strip(), False
-
-    starts = [
-        match.start()
-        for match in (_FENCED_BLOCK.search(text), _HEADER_PATTERN.search(text))
-        if match is not None
-    ]
-    if not starts:
-        return "", True
-    return text[: min(starts)].strip(), True
+    return text[: start.start()].strip(), True
 
 
 def split_questionnaire_answers(

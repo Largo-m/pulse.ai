@@ -6,6 +6,7 @@ from typing import Any
 
 from pulse.prompts.text_questionnaire import (
     QUESTIONNAIRE_NOTICE,
+    QUESTIONNAIRE_START,
     extract_questionnaire_block,
 )
 from pulse.tui.artifacts import artifact_has_content
@@ -18,16 +19,6 @@ from pulse.history.tool_detail import (
 )
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
-#: Cerca `text`, ou cerca sem nome cuja primeira linha já é pergunta. Qualquer
-#: cerca valia antes, e o bloco `pulse:outcome` — ou um trecho de código citado —
-#: escondia o resto da fala atrás de um "Questionário interativo" que não existia.
-_QUESTIONNAIRE_START = re.compile(
-    r"```text"
-    r"|```[ \t]*\n[ \t]*(?:\d+\.[ \t]|Preciso de algumas informações|I need some information)"
-    r"|Preciso de algumas informações|I need some information before continuing"
-    r"|Apresentando todas as perguntas",
-    re.IGNORECASE,
-)
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
@@ -452,7 +443,7 @@ class CockpitSink:
     def _maybe_enter_questionnaire_mode(self) -> None:
         if self._questionnaire_mode:
             return
-        if _QUESTIONNAIRE_START.search(self._agent_text):
+        if QUESTIONNAIRE_START.search(self._agent_text):
             self._questionnaire_mode = True
             self._finish_message_line()
 

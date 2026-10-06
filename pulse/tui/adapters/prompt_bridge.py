@@ -10,11 +10,14 @@ from pulse.prompts.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
     OTHER_OPTION_ID,
+    PLAN_APPROVAL_TITLE,
     build_ask_question_answers,
     build_ask_question_cancelled,
     build_question_choices,
+    multi_select_prompt,
     parse_ask_question_params,
     parse_questionnaire_meta,
+    plan_prompt_text,
     resolve_question_progress,
 )
 from pulse.prompts.approval import answer_needs_description
@@ -276,15 +279,11 @@ class TextualPromptHandler:
         return f"{FREE_TEXT_ANSWER_PREFIX}{value}"
 
     def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
-        name = str(params.get("name") or "Plano").strip()
-        overview = str(params.get("overview") or "").strip()
-        plan = str(params.get("plan") or "").strip()
-        body = name
-        if overview:
-            body = f"{body}\n{overview}"
-        if plan:
-            body = f"{body}\n\n{plan[:1200]}"
-        approved = self._bridge.confirm(body, title="Aprovar plano?", default=True)
+        approved = self._bridge.confirm(
+            plan_prompt_text(params),
+            title=PLAN_APPROVAL_TITLE,
+            default=True,
+        )
         if approved is None:
             return {"outcome": {"outcome": "cancelled"}}
         if approved:
@@ -392,7 +391,7 @@ class TextualPromptHandler:
 
         select_prompt = prompt
         if allow_multiple:
-            select_prompt = f"{prompt}\n(escolha uma ou mais)"
+            select_prompt = multi_select_prompt(prompt)
             selected_ids = self._bridge.multi_select(select_prompt, choices, title=title)
             if selected_ids is None:
                 return None

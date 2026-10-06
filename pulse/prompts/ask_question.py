@@ -202,6 +202,29 @@ def build_question_choices(
     return choices
 
 
+def multi_select_prompt(prompt: str) -> str:
+    """O texto da pergunta de múltipla escolha como o dock o mostra."""
+    return f"{prompt}\n(escolha uma ou mais)"
+
+
+PLAN_APPROVAL_TITLE = "Aprovar plano?"
+#: Teto do plano no dock de aprovação — o resto não cabe na tela.
+PLAN_PREVIEW_CHARS = 1200
+
+
+def plan_prompt_text(params: dict[str, Any]) -> str:
+    """O corpo do dock de aprovação de plano (`cursor/create_plan`)."""
+    name = str(params.get("name") or "Plano").strip()
+    overview = str(params.get("overview") or "").strip()
+    plan = str(params.get("plan") or "").strip()
+    body = name
+    if overview:
+        body = f"{body}\n{overview}"
+    if plan:
+        body = f"{body}\n\n{plan[:PLAN_PREVIEW_CHARS]}"
+    return body
+
+
 def build_ask_question_answer(
     question_id: str,
     selected_option_ids: list[str],
