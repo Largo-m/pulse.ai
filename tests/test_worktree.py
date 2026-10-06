@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from pulse import vcs
 from pulse.config.paths import worktrees_dir
 from pulse.config.project_config import init_project_config, update_project_defaults
 from pulse.config.resolved import resolve_config
+from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _branch_name, _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
@@ -192,20 +194,85 @@ def test_retomar_reusa_o_worktree_da_run(tmp_path: Path) -> None:
     assert (second / "entrega.md").exists()
 
 
-def test_worktree_sumiu_do_disco_abre_outro(tmp_path: Path) -> None:
-    """Diretório apagado à mão não pode travar a retomada da run."""
+def commit_in(path: Path, name: str) -> None:
+    (path / name).write_text("trabalho de um step\n", encoding="utf-8")
+    for args in (["add", name], ["commit", "-q", "-m", name]):
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+
+
+def test_worktree_removido_pelo_historico_reabre_a_branch_da_run(tmp_path: Path) -> None:
+    """Retomar depois do `w` continua de onde os steps pararam, não do HEAD."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
-    first, _ = _prepare_workspace(run, repo, Resolved(use_worktree=True))
-    vcs.remove_worktree(repo, first, force=True)
+    first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
+    commit_in(first, "spec.md")
+
+    catalog = HistoryCatalog(repo)
+    item = catalog.get(run.id)
+    assert item is not None
+    assert catalog.remove_worktree(item) is True
 
     retomada = run_store.load_run(run.id)
     assert retomada is not None
-    second, branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    second, same_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+
+    assert same_branch == branch
+    assert (second / "spec.md").exists()
+    assert run_store.load_run(run.id).worktree_path == str(second)
+
+
+def test_worktree_apagado_a_mao_reabre_a_branch_da_run(tmp_path: Path) -> None:
+    """Diretório apagado sem o git saber não pode travar a retomada da run.
+
+    O git ainda tem o caminho registrado e recusaria o `add` ali; e cada
+    tentativa recusada deixava uma branch `-N` para trás.
+    """
+    repo = make_repo(tmp_path / "repo")
+    run = make_run(repo)
+    first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
+    commit_in(first, "spec.md")
+    shutil.rmtree(first)
+
+    retomada = run_store.load_run(run.id)
+    assert retomada is not None
+    second, same_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+
+    assert second == first
+    assert same_branch == branch
+    assert (second / "spec.md").exists()
+    assert not vcs.branch_exists(repo, f"{branch}-2")
+
+
+def test_branch_do_projeto_nao_e_reanexada(tmp_path: Path) -> None:
+    """Run que começou na raiz grava `main`; ligar a chave depois abre branch nova."""
+    repo = make_repo(tmp_path / "repo")
+    run = make_run(repo)
+    _prepare_workspace(run, repo, Resolved(use_worktree=False))
+
+    retomada = run_store.load_run(run.id)
+    assert retomada is not None
+    assert retomada.branch == "main"
+    target, branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+
+    assert branch == _branch_name(run)
+    assert target == worktrees_dir() / run.id
+    assert vcs.current_branch(repo) == "main"
+
+
+def test_branch_da_run_apagada_abre_outra(tmp_path: Path) -> None:
+    """Sem a branch não há o que reanexar: a run segue do HEAD, num nome novo."""
+    repo = make_repo(tmp_path / "repo")
+    run = make_run(repo)
+    first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
+    vcs.remove_worktree(repo, first)
+    subprocess.run(["git", "branch", "-D", branch], cwd=repo, check=True, capture_output=True)
+
+    retomada = run_store.load_run(run.id)
+    assert retomada is not None
+    second, new_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
 
     assert second.is_dir()
-    # Branch nova: a anterior ficou para trás com o worktree removido.
-    assert branch == f"{_branch_name(run)}-2"
+    assert new_branch == branch
 
 
 def test_runs_simultaneas_nao_dividem_diretorio(tmp_path: Path) -> None:

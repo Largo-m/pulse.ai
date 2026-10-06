@@ -123,6 +123,7 @@ def add_worktree(
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    prune_worktrees(repo)
     name = branch
     for attempt in range(2, MAX_BRANCH_ATTEMPTS + 2):
         if not branch_exists(repo, name):
@@ -132,6 +133,29 @@ def add_worktree(
         raise GitError(f"não consegui um nome de branch livre a partir de `{branch}`")
     _write(["worktree", "add", "-b", name, str(target), start], cwd=repo)
     return name
+
+
+def attach_worktree(repo: Path | str, path: Path | str, branch: str) -> None:
+    """Reabre um worktree em `path` numa branch que já existe.
+
+    É o caminho da run retomada que perdeu o diretório: o trabalho dos steps que
+    já fecharam está commitado na branch dela, e uma branch nova a partir do HEAD
+    deixaria esse trabalho de fora.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    prune_worktrees(repo)
+    _write(["worktree", "add", str(target), branch], cwd=repo)
+
+
+def prune_worktrees(repo: Path | str) -> None:
+    """Esquece worktrees cujo diretório sumiu do disco.
+
+    Diretório apagado à mão continua registrado no git, e `worktree add` recusa
+    o mesmo caminho até alguém rodar `prune`. Falhar aqui não impede nada: o
+    `add` seguinte reporta o erro de verdade.
+    """
+    _read(["worktree", "prune"], cwd=repo)
 
 
 def remove_worktree(repo: Path | str, path: Path | str, *, force: bool = False) -> None:
@@ -178,11 +202,13 @@ def git_available() -> bool:
 __all__ = [
     "GitError",
     "add_worktree",
+    "attach_worktree",
     "branch_exists",
     "current_branch",
     "git_available",
     "has_changes",
     "is_repo",
+    "prune_worktrees",
     "remove_worktree",
     "repo_root",
 ]

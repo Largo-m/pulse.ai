@@ -21,7 +21,7 @@ from typing import Any
 
 from pulse import vcs
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.config import resolve_config
+from pulse.config import ResolvedConfig, resolve_config
 from pulse.config.paths import worktrees_dir
 from pulse.doctor.checks import check_runtime_ready
 from pulse.orchestrator.cli_output import (
@@ -222,20 +222,24 @@ def _resolve_run(
 def _prepare_workspace(
     run: run_store.RunRecord,
     workspace_root: Path,
-    resolved: Any,
+    resolved: ResolvedConfig,
 ) -> tuple[Path, str]:
     """Onde esta run trabalha, e em que branch.
 
-    Três casos, nesta ordem:
+    Quatro casos, nesta ordem:
 
     1. **Run retomada que já tem worktree.** Reusa o que está gravado. Abrir um
        segundo worktree ao retomar jogaria fora o que o primeiro produziu — o
        trabalho dos steps que já fecharam está lá dentro.
-    2. **Sem isolamento** (chave desligada, ou projeto fora de repositório git).
+    2. **Run retomada que perdeu o worktree** (removido pelo histórico ou
+       apagado à mão) mas ainda tem a branch dela. Reabre o worktree nessa
+       branch, com ou sem a chave: a run começou isolada, e o que os steps
+       commitaram só existe ali.
+    3. **Sem isolamento** (chave desligada, ou projeto fora de repositório git).
        A run roda na raiz, como sempre rodou, e a branch é a que o projeto tem
        agora. É este caso que faz a branch aparecer na tela de quem nem liga a
        chave.
-    3. **Isolamento ligado.** `git worktree add` em `~/.pulse/worktrees/<run>`,
+    4. **Isolamento ligado.** `git worktree add` em `~/.pulse/worktrees/<run>`,
        numa branch nova a partir do HEAD.
 
     A raiz do projeto continua sendo a identidade da run (`workspace_root`): é
@@ -244,8 +248,15 @@ def _prepare_workspace(
     if run.worktree_path and Path(run.worktree_path).exists():
         return Path(run.worktree_path), run.branch
 
-    repo = vcs.repo_root(workspace_root) if getattr(resolved, "use_worktree", False) else None
-    if repo is None:
+    repo = vcs.repo_root(workspace_root)
+    if repo is not None and _owns_branch(run) and vcs.branch_exists(repo, run.branch):
+        target = worktrees_dir() / run.id
+        vcs.attach_worktree(repo, target, run.branch)
+        run_store.set_workspace_context(run.id, worktree_path=str(target), branch=run.branch)
+        run.worktree_path = str(target)
+        return target, run.branch
+
+    if repo is None or not resolved.use_worktree:
         branch = vcs.current_branch(workspace_root)
         if branch != run.branch:
             run_store.set_workspace_context(run.id, branch=branch)
@@ -272,6 +283,17 @@ def _branch_name(run: run_store.RunRecord) -> str:
     slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in run.workflow_id)
     slug = slug.strip("-") or "run"
     return f"pulse/{slug}-{run.id[:8]}"
+
+
+def _owns_branch(run: run_store.RunRecord) -> bool:
+    """A branch gravada foi aberta por esta run, e não é a do projeto?
+
+    Sem worktree a run grava a branch atual do projeto (`main`, por exemplo), e
+    reanexar essa seria tomar a branch da árvore de trabalho da pessoa. Só conta
+    o nome que `_branch_name` deu, com ou sem o sufixo de `add_worktree`.
+    """
+    base = _branch_name(run)
+    return run.branch == base or run.branch.startswith(f"{base}-")
 
 
 def _announce_context(stream: Any | None, exec_dir: Path, branch: str) -> None:
