@@ -508,11 +508,13 @@ def _run_step(
                 _notify(runner, f"{record.label} pulado pelo usuário")
                 return 0, SKIPPED
             if choice != "retry":
+                _close_after_menu(run, record)
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
                 return RUN_BLOCKED, BLOCKED
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
             if choice != "retry":
+                _close_after_menu(run, record)
                 return 1, FAILED
         _revive_session(runner)
         if guidance:
@@ -719,6 +721,18 @@ def _fail_running_steps(run: run_store.RunRecord) -> None:
     for record in run.steps:
         if record.status == RUNNING:
             _fail(run, record)
+
+
+def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
+    """Fecha o step de novo depois do menu de retry/bloqueio.
+
+    `_fail`/`_block` carimbam `ended_at` *antes* de perguntar, e a espera no
+    menu é descontada deste step (`run_steps.waiting_seconds`). Sem recarimbar,
+    o desconto caía fora da janela `started_at..ended_at` e a duração no
+    histórico encolhia, ou sumia de vez quando ficava negativa.
+    """
+    record.ended_at = run_store.utc_now()
+    run_store.save_step(run.id, record)
 
 
 def _fail(run: run_store.RunRecord, record: StepRecord) -> None:

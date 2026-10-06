@@ -1300,3 +1300,40 @@ def test_as_voltas_do_laco_ficam_sob_o_mesmo_step(wired, monkeypatch, tmp_path):
         {"path": "reviews/round-001.md", "step_id": "review"},
         {"path": "reviews/round-002.md", "step_id": "review"},
     ]
+
+
+def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
+    wired, monkeypatch, tmp_path: Path
+):
+    """`_fail` carimba `ended_at` antes do menu, e a espera no menu é descontada
+    deste step. Se a pessoa desiste, o fim tem de ser recarimbado depois do menu
+    — senão o desconto cai fora da janela e a duração some do histórico."""
+    make_workflow("demo", steps=[("one", "Um")])
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+    monkeypatch.setattr(run_store, "utc_now", lambda: clock[0].isoformat())
+
+    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    stamped_before_menu: list[str] = []
+
+    def stop_after_ten_minutes(prompt, choices, *, title=""):
+        stamped_before_menu.append(run_store.list_runs(tmp_path)[0].step("one").ended_at)
+        clock[0] += timedelta(minutes=10)
+        return "stop"
+
+    runner._prompt_handler.select_choice = stop_after_ten_minutes
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == 1
+    step = run_store.list_runs(tmp_path)[0].step("one")
+    assert stamped_before_menu and stamped_before_menu[0]
+    assert datetime.fromisoformat(step.ended_at) - datetime.fromisoformat(
+        stamped_before_menu[0]
+    ) == timedelta(minutes=10)

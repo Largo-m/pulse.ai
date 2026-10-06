@@ -71,16 +71,23 @@ def waiting_for(run: dict[str, Any], *, now: float | None = None) -> str:
     return f"{hours}h{minutes:02d}"
 
 
+def run_line(run: dict[str, Any], *, tail: str = "") -> str:
+    """`loop · step · tail`, sem as partes vazias — a linha que toda tela usa
+    para nomear uma run viva."""
+    label = str(run.get("workflow_label") or run.get("workflow_id") or "Run")
+    step = str(run.get("current_step_label") or "").strip()
+    return " · ".join(part for part in (label, step, tail) if part)
+
+
+def held_tail(run: dict[str, Any]) -> str:
+    """`há 3min` para a run que espera; vazio se o tempo não é conhecido."""
+    held = waiting_for(run)
+    return f"há {held}" if held else ""
+
+
 def describe(run: dict[str, Any]) -> str:
     """Uma linha de menu: o loop, onde está e se está esperando alguém."""
-    label = str(run.get("workflow_label") or run.get("workflow_id") or "Run")
-    parts = [label]
-    step = str(run.get("current_step_label") or "").strip()
-    if step:
-        parts.append(step)
     if run.get("awaiting_prompt"):
         held = waiting_for(run)
-        parts.append(f"precisa de você há {held}" if held else "precisa de você")
-    else:
-        parts.append("executando")
-    return " · ".join(parts)
+        return run_line(run, tail=f"precisa de você há {held}" if held else "precisa de você")
+    return run_line(run, tail="executando")

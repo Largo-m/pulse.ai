@@ -197,15 +197,21 @@ class CockpitState:
                 phase.status = PhaseStatus.DONE
         self.notify()
 
-    def begin_waiting(self) -> None:
+    def begin_waiting(self, *, since: float | None = None) -> None:
         """Abriu pergunta: congela o relógio do passo em curso.
 
         Se nenhum passo está `running` — a pergunta veio entre dois steps, como
         o menu de retomada — só a flag da run acende: não há cronômetro andando
         para congelar.
+
+        `since` é a hora de parede em que a espera começou. Sem ele, começou
+        agora; com ele, o relógio congela onde a run de fato parou, mesmo para
+        quem anexou horas depois.
         """
         self.awaiting_input = True
         now = time.monotonic()
+        if since is not None:
+            now -= max(0.0, time.time() - since)
         for phase in self.phases:
             if phase.status == PhaseStatus.RUNNING:
                 phase.begin_waiting(now)

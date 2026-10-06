@@ -20,7 +20,7 @@ from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.prompts.permission import PermissionPolicy
+from pulse.prompts.permission import PermissionPolicy, decide_permission
 from pulse.prompts.text_questionnaire import (
     QUESTIONNAIRE_NOTICE,
     parse_text_questionnaire,
@@ -76,6 +76,13 @@ class _WatchedPrompts:
             return attr
 
         def watched(*args: Any, **kwargs: Any) -> Any:
+            # O que a política resolve não é pergunta: decidir aqui, antes de
+            # abrir a espera, é o que impede cada tool-call de um step
+            # `auto_approve` de piscar a run para `awaiting_input` e de volta.
+            if name == "respond_to_permission":
+                decided = _policy_decision(args, kwargs)
+                if decided is not None:
+                    return decided
             self._on_enter()
             try:
                 result = attr(*args, **kwargs)
@@ -95,6 +102,19 @@ class _WatchedPrompts:
             # Registrar o diálogo é acessório: não pode derrubar a pergunta que
             # a pessoa acabou de responder.
             pass
+
+
+def _policy_decision(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    """A resposta de `respond_to_permission(params, *, policy, allow_terminal)`
+    que a política dá sozinha. `None` = só uma pessoa decide."""
+    params = args[0] if args else kwargs.get("params")
+    if not isinstance(params, dict):
+        return None
+    return decide_permission(
+        params,
+        policy=kwargs.get("policy", "ask"),
+        allow_terminal=bool(kwargs.get("allow_terminal", False)),
+    )
 
 
 class AcpSessionRunner:

@@ -174,7 +174,11 @@ class EngineRunSession:
         if kind == "run.awaiting":
             handler = getattr(self._stream, "mark_awaiting", None)
             if callable(handler):
-                handler(bool(event.get("waiting")))
+                since = event.get("since")
+                handler(
+                    bool(event.get("waiting")),
+                    since=float(since) if isinstance(since, (int, float)) else None,
+                )
             return
         if kind == "run.stopped":
             handler = getattr(self._stream, "mark_stopped", None)

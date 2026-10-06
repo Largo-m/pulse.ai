@@ -182,12 +182,20 @@ def _permission(kind: str = "edit") -> dict:
 
 
 def _port_and_bus():
-    from pulse.daemon.adapters import ApiPromptPort
+    """O port do daemon visto como o motor o vê: pelo proxy do runner, que é
+    onde a política decide antes de abrir a espera."""
+    from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
     from pulse.daemon.events import EventBus, PromptCorrelator
 
     bus = EventBus()
     correlator = PromptCorrelator(bus)
-    return ApiPromptPort(correlator), correlator, bus
+    runner = AcpSessionRunner(
+        ["echo"],
+        cwd=str(Path.cwd()),
+        stream=ApiStreamSink(bus),
+        prompt_handler=ApiPromptPort(correlator),
+    )
+    return runner._prompt_handler, correlator, bus
 
 
 def test_a_permission_the_policy_resolves_never_becomes_a_question():
@@ -201,6 +209,23 @@ def test_a_permission_the_policy_resolves_never_becomes_a_question():
         assert answer["outcome"]["optionId"] == expected
         assert correlator.pending() == [], f"{policy} não pode deixar pergunta aberta"
         assert [e for e in bus._history if e["type"] == "prompt.request"] == []
+        # Nem espera: regra decidida não acende "precisa de você", nem por um instante.
+        assert [e for e in bus._history if e["type"] == "run.awaiting"] == [], policy
+
+
+def test_a_policy_decision_never_touches_the_run_status():
+    """Cada tool-call de um step `auto_approve` gravava `awaiting_input` e logo
+    `running` no banco — a run piscava na Home e no histórico."""
+    run = _run_with_step()
+    run_store.save_step(run.id, run.steps[0])
+    port, _correlator, _bus = _port_and_bus()
+    runner = port._on_enter.__self__
+    runner.bind_run(run.id)
+    run_store.update_run(run.id, status="marcador")
+
+    port.respond_to_permission(_permission(), policy="auto_approve")
+
+    assert run_store.load_run(run.id).status == "marcador"
 
 
 def test_the_terminal_veto_is_decided_without_asking_anyone():
@@ -381,3 +406,33 @@ def test_the_proxy_still_hides_nothing_from_whoever_asks():
     except AttributeError:
         return
     raise AssertionError("o proxy inventou um método que o port não tem")
+
+
+def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
+    """Step começou há 10min, trabalhou 2 e está há 8 esperando. Quem anexa
+    agora tem de ver `02:00` congelado — não `10:00`, que conta a espera como
+    trabalho do agente."""
+    from datetime import UTC, datetime, timedelta
+
+    from pulse.client.run_session import EngineRunSession
+    from pulse.tui.adapters.cockpit_sink import CockpitSink
+    from pulse.tui.hydrate import stamp_live_elapsed
+    from unittest.mock import MagicMock
+
+    run = _run_with_step()
+    step = run.steps[0]
+    step.status = RUNNING
+    step.started_at = (datetime.now(UTC) - timedelta(minutes=10)).replace(microsecond=0).isoformat()
+    run_store.save_step(run.id, step)
+
+    state = CockpitState()
+    state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.RUNNING, started_at=0.0)]
+    session = EngineRunSession(
+        stream=CockpitSink(state, on_change=lambda: None),
+        prompt_handler=MagicMock(),
+        client=MagicMock(),
+    )
+    session._dispatch({"type": "run.awaiting", "waiting": True, "since": time.time() - 8 * 60})
+    stamp_live_elapsed(state, run.id)
+
+    assert state.phases[0].elapsed_label() == "02:00"

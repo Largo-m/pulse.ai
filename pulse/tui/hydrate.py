@@ -148,11 +148,9 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
         phase.started_at = now_mono - spent - max(0.0, carried.get(phase.id, 0.0))
         phase.ended_at = None
         # A espera já fechada vem do banco; a que ainda está aberta o replay
-        # acabou de marcar em `awaiting_since`, e ela se fecha sozinha quando a
-        # pessoa responder.
+        # já marcou em `awaiting_since` na hora em que ela começou (o `since`
+        # de `run.awaiting`), e ela se fecha sozinha quando a pessoa responder.
         phase.waiting_total = max(0.0, waiting.get(phase.id, 0.0))
-        if phase.awaiting_since is not None:
-            phase.awaiting_since = now_mono
     state.notify()
 
 

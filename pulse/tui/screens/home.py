@@ -10,10 +10,11 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
+from textual.worker import get_current_worker
 
 from pulse import __version__
 from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
-from pulse.client.active_runs import active_runs, awaiting_runs, waiting_for
+from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
 from pulse.config import global_config_exists
 from pulse.status_labels import status_color, status_icon
 from pulse.store.workflow_defs import list_workflows
@@ -72,15 +73,7 @@ def _alert_panel(runs: list[dict[str, Any]]) -> Text:
     panel = Text()
     panel.append(f"{status_icon('awaiting_input')} {count} {noun} de você", style=tone)
     for run in runs:
-        label = str(run.get("workflow_label") or run.get("workflow_id") or "Run")
-        parts = [label]
-        step = str(run.get("current_step_label") or "").strip()
-        if step:
-            parts.append(step)
-        held = waiting_for(run)
-        if held:
-            parts.append(f"há {held}")
-        panel.append(f"\n   {' · '.join(parts)}", style="#888888")
+        panel.append(f"\n   {run_line(run, tail=held_tail(run))}", style="#888888")
     return panel
 
 
@@ -129,13 +122,18 @@ class HomeScreen(Screen[None]):
         """Pergunta ao daemon o que está esperando — fora do laço de eventos.
 
         `awaiting_runs` é HTTP com timeout de dois segundos: rodá-lo aqui
-        travaria a tela toda vez que o daemon demorasse. `exclusive` garante que
-        um poll lento não acumule outro atrás dele.
+        travaria a tela toda vez que o daemon demorasse. `exclusive` cancela o
+        poll anterior, mas thread não para por cancelamento: quem chega atrasado
+        confere `is_cancelled` em `_fetch_alerts` e descarta o que trouxe.
         """
         self.run_worker(self._fetch_alerts, exclusive=True, thread=True)
 
     def _fetch_alerts(self) -> None:
         runs = awaiting_runs()
+        # Um poll cancelado que voltasse depois do mais novo pintaria a Home com
+        # a resposta velha.
+        if get_current_worker().is_cancelled:
+            return
         try:
             self.app.call_from_thread(self._apply_alerts, runs)
         except Exception:
@@ -199,11 +197,9 @@ class HomeScreen(Screen[None]):
             return
         if self._view == ALERTS:
             for run in self._alerts:
-                held = waiting_for(run)
-                label = str(run.get("workflow_label") or run.get("workflow_id") or "Run")
-                step = str(run.get("current_step_label") or "").strip()
-                parts = [part for part in (label, step, f"há {held}" if held else "") if part]
-                options.add_option(Option(" · ".join(parts), id=f"attach:{run.get('id')}"))
+                options.add_option(
+                    Option(run_line(run, tail=held_tail(run)), id=f"attach:{run.get('id')}")
+                )
             options.add_option(Option("← Voltar", id="back"))
             hint.update("Enter abre a sessão · Esc volta")
             return
@@ -340,8 +336,9 @@ class HomeScreen(Screen[None]):
     def action_quit_app(self) -> None:
         """Sair do CLI não encerra o que está rodando: o motor é outro processo.
 
-        A consulta é feita aqui, na saída, e não de tempos em tempos: a Home não
-        lista run nenhuma — quem oferece voltar para elas é o Histórico.
+        Aqui a pergunta é por **toda** run ativa, e não só pelas que esperam
+        alguém como no painel de avisos: quem sai precisa saber de tudo que
+        continua rodando em background.
         """
         running = active_runs()
         if running:
@@ -350,7 +347,7 @@ class HomeScreen(Screen[None]):
             self.app.exit(
                 message=(
                     f"[pulse] {count} {noun} em background — "
-                    "`pulse` → Histórico para voltar."
+                    "`pulse` → Histórico (ou os avisos da Home) para voltar."
                 )
             )
             return

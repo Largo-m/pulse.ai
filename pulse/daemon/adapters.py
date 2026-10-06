@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.prompts.permission import decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
-
-#: Políticas que `decide_permission` conhece. Qualquer outra coisa é tratada
-#: como `ask` — na dúvida, quem decide é a pessoa.
-_POLICIES = frozenset({"ask", "auto_approve", "deny_writes"})
 
 
 class ApiStreamSink:
@@ -46,8 +43,11 @@ class ApiStreamSink:
         Vai pelo barramento como qualquer evento, então o replay entrega o par
         `true`/`false` a quem anexa depois — e, numa espera em curso, entrega o
         `true` sozinho, que é exatamente o estado da run.
+
+        `since` é a hora de parede em que a espera começou: quem anexa no meio
+        dela congela o relógio ali, e não no instante em que chegou à tela.
         """
-        self._bus.publish({"type": "run.awaiting", "waiting": True})
+        self._bus.publish({"type": "run.awaiting", "waiting": True, "since": time.time()})
 
     def end_user_wait(self) -> None:
         self._bus.publish({"type": "run.awaiting", "waiting": False})
@@ -97,17 +97,11 @@ class ApiPromptPort:
         policy: str,
         allow_terminal: bool = False,
     ) -> dict[str, Any]:
-        # O que a política resolve não vira pergunta. `auto_approve` e
-        # `deny_writes` decidem sem ninguém, e publicá-los mesmo assim fazia a
-        # run depender de haver um cliente ligado: com o cockpit fechado, um
-        # `edit` parava a run para sempre esperando uma resposta que ninguém
-        # tinha de dar — e a Home anunciava "precisa de você" para uma decisão
-        # que já estava tomada.
-        decided = decide_permission(
-            params,
-            policy=policy if policy in _POLICIES else "ask",
-            allow_terminal=allow_terminal,
-        )
+        # Quem decide primeiro é o runner, antes de abrir a espera
+        # ([pulse.acp.session_runner._WatchedPrompts]). Repetir aqui é a rede
+        # do daemon: publicar o que a política resolve faria a run esperar para
+        # sempre por uma resposta que, com o cockpit fechado, ninguém daria.
+        decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
         if decided is not None:
             return decided
 
