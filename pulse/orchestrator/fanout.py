@@ -113,6 +113,7 @@ def expand(
                     agent_id=step.agent_id,
                     prompt_template=step.prompt_template,
                     requires_approval=step.requires_approval,
+                    requires_outcome=step.requires_outcome,
                 ),
                 item,
             )

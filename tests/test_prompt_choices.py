@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from pulse.prompts.approval import (
     answer_needs_description,
     classify_outcome,
@@ -320,3 +322,23 @@ def test_o_pedido_de_texto_chega_a_fila_do_dock_como_um_prompt_proprio():
 
     assert kinds == [PromptKind.SELECT, PromptKind.TEXT], "escolher B abre o campo"
     assert "trocar a seção de cache" in (answers[0] or "")
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        "→ Outro — renomeie o campo cancel_reason para motivo",
+        "→ Outro — não pular a validação, detalhe mais",
+        "→ B) Ajustar (descreva) — pode pular a seção de métricas",
+    ],
+)
+def test_typed_text_never_cancels_or_skips_the_step(answers: str) -> None:
+    from pulse.prompts.approval import CANCEL, SKIP, classify_outcome
+
+    assert classify_outcome(answers) not in {CANCEL, SKIP}
+
+
+def test_picked_skip_option_still_skips() -> None:
+    from pulse.prompts.approval import SKIP, classify_outcome
+
+    assert classify_outcome("→ C) Pular esta fase") == SKIP

@@ -106,3 +106,41 @@ def test_a_dead_process_ends_the_wait_right_away():
     else:  # pragma: no cover - o teste falha antes
         raise AssertionError("processo morto tem de interromper a espera")
     assert time.monotonic() - started < 5.0
+
+
+def test_closing_a_silent_session_does_not_wait_the_whole_timeout(monkeypatch):
+    """Depois de um travamento, `session/close` não pode custar mais 10 minutos."""
+    import pulse.acp.session_runner as session_runner
+
+    monkeypatch.setattr(session_runner, "CLOSE_TIMEOUT_SECONDS", 0.2)
+    runner = _runner(600.0)
+
+    started = time.monotonic()
+    runner.close_session()
+
+    assert time.monotonic() - started < 2.0
+    assert runner._session_id is None
+
+
+def test_retry_after_a_timeout_restarts_a_process_that_is_alive_but_mute():
+    """`poll()` diz que está de pé; o prazo estourado diz que não responde."""
+
+    class _Alive:
+        def poll(self) -> None:
+            return None
+
+    runner = _runner(0.2)
+    runner._process = _Alive()  # type: ignore[assignment]
+    try:
+        runner._request("session/prompt", {})
+    except TimeoutError:
+        pass
+
+    restarted: list[str] = []
+    runner.close = lambda: restarted.append("close")  # type: ignore[method-assign]
+    runner.start = lambda: restarted.append("start")  # type: ignore[method-assign]
+    runner.initialize = lambda: restarted.append("initialize")  # type: ignore[method-assign]
+    runner.authenticate = lambda: restarted.append("authenticate")  # type: ignore[method-assign]
+
+    assert runner.ensure_process() is True
+    assert restarted == ["close", "start", "initialize", "authenticate"]

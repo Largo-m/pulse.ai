@@ -312,3 +312,44 @@ def test_custom_agent_is_never_swapped_for_a_runtime(monkeypatch, tmp_path: Path
     assert resolved.agent_name == "local"
     assert resolved.agent_binary == "my-agent"
     assert resolved.sources["agent"] == "project.default"
+
+
+def test_a_new_project_inherits_the_machine_choice(monkeypatch, tmp_path: Path):
+    """O onboarding grava a máquina e cria o projeto logo depois: o projeto
+    recém-criado não pode trocar o runtime que a pessoa acabou de escolher."""
+    machine = _global(default_agent="claude", model="opus[1m]", permission_policy="auto_approve")
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: machine)
+    init_project_config(tmp_path)
+
+    resolved = resolve_config(tmp_path)
+
+    # O nome final depende do binário instalado (`runtime.fallback`); o que
+    # importa aqui é que a escolha não veio do projeto.
+    assert resolved.sources["agent"] != "project.default"
+    assert resolved.model == "opus[1m]"
+    assert resolved.permission_policy == "auto_approve"
+
+
+def test_the_default_agent_follows_the_machine_policy(monkeypatch, tmp_path: Path):
+    """O `ask` fixo no agente `default` ganhava da máquina: o onboarding não mudava nada."""
+    machine = _global(permission_policy="auto_approve")
+    monkeypatch.setattr(resolved_module, "load_global_config", lambda: machine)
+    init_project_config(tmp_path)
+
+    resolved = resolve_config(tmp_path, pulse_agent="default")
+
+    assert resolved.permission_policy == "auto_approve"
+    assert resolved.sources["permission_policy"] == "global"
+
+
+def test_an_old_database_stops_pinning_ask_on_the_default_agent(tmp_path: Path):
+    connection = connect(default_db_path())
+    connection.execute("UPDATE agent_defs SET permission_policy = 'ask' WHERE id = 'default'")
+    connection.commit()
+    connection.close()
+
+    connection = connect(default_db_path())
+    row = connection.execute("SELECT permission_policy FROM agent_defs WHERE id = 'default'").fetchone()
+    connection.close()
+
+    assert row["permission_policy"] == ""

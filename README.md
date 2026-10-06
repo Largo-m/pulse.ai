@@ -32,7 +32,7 @@ comando ACP, checagens de ambiente e como aplicar modo e modelo:
 | Runtime | Binário | Comando ACP | Autenticação |
 | --- | --- | --- | --- |
 | `cursor` | `agent` | `agent acp` | `agent login` ou `CURSOR_API_KEY` |
-| `claude` | `claude` | `npx -y @agentclientprotocol/claude-agent-acp` | `claude /login` ou `ANTHROPIC_API_KEY` |
+| `claude` | `claude` | `npx -y @agentclientprotocol/claude-agent-acp@0.86.0` | `claude /login` ou `ANTHROPIC_API_KEY` |
 
 O Claude Code não fala ACP nativamente: o Pulse usa o adapter oficial distribuído
 via npm, então o **Node.js 18+ (`npx`) precisa estar no PATH**. O adapter herda o
@@ -79,8 +79,9 @@ Cada projeto tem um `project_id` no SQLite da máquina. A resolução segue:
 defaults do código → machine (SQLite) → project_* (mesmo SQLite, por root_path)
 ```
 
-`pulse init` e `pulse config init` cadastram o projeto com defaults: agent
-`cursor`, model `claude-sonnet-4-6`, `permission_policy` `deny_writes`.
+`pulse init` e `pulse config init` cadastram o projeto sem agent, model nem
+`permission_policy`: vazio herda da máquina, que é onde o onboarding grava a
+escolha.
 
 Campos por projeto: agent, model, permission_policy, workspace, use_worktree e
 `workflows.*` (override de agent/model por id de workflow — não definem

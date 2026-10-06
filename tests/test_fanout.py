@@ -358,3 +358,31 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
     assert len(runner.prompts) == 3, "T3 nem chegou a abrir sessão"
     # O painel mostra a task travada como bloqueada, não como falha.
     assert runner._stream.statuses[-1]["blocked_ids"] == ["run:T2"]
+
+
+def test_children_inherit_requires_outcome(tmp_path: Path):
+    from pulse.orchestrator.fanout import expand
+    from pulse.store.workflow_defs import StepDef
+
+    step = StepDef(
+        workflow_id="demo",
+        step_id="impl",
+        position=2,
+        label="Implementar",
+        agent_id="implement",
+        prompt_template="",
+        requires_approval=False,
+        fan_out=True,
+        requires_outcome=False,
+    )
+    run = run_store.create_run(
+        run_id="run-fan",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="x",
+        steps=[],
+    )
+
+    units = expand(run, step, _block("- T1: primeira", "- T2: segunda"))
+
+    assert [child.requires_outcome for child, _item in units] == [False, False]

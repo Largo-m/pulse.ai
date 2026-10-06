@@ -7,6 +7,8 @@ Adicionar um agente novo = um módulo aqui + uma entrada em `RUNTIMES`.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
 from pulse.runtimes.claude import ClaudeRuntime
 from pulse.runtimes.cursor import CursorRuntime
@@ -43,14 +45,26 @@ def find_runtime(name: str | None) -> AgentRuntime | None:
 
 def runtime_for_command(command: list[str] | tuple[str, ...]) -> AgentRuntime:
     """Runtime cujo comando ACP bate com `command` (para sessões já configuradas)."""
-    parts = [str(item) for item in command]
+    parts = [_without_version(str(item)) for item in command]
     for runtime in RUNTIMES.values():
-        if runtime.acp_command == parts:
+        if [_without_version(item) for item in runtime.acp_command] == parts:
             return runtime
+    # Nome do executável, e não substring do caminho: `agent` (Cursor) está
+    # dentro de `claude-agent-acp`.
+    executable = Path(parts[0]).name if parts else ""
     for runtime in RUNTIMES.values():
-        if parts and runtime.binary in parts[0]:
+        if executable == runtime.binary:
             return runtime
     return RUNTIMES[DEFAULT_RUNTIME_ID]
+
+
+def _without_version(part: str) -> str:
+    """`@scope/pacote@1.2.3` e `@scope/pacote` são o mesmo comando ACP.
+
+    Sem isto, a config gravada antes do pin de versão deixaria de casar.
+    """
+    name, at, _version = part.rpartition("@")
+    return name if at and name else part
 
 
 __all__ = [

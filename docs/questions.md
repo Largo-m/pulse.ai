@@ -174,9 +174,13 @@ Não são questionário, mas usam o mesmo handler:
 - `session/request_permission` / `cursor/request_permission` — política `ask` / `auto_approve` / `deny_writes`
 - `cursor/create_plan` — confirm “Aprovar plano?”
 
-`deny_writes` recusa write/edit **sem exceção por caminho**: o Pulse não sabe
-qual pasta é “dele”. Step que precisa escrever é step com `ask` ou
-`auto_approve`. Shell sem capability de terminal é recusado.
+`deny_writes` aprova sozinho só o que não mexe em nada (`read`, `search`,
+`fetch`, `think`) e recusa `edit`/`delete`/`move` **sem exceção por caminho**: o
+Pulse não sabe qual pasta é “dele”. `execute` (o Bash do Claude) e kind
+desconhecido viram pergunta, porque só quem lê o comando sabe se ele escreve.
+Step que precisa escrever é step com `ask` ou `auto_approve`. Shell sem
+capability de terminal é recusado. Aprovar sozinho escolhe `allow_once`, nunca
+`allow_always`: a escolha não vaza para os steps seguintes da sessão.
 
 ## 7. O que **não** é persistido
 

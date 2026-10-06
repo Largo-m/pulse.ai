@@ -7,6 +7,9 @@ from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
 
 #: O Claude Code não fala ACP nativamente; o adapter oficial vem por npm.
 CLAUDE_ACP_PACKAGE = "@agentclientprotocol/claude-agent-acp"
+#: Versão testada. O pacote é 0.x e publica várias por dia: sem pin, cada máquina
+#: rodaria um adapter diferente. Subir de propósito, depois de testar.
+CLAUDE_ACP_VERSION = "0.86.0"
 
 MODEL_CONFIG_ID = "model"
 
@@ -25,7 +28,7 @@ class ClaudeRuntime(AgentRuntime):
     id = "claude"
     label = "Claude Code"
     binary = "claude"
-    acp_override = ("npx", "-y", CLAUDE_ACP_PACKAGE)
+    acp_override = ("npx", "-y", f"{CLAUDE_ACP_PACKAGE}@{CLAUDE_ACP_VERSION}")
     default_models = ("default", "opus[1m]", "claude-fable-5-1", "sonnet", "haiku")
     required_binaries = ("npx",)
     auth_env_var = "ANTHROPIC_API_KEY"

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -20,6 +21,9 @@ from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
+
+TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
+
 
 class StartRunBody(BaseModel):
     prompt: str = ""
@@ -95,6 +99,10 @@ def _history_to_dict(item: Any) -> dict[str, Any]:
 def create_app(manager: RunManager | None = None) -> FastAPI:
     runs = manager or RunManager()
     app = FastAPI(title="Pulse Engine", version=__version__)
+    # Escutar só em 127.0.0.1 não basta: uma página com DNS rebinding chega aqui
+    # com `Host: atacante.exemplo`. Só aceitar os nomes que o próprio cliente usa
+    # fecha essa porta (`pulse` é o host fictício das chamadas pelo socket UDS).
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(TRUSTED_HOSTS))
     app.state.runs = runs
 
     @app.get("/api/status")

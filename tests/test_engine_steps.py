@@ -1337,3 +1337,61 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     assert datetime.fromisoformat(step.ended_at) - datetime.fromisoformat(
         stamped_before_menu[0]
     ) == timedelta(minutes=10)
+
+
+def test_stopping_while_the_blocked_menu_is_open_stops_the_run(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Parar com o menu aberto cancela a pergunta, que volta como `None`.
+
+    Isso é parada do usuário: a run fica `stopped` e o step volta a pendente
+    para quem retomar, em vez de virar `blocked`.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
+    runner = _Runner([_blocked("falta a credencial do banco", needs="user")])
+
+    def stop_while_waiting(prompt, choices, *, title=""):
+        runner.control.stop()
+        return None
+
+    runner._prompt_handler.select_choice = stop_while_waiting
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == RUN_STOPPED
+    record = run_store.list_runs(tmp_path)[0]
+    assert record.status == "stopped"
+    assert record.step("one").status == "pending"
+
+
+def test_stopping_while_typing_guidance_does_not_reopen_the_menu(
+    wired, monkeypatch, tmp_path: Path
+):
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
+    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    runner._prompt_handler.choice = "guidance"
+
+    def stop_while_typing(prompt, *, title=""):
+        runner.control.stop()
+        return None
+
+    runner._prompt_handler.ask_text = stop_while_typing
+    _install(monkeypatch, runner)
+
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=runner._stream,
+        prompt_handler=runner._prompt_handler,
+        render_header=False,
+    )
+
+    assert code == RUN_STOPPED
+    assert len(runner._prompt_handler.asked) == 1, "o menu não volta depois de parar"

@@ -613,7 +613,7 @@ ACP puro; cada backend sobrescreve só o que diverge.
 
 | | Cursor | Claude Code |
 | --- | --- | --- |
-| Comando | `agent acp` (ACP nativo) | `npx -y @agentclientprotocol/claude-agent-acp` |
+| Comando | `agent acp` (ACP nativo) | `npx -y @agentclientprotocol/claude-agent-acp@0.86.0` |
 | Auth | `authenticate` com `cursor_login` | `authMethods` vazio — já autenticado pelo CLI |
 | Modelo | `session/set_model` | `session/set_config_option` |
 | Modos | `agent` para as duas fases | `default`/`acceptEdits` — **nunca** `plan` |

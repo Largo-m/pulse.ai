@@ -11,9 +11,8 @@ from pulse.config.agents import (
     default_global_agents,
     default_global_workflows,
 )
-from pulse.config.paths import GLOBAL_DB_FILE
 from pulse.store.codec import dump_list, load_list
-from pulse.store.db import connect
+from pulse.store.db import connect, default_db_path
 
 PERMISSION_POLICIES = ("ask", "auto_approve", "deny_writes")
 
@@ -92,7 +91,7 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
 
 
 def save_global_config(config: GlobalConfig, path: Path | None = None) -> Path:
-    db_path = path or GLOBAL_DB_FILE
+    db_path = path or default_db_path()
     connection = connect(db_path)
     try:
         connection.execute("DELETE FROM machine_workflows")
@@ -160,7 +159,7 @@ def update_global_defaults(
     if agent is not None:
         updates["default_agent"] = agent
     if not updates:
-        return path or GLOBAL_DB_FILE
+        return path or default_db_path()
     return save_global_config(replace(config, **updates), path)
 
 

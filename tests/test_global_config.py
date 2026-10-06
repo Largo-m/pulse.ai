@@ -85,3 +85,22 @@ def test_save_global_config_creates_parent(tmp_path: Path):
     )
     save_global_config(config, config_path)
     assert config_path.is_file()
+
+
+def test_saving_honours_pulse_db_like_loading_does(monkeypatch, tmp_path):
+    """Gravar num arquivo e ler de outro prendia o onboarding em loop."""
+    from pulse.config.global_config import load_global_config, mark_onboarding_complete
+
+    monkeypatch.setenv("PULSE_DB", str(tmp_path / "outro.db"))
+    mark_onboarding_complete(
+        agent_binary="agent",
+        acp_command=["agent", "acp"],
+        auth_method="cursor_login",
+        workspace_dir=tmp_path,
+        model="Auto",
+        permission_policy="ask",
+        acp_test_passed=True,
+    )
+
+    assert load_global_config() is not None
+    assert (tmp_path / "outro.db").exists()

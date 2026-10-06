@@ -147,10 +147,10 @@ def parse_outcome(text: str) -> Outcome:
         }.get(key, key)
         fields.setdefault(key, _clean(match.group(2)))
 
-    raw_status = fields.get("status", "").lower()
+    raw_status = _first_word(fields.get("status", ""))
     reason = fields.get("reason", "")[:REASON_MAX_CHARS]
-    needs = fields.get("needs", "").split()[0].lower().strip(".,;") if fields.get("needs") else ""
-    nxt = fields.get("next", "").split()[0].lower().strip(".,;") if fields.get("next") else ""
+    needs = _first_word(fields.get("needs", ""))
+    nxt = _first_word(fields.get("next", ""))
 
     if raw_status in _DONE_WORDS:
         return Outcome(status=DONE, next=nxt)
@@ -169,8 +169,10 @@ def parse_outcome(text: str) -> Outcome:
 
 
 def _clean(value: str) -> str:
-    """Tira o comentário de fim de linha que o exemplo do protocolo carrega."""
-    text = value.strip()
-    if "#" in text:
-        text = text.split("#", 1)[0]
-    return text.strip().strip("`").strip()
+    return value.strip().strip("`").strip()
+
+
+def _first_word(value: str) -> str:
+    """`done.`, `**done**` e `done — entreguei` são o mesmo `done`."""
+    words = value.split()
+    return words[0].lower().strip(".,;:*_`") if words else ""

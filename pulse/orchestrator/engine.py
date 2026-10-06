@@ -492,6 +492,15 @@ def _run_step(
             choice, guidance = _offer_blocked(
                 runner, f"{record.label} está bloqueado", reason
             )
+        else:
+            choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
+        # Parar com o menu aberto cancela a pergunta e ela volta como "stop".
+        # Isso é a run parada pelo usuário, não um bloqueio nem uma falha.
+        if _control(runner).interrupted:
+            _release_step(runner, run=run, record=record, label=record.label)
+            return RUN_STOPPED, FAILED
+
+        if outcome == BLOCKED:
             if choice == "skip":
                 # Pulo explícito, e não o `done` de antes: o step não entregou,
                 # e quem vier depois — no painel, no histórico ou no resumo do
@@ -511,11 +520,9 @@ def _run_step(
                 _close_after_menu(run, record)
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
                 return RUN_BLOCKED, BLOCKED
-        else:
-            choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
-            if choice != "retry":
-                _close_after_menu(run, record)
-                return 1, FAILED
+        elif choice != "retry":
+            _close_after_menu(run, record)
+            return 1, FAILED
         _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
@@ -912,6 +919,8 @@ def _choose(
         guidance = _ask_guidance(runner, title)
         if guidance:
             return "retry", guidance
+        if _control(runner).interrupted:
+            return "stop", ""
         # desistiu de escrever: volta a perguntar em vez de parar por engano
         return _choose(runner, title, reason, choices)
     if choice in {value for _label, value in choices}:

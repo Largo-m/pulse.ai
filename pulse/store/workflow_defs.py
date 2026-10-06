@@ -22,7 +22,7 @@ class AgentDef:
     #: Vazio = cai no padrão da máquina. Ver `pulse.config.resolved`.
     runtime: str = ""
     model: str = ""
-    permission_policy: str = "ask"
+    permission_policy: str = ""
     instructions: str = ""
 
 
@@ -68,7 +68,7 @@ def _agent(row: Any) -> AgentDef:
         label=str(row["label"]),
         runtime=str(row["runtime"] or ""),
         model=str(row["model"] or ""),
-        permission_policy=str(row["permission_policy"] or "ask"),
+        permission_policy=str(row["permission_policy"] or ""),
         instructions=str(row["instructions"] or ""),
     )
 

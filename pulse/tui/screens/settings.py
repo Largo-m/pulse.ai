@@ -288,13 +288,17 @@ class SettingsScreen(Screen[None]):
         return f"{title} (global)" if self._target == "global" else title
 
     def _effective_global_fields(self) -> tuple[str, str, str]:
+        """O que vale hoje: projeto, senão máquina, senão o padrão do Pulse."""
+        from pulse.config import load_global_config
+
         project = load_project_config(self._cwd)
-        if project is None:
-            return "cursor", "Auto", "ask"
+        machine = load_global_config()
         return (
-            project.default_agent or "cursor",
-            project.model or "Auto",
-            project.permission_policy or "ask",
+            (project and project.default_agent) or (machine and machine.default_agent) or "cursor",
+            (project and project.model) or (machine and machine.model) or "Auto",
+            (project and project.permission_policy)
+            or (machine and machine.permission_policy)
+            or "ask",
         )
 
     def _save_global(self, *, field: str, value: str) -> None:

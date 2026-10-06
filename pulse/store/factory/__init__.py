@@ -254,7 +254,8 @@ def load_agents() -> tuple[FactoryAgent, ...]:
             FactoryAgent(
                 id=agent_id,
                 label=label,
-                permission_policy=meta.get("permission_policy", "ask"),
+                # Sem política declarada: vazio, que é "herde da máquina/projeto".
+                permission_policy=meta.get("permission_policy", ""),
                 instructions=body.strip(),
                 prompt_template=load_phase(agent_id),
             )
@@ -275,7 +276,9 @@ def seed(connection: Any) -> None:
     ]
     # O agente genérico do workflow `default` não tem playbook nem fase: ele é o
     # escape — o que o usuário pedir vai cru para o runtime configurado.
-    agents.append(("default", "Agente", "ask", ""))
+    # Política vazia: o escape segue a política que a pessoa escolheu para a
+    # máquina ou o projeto, em vez de um `ask` que nada consegue sobrescrever.
+    agents.append(("default", "Agente", "", ""))
     connection.executemany(
         """
         INSERT OR IGNORE INTO agent_defs (id, label, runtime, model, permission_policy, instructions)
@@ -324,6 +327,18 @@ def seed(connection: Any) -> None:
             for workflow in WORKFLOWS
             for position, step in enumerate(workflow.steps, start=1)
         ],
+    )
+
+
+def inherit_policy_on_default_agent(connection: Any) -> None:
+    """Bancos semeados com `ask` no agente `default` passam a herdar a política.
+
+    O `ask` fixo ganhava da máquina e do projeto em `_resolve_pulse_agent`, então
+    escolher a política no onboarding não mudava nada. Idempotente: depois da
+    primeira abertura nenhuma linha casa.
+    """
+    connection.execute(
+        "UPDATE agent_defs SET permission_policy = '' WHERE id = 'default' AND permission_policy = 'ask'"
     )
 
 

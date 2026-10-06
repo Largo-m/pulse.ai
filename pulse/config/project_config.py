@@ -161,7 +161,9 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
               use_worktree
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (project_id, "claude-sonnet-4-6", "deny_writes", None, "cursor", 0),
+            # Vazio = herda da máquina. O onboarding grava a escolha do usuário
+            # lá e chama isto logo depois: um valor concreto aqui ganharia dela.
+            (project_id, None, None, None, None, 0),
         )
         for workflow_id, defaults in DEFAULT_PROJECT_WORKFLOWS.items():
             connection.execute(

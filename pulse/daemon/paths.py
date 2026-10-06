@@ -42,7 +42,16 @@ def read_daemon_meta() -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
-def clear_daemon_meta() -> None:
+def clear_daemon_meta(pid: int | None = None) -> None:
+    """Apaga meta, pid e socket. Com `pid`, só se o meta ainda for desse processo.
+
+    Um daemon que perdeu a corrida, ou um `stop` atrasado, não pode apagar os
+    arquivos de outro daemon que está de pé.
+    """
+    if pid is not None:
+        meta = read_daemon_meta()
+        if meta is not None and meta.get("pid") != pid:
+            return
     for path in (DAEMON_META_FILE, DAEMON_PID_FILE):
         try:
             path.unlink(missing_ok=True)

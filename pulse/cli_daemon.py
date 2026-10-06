@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import os
-import signal
-import time
 from pathlib import Path
 
 from pulse.client.active_runs import active_runs, describe
 from pulse.client.engine_client import EngineClient
-from pulse.daemon.paths import clear_daemon_meta, read_daemon_meta
-from pulse.daemon.server import is_daemon_alive
+from pulse.daemon.server import is_daemon_alive, stop_daemon
 
 
 def run_daemon_command(action: str) -> int:
@@ -70,20 +66,8 @@ def _stop() -> int:
     # Parar o engine leva junto o que ele está rodando. Enquanto a run era
     # atrelada ao cockpit isso era óbvio; agora que ela sobrevive à TUI, não é.
     _warn_about_live_runs()
-    meta = read_daemon_meta() or {}
-    pid = meta.get("pid")
-    if isinstance(pid, int):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
-            time.sleep(0.1)
-    clear_daemon_meta()
+    if not stop_daemon():
+        print("[pulse] pulse-engine não saiu depois do SIGTERM; continua rodando")
+        return 1
     print("pulse-engine parado")
     return 0

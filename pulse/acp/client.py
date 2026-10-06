@@ -3,14 +3,12 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
-import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
-from pulse.acp.logger import AcpLogger
 from pulse.acp.models import extract_model_labels
 
 
@@ -29,7 +27,6 @@ class AcpClient:
         command: list[str],
         *,
         timeout_seconds: float = 60.0,
-        run_id: str | None = None,
     ) -> None:
         self._command = command
         self._timeout_seconds = timeout_seconds
@@ -39,10 +36,8 @@ class AcpClient:
         self._reader: threading.Thread | None = None
         self._next_id = 1
         self._session_updates: list[dict[str, Any]] = []
-        self._logger = AcpLogger(run_id or str(uuid.uuid4()))
 
     def start(self) -> None:
-        self._logger.log_event("process_start", {"command": self._command})
         self._process = subprocess.Popen(
             self._command,
             stdin=subprocess.PIPE,
@@ -55,7 +50,6 @@ class AcpClient:
         self._reader.start()
 
     def close(self) -> None:
-        self._logger.log_event("process_close")
         if self._process is None:
             return
         if self._process.stdin:
@@ -80,11 +74,9 @@ class AcpClient:
                 message = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            self._logger.log_received(message)
             if "method" in message and "id" not in message:
                 if message.get("method") == "session/update":
                     params = message.get("params", {})
-                    self._logger.log_update(params)
                     self._session_updates.append(params)
                 continue
             message_id = message.get("id")
@@ -95,7 +87,6 @@ class AcpClient:
     def _send(self, payload: dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
             raise RuntimeError("Processo ACP não iniciado")
-        self._logger.log_sent(payload)
         self._process.stdin.write(json.dumps(payload) + "\n")
         self._process.stdin.flush()
 
@@ -134,11 +125,7 @@ class AcpClient:
         return result
 
     def new_session(self, cwd: str) -> dict[str, Any]:
-        result = self._request("session/new", {"cwd": cwd, "mcpServers": []})
-        session_id = result.get("sessionId")
-        if session_id:
-            self._logger.set_session_id(str(session_id))
-        return result
+        return self._request("session/new", {"cwd": cwd, "mcpServers": []})
 
     def prompt(self, session_id: str, text: str) -> dict[str, Any]:
         return self._request(

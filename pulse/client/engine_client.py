@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import time
@@ -17,7 +16,6 @@ from pulse.daemon.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
-    clear_daemon_meta,
     ensure_global_dir,
     read_daemon_meta,
 )
@@ -151,22 +149,12 @@ class EngineClient:
             return False
 
     def _stop_daemon(self) -> None:
-        meta = read_daemon_meta() or {}
-        pid = meta.get("pid")
+        # Import tardio: o servidor puxa uvicorn e a API inteira, e o cliente
+        # só precisa disto quando troca um daemon de protocolo antigo.
+        from pulse.daemon.server import stop_daemon
+
         self.close()
-        if isinstance(pid, int):
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
-                pass
-            deadline = time.monotonic() + 5
-            while time.monotonic() < deadline:
-                try:
-                    os.kill(pid, 0)
-                except OSError:
-                    break
-                time.sleep(0.1)
-        clear_daemon_meta()
+        stop_daemon()
 
     def _start_daemon(self) -> None:
         cmd = [sys.executable, "-m", "pulse.daemon", "serve"]

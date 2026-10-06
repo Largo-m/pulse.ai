@@ -15,7 +15,7 @@ from pulse.runcontrol import RUN_STOPPED
 
 def test_status_and_workflows():
     app = create_app(RunManager())
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     status = client.get("/api/status")
     assert status.status_code == 200
     assert status.json()["ok"] is True
@@ -39,7 +39,7 @@ def test_status_and_workflows():
 
 def test_doctor_endpoint():
     app = create_app(RunManager())
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     response = client.get("/api/doctor")
     assert response.status_code == 200
     assert "checks" in response.json()
@@ -48,7 +48,7 @@ def test_doctor_endpoint():
 def test_start_run_and_prompt_correlator(monkeypatch):
     manager = RunManager()
     app = create_app(manager)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     captured: dict[str, object] = {}
 
     def fake_run_workflow(**kwargs):
@@ -121,7 +121,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
 
 def test_unknown_workflow_returns_404():
     app = create_app(RunManager())
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
 
@@ -130,7 +130,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
     """Retomar é uma run nova sobre o mesmo registro — o flow recebe o id."""
     manager = RunManager()
     app = create_app(manager)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     seen: dict[str, object] = {}
     entered = threading.Event()
 
@@ -154,7 +154,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
 def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
     manager = RunManager()
     app = create_app(manager)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1")
     entered = threading.Event()
 
     def fake_run_workflow(**kwargs):
@@ -188,7 +188,7 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
 
 
 def test_control_endpoints_404_for_unknown_run():
-    client = TestClient(create_app(RunManager()))
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
     assert client.post("/api/runs/nao-existe/cancel").status_code == 404
 
 
@@ -203,7 +203,7 @@ def test_history_delete_endpoint(tmp_path: Path):
         user_prompt="algo",
         steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
     )
-    client = TestClient(create_app(RunManager()))
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
 
     removed = client.delete("/api/history/run-api", params={"workspace": str(tmp_path)})
     assert removed.status_code == 200
@@ -216,7 +216,7 @@ def test_history_delete_endpoint(tmp_path: Path):
 def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
     """`RunState.id` é o id do SQLite — sem isso "reabrir a run X" é chute."""
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     seen: dict[str, object] = {}
     entered = threading.Event()
 
@@ -233,7 +233,7 @@ def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
 
 def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     asking = threading.Event()
     release = threading.Event()
 
@@ -289,7 +289,7 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
     nenhuma: o cliente respondia calado pela política e o log voltava a andar.
     """
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     decided: list = []
     done = threading.Event()
 
@@ -333,7 +333,7 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
     thread ficava presa no `wait` da pergunta e a run nunca encerrava.
     """
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     asked = threading.Event()
     answer: list[object] = []
 
@@ -369,7 +369,7 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
 def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
     """Mesmo id, mesma run: duas threads sobre ela é que não dá."""
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     entered = threading.Event()
     release = threading.Event()
 
@@ -394,7 +394,7 @@ def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
     from pulse.daemon.protocol import REPLAY_END
 
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     streamed = threading.Event()
     release = threading.Event()
 
@@ -434,7 +434,7 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
     from pulse.daemon import runs as runs_module
 
     manager = RunManager()
-    client = TestClient(create_app(manager))
+    client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     monkeypatch.setattr("pulse.daemon.runs.run_workflow", lambda **kwargs: 0)
 
     first = client.post("/api/workflows/default/runs", json={"prompt": "a"}).json()["id"]
@@ -449,3 +449,10 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
     manager.get(first).finished_at -= runs_module.FINISHED_TTL + 1
     client.post("/api/workflows/default/runs", json={"prompt": "b"})
     assert manager.get(first) is None
+
+
+def test_foreign_host_is_rejected() -> None:
+    # DNS rebinding: o navegador manda o nome do atacante no `Host`.
+    client = TestClient(create_app(), base_url="http://attacker.example:8787")
+    response = client.post("/api/workflows/feature/runs", json={"prompt": "x", "workspace": "/"})
+    assert response.status_code == 400

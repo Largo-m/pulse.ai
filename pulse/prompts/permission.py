@@ -8,6 +8,10 @@ PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
 
 _PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"})
 
+#: Kinds do ACP que não mexem em nada (agentclientprotocol.com/protocol/tool-calls).
+_READ_ONLY_KINDS = frozenset({"read", "search", "fetch", "think"})
+_WRITE_KINDS = frozenset({"edit", "delete", "move"})
+
 _PERMISSION_KIND_LABELS = {
     "allow_once": "Permitir esta vez",
     "allow_always": "Sempre permitir",
@@ -67,18 +71,23 @@ def permission_cancelled() -> dict[str, Any]:
 
 
 def pick_permission_option(options: list[Any], *, prefer: str) -> str | None:
+    """A primeira opção do lado pedido, com `*_once` na frente de `*_always`.
+
+    `allow_always` faz o agente lembrar da escolha (ACP) e não perguntar mais —
+    isto é, a política de um step vazaria para os steps seguintes da sessão.
+    """
+    matches: list[tuple[str, str]] = []
     for option in options:
         if not isinstance(option, dict):
             continue
         kind = str(option.get("kind", ""))
         option_id = str(option.get("optionId", ""))
-        if not option_id:
-            continue
-        if prefer == "allow" and kind.startswith("allow"):
+        if option_id and kind.startswith(prefer):
+            matches.append((kind, option_id))
+    for kind, option_id in matches:
+        if kind.endswith("_once"):
             return option_id
-        if prefer == "reject" and kind.startswith("reject"):
-            return option_id
-    return None
+    return matches[0][1] if matches else None
 
 
 def permission_kind(params: dict[str, Any]) -> str:
@@ -110,7 +119,8 @@ def decide_permission(
     o daemon publicava a pergunta, não havia tela para respondê-la, e a run
     ficava "precisando de você" para decidir o que a política já tinha decidido.
 
-    Só `ask` devolve `None`, que é quando perguntar é o ponto.
+    `None` = perguntar: sempre em `ask`, e em `deny_writes` quando o kind não
+    diz se escreve (`execute`, desconhecido).
     """
     options = params.get("options")
     if not isinstance(options, list):
@@ -131,9 +141,13 @@ def decide_permission(
     if policy == "deny_writes":
         # Sem exceção por caminho: o Pulse não sabe qual pasta é "dele".
         # Step que precisa escrever é step com `ask` ou `auto_approve`.
-        if "write" in kind or "edit" in kind:
+        if kind in _READ_ONLY_KINDS:
+            return chosen("allow", "allow-once")
+        if kind in _WRITE_KINDS or "write" in kind:
             return chosen("reject", "reject-once")
-        return chosen("allow", "allow-once")
+        # `execute` (o Bash do Claude) e kind desconhecido podem escrever ou
+        # não; só quem lê o comando sabe. Aprovar sozinho furava a política.
+        return None
 
     return None
 

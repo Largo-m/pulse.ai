@@ -52,7 +52,7 @@ def test_registry_exposes_both_runtimes():
 def test_claude_runs_through_the_npm_adapter():
     command = get_runtime("claude").acp_command
     assert command[0] == "npx"
-    assert command[-1] == "@agentclientprotocol/claude-agent-acp"
+    assert command[-1].startswith("@agentclientprotocol/claude-agent-acp@")
 
 
 def test_cursor_speaks_acp_natively():
@@ -245,3 +245,14 @@ def test_no_fallback_when_nothing_is_available(monkeypatch):
 
     _only_available(monkeypatch, "nenhum")
     assert resolved_module._available_runtime_fallback("cursor", None, None) is None
+
+
+def test_runtime_for_command_ignores_the_pinned_version():
+    """Config gravada antes do pin continua sendo do Claude."""
+    assert runtime_for_command(["npx", "-y", "@agentclientprotocol/claude-agent-acp"]).id == "claude"
+
+
+def test_runtime_for_command_matches_the_executable_not_a_substring():
+    """`agent` (Cursor) está dentro de `claude-agent-acp`: substring errava o runtime."""
+    assert runtime_for_command(["/usr/local/bin/agent", "acp"]).id == "cursor"
+    assert runtime_for_command(["/usr/local/bin/claude"]).id == "claude"

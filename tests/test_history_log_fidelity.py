@@ -399,7 +399,7 @@ def test_dialogo_que_nao_deu_para_montar_deixa_rastro(tmp_path: Path, monkeypatc
     def _broken(*_args):
         raise ValueError("payload estranho")
 
-    monkeypatch.setattr("pulse.acp.session_runner.build_prompt_qa", _broken)
+    monkeypatch.setattr("pulse.acp.run_events.build_prompt_qa", _broken)
 
     class _Port:
         def ask_text(self, prompt, *, title=""):

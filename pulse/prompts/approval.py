@@ -49,16 +49,23 @@ def picked_answers(answers_text: str) -> list[str]:
     return result
 
 
-def is_positive(answers_text: str) -> bool:
-    picked = picked_answers(answers_text)
-    if not picked:
-        return False
-    for raw in picked:
-        # Texto livre é orientação, não escolha: "revise o fluxo de aprovação"
-        # não pode aprovar o step só porque contém "aprov".
+def chosen_options(answers_text: str) -> list[str]:
+    """O que o usuário escolheu, sem o que ele digitou.
+
+    Texto livre ("Outro — …") e o detalhe de uma opção (`B) Ajustar — …`) são
+    orientação para o agente: "pode pular a seção de métricas" não pode pular o
+    step, nem "revise o fluxo de aprovação" aprová-lo.
+    """
+    chosen: list[str] = []
+    for raw in picked_answers(answers_text):
         if is_free_text_answer(raw):
             continue
-        answer = raw.lower()
+        chosen.append(raw.split(" — ", 1)[0].lower())
+    return chosen
+
+
+def is_positive(answers_text: str) -> bool:
+    for answer in chosen_options(answers_text):
         if any(token in answer for token in NEGATIVE_WORDS):
             continue
         if any(token in answer for token in APPROVE_WORDS):
@@ -67,9 +74,9 @@ def is_positive(answers_text: str) -> bool:
 
 
 def classify_outcome(answers_text: str) -> str:
-    picked = [answer.lower() for answer in picked_answers(answers_text)]
-    if not picked:
+    if not picked_answers(answers_text):
         return UNKNOWN
+    picked = chosen_options(answers_text)
     if any(word in answer for answer in picked for word in CANCEL_WORDS):
         return CANCEL
     if any(word in answer for answer in picked for word in SKIP_WORDS):

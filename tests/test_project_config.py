@@ -127,9 +127,10 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert path == tmp_path.resolve()
     config = load_project_config(tmp_path)
     assert config is not None
-    assert config.default_agent == "cursor"
-    assert config.model == "claude-sonnet-4-6"
-    assert config.permission_policy == "deny_writes"
+    # Nada fixo: projeto novo herda runtime, model e política da máquina.
+    assert config.default_agent is None
+    assert config.model is None
+    assert config.permission_policy is None
     # Nenhum workflow nasce aqui: quem define workflow é `workflow_defs`.
     assert config.workflows == {}
     assert not (tmp_path / ".pulse" / "config.yaml").exists()

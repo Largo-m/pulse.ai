@@ -84,10 +84,6 @@ class RunManager:
         # `RunState.id` e `runs.id` no SQLite serem a mesma coisa, e o que
         # permite anexar numa run pelo id em vez de chutar a mais recente.
         run_id = resume_run_id or str(uuid.uuid4())
-        with self._lock:
-            existing = self._runs.get(run_id)
-            if existing is not None and existing.is_active():
-                raise RunAlreadyActive(f"run já está em execução: {run_id}")
         self._prune()
         bus = EventBus()
         correlator = PromptCorrelator(bus)
@@ -105,7 +101,13 @@ class RunManager:
             control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
         )
+        # Checar e registrar sob o mesmo lock: dois "retomar" da mesma run ao
+        # mesmo tempo (endpoints síncronos rodam num threadpool) passariam os
+        # dois por uma checagem feita antes.
         with self._lock:
+            existing = self._runs.get(run_id)
+            if existing is not None and existing.is_active():
+                raise RunAlreadyActive(f"run já está em execução: {run_id}")
             self._runs[run_id] = state
         thread = threading.Thread(
             target=self._execute,

@@ -62,3 +62,13 @@ def test_the_agent_may_answer_in_the_language_of_the_prompt():
 def test_a_reason_the_size_of_a_stack_trace_is_cut():
     outcome = parse_outcome(_block(f"status: blocked\nreason: {'x' * 5000}"))
     assert len(outcome.reason) <= 400
+
+
+def test_punctuation_or_markdown_around_done_still_counts_as_delivered():
+    for status in ("done.", "**done**", "`done`", "done — entreguei"):
+        assert parse_outcome(_block(f"status: {status}")).status == DONE, status
+
+
+def test_the_reason_keeps_issue_and_pr_references():
+    outcome = parse_outcome(_block("status: blocked\nreason: sem acesso ao repo (PR #29)"))
+    assert outcome.reason == "sem acesso ao repo (PR #29)"

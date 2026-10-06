@@ -295,7 +295,8 @@ caminho de pergunta que escape da contagem.
 **O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
 veto a terminal são regra, e regra o Pulse aplica onde a run roda:
 [`decide_permission`](pulse/prompts/permission.py) devolve a resposta e só cai
-no `None` — que é o que vira pergunta de verdade — quando a política é `ask`.
+no `None` — que é o que vira pergunta de verdade — quando a política é `ask`,
+ou em `deny_writes` quando o kind não diz se escreve (`execute`, desconhecido).
 Enquanto essa decisão morava só na TUI, uma run com o cockpit fechado parava
 para sempre num `edit`: o daemon publicava a pergunta, não havia tela para
 respondê-la, e a run ficava "precisando de você" para algo que já estava

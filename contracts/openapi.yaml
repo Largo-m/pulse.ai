@@ -15,6 +15,19 @@ paths:
       responses:
         "200":
           description: Check results
+  /api/doctor/acp-probe:
+    post:
+      summary: Open an ACP session with the resolved agent and send a test prompt
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Project whose agent override applies; the engine's own directory otherwise
+      responses:
+        "200":
+          description: ok, message, error and response_text of the probe
   /api/workflows:
     get:
       summary: List workflows defined in the database
@@ -85,6 +98,23 @@ paths:
       responses:
         "200":
           description: Run state
+  /api/runs/{run_id}/cancel:
+    post:
+      summary: Stop a run
+      description: >-
+        Cuts the step in flight and cancels the open questions. The interrupted
+        step goes back to pending, so resuming the run starts from it.
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stop requested
+        "404":
+          description: Unknown run id
   /api/runs/{run_id}/events:
     get:
       summary: SSE event stream for a run, replayed from the start
@@ -181,3 +211,60 @@ paths:
             branch instead of writing in the working tree. It is a project
             setting only — the machine does not get to isolate someone else's
             repository.
+  /api/config/resolved:
+    get:
+      summary: The config a run would use, after the project and machine cascade
+      parameters:
+        - name: workflow
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            agent, model, permission_policy, workspace, use_worktree,
+            acp_command and auth_method.
+  /api/config/global:
+    patch:
+      summary: Change the machine defaults
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model:
+                  type: string
+                  nullable: true
+                permission_policy:
+                  type: string
+                  nullable: true
+                  enum: [ask, auto_approve, deny_writes]
+                default_agent:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: ok and the machine config after the change
+  /api/config/project:
+    post:
+      summary: Register a directory as a Pulse project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace]
+              properties:
+                workspace:
+                  type: string
+      responses:
+        "200":
+          description: ok and the project root

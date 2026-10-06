@@ -105,4 +105,4 @@ def test_saving_global_permission_and_runtime_lands_on_the_project(tmp_path: Pat
     assert project is not None
     assert project.permission_policy == "auto_approve"
     assert project.default_agent == "claude"
-    assert screen._effective_global_fields() == ("claude", "claude-sonnet-4-6", "auto_approve")
+    assert screen._effective_global_fields() == ("claude", "Auto", "auto_approve")

@@ -157,7 +157,7 @@ class CockpitScreen(Screen[None]):
         como "concluído" e nada mais — sem log, sem tool e sem duração.
 
         Anexar não passa por aqui: lá quem reconstrói é o replay do barramento,
-        que devolve a run inteira pelo mesmo caminho do vivo.
+        completado por `restore_settled_steps` no fim dele (`_on_replay_end`).
         """
         if self.attach_run_id or not self.resume_run_id:
             return
@@ -181,9 +181,10 @@ class CockpitScreen(Screen[None]):
         """
         if not self.attach_run_id:
             return
-        from pulse.tui.hydrate import stamp_live_elapsed
+        from pulse.tui.hydrate import restore_settled_steps, stamp_live_elapsed
 
         try:
+            restore_settled_steps(self.state, self.attach_run_id, Path(self._workspace))
             stamp_live_elapsed(self.state, self.attach_run_id)
         except (OSError, ValueError):
             # Duração é acabamento: não vale derrubar a run reanexada por isso.

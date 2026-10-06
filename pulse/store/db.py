@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS agent_defs (
   -- gravado aqui congelaria a escolha feita no `pulse init`.
   runtime TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
-  permission_policy TEXT NOT NULL DEFAULT 'ask',
+  permission_policy TEXT NOT NULL DEFAULT '',
   instructions TEXT NOT NULL DEFAULT ''
 );
 
@@ -324,6 +324,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
         if ("workflow_defs", "default_prompt") in added:
             factory.backfill_default_prompts(connection)
         factory.drop_approval_from_unattended_steps(connection)
+        factory.inherit_policy_on_default_agent(connection)
     connection.commit()
     return connection
 

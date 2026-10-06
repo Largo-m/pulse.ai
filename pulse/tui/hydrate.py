@@ -114,6 +114,46 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
     return record.exec_root
 
 
+def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> None:
+    """Depois do replay de uma run anexada, traz do banco o que ele não traz.
+
+    Retomar mantém o `run_id` mas abre um barramento novo no daemon: o replay só
+    tem o que aconteceu desde a retomada. Os steps que fecharam antes dela
+    chegavam ao cockpit anexado sem log, sem tool e sem artefato. Só entra fase
+    fechada que o replay deixou sem nenhuma linha, então uma run que nunca foi
+    retomada não muda.
+    """
+    record = run_store.load_run(run_id)
+    if record is None:
+        return
+    settled = {
+        step.step_id
+        for step in record.steps
+        if step.status in {"done", "skipped", "failed", "blocked"}
+    }
+    logged = {entry.phase_id for entry in state.entries if entry.phase_id}
+    missing = settled - logged
+    if not missing:
+        return
+    restored = [
+        entry
+        for entry in _load_entries(run_id, state.phases, placeholder=False)
+        if entry.phase_id in missing
+    ]
+    for entry in restored:
+        entry.entry_id = state._next_entry_id
+        state._next_entry_id += 1
+    # Aconteceram antes de tudo que o replay trouxe: vão na frente.
+    state.entries = restored + state.entries
+    known = {artifact.path for artifact in state.artifacts}
+    state.artifacts = [
+        artifact
+        for artifact in _load_artifacts(run_id, Path(record.exec_root or workspace))
+        if artifact.phase_id in missing and artifact.path not in known
+    ] + state.artifacts
+    state.notify()
+
+
 def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
     """Acerta o relógio depois de reconstruir uma run **que ainda roda**.
 
