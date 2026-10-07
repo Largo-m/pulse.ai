@@ -161,10 +161,9 @@ def run_workflow(
             fallback_model=resolved.model,
         )
     except Exception as error:  # noqa: BLE001
-        for record in run.fail_running_steps():
-            run_store.save_step(run.id, record)
+        run.fail_running_steps()
         run.end(1)
-        run_store.save_run(run)
+        run_store.save(run)
         if cockpit:
             raise
         print_workflow_error(f"Falha na sessão ACP: {error}")
@@ -230,23 +229,20 @@ def _prepare_workspace(
     if repo is not None and _owns_branch(run) and vcs.branch_exists(repo, run.branch):
         target = worktrees_dir() / run.id
         vcs.attach_worktree(repo, target, run.branch)
-        run_store.set_workspace_context(run.id, worktree_path=str(target), branch=run.branch)
-        run.worktree_path = str(target)
+        run.work_in(worktree_path=str(target), branch=run.branch)
+        run_store.save(run)
         return target, run.branch
 
     if repo is None or not resolved.use_worktree:
         branch = vcs.current_branch(workspace_root)
-        if branch != run.branch:
-            run_store.set_workspace_context(run.id, branch=branch)
-        run.branch = branch
-        run.worktree_path = ""
+        run.work_in(worktree_path="", branch=branch)
+        run_store.save(run)
         return workspace_root, branch
 
     target = worktrees_dir() / run.id
     branch = vcs.add_worktree(repo, target, _branch_name(run))
-    run_store.set_workspace_context(run.id, worktree_path=str(target), branch=branch)
-    run.worktree_path = str(target)
-    run.branch = branch
+    run.work_in(worktree_path=str(target), branch=branch)
+    run_store.save(run)
     return target, branch
 
 
@@ -304,18 +300,18 @@ def _execute(
             at = index
             index += 1
             units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
+            run_store.save(run)
             _sync_steps(runner, run)
 
             for step, item in units:
-                record = run.step(step.step_id)
-                if record is None:
-                    record = StepRecord(
+                record = run.add_step(
+                    StepRecord(
                         step_id=step.step_id,
                         position=step.position,
                         label=step.label,
                         agent_id=step.agent_id,
                     )
-                    run.steps.append(record)
+                )
 
                 if record.status in SETTLED:
                     continue
@@ -323,11 +319,11 @@ def _execute(
                 if not _control(runner).checkpoint():
                     _notify(runner, "Run parada pelo usuário")
                     run.end(RUN_STOPPED)
-                    run_store.save_run(run)
+                    run_store.save(run)
                     return RUN_STOPPED
 
                 run.begin_step(step.step_id)
-                run_store.save_run(run)
+                run_store.save(run)
                 opens_loop = at in loops and loops[at].start == at
                 exit_code, signal = _run_step(
                     runner=runner,
@@ -344,7 +340,7 @@ def _execute(
                 _sync_steps(runner, run)
                 if exit_code != 0:
                     run.end(exit_code)
-                    run_store.save_run(run)
+                    run_store.save(run)
                     return exit_code
 
                 if signal == CLOSE and opens_loop:
@@ -362,7 +358,7 @@ def _execute(
                         break
 
         run.complete()
-        run_store.save_run(run)
+        run_store.save(run)
         if not cockpit:
             print_workflow_result(f"✓ {definition.label} concluído")
         return 0
@@ -442,7 +438,7 @@ def _run_step(
         if outcome == BLOCKED:
             if choice == "skip":
                 record.skip_blocked()
-                run_store.save_step(run.id, record)
+                run_store.save(run)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
                 return 0, SKIPPED
@@ -475,7 +471,7 @@ def _attempt_step(
     may_close: bool = False,
 ) -> tuple[str, str]:
     record.start()
-    run_store.save_step(run.id, record)
+    run_store.save(run)
 
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
     try:
@@ -533,7 +529,7 @@ def _attempt_step(
 
     if outcome == SKIP:
         record.skip()
-        run_store.save_step(run.id, record)
+        run_store.save(run)
         if not cockpit:
             print_workflow_result(f"⏭  {record.label} pulado")
         return SKIPPED, ""
@@ -568,7 +564,7 @@ def _settle(
 ) -> tuple[str, str]:
     """Record the step as delivered and return the outcome to the engine loop."""
     record.deliver()
-    run_store.save_step(run.id, record)
+    run_store.save(run)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
     return outcome, ""
@@ -611,18 +607,18 @@ def _blocked_reason(declared: Outcome) -> str:
 def _block(run: run_store.RunRecord, record: StepRecord, reason: str) -> tuple[str, str]:
     """Record the step as blocked: it ran, did not crash, did not deliver."""
     record.block()
-    run_store.save_step(run.id, record)
+    run_store.save(run)
     return BLOCKED, reason
 
 
 def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
     record.close_after_wait()
-    run_store.save_step(run.id, record)
+    run_store.save(run)
 
 
 def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
     record.fail()
-    run_store.save_step(run.id, record)
+    run_store.save(run)
 
 
 def _context(
@@ -700,7 +696,7 @@ def _release_step(
     not redone.
     """
     if record.release():
-        run_store.save_step(run.id, record)
+        run_store.save(run)
         _sync_steps(runner, run)
     _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
 

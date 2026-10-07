@@ -58,6 +58,7 @@ def expand(
 
     With `fan_out`, one step per item enumerated by the previous step, each with
     its own `step_id`. An empty list runs the step once, as if `fan_out` were unset.
+    Only the run in memory changes; the caller persists it with `run_store.save`.
     """
     if not step.fan_out:
         return [(step, None)]
@@ -68,13 +69,9 @@ def expand(
 
     base = run.step(step.step_id)
     base_position = base.position if base is not None else step.position * POSITION_STRIDE
-    at = len(run.steps)
-    if base is not None:
-        at = run.steps.index(base)
-        run.steps.remove(base)
-        run_store.delete_step(run.id, step.step_id)
 
     units: list[tuple[StepDef, Item | None]] = []
+    children: list[StepRecord] = []
     for index, item in enumerate(items, start=1):
         step_id = f"{step.step_id}:{item.id}"
         label = item.label or item.id
@@ -94,13 +91,8 @@ def expand(
                 item,
             )
         )
-        if run.step(step_id) is None:
-            child = StepRecord(
-                step_id=step_id,
-                position=position,
-                label=label,
-                agent_id=step.agent_id,
-            )
-            run.steps.insert(at + index - 1, child)
-            run_store.save_step(run.id, child)
+        children.append(
+            StepRecord(step_id=step_id, position=position, label=label, agent_id=step.agent_id)
+        )
+    run.expand_step(step.step_id, children)
     return units

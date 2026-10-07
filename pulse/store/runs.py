@@ -221,9 +221,34 @@ def update_run(
         connection.close()
 
 
-def save_run(run: RunRecord, *, db_path: Path | None = None) -> None:
-    """Persist the run's status and current step as the aggregate left them."""
-    update_run(run.id, status=run.status, current_step=run.current_step, db_path=db_path)
+def save(run: RunRecord, *, db_path: Path | None = None) -> None:
+    """Persist the whole aggregate in one transaction.
+
+    Writes the run row, deletes the steps it dropped and upserts every step, so
+    a crash never leaves the run and its steps out of step with each other.
+    `waiting_seconds` and `carried_seconds` are left to `add_waiting_seconds`
+    and `carry_round`, which own them.
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            """
+            UPDATE runs
+            SET status = ?, current_step = ?, worktree_path = ?, branch = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (run.status, run.current_step, run.worktree_path, run.branch, utc_now(), run.id),
+        )
+        connection.executemany(
+            "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?",
+            [(run.id, step_id) for step_id in run.removed_step_ids()],
+        )
+        for step in run.steps:
+            _upsert_step(connection, run.id, step)
+        connection.commit()
+    finally:
+        connection.close()
+    run.forget_removed_steps()
 
 
 def set_workspace_context(
@@ -255,42 +280,46 @@ def set_workspace_context(
 def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
     connection = connect(db_path or default_db_path())
     try:
-        connection.execute(
-            """
-            INSERT INTO run_steps
-              (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
-               rounds)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id, step_id) DO UPDATE SET
-              status = excluded.status,
-              summary = excluded.summary,
-              acp_session_id = excluded.acp_session_id,
-              started_at = excluded.started_at,
-              ended_at = excluded.ended_at,
-              rounds = excluded.rounds
-            """,
-            (
-                run_id,
-                step.step_id,
-                step.position,
-                step.label,
-                step.agent_id,
-                step.status,
-                step.summary,
-                step.acp_session_id,
-                step.started_at,
-                step.ended_at,
-                step.waiting_seconds,
-                step.rounds,
-            ),
-        )
+        _upsert_step(connection, run_id, step)
         connection.execute(
             "UPDATE runs SET updated_at = ? WHERE id = ?", (utc_now(), run_id)
         )
         connection.commit()
     finally:
         connection.close()
+
+
+def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
+    connection.execute(
+        """
+        INSERT INTO run_steps
+          (run_id, step_id, position, label, agent_id,
+           status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
+           rounds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, step_id) DO UPDATE SET
+          status = excluded.status,
+          summary = excluded.summary,
+          acp_session_id = excluded.acp_session_id,
+          started_at = excluded.started_at,
+          ended_at = excluded.ended_at,
+          rounds = excluded.rounds
+        """,
+        (
+            run_id,
+            step.step_id,
+            step.position,
+            step.label,
+            step.agent_id,
+            step.status,
+            step.summary,
+            step.acp_session_id,
+            step.started_at,
+            step.ended_at,
+            step.waiting_seconds,
+            step.rounds,
+        ),
+    )
 
 
 def add_waiting_seconds(
@@ -303,7 +332,7 @@ def add_waiting_seconds(
     """Add user wait time to the step (accumulates across multiple waits).
 
     A step not yet in the table is silently ignored: waits can happen before
-    the first `save_step` (e.g. the resume menu).
+    the step is first saved (e.g. the resume menu).
     """
     if not run_id or not step_id or seconds <= 0:
         return
@@ -371,21 +400,6 @@ def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
         cursor = connection.execute("DELETE FROM runs WHERE id = ?", (run_id,))
         connection.commit()
         return cursor.rowcount > 0
-    finally:
-        connection.close()
-
-
-def delete_step(run_id: str, step_id: str, *, db_path: Path | None = None) -> None:
-    """Remove a step from the run.
-
-    Used by fan-out: the original step is replaced by its N children.
-    """
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?", (run_id, step_id)
-        )
-        connection.commit()
     finally:
         connection.close()
 

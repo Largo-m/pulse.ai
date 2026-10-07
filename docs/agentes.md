@@ -530,7 +530,7 @@ step `implement` (fan_out, placeholder em run_steps)
   ├─ vazio? → roda uma vez, como se fan_out não existisse
   │
   └─ N itens:
-       delete_step(placeholder)                      ← o placeholder some
+       run.expand_step(placeholder, filhos)          ← o placeholder some no save(run)
        para cada item, no mesmo ponto da lista:
          step_id  = "implement:T1"
          position = base + 1, base + 2, …            ← cabe no stride de 1000

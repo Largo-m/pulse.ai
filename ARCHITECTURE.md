@@ -147,7 +147,7 @@ run_workflow(workflow_id, user_prompt, …)
        ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
        ├─ classify_outcome(…)          approve | adjust | skip | cancel
        ├─ parse_outcome(…)             done | blocked  (step sem aprovação)
-       └─ save_step(status, summary)   desfecho no banco
+       └─ record.deliver()/block()…   desfecho no agregado → save(run)
 ```
 
 ### Sessão ACP isolada por step

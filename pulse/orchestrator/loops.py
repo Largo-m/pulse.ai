@@ -89,7 +89,7 @@ def reopen_loop(
             carried_seconds=run_store.carry_round(run.id, step.step_id),
             opener=step.step_id == definition.steps[loop.start].step_id,
         )
-        run_store.save_step(run.id, record)
+    run_store.save(run)
 
 
 def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) -> int:
@@ -104,5 +104,5 @@ def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) ->
         if record is None or record.settled:
             continue
         record.close_with_loop(ran_before=ran_before)
-        run_store.save_step(run.id, record)
+    run_store.save(run)
     return loop.end + 1

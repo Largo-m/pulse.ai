@@ -150,3 +150,52 @@ def test_the_step_position_comes_from_the_record(tmp_path: Path):
     loaded = run_store.load_run(record.id)
     assert loaded is not None
     assert [step.position for step in loaded.steps] == [1000, 2000]
+
+
+def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
+    record = _create(tmp_path)
+    record.begin_step("two")
+    record.steps[0].start()
+    record.steps[0].deliver()
+    record.work_in(worktree_path="/tmp/wt", branch="pulse/demo-1")
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert (loaded.current_step, loaded.worktree_path, loaded.branch) == (
+        "two",
+        "/tmp/wt",
+        "pulse/demo-1",
+    )
+    assert [step.status for step in loaded.steps] == [DONE, PENDING]
+
+
+def test_save_deletes_the_step_a_fan_out_replaced(tmp_path: Path):
+    record = _create(tmp_path)
+    record.expand_step(
+        "two",
+        [
+            StepRecord(step_id="two:T1", position=3, label="T1"),
+            StepRecord(step_id="two:T2", position=4, label="T2"),
+        ],
+    )
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert [step.step_id for step in loaded.steps] == ["one", "two:T1", "two:T2"]
+    assert record.removed_step_ids() == frozenset()
+
+
+def test_save_leaves_the_wait_time_to_the_store(tmp_path: Path):
+    """The session runner adds wait time straight to the DB; a stale record must not erase it."""
+    record = _create(tmp_path)
+    run_store.add_waiting_seconds(record.id, "one", 42.0)
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert loaded.steps[0].waiting_seconds == 42.0

@@ -223,6 +223,7 @@ class RunRecord:
     worktree_path: str = ""
     branch: str = ""
     steps: list[StepRecord] = field(default_factory=list)
+    _removed: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
 
     @property
     def exec_root(self) -> str:
@@ -243,6 +244,44 @@ class RunRecord:
 
     def is_incomplete(self) -> bool:
         return any(not item.settled for item in self.steps)
+
+    def add_step(self, record: StepRecord) -> StepRecord:
+        """Append a step the run did not know yet; returns the one it already had."""
+        existing = self.step(record.step_id)
+        if existing is not None:
+            return existing
+        self.steps.append(record)
+        self._removed.discard(record.step_id)
+        return record
+
+    def expand_step(self, step_id: str, children: list[StepRecord]) -> None:
+        """Replace a fan-out step with one child per item, in its place.
+
+        Children already present (a resumed fan-out) are kept as they are.
+        """
+        at = len(self.steps)
+        base = self.step(step_id)
+        if base is not None:
+            at = self.steps.index(base)
+            self.steps.remove(base)
+            self._removed.add(step_id)
+        for offset, child in enumerate(children):
+            if self.step(child.step_id) is None:
+                self.steps.insert(at + offset, child)
+                self._removed.discard(child.step_id)
+
+    def removed_step_ids(self) -> frozenset[str]:
+        """Steps dropped since the last save, which storage must delete."""
+        return frozenset(self._removed)
+
+    def forget_removed_steps(self) -> None:
+        """Called by storage once the deletions are committed."""
+        self._removed.clear()
+
+    def work_in(self, *, worktree_path: str, branch: str) -> None:
+        """Where the agent works for this run: a worktree, or the root when empty."""
+        self.worktree_path = worktree_path
+        self.branch = branch
 
     def begin_step(self, step_id: str) -> None:
         """Point the run at the step about to execute."""

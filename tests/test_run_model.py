@@ -213,3 +213,32 @@ def test_daemon_run_state_finishes_once_with_the_mapped_status():
     assert (state.status, state.exit_code, state.is_active()) == (RunStatus.BLOCKED, RUN_BLOCKED, False)
     with pytest.raises(RuntimeError):
         state.finish(0)
+
+
+def test_add_step_keeps_the_step_the_run_already_had():
+    known = StepRecord(step_id="one", status=StepStatus.DONE)
+    run = _run(known)
+
+    assert run.add_step(StepRecord(step_id="one")) is known
+    assert run.add_step(StepRecord(step_id="two")).step_id == "two"
+    assert [step.step_id for step in run.steps] == ["one", "two"]
+
+
+def test_expand_step_puts_the_children_where_the_base_was():
+    run = _run(StepRecord(step_id="a"), StepRecord(step_id="fan"), StepRecord(step_id="z"))
+
+    run.expand_step("fan", [StepRecord(step_id="fan:1"), StepRecord(step_id="fan:2")])
+
+    assert [step.step_id for step in run.steps] == ["a", "fan:1", "fan:2", "z"]
+    assert run.removed_step_ids() == {"fan"}
+
+
+def test_expanding_again_on_resume_keeps_the_children_it_has():
+    done = StepRecord(step_id="fan:1", status=StepStatus.DONE)
+    run = _run(done, StepRecord(step_id="fan:2"))
+
+    run.expand_step("fan", [StepRecord(step_id="fan:1"), StepRecord(step_id="fan:2")])
+
+    assert run.steps[0] is done
+    assert len(run.steps) == 2
+    assert run.removed_step_ids() == frozenset()
