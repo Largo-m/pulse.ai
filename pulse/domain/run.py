@@ -317,6 +317,10 @@ class RunRecord:
         self.status = RunStatus.RUNNING
         return True
 
+    def drop_worktree(self) -> None:
+        """The worktree directory is gone; the branch stays, it still holds the work."""
+        self.worktree_path = ""
+
     def begin_step(self, step_id: str) -> None:
         """Point the run at the step about to execute."""
         if self.step(step_id) is None:

@@ -196,30 +196,6 @@ def find_resumable(workspace: str | Path, *, db_path: Path | None = None) -> lis
     ]
 
 
-def update_run(
-    run_id: str,
-    *,
-    status: str | None = None,
-    current_step: str | None = None,
-    db_path: Path | None = None,
-) -> None:
-    sets: list[str] = ["updated_at = ?"]
-    values: list[Any] = [utc_now()]
-    if status is not None:
-        sets.append("status = ?")
-        values.append(status)
-    if current_step is not None:
-        sets.append("current_step = ?")
-        values.append(current_step)
-    values.append(run_id)
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", values)
-        connection.commit()
-    finally:
-        connection.close()
-
-
 def save(run: RunRecord, *, db_path: Path | None = None) -> None:
     """Persist the whole aggregate in one transaction.
 
@@ -246,44 +222,6 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
     finally:
         connection.close()
     run.forget_removed_steps()
-
-
-def set_workspace_context(
-    run_id: str,
-    *,
-    worktree_path: str = "",
-    branch: str = "",
-    db_path: Path | None = None,
-) -> None:
-    """Store where this run works and on which branch.
-
-    Separate from `create_run` because the worktree is named after the run id,
-    and from `update_run` because it is not execution state: it never changes
-    during the run and resuming rereads it as-is.
-    """
-    if not run_id:
-        return
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            "UPDATE runs SET worktree_path = ?, branch = ?, updated_at = ? WHERE id = ?",
-            (worktree_path, branch, utc_now(), run_id),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
-    connection = connect(db_path or default_db_path())
-    try:
-        _upsert_step(connection, run_id, step)
-        connection.execute(
-            "UPDATE runs SET updated_at = ? WHERE id = ?", (utc_now(), run_id)
-        )
-        connection.commit()
-    finally:
-        connection.close()
 
 
 def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:

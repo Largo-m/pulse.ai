@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.conftest import store_step, store_run_status
 from pulse.store import runs as run_store
 from pulse.store.runs import DONE, PENDING, RUNNING, SKIPPED, StepRecord
 
@@ -44,7 +45,7 @@ def test_next_pending_skips_what_is_already_settled(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = SKIPPED
-    run_store.save_step(record.id, first)
+    store_step(record.id, first)
 
     loaded = run_store.load_run(record.id)
     assert loaded is not None
@@ -55,8 +56,8 @@ def test_a_finished_run_is_not_resumable(tmp_path: Path):
     record = _create(tmp_path)
     for step in record.steps:
         step.status = DONE
-        run_store.save_step(record.id, step)
-    run_store.update_run(record.id, status="completed")
+        store_step(record.id, step)
+    store_run_status(record.id, "completed")
 
     assert run_store.find_resumable(tmp_path) == []
 
@@ -65,8 +66,8 @@ def test_a_run_cut_in_the_middle_is_resumable(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = DONE
-    run_store.save_step(record.id, first)
-    run_store.update_run(record.id, status="stopped")
+    store_step(record.id, first)
+    store_run_status(record.id, "stopped")
 
     pending = run_store.find_resumable(tmp_path)
     assert [item.id for item in pending] == [record.id]
@@ -128,8 +129,8 @@ def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = DONE
-    run_store.save_step(record.id, first)
-    run_store.update_run(record.id, status="failed")
+    store_step(record.id, first)
+    store_run_status(record.id, "failed")
 
     pending = run_store.find_resumable(tmp_path)
     assert [item.id for item in pending] == [record.id]

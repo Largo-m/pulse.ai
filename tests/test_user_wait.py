@@ -12,6 +12,7 @@ from pathlib import Path
 
 import threading
 
+from tests.conftest import store_step
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
@@ -474,7 +475,7 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     step = run.steps[0]
     step.status = RUNNING
     step.started_at = (datetime.now(UTC) - timedelta(minutes=10)).replace(microsecond=0).isoformat()
-    run_store.save_step(run.id, step)
+    store_step(run.id, step)
 
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.RUNNING, started_at=0.0)]

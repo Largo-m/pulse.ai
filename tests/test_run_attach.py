@@ -15,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import store_step, store_run_status
 from pulse.client.run_session import DETACHED, EngineRunSession
 from pulse.history.events import PhaseStatus
 from pulse.store import runs as run_store
@@ -109,7 +110,7 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
     """Replay restamps `phase.begin` as now; the real time comes from the database."""
     _seed_run(tmp_path)
     now = datetime.now(UTC).replace(microsecond=0)
-    run_store.save_step(
+    store_step(
         "run-live",
         StepRecord(
             step_id="one",
@@ -121,7 +122,7 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
             ended_at=(now - timedelta(seconds=60)).isoformat(),
         ),
     )
-    run_store.save_step(
+    store_step(
         "run-live",
         StepRecord(
             step_id="two",
@@ -159,7 +160,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
 
     _seed_run(tmp_path, run_id="run-wait")
     now = datetime.now(UTC).replace(microsecond=0)
-    run_store.save_step(
+    store_step(
         "run-wait",
         StepRecord(
             step_id="one",
@@ -211,7 +212,7 @@ def test_history_puts_what_is_running_above_the_past(tmp_path: Path):
             user_prompt=run_id,
             steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
         )
-        run_store.update_run(run_id, status=status)
+        store_run_status(run_id, status)
 
     items = HistoryCatalog(tmp_path).list_items()
     assert {item.run_id for item in items[:2]} == {"rodando", "rodando-2"}, (
@@ -237,7 +238,7 @@ def test_searching_keeps_the_running_run_on_top(tmp_path: Path):
             user_prompt="alfa",
             steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
         )
-        run_store.update_run(run_id, status=status)
+        store_run_status(run_id, status)
 
     found = HistoryCatalog(tmp_path).search("alfa")
     assert [item.run_id for item in found] == ["alfa-viva", "alfa-velha"]
