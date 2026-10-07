@@ -358,6 +358,7 @@ def _execute(
                         _sync_steps(runner, run)
                         break
 
+        run.retire_steps_outside({step.step_id for step in definition.steps})
         run.complete()
         run_store.save(run)
         if not cockpit:

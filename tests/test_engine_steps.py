@@ -10,6 +10,7 @@ import pytest
 from tests.conftest import make_workflow, store_step
 
 from pulse.domain import run as run_model
+from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
@@ -685,6 +686,49 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
     assert code == 0
     assert len(second.prompts) == 1, "the already-finished step does not run again"
     assert len(run_store.list_runs(tmp_path)) == 1, "resuming does not create another run"
+
+
+def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
+    wired, monkeypatch, tmp_path: Path
+):
+    """Definitions are editable; a step the workflow dropped must not fail every resume.
+
+    The engine never reaches it again, so it is skipped instead of holding the run open.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
+    first = _Runner([_approved(), {"approved": False, "outcome": "continue"}])
+    first._prompt_handler.choice = "stop"
+    _install(monkeypatch, first)
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=first._stream,
+        prompt_handler=first._prompt_handler,
+        render_header=False,
+    )
+    run_id = run_store.list_runs(tmp_path)[0].id
+    make_workflow("demo", steps=[("one", "Um"), ("three", "Três")])
+
+    second = _Runner([_approved()])
+    _install(monkeypatch, second)
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=second._stream,
+        prompt_handler=second._prompt_handler,
+        render_header=False,
+        resume_run_id=run_id,
+    )
+
+    assert code == 0
+    record = run_store.load_run(run_id)
+    assert record.status == RunStatus.COMPLETED
+    assert [(step.step_id, step.status) for step in record.steps] == [
+        ("one", StepStatus.DONE),
+        ("two", StepStatus.SKIPPED),
+        ("three", StepStatus.DONE),
+    ]
+    assert run_store.find_resumable(tmp_path) == []
 
 
 def test_resuming_after_a_crash_reruns_the_step_it_left_running(

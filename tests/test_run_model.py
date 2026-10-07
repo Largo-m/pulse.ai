@@ -295,6 +295,51 @@ def test_a_run_completes_only_when_every_step_settled():
     assert run.status == RunStatus.COMPLETED
 
 
+def test_steps_the_definition_dropped_are_skipped_and_the_rest_left_alone():
+    """An edited workflow must not hold a resumed run open forever.
+
+    Only unsettled steps outside the definition change; fan-out children count as
+    their base step, and history already settled is never rewritten.
+    """
+    dropped_failed = _running("gone")
+    dropped_failed.fail()
+    dropped_done = _running("old")
+    dropped_done.deliver()
+    run = _run(
+        StepRecord(step_id="kept"),
+        StepRecord(step_id="review:T1"),
+        dropped_failed,
+        StepRecord(step_id="gone:T1"),
+        dropped_done,
+    )
+
+    run.retire_steps_outside({"kept", "review"})
+
+    assert [(item.step_id, item.status) for item in run.steps] == [
+        ("kept", StepStatus.PENDING),
+        ("review:T1", StepStatus.PENDING),
+        ("gone", StepStatus.SKIPPED),
+        ("gone:T1", StepStatus.SKIPPED),
+        ("old", StepStatus.DONE),
+    ]
+
+
+def test_a_retired_step_drops_its_summary_so_it_is_not_passed_on():
+    step = _running("gone")
+    step.record_reply(session_id="s", summary="half done")
+    step.block()
+
+    step.retire()
+
+    assert (step.status, step.summary) == (StepStatus.SKIPPED, "")
+    assert step.ended_at is not None
+
+
+def test_a_running_step_cannot_be_retired():
+    with pytest.raises(InvalidTransition):
+        _running("gone").retire()
+
+
 @pytest.mark.parametrize(
     ("code", "status"),
     [(RUN_STOPPED, RunStatus.STOPPED), (RUN_BLOCKED, RunStatus.BLOCKED), (1, RunStatus.FAILED)],

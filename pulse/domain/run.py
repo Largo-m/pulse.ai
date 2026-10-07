@@ -215,8 +215,16 @@ class StepRecord:
 
         A step that ran in an earlier round is `done`; one that never ran is `skipped`.
         """
-        self._require_not(SETTLED | {StepStatus.RUNNING}, "close with the loop")
-        self.status = StepStatus.DONE if ran_before else StepStatus.SKIPPED
+        status = StepStatus.DONE if ran_before else StepStatus.SKIPPED
+        self._settle_unrun(status, "close with the loop")
+
+    def retire(self) -> None:
+        """Skip a step the workflow no longer has: the engine will never reach it again."""
+        self._settle_unrun(StepStatus.SKIPPED, "retire")
+
+    def _settle_unrun(self, status: StepStatus, action: str) -> None:
+        self._require_not(SETTLED | {StepStatus.RUNNING}, action)
+        self.status = status
         self.summary = ""
         self.ended_at = self.ended_at or utc_now()
 
@@ -404,6 +412,18 @@ class RunRecord:
             record = self.step(step_id)
             if record is not None and not record.settled:
                 record.close_with_loop(ran_before=ran_before)
+
+    def retire_steps_outside(self, defined_ids: set[str]) -> None:
+        """Skip the unsettled steps of a definition edited since the run started.
+
+        Fan-out children belong to their defined base step and are kept.
+        """
+        for item in self.steps:
+            base, separator, _item = item.step_id.rpartition(FAN_OUT_SEPARATOR)
+            if item.step_id in defined_ids or (separator and base in defined_ids):
+                continue
+            if not item.settled:
+                item.retire()
 
     def complete(self) -> None:
         """Every step settled; the workflow is over."""

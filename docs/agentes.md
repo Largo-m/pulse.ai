@@ -293,6 +293,7 @@ para cada definition_step em definition.steps:
        ├─ _sync_steps()
        └─ exit_code ≠ 0 → grava status e sai
 
+run.retire_steps_outside(ids da definição)  ← step que saiu da definição vira skipped
 run.complete(); run_store.save(run)
 finally: runner.close()
 ```
