@@ -11,10 +11,10 @@ from typing import Any
 from pulse.config.paths import safe_cwd
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
-from pulse.runcontrol import RUN_STOPPED, RunControl
+from pulse.orchestrator.engine import run_workflow
+from pulse.runcontrol import RunControl
 from pulse.store import runs as run_store
-from pulse.store.runs import AWAITING_INPUT
+from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
 FINISHED_TTL = 15 * 60.0
@@ -27,7 +27,7 @@ class RunState:
     workflow_id: str
     prompt: str
     workspace: str
-    status: str = "running"
+    status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
     bus: EventBus = field(default_factory=EventBus)
     correlator: PromptCorrelator | None = None
@@ -39,6 +39,14 @@ class RunState:
 
     def is_active(self) -> bool:
         return self.finished_at is None
+
+    def finish(self, exit_code: int) -> None:
+        """The engine returned; record how the run ended."""
+        if not self.is_active():
+            raise RuntimeError(f"run {self.id} already finished")
+        self.exit_code = exit_code
+        self.status = RunStatus.for_exit_code(exit_code)
+        self.finished_at = time.time()
 
 
 class RunAlreadyActive(Exception):
@@ -133,7 +141,7 @@ class RunManager:
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
             "prompt": state.prompt,
             "workspace": state.workspace,
-            "status": AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
+            "status": RunStatus.AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
             "active": state.is_active(),
             "awaiting_prompt": awaiting,
             "awaiting_since": since,
@@ -222,9 +230,7 @@ class RunManager:
             )
         except Exception as error:
             traceback.print_exc()
-            state.status = "failed"
-            state.exit_code = 1
-            state.finished_at = time.time()
+            state.finish(1)
             state.bus.publish(
                 {
                     "type": "run.finished",
@@ -235,16 +241,7 @@ class RunManager:
             )
             state.bus.close()
             return
-        state.exit_code = exit_code
-        if exit_code == 0:
-            state.status = "completed"
-        elif exit_code == RUN_STOPPED:
-            state.status = "stopped"
-        elif exit_code == RUN_BLOCKED:
-            state.status = "blocked"
-        else:
-            state.status = "failed"
-        state.finished_at = time.time()
+        state.finish(exit_code)
         state.bus.publish(
             {
                 "type": "run.finished",

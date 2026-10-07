@@ -11,80 +11,47 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from pulse.domain.run import (
+    SETTLED,
+    InvalidTransition,
+    RunRecord,
+    RunStatus,
+    StepRecord,
+    StepStatus,
+    net_seconds,
+    utc_now,
+)
 from pulse.store.db import connect, default_db_path
+
+__all__ = [
+    "AWAITING_INPUT",
+    "BLOCKED",
+    "DONE",
+    "FAILED",
+    "PENDING",
+    "RUNNING",
+    "SETTLED",
+    "SKIPPED",
+    "InvalidTransition",
+    "RunRecord",
+    "RunStatus",
+    "StepRecord",
+    "StepStatus",
+    "utc_now",
+]
 
 MAX_DETAIL = 20_000
 
-PENDING = "pending"
-RUNNING = "running"
-AWAITING_INPUT = "awaiting_input"
-DONE = "done"
-SKIPPED = "skipped"
-FAILED = "failed"
-STOPPED = "stopped"
-BLOCKED = "blocked"
-
-SETTLED = frozenset({DONE, SKIPPED})
-
-
-@dataclass
-class StepRecord:
-    step_id: str
-    position: int = 0
-    label: str = ""
-    agent_id: str = ""
-    status: str = PENDING
-    summary: str = ""
-    acp_session_id: str = ""
-    started_at: str = ""
-    ended_at: str = ""
-    waiting_seconds: float = 0.0
-    rounds: int = 1
-    carried_seconds: float = 0.0
-
-
-@dataclass
-class RunRecord:
-    id: str
-    workflow_id: str
-    workspace_root: str
-    user_prompt: str = ""
-    status: str = PENDING
-    current_step: str = ""
-    created_at: str = ""
-    updated_at: str = ""
-    worktree_path: str = ""
-    branch: str = ""
-    steps: list[StepRecord] = field(default_factory=list)
-
-    @property
-    def exec_root(self) -> str:
-        """Where the agent worked: the worktree, or the root when there was none."""
-        return self.worktree_path or self.workspace_root
-
-    def step(self, step_id: str) -> StepRecord | None:
-        for item in self.steps:
-            if item.step_id == step_id:
-                return item
-        return None
-
-    def next_pending(self) -> StepRecord | None:
-        for item in self.steps:
-            if item.status not in SETTLED:
-                return item
-        return None
-
-    def is_incomplete(self) -> bool:
-        return any(item.status not in SETTLED for item in self.steps)
-
-
-def utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
+PENDING = StepStatus.PENDING
+RUNNING = StepStatus.RUNNING
+DONE = StepStatus.DONE
+SKIPPED = StepStatus.SKIPPED
+FAILED = StepStatus.FAILED
+BLOCKED = StepStatus.BLOCKED
+AWAITING_INPUT = RunStatus.AWAITING_INPUT
 
 
 def _root(workspace: str | Path) -> str:
@@ -97,7 +64,7 @@ def _step(row: Any) -> StepRecord:
         position=int(row["position"] or 0),
         label=str(row["label"] or ""),
         agent_id=str(row["agent_id"] or ""),
-        status=str(row["status"] or PENDING),
+        status=StepStatus.parse(str(row["status"] or "")),
         summary=str(row["summary"] or ""),
         acp_session_id=str(row["acp_session_id"] or ""),
         started_at=str(row["started_at"] or ""),
@@ -114,7 +81,7 @@ def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
         workflow_id=str(row["workflow_id"]),
         workspace_root=str(row["workspace_root"]),
         user_prompt=str(row["user_prompt"] or ""),
-        status=str(row["status"] or PENDING),
+        status=RunStatus.parse(str(row["status"] or "")),
         current_step=str(row["current_step"] or ""),
         created_at=str(row["created_at"] or ""),
         updated_at=str(row["updated_at"] or ""),
@@ -156,7 +123,7 @@ def create_run(
                 workflow_id,
                 _root(workspace),
                 user_prompt,
-                RUNNING,
+                RunStatus.RUNNING,
                 steps[0].step_id if steps else "",
                 now,
                 now,
@@ -181,7 +148,7 @@ def create_run(
         workflow_id=workflow_id,
         workspace_root=_root(workspace),
         user_prompt=user_prompt,
-        status=RUNNING,
+        status=RunStatus.RUNNING,
         current_step=steps[0].step_id if steps else "",
         created_at=now,
         updated_at=now,
@@ -226,7 +193,7 @@ def find_resumable(workspace: str | Path, *, db_path: Path | None = None) -> lis
     return [
         run
         for run in list_runs(workspace, db_path=db_path)
-        if run.status != "completed" and run.is_incomplete()
+        if run.status != RunStatus.COMPLETED and run.is_incomplete()
     ]
 
 
@@ -252,6 +219,11 @@ def update_run(
         connection.commit()
     finally:
         connection.close()
+
+
+def save_run(run: RunRecord, *, db_path: Path | None = None) -> None:
+    """Persist the run's status and current step as the aggregate left them."""
+    update_run(run.id, status=run.status, current_step=run.current_step, db_path=db_path)
 
 
 def set_workspace_context(
@@ -369,7 +341,7 @@ def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> fl
         if row is None:
             return 0.0
         carried = float(row["carried_seconds"] or 0.0)
-        carried += _net_seconds(
+        carried += net_seconds(
             str(row["started_at"] or ""),
             str(row["ended_at"] or ""),
             float(row["waiting_seconds"] or 0.0),
@@ -386,16 +358,6 @@ def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> fl
         return carried
     finally:
         connection.close()
-
-
-def _net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
-    """Wall time minus wait; zero when the round has no recorded start and end."""
-    try:
-        start = datetime.fromisoformat(started_at)
-        end = datetime.fromisoformat(ended_at)
-    except ValueError:
-        return 0.0
-    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
 
 
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:

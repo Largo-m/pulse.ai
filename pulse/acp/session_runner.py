@@ -177,9 +177,10 @@ class AcpSessionRunner(RunEventRecorder):
         if not self._bound_run_id:
             return
         try:
-            from pulse.store.runs import AWAITING_INPUT, RUNNING, update_run
+            from pulse.store.runs import RunStatus, update_run
 
-            update_run(self._bound_run_id, status=AWAITING_INPUT if awaiting else RUNNING)
+            status = RunStatus.AWAITING_INPUT if awaiting else RunStatus.RUNNING
+            update_run(self._bound_run_id, status=status)
         except Exception:
             pass
 

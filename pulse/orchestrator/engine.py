@@ -41,7 +41,7 @@ from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import CANCEL, SKIP, format_summary
 from pulse.prompts.permission import PermissionPolicy
 from pulse.prompts.render import TemplateError, render
-from pulse.runcontrol import RUN_STOPPED, RunControl
+from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
@@ -49,8 +49,6 @@ from pulse.store.runs import (
     BLOCKED,
     DONE,
     FAILED,
-    PENDING,
-    RUNNING,
     SETTLED,
     SKIPPED,
     StepRecord,
@@ -64,7 +62,6 @@ _POLICIES: dict[str, PermissionPolicy] = {
     "deny_writes": "deny_writes",
 }
 _NEVER_INTERRUPTED = RunControl()
-RUN_BLOCKED = 131
 
 
 class UnknownWorkflow(ValueError):
@@ -164,8 +161,10 @@ def run_workflow(
             fallback_model=resolved.model,
         )
     except Exception as error:  # noqa: BLE001
-        _fail_running_steps(run)
-        run_store.update_run(run.id, status=FAILED)
+        for record in run.fail_running_steps():
+            run_store.save_step(run.id, record)
+        run.end(1)
+        run_store.save_run(run)
         if cockpit:
             raise
         print_workflow_error(f"Falha na sessão ACP: {error}")
@@ -323,10 +322,12 @@ def _execute(
 
                 if not _control(runner).checkpoint():
                     _notify(runner, "Run parada pelo usuário")
-                    run_store.update_run(run.id, status="stopped")
+                    run.end(RUN_STOPPED)
+                    run_store.save_run(run)
                     return RUN_STOPPED
 
-                run_store.update_run(run.id, status=RUNNING, current_step=step.step_id)
+                run.begin_step(step.step_id)
+                run_store.save_run(run)
                 opens_loop = at in loops and loops[at].start == at
                 exit_code, signal = _run_step(
                     runner=runner,
@@ -342,7 +343,8 @@ def _execute(
                 )
                 _sync_steps(runner, run)
                 if exit_code != 0:
-                    run_store.update_run(run.id, status=_run_status(exit_code))
+                    run.end(exit_code)
+                    run_store.save_run(run)
                     return exit_code
 
                 if signal == CLOSE and opens_loop:
@@ -359,24 +361,13 @@ def _execute(
                         _sync_steps(runner, run)
                         break
 
-        run_store.update_run(run.id, status="completed")
+        run.complete()
+        run_store.save_run(run)
         if not cockpit:
             print_workflow_result(f"✓ {definition.label} concluído")
         return 0
     finally:
         runner.close()
-
-
-def _run_status(exit_code: int) -> str:
-    """Run status recorded when a step interrupts the run.
-
-    Blocked is not failed: history must tell them apart to offer the right action.
-    """
-    if exit_code == RUN_STOPPED:
-        return "stopped"
-    if exit_code == RUN_BLOCKED:
-        return BLOCKED
-    return FAILED
 
 
 def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
@@ -450,9 +441,7 @@ def _run_step(
 
         if outcome == BLOCKED:
             if choice == "skip":
-                record.status = SKIPPED
-                record.ended_at = run_store.utc_now()
-                record.summary = ""
+                record.skip_blocked()
                 run_store.save_step(run.id, record)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
@@ -485,8 +474,7 @@ def _attempt_step(
     item: Item | None = None,
     may_close: bool = False,
 ) -> tuple[str, str]:
-    record.status = RUNNING
-    record.started_at = record.started_at or run_store.utc_now()
+    record.start()
     run_store.save_step(run.id, record)
 
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
@@ -533,9 +521,10 @@ def _attempt_step(
         _fail(run, record)
         return FAILED, _session_error(error)
 
-    record.acp_session_id = runner.last_session_id or record.acp_session_id
     agent_text = str(result.get("phaseSummary", ""))
-    record.summary = format_summary(agent_text)
+    record.record_reply(
+        session_id=runner.last_session_id or "", summary=format_summary(agent_text)
+    )
 
     outcome = str(result.get("outcome", ""))
     if outcome in {CANCEL, "cancelled"} or result.get("stopReason") == "cancelled":
@@ -543,8 +532,7 @@ def _attempt_step(
         return FAILED, "step cancelado"
 
     if outcome == SKIP:
-        record.status = SKIPPED
-        record.ended_at = run_store.utc_now()
+        record.skip()
         run_store.save_step(run.id, record)
         if not cockpit:
             print_workflow_result(f"⏭  {record.label} pulado")
@@ -579,8 +567,7 @@ def _settle(
     run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
 ) -> tuple[str, str]:
     """Record the step as delivered and return the outcome to the engine loop."""
-    record.status = DONE
-    record.ended_at = run_store.utc_now()
+    record.deliver()
     run_store.save_step(run.id, record)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
@@ -623,36 +610,18 @@ def _blocked_reason(declared: Outcome) -> str:
 
 def _block(run: run_store.RunRecord, record: StepRecord, reason: str) -> tuple[str, str]:
     """Record the step as blocked: it ran, did not crash, did not deliver."""
-    record.status = BLOCKED
-    record.ended_at = run_store.utc_now()
+    record.block()
     run_store.save_step(run.id, record)
     return BLOCKED, reason
 
 
-def _fail_running_steps(run: run_store.RunRecord) -> None:
-    for record in run.steps:
-        if record.status == RUNNING:
-            _fail(run, record)
-
-
 def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
-    """Re-stamp `ended_at` after the retry/blocked menu.
-
-    Menu wait time is subtracted from the step (`run_steps.waiting_seconds`), so
-    `ended_at` must cover it or the recorded duration shrinks or goes negative.
-    """
-    record.ended_at = run_store.utc_now()
+    record.close_after_wait()
     run_store.save_step(run.id, record)
 
 
 def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
-    """Record the attempt as failed before asking what to do.
-
-    Prevents a step stuck as `running` in history if the process dies while the
-    retry menu is open. Retrying sets it back to `running` in `_attempt_step`.
-    """
-    record.status = FAILED
-    record.ended_at = run_store.utc_now()
+    record.fail()
     run_store.save_step(run.id, record)
 
 
@@ -730,9 +699,7 @@ def _release_step(
     Pending makes `resume_run_id` restart from this step only; settled steps are
     not redone.
     """
-    if record.status in {RUNNING, FAILED, BLOCKED}:
-        record.status = PENDING
-        record.ended_at = ""
+    if record.release():
         run_store.save_step(run.id, record)
         _sync_steps(runner, run)
     _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")

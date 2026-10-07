@@ -1,0 +1,271 @@
+"""The run aggregate: a run and the steps it executes.
+
+`RunRecord` is the aggregate root and `StepRecord` its child entity. Every
+status change goes through an intent method that checks the transition is
+legal, so the engine asks for what it wants (`record.block()`) instead of
+writing fields. Persistence lives in [pulse.store.runs]; this module has no I/O.
+
+Statuses are `StrEnum`s: they compare and hash like the plain strings already
+stored in SQLite, so no migration is needed.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import StrEnum
+
+from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
+
+
+class StepStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+
+    @classmethod
+    def parse(cls, value: str) -> StepStatus:
+        """Status read from storage; unknown or empty values fall back to `PENDING`."""
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.PENDING
+
+
+class RunStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    AWAITING_INPUT = "awaiting_input"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    STOPPED = "stopped"
+    BLOCKED = "blocked"
+
+    @classmethod
+    def parse(cls, value: str) -> RunStatus:
+        """Status read from storage; unknown or empty values fall back to `PENDING`."""
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.PENDING
+
+    @classmethod
+    def for_exit_code(cls, exit_code: int) -> RunStatus:
+        """Status of a run that ended with `exit_code`.
+
+        Blocked is not failed: history must tell them apart to offer the right action.
+        """
+        if exit_code == 0:
+            return cls.COMPLETED
+        if exit_code == RUN_STOPPED:
+            return cls.STOPPED
+        if exit_code == RUN_BLOCKED:
+            return cls.BLOCKED
+        return cls.FAILED
+
+
+SETTLED = frozenset({StepStatus.DONE, StepStatus.SKIPPED})
+_INTERRUPTED = frozenset({StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED})
+
+
+class InvalidTransition(RuntimeError):
+    """A status change the run or step does not allow from its current state."""
+
+
+def utc_now() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
+
+
+def net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
+    """Wall time minus wait; zero when the round has no recorded start and end."""
+    try:
+        start = datetime.fromisoformat(started_at)
+        end = datetime.fromisoformat(ended_at)
+    except ValueError:
+        return 0.0
+    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
+
+
+@dataclass
+class StepRecord:
+    step_id: str
+    position: int = 0
+    label: str = ""
+    agent_id: str = ""
+    status: StepStatus = StepStatus.PENDING
+    summary: str = ""
+    acp_session_id: str = ""
+    started_at: str = ""
+    ended_at: str = ""
+    waiting_seconds: float = 0.0
+    rounds: int = 1
+    carried_seconds: float = 0.0
+
+    @property
+    def settled(self) -> bool:
+        return self.status in SETTLED
+
+    def start(self) -> None:
+        """Begin an attempt. Retries keep the first `started_at` of the round."""
+        self._require_not(SETTLED, "start")
+        self.status = StepStatus.RUNNING
+        self.started_at = self.started_at or utc_now()
+
+    def record_reply(self, *, session_id: str, summary: str) -> None:
+        """Keep what the agent answered; an empty `session_id` keeps the previous one."""
+        self._require({StepStatus.RUNNING}, "record a reply")
+        self.acp_session_id = session_id or self.acp_session_id
+        self.summary = summary
+
+    def deliver(self) -> None:
+        """The agent delivered what the step asks for."""
+        self._end_as(StepStatus.DONE, allowed={StepStatus.RUNNING})
+
+    def skip(self) -> None:
+        """The agent declared the step does not apply; its summary is kept."""
+        self._end_as(StepStatus.SKIPPED, allowed={StepStatus.RUNNING})
+
+    def skip_blocked(self) -> None:
+        """The user skips a blocked step.
+
+        The summary is cleared so the next step reports the earlier delivery
+        instead of this one's blocked text.
+        """
+        self._end_as(StepStatus.SKIPPED, allowed={StepStatus.BLOCKED})
+        self.summary = ""
+
+    def block(self) -> None:
+        """It ran and did not crash, but did not deliver."""
+        self._end_as(StepStatus.BLOCKED, allowed={StepStatus.RUNNING})
+
+    def fail(self) -> None:
+        """Record the attempt as failed before asking what to do.
+
+        Prevents a step stuck as `running` in history if the process dies while
+        the retry menu is open. Retrying calls `start` again.
+        """
+        self._end_as(StepStatus.FAILED, allowed={StepStatus.RUNNING})
+
+    def close_after_wait(self) -> None:
+        """Re-stamp `ended_at` after the user answered the retry/blocked menu.
+
+        Menu wait time is subtracted from the step (`waiting_seconds`), so
+        `ended_at` must cover it or the recorded duration shrinks or goes negative.
+        """
+        self._require({StepStatus.FAILED, StepStatus.BLOCKED}, "close after the menu")
+        self.ended_at = utc_now()
+
+    def release(self) -> bool:
+        """Return a step cut by a stop to `pending` so a resume restarts it.
+
+        Settled steps are left alone. Returns whether anything changed.
+        """
+        if self.status not in _INTERRUPTED:
+            return False
+        self.status = StepStatus.PENDING
+        self.ended_at = ""
+        return True
+
+    def reopen_round(self, *, carried_seconds: float, opener: bool) -> None:
+        """Start a new loop round on the same row.
+
+        `carried_seconds` is the net time of all previous rounds; the opener is
+        the step that counts the rounds.
+        """
+        self._require_not({StepStatus.RUNNING}, "reopen")
+        if opener:
+            self.rounds += 1
+        self.carried_seconds = carried_seconds
+        self.waiting_seconds = 0.0
+        self.status = StepStatus.PENDING
+        self.summary = ""
+        self.started_at = ""
+        self.ended_at = ""
+        self.acp_session_id = ""
+
+    def close_with_loop(self, *, ran_before: bool) -> None:
+        """Settle a step the loop no longer needs, without running it.
+
+        A step that ran in an earlier round is `done`; one that never ran is `skipped`.
+        """
+        self._require_not(SETTLED | {StepStatus.RUNNING}, "close with the loop")
+        self.status = StepStatus.DONE if ran_before else StepStatus.SKIPPED
+        self.summary = ""
+        self.ended_at = self.ended_at or utc_now()
+
+    def _end_as(self, status: StepStatus, *, allowed: set[StepStatus]) -> None:
+        self._require(allowed, f"mark as {status}")
+        self.status = status
+        self.ended_at = utc_now()
+
+    def _require(self, allowed: set[StepStatus], action: str) -> None:
+        if self.status not in allowed:
+            raise InvalidTransition(f"step {self.step_id}: cannot {action} while {self.status}")
+
+    def _require_not(self, forbidden: set[StepStatus] | frozenset[StepStatus], action: str) -> None:
+        if self.status in forbidden:
+            raise InvalidTransition(f"step {self.step_id}: cannot {action} while {self.status}")
+
+
+@dataclass
+class RunRecord:
+    id: str
+    workflow_id: str
+    workspace_root: str
+    user_prompt: str = ""
+    status: RunStatus = RunStatus.PENDING
+    current_step: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    worktree_path: str = ""
+    branch: str = ""
+    steps: list[StepRecord] = field(default_factory=list)
+
+    @property
+    def exec_root(self) -> str:
+        """Where the agent worked: the worktree, or the root when there was none."""
+        return self.worktree_path or self.workspace_root
+
+    def step(self, step_id: str) -> StepRecord | None:
+        for item in self.steps:
+            if item.step_id == step_id:
+                return item
+        return None
+
+    def next_pending(self) -> StepRecord | None:
+        for item in self.steps:
+            if not item.settled:
+                return item
+        return None
+
+    def is_incomplete(self) -> bool:
+        return any(not item.settled for item in self.steps)
+
+    def begin_step(self, step_id: str) -> None:
+        """Point the run at the step about to execute."""
+        if self.step(step_id) is None:
+            raise InvalidTransition(f"run {self.id}: unknown step {step_id}")
+        self.status = RunStatus.RUNNING
+        self.current_step = step_id
+
+    def complete(self) -> None:
+        """Every step settled; the workflow is over."""
+        if self.is_incomplete():
+            raise InvalidTransition(f"run {self.id}: cannot complete with unsettled steps")
+        self.status = RunStatus.COMPLETED
+
+    def end(self, exit_code: int) -> None:
+        """Record why the run stopped early (stop, block or failure)."""
+        if exit_code == 0:
+            raise InvalidTransition(f"run {self.id}: a clean exit must go through complete()")
+        self.status = RunStatus.for_exit_code(exit_code)
+
+    def fail_running_steps(self) -> list[StepRecord]:
+        """Fail the steps a crash left `running`; returns them so they can be saved."""
+        running = [item for item in self.steps if item.status == StepStatus.RUNNING]
+        for item in running:
+            item.fail()
+        return running

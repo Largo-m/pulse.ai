@@ -13,7 +13,7 @@ from pathlib import Path
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.store import runs as run_store
-from pulse.store.runs import AWAITING_INPUT, RUNNING, StepRecord
+from pulse.store.runs import AWAITING_INPUT, RUNNING, RunStatus, StepRecord
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
 
@@ -197,11 +197,11 @@ def test_a_policy_decision_never_touches_the_run_status():
     port, _correlator, _bus = _port_and_bus()
     runner = port._on_enter.__self__
     runner.bind_run(run.id)
-    run_store.update_run(run.id, status="marcador")
+    run_store.update_run(run.id, status=RunStatus.BLOCKED)
 
     port.respond_to_permission(_permission(), policy="auto_approve")
 
-    assert run_store.load_run(run.id).status == "marcador"
+    assert run_store.load_run(run.id).status == RunStatus.BLOCKED
 
 
 def test_the_terminal_veto_is_decided_without_asking_anyone():

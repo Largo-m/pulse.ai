@@ -15,6 +15,7 @@ import threading
 from collections.abc import Callable
 
 RUN_STOPPED = 130
+RUN_BLOCKED = 131
 
 STOPPED = "stopped"
 

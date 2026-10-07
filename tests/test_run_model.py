@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+import pytest
+
+from pulse.daemon.runs import RunState
+from pulse.domain.run import (
+    InvalidTransition,
+    RunRecord,
+    RunStatus,
+    StepRecord,
+    StepStatus,
+)
+from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
+
+
+def _running(step_id: str = "one") -> StepRecord:
+    step = StepRecord(step_id=step_id)
+    step.start()
+    return step
+
+
+def _run(*steps: StepRecord) -> RunRecord:
+    return RunRecord(id="run-1", workflow_id="demo", workspace_root="/tmp", steps=list(steps))
+
+
+def test_start_marks_running_and_keeps_the_first_start_across_retries():
+    step = _running()
+    first = step.started_at
+    step.fail()
+    step.start()
+
+    assert step.status == StepStatus.RUNNING
+    assert step.started_at == first
+
+
+@pytest.mark.parametrize("status", [StepStatus.DONE, StepStatus.SKIPPED])
+def test_a_settled_step_cannot_start_again(status: StepStatus):
+    step = StepRecord(step_id="one", status=status)
+
+    with pytest.raises(InvalidTransition):
+        step.start()
+
+
+@pytest.mark.parametrize(
+    ("end", "status"),
+    [
+        (StepRecord.deliver, StepStatus.DONE),
+        (StepRecord.skip, StepStatus.SKIPPED),
+        (StepRecord.block, StepStatus.BLOCKED),
+        (StepRecord.fail, StepStatus.FAILED),
+    ],
+)
+def test_ending_a_running_step_stamps_the_end(end, status: StepStatus):
+    step = _running()
+
+    end(step)
+
+    assert step.status == status
+    assert step.ended_at
+
+
+@pytest.mark.parametrize("end", [StepRecord.deliver, StepRecord.block, StepRecord.fail])
+def test_only_a_running_step_can_end(end):
+    step = StepRecord(step_id="one")
+
+    with pytest.raises(InvalidTransition):
+        end(step)
+
+
+def test_an_agent_skip_keeps_the_summary_but_a_user_skip_drops_it():
+    agent = _running()
+    agent.record_reply(session_id="s1", summary="nada a fazer")
+    agent.skip()
+
+    user = _running()
+    user.record_reply(session_id="s2", summary="falta o token")
+    user.block()
+    user.skip_blocked()
+
+    assert agent.summary == "nada a fazer"
+    assert user.status == StepStatus.SKIPPED
+    assert user.summary == ""
+
+
+def test_a_user_skip_needs_a_blocked_step():
+    with pytest.raises(InvalidTransition):
+        _running().skip_blocked()
+
+
+def test_an_empty_session_id_keeps_the_previous_one():
+    step = _running()
+    step.record_reply(session_id="s1", summary="a")
+    step.record_reply(session_id="", summary="b")
+
+    assert step.acp_session_id == "s1"
+    assert step.summary == "b"
+
+
+@pytest.mark.parametrize("status", [StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED])
+def test_release_returns_an_interrupted_step_to_pending(status: StepStatus):
+    step = StepRecord(step_id="one", status=status, ended_at="2026-01-01T00:00:00+00:00")
+
+    assert step.release() is True
+    assert step.status == StepStatus.PENDING
+    assert step.ended_at == ""
+
+
+def test_release_leaves_a_settled_step_alone():
+    step = StepRecord(step_id="one", status=StepStatus.DONE, ended_at="x")
+
+    assert step.release() is False
+    assert step.status == StepStatus.DONE
+
+
+def test_reopening_a_round_clears_the_attempt_and_counts_only_on_the_opener():
+    opener = _running("review")
+    opener.record_reply(session_id="s1", summary="ok")
+    opener.deliver()
+    other = _running("fix")
+    other.deliver()
+
+    opener.reopen_round(carried_seconds=12.5, opener=True)
+    other.reopen_round(carried_seconds=3.0, opener=False)
+
+    assert (opener.rounds, other.rounds) == (2, 1)
+    assert opener.status == StepStatus.PENDING
+    assert (opener.summary, opener.acp_session_id, opener.started_at) == ("", "", "")
+    assert opener.carried_seconds == 12.5
+
+
+def test_a_running_step_cannot_be_reopened():
+    with pytest.raises(InvalidTransition):
+        _running().reopen_round(carried_seconds=0.0, opener=True)
+
+
+def test_closing_with_the_loop_depends_on_whether_the_step_ran_before():
+    ran = StepRecord(step_id="a")
+    never = StepRecord(step_id="b")
+
+    ran.close_with_loop(ran_before=True)
+    never.close_with_loop(ran_before=False)
+
+    assert (ran.status, never.status) == (StepStatus.DONE, StepStatus.SKIPPED)
+
+
+def test_begin_step_points_the_run_at_a_known_step():
+    run = _run(StepRecord(step_id="one"))
+
+    run.begin_step("one")
+
+    assert (run.status, run.current_step) == (RunStatus.RUNNING, "one")
+    with pytest.raises(InvalidTransition):
+        run.begin_step("ghost")
+
+
+def test_a_run_completes_only_when_every_step_settled():
+    step = _running()
+    run = _run(step)
+
+    with pytest.raises(InvalidTransition):
+        run.complete()
+
+    step.deliver()
+    run.complete()
+    assert run.status == RunStatus.COMPLETED
+
+
+@pytest.mark.parametrize(
+    ("code", "status"),
+    [(RUN_STOPPED, RunStatus.STOPPED), (RUN_BLOCKED, RunStatus.BLOCKED), (1, RunStatus.FAILED)],
+)
+def test_end_maps_the_exit_code(code: int, status: RunStatus):
+    run = _run()
+
+    run.end(code)
+
+    assert run.status == status
+
+
+def test_a_clean_exit_must_go_through_complete():
+    with pytest.raises(InvalidTransition):
+        _run(StepRecord(step_id="one")).end(0)
+
+
+def test_a_crash_fails_only_the_running_steps():
+    running = _running("a")
+    done = _running("b")
+    done.deliver()
+    run = _run(running, done)
+
+    failed = run.fail_running_steps()
+
+    assert failed == [running]
+    assert (running.status, done.status) == (StepStatus.FAILED, StepStatus.DONE)
+
+
+def test_unknown_stored_statuses_load_as_pending():
+    assert StepStatus.parse("") == StepStatus.PENDING
+    assert RunStatus.parse("legacy") == RunStatus.PENDING
+    assert RunStatus.parse("completed") == RunStatus.COMPLETED
+
+
+def test_statuses_still_compare_as_the_stored_strings():
+    assert StepStatus.DONE == "done"
+    assert "awaiting_input" in {RunStatus.AWAITING_INPUT}
+
+
+def test_daemon_run_state_finishes_once_with_the_mapped_status():
+    state = RunState(id="r", workflow_id="demo", prompt="", workspace="")
+
+    state.finish(RUN_BLOCKED)
+
+    assert (state.status, state.exit_code, state.is_active()) == (RunStatus.BLOCKED, RUN_BLOCKED, False)
+    with pytest.raises(RuntimeError):
+        state.finish(0)

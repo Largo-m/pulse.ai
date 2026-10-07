@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, PENDING, SETTLED, SKIPPED
 from pulse.store.workflow_defs import WorkflowDef
 
 REPEAT = "repeat"
@@ -86,15 +85,10 @@ def reopen_loop(
         record = run.step(step.step_id)
         if record is None:
             continue
-        if step.step_id == definition.steps[loop.start].step_id:
-            record.rounds += 1
-        record.carried_seconds = run_store.carry_round(run.id, step.step_id)
-        record.waiting_seconds = 0.0
-        record.status = PENDING
-        record.summary = ""
-        record.started_at = ""
-        record.ended_at = ""
-        record.acp_session_id = ""
+        record.reopen_round(
+            carried_seconds=run_store.carry_round(run.id, step.step_id),
+            opener=step.step_id == definition.steps[loop.start].step_id,
+        )
         run_store.save_step(run.id, record)
 
 
@@ -107,10 +101,8 @@ def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) ->
     ran_before = opener is not None and opener.rounds > 1
     for step in definition.steps[loop.start + 1 : loop.end + 1]:
         record = run.step(step.step_id)
-        if record is None or record.status in SETTLED:
+        if record is None or record.settled:
             continue
-        record.status = DONE if ran_before else SKIPPED
-        record.summary = ""
-        record.ended_at = record.ended_at or run_store.utc_now()
+        record.close_with_loop(ran_before=ran_before)
         run_store.save_step(run.id, record)
     return loop.end + 1

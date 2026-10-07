@@ -493,7 +493,8 @@ enxergá-lo sem mudanças.
 | Pasta | Função |
 |-------|--------|
 | [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Definições de workflow, step e agente |
-| [`pulse/store/runs.py`](pulse/store/runs.py) | Estado da run, log e artefatos |
+| [`pulse/domain/run.py`](pulse/domain/run.py) | Agregado da run: `RunRecord`/`StepRecord`, status e transições com guarda, sem I/O |
+| [`pulse/store/runs.py`](pulse/store/runs.py) | Persistência da run, log e artefatos |
 | [`pulse/store/db.py`](pulse/store/db.py) | Schema + disparo da semente |
 | [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
 | [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |

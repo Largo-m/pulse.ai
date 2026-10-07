@@ -9,6 +9,7 @@ import pytest
 
 from tests.conftest import make_workflow
 
+from pulse.domain import run as run_model
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
@@ -1074,7 +1075,7 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
     start = datetime(2026, 10, 6, tzinfo=UTC)
     seconds = iter(range(0, 10_000, 10))
     monkeypatch.setattr(
-        run_store,
+        run_model,
         "utc_now",
         lambda: (start + timedelta(seconds=next(seconds))).isoformat(),
     )
@@ -1289,7 +1290,7 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     """
     make_workflow("demo", steps=[("one", "Um")])
     clock = [datetime(2026, 1, 1, tzinfo=UTC)]
-    monkeypatch.setattr(run_store, "utc_now", lambda: clock[0].isoformat())
+    monkeypatch.setattr(run_model, "utc_now", lambda: clock[0].isoformat())
 
     runner = _Runner([RuntimeError("o processo do agente encerrou")])
     stamped_before_menu: list[str] = []
