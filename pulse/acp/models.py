@@ -27,7 +27,7 @@ def _native_models(session: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _config_option_models(session: dict[str, Any]) -> list[dict[str, Any]]:
-    """Modelos expostos como config option (dialeto do adapter do Claude)."""
+    """Models exposed as a config option (Claude adapter dialect)."""
     from pulse.runtimes.claude import model_config_option
 
     option = model_config_option(session)
@@ -116,5 +116,4 @@ def resolve_interview_model_id(
     return None
 
 
-#: Nome novo, agnóstico de fase: o runtime é quem decide como aplicar o modelo.
 resolve_model_id = resolve_interview_model_id

@@ -265,12 +265,12 @@ def test_prompt_text_submit_and_confirm_cancel():
     asyncio.run(run())
 
 
-def test_a_letra_da_opcao_escolhe_direto():
-    """O dock já rotula `A)`, `B)`, `C)` — a tecla é a letra que está na tela.
+def test_the_option_letter_picks_it_directly():
+    """The dock already labels `A)`, `B)`, `C)`; the key is the letter on screen.
 
-    É o que torna "pular o review" uma tecla: o bloco de aprovação vira
-    A) aprovar · B) ajustar · C) pular · D) cancelar, e `c` responde sem
-    navegar. Vale para qualquer questionário, não só para o de aprovação.
+    This makes "skip the review" a single key: the approval block becomes
+    A) approve, B) adjust, C) skip, D) cancel, and `c` answers without navigating.
+    Applies to any questionnaire, not only the approval one.
     """
 
     async def run() -> None:
@@ -325,8 +325,8 @@ def test_a_letra_da_opcao_escolhe_direto():
     asyncio.run(run())
 
 
-def test_rotulo_sem_letra_nao_ganha_atalho():
-    """Atalho que não está escrito na tela é atalho invisível."""
+def test_a_label_without_a_letter_gets_no_hotkey():
+    """A hotkey not written on screen is an invisible hotkey."""
     request = PromptRequest(
         kind=PromptKind.SELECT,
         title="Questionário",

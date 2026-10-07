@@ -1,4 +1,4 @@
-"""A branch na tela, e o worktree saindo pelo histórico."""
+"""The branch on screen, and removing the worktree from history."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 
-git_only = pytest.mark.skipif(not vcs.git_available(), reason="git não está no PATH")
+git_only = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
 
 def _run_in(workspace: Path, *, run_id: str = "run-1", branch: str = "", worktree: str = "") -> str:
@@ -47,12 +47,7 @@ def _run_in(workspace: Path, *, run_id: str = "run-1", branch: str = "", worktre
     return record.id
 
 
-# --------------------------------------------------------------------------
-# A branch ao lado do modelo
-# --------------------------------------------------------------------------
-
-
-def test_meta_do_stream_mostra_modelo_e_branch():
+def test_stream_meta_shows_model_and_branch():
     state = CockpitState()
     make_workflow("demo")
     state.configure_workflow("demo")
@@ -79,8 +74,8 @@ def test_meta_do_stream_mostra_modelo_e_branch():
     asyncio.run(run())
 
 
-def test_sem_branch_a_meta_fica_como_era():
-    """Projeto fora de git não ganha separador pendurado no modelo."""
+def test_without_branch_meta_is_unchanged():
+    """A project outside git gets no dangling separator after the model."""
     state = CockpitState()
     make_workflow("demo")
     state.configure_workflow("demo")
@@ -107,7 +102,7 @@ def test_sem_branch_a_meta_fica_como_era():
     asyncio.run(run())
 
 
-def test_historico_reabre_com_a_branch_da_run(tmp_path: Path):
+def test_history_reopens_with_run_branch(tmp_path: Path):
     run_id = _run_in(tmp_path, branch="pulse/demo-abc123")
     item = HistoryCatalog(tmp_path).get(run_id)
     assert item is not None
@@ -115,7 +110,7 @@ def test_historico_reabre_com_a_branch_da_run(tmp_path: Path):
     assert hydrate_history_item(item, tmp_path).branch_label == "pulse/demo-abc123"
 
 
-def test_retomar_reabre_com_a_branch_da_run(tmp_path: Path):
+def test_resume_reopens_with_run_branch(tmp_path: Path):
     from pulse.tui.hydrate import restore_run
 
     run_id = _run_in(tmp_path, branch="pulse/demo-abc123")
@@ -123,12 +118,11 @@ def test_retomar_reabre_com_a_branch_da_run(tmp_path: Path):
     state.configure_workflow("demo")
     exec_root = restore_run(state, run_id, tmp_path)
     assert state.branch_label == "pulse/demo-abc123"
-    # Sem worktree, onde a run trabalha é a própria raiz.
     assert exec_root == str(tmp_path.resolve())
 
 
-def test_retomar_aponta_para_o_worktree_antes_do_motor_falar(tmp_path: Path):
-    """A tela não pode ler artefato da raiz enquanto o `run.context` não chega."""
+def test_resume_points_to_worktree_before_engine_reports(tmp_path: Path):
+    """The screen must not read artifacts from the root before `run.context` arrives."""
     from pulse.tui.hydrate import restore_run
 
     worktree = tmp_path / "wt"
@@ -139,13 +133,8 @@ def test_retomar_aponta_para_o_worktree_antes_do_motor_falar(tmp_path: Path):
     assert restore_run(state, run_id, tmp_path) == str(worktree)
 
 
-# --------------------------------------------------------------------------
-# Remoção do worktree
-# --------------------------------------------------------------------------
-
-
 @git_only
-def test_remover_worktree_pelo_catalogo(tmp_path: Path):
+def test_remove_worktree_through_catalog(tmp_path: Path):
     repo = make_repo(tmp_path / "repo")
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
@@ -158,15 +147,14 @@ def test_remover_worktree_pelo_catalogo(tmp_path: Path):
 
     assert HistoryCatalog(repo).remove_worktree(item) is True
     assert not exec_dir.exists()
-    # O banco esquece o caminho: oferecer remover de novo não faria sentido.
     stored = run_store.load_run(run_id)
     assert stored is not None
     assert stored.worktree_path == ""
 
 
 @git_only
-def test_worktree_sujo_nao_e_apagado_em_silencio(tmp_path: Path):
-    """Trabalho não commitado lá dentro não é nosso para jogar fora."""
+def test_dirty_worktree_is_not_silently_deleted(tmp_path: Path):
+    """Uncommitted work inside is not ours to throw away."""
     repo = make_repo(tmp_path / "repo")
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
@@ -179,14 +167,13 @@ def test_worktree_sujo_nao_e_apagado_em_silencio(tmp_path: Path):
     assert HistoryCatalog(repo).remove_worktree(item) is False
     assert exec_dir.exists()
 
-    # Apagar a run do histórico também respeita isso — a run sai, o diretório fica.
     assert HistoryCatalog(repo).delete(run_id) is True
     assert exec_dir.exists()
     assert run_store.load_run(run_id) is None
 
 
 @git_only
-def test_apagar_run_limpa_o_worktree_limpo(tmp_path: Path):
+def test_deleting_run_removes_clean_worktree(tmp_path: Path):
     repo = make_repo(tmp_path / "repo")
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
@@ -199,7 +186,7 @@ def test_apagar_run_limpa_o_worktree_limpo(tmp_path: Path):
 
 
 @git_only
-def test_detalhe_oferece_remover_so_quando_ha_worktree(tmp_path: Path):
+def test_detail_offers_removal_only_with_worktree(tmp_path: Path):
     repo = make_repo(tmp_path / "repo")
     plain_id = _run_in(repo, run_id="run-sem-wt")
     plain = HistoryCatalog(repo).get(plain_id)
@@ -225,8 +212,8 @@ def test_detalhe_oferece_remover_so_quando_ha_worktree(tmp_path: Path):
 
 
 @git_only
-def test_detalhe_le_artefato_de_dentro_do_worktree(tmp_path: Path):
-    """O painel procura o arquivo onde o agente escreveu, não na raiz."""
+def test_detail_reads_artifact_from_inside_worktree(tmp_path: Path):
+    """The pane looks for the file where the agent wrote it, not at the root."""
     repo = make_repo(tmp_path / "repo")
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
@@ -242,13 +229,8 @@ def test_detalhe_le_artefato_de_dentro_do_worktree(tmp_path: Path):
     assert state.artifacts[0].has_content is True
 
 
-# --------------------------------------------------------------------------
-# A chave nas configurações
-# --------------------------------------------------------------------------
-
-
 @git_only
-def test_configuracoes_oferece_a_chave_em_repo_git(tmp_path: Path):
+def test_settings_offers_toggle_in_git_repo(tmp_path: Path):
     repo = make_repo(tmp_path / "repo")
 
     async def run() -> None:
@@ -283,8 +265,8 @@ def test_configuracoes_oferece_a_chave_em_repo_git(tmp_path: Path):
     asyncio.run(run())
 
 
-def test_configuracoes_esconde_a_chave_fora_de_git(tmp_path: Path):
-    """Chave que não liga nada é pior do que chave nenhuma."""
+def test_settings_hides_toggle_outside_git(tmp_path: Path):
+    """A toggle that enables nothing is worse than no toggle."""
     plain = tmp_path / "sem-git"
     plain.mkdir()
 
@@ -312,8 +294,8 @@ def test_configuracoes_esconde_a_chave_fora_de_git(tmp_path: Path):
 
 
 @git_only
-def test_chave_ligada_leva_a_run_para_o_worktree(tmp_path: Path):
-    """Da chave ao diretório: o caminho inteiro, sem mock no meio."""
+def test_enabled_toggle_moves_run_to_worktree(tmp_path: Path):
+    """From toggle to directory: the whole path, with no mocks."""
     repo = make_repo(tmp_path / "repo")
     update_project_defaults(repo, use_worktree=True)
 

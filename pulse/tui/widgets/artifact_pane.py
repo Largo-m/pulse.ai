@@ -39,12 +39,11 @@ class ArtifactPane(Widget):
         self._loaded_key: tuple[str, float, bool] | None = None
 
     def set_cwd(self, cwd: str | None) -> None:
-        """Reaponta a pasta onde os artefatos são procurados.
+        """Repoint the directory where artifacts are looked up.
 
-        A run pode trabalhar num worktree, que o painel só descobre quando o
-        `run.context` chega. `_loaded_key` cai junto: ele guarda o mtime do
-        arquivo já lido, e manter a chave faria o painel continuar mostrando o
-        conteúdo lido do caminho antigo.
+        The run may work in a worktree only known once `run.context` arrives.
+        `_loaded_key` is reset too, since it caches the mtime of the file read
+        from the old path.
         """
         if cwd == self._cwd:
             return

@@ -28,8 +28,6 @@ class ResolvedConfig:
     model: str
     permission_policy: str
     workspace_dir: Path
-    #: Cada run abre o próprio `git worktree`. Não tem cascata: vem do projeto
-    #: ou não vem — a máquina não decide isolar o repositório de ninguém.
     use_worktree: bool = False
     workflow: str | None = None
     pulse_agent: str | None = None
@@ -161,10 +159,6 @@ def resolve_config(
         agent_name, agent_source = _resolve_agent_name(global_cfg, project_cfg, workflow)
         model, model_source = _resolve_model(global_cfg, project_cfg, workflow)
         permission_policy, policy_source = _resolve_permission_policy(global_cfg, project_cfg)
-        # Só um runtime do registry pode ser julgado indisponível: um agente
-        # declarado à mão no config tem binário próprio, e `get_runtime` devolve
-        # o default para nome desconhecido — checar a disponibilidade dele seria
-        # checar a do Cursor.
         if find_runtime(agent_name) is not None:
             fallback = _available_runtime_fallback(agent_name, project_cfg, global_cfg)
             if fallback is not None and fallback in agents:
@@ -211,11 +205,11 @@ def _resolve_pulse_agent(
     project_cfg: ProjectConfig | None,
     global_cfg: GlobalConfig | None,
 ) -> tuple[str, str, str, str, str, str]:
-    """Runtime, model e policy de um agente do banco.
+    """Runtime, model and policy of a DB-defined agent.
 
-    Campo vazio na definição significa "use o padrão" — e não o default do
-    código, mas o que a máquina/projeto já resolveram. Gravar um runtime
-    concreto na semente congelaria a escolha feita no `pulse init`.
+    An empty field in the definition means "use what the machine/project
+    resolved", not a code default; seeding a concrete runtime would freeze the
+    `pulse init` choice.
     """
     from pulse.store.agent_settings import load_agent_settings
     from pulse.store.workflow_defs import get_agent
@@ -259,14 +253,12 @@ def _available_runtime_fallback(
     project_cfg: ProjectConfig | None,
     global_cfg: GlobalConfig | None,
 ) -> str | None:
-    """Runtime alternativo quando o declarado não existe nesta máquina.
+    """Alternative runtime when the declared one is not available on this machine.
 
-    O runtime escolhido — no agente, no projeto ou na máquina — é preferência,
-    não requisito: quem só tem o Claude instalado não deve ficar travado porque
-    a preferência diz `cursor`. Vale para os dois caminhos de resolução; se só o
-    do agente caísse aqui, o pré-voo do orquestrador reprovaria a run inteira
-    por um runtime que nenhum step ia usar. O modelo é preservado — se o id não
-    existir no runtime novo, o próprio agente cai no default dele.
+    The chosen runtime (agent, project or machine) is a preference, not a
+    requirement. Applies to both resolution paths so the orchestrator preflight
+    does not reject a run over an unused runtime. The model is kept; if the id
+    is unknown to the new runtime, the agent falls back to its own default.
     """
     if get_runtime(runtime).is_available():
         return None

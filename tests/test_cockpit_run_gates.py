@@ -1,4 +1,4 @@
-"""Os portões antes de o motor abrir a sessão ACP."""
+"""Gates checked before the engine opens the ACP session."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def test_cockpit_surfaces_runtime_failures(monkeypatch, tmp_path: Path):
 
 
 def test_unknown_workflow_is_an_error(monkeypatch):
-    """Sem catálogo em código, um id que não está no banco não existe."""
+    """With no catalog in code, an id missing from the database does not exist."""
     monkeypatch.setattr(engine, "is_interactive", lambda: False)
     with pytest.raises(UnknownWorkflow, match="desconhecido"):
         run_workflow(

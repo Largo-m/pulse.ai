@@ -28,7 +28,6 @@ TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
 class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
-    #: Run anterior a retomar, do primeiro step que não fechou.
     resume_run_id: str | None = None
 
 
@@ -99,9 +98,6 @@ def _history_to_dict(item: Any) -> dict[str, Any]:
 def create_app(manager: RunManager | None = None) -> FastAPI:
     runs = manager or RunManager()
     app = FastAPI(title="Pulse Engine", version=__version__)
-    # Escutar só em 127.0.0.1 não basta: uma página com DNS rebinding chega aqui
-    # com `Host: atacante.exemplo`. Só aceitar os nomes que o próprio cliente usa
-    # fecha essa porta (`pulse` é o host fictício das chamadas pelo socket UDS).
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(TRUSTED_HOSTS))
     app.state.runs = runs
 
@@ -235,11 +231,11 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
 
     @app.get("/api/runs/{run_id}/events")
     async def run_events(run_id: str, after: int = 0) -> StreamingResponse:
-        """O stream da run: o passado dela e depois o vivo.
+        """The run stream: its past events, then live ones.
 
-        `after` pula os N primeiros eventos, para quem já tem parte do histórico.
-        Sem ele, anexar entrega a run inteira desde `run.started` — é assim que o
-        cockpit reabre idêntico ao que era antes de o usuário sair.
+        `after` skips the first N events for clients that already have part of
+        the history. Without it, attaching replays the whole run from
+        `run.started`, so the cockpit reopens exactly as it was.
         """
         state = runs.get(run_id)
         if state is None:

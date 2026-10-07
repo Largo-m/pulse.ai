@@ -1,13 +1,11 @@
-"""Quando o diretório atual não dá para ler, o Pulse segue em frente.
+"""Pulse keeps going when the current directory is unreadable.
 
-O daemon vive destacado, com o cwd que herdou de quem o iniciou — e esse
-diretório não é dele. Apagar o projeto de onde o engine subiu move o cwd dele
-para a Lixeira, onde o macOS nega até `getcwd()` (`EPERM`). Antes disso aqui,
-toda run nova morria no `resolve_config`, antes do primeiro step, com um
-"Operation not permitted" que não dizia nada a ninguém.
+The detached daemon inherits its launcher's cwd. Deleting that project moves the
+cwd to the Trash, where macOS denies even `getcwd()` (`EPERM`), and every new run
+died in `resolve_config` with an opaque "Operation not permitted".
 
-Duas defesas, e as duas têm teste: o daemon se ancora em `~/.pulse` para nunca
-chegar nesse estado, e `safe_cwd` segura o tranco de quem chegou.
+Two defenses, both tested: the daemon anchors itself in `~/.pulse`, and
+`safe_cwd` absorbs the failure for callers that still hit it.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ from pulse.daemon.server import _anchor_cwd
 
 @pytest.fixture
 def unreadable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`os.getcwd()` recusa, como numa pasta protegida pelo macOS."""
+    """`os.getcwd()` refuses, as in a macOS-protected folder."""
 
     def _deny() -> str:
         raise PermissionError(1, "Operation not permitted")
@@ -33,7 +31,7 @@ def unreadable_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "getcwd", _deny)
 
 
-def test_safe_cwd_devolve_o_diretorio_atual_quando_da(
+def test_safe_cwd_returns_current_directory_when_readable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -42,17 +40,17 @@ def test_safe_cwd_devolve_o_diretorio_atual_quando_da(
     assert safe_cwd() == Path.cwd()
 
 
-def test_safe_cwd_cai_no_estado_do_pulse_quando_nao_da(unreadable_cwd: None) -> None:
+def test_safe_cwd_falls_back_to_pulse_state_when_unreadable(unreadable_cwd: None) -> None:
     assert safe_cwd() == global_state_dir()
 
 
-def test_resolve_config_com_workspace_nao_depende_do_cwd(
+def test_resolve_config_with_workspace_does_not_depend_on_cwd(
     tmp_path: Path,
     unreadable_cwd: None,
 ) -> None:
-    """O caso que quebrava: iniciar uma spec com o engine num cwd ilegível.
+    """The broken case: starting a spec with the engine in an unreadable cwd.
 
-    O daemon sempre diz qual é o workspace — a run nunca precisou do cwd dele.
+    The daemon always passes the workspace, so the run never needs its own cwd.
     """
     project = tmp_path / "projeto"
     project.mkdir()
@@ -63,20 +61,20 @@ def test_resolve_config_com_workspace_nao_depende_do_cwd(
     assert resolved.workspace_dir == project.resolve()
 
 
-def test_resolve_config_sem_workspace_nao_levanta(unreadable_cwd: None) -> None:
-    """Sem projeto para apontar, o pior desfecho é não achar projeto nenhum."""
+def test_resolve_config_without_workspace_does_not_raise(unreadable_cwd: None) -> None:
+    """With no project to point at, the worst outcome is finding no project."""
     resolved = resolve_config()
 
     assert resolved.workspace_dir == global_state_dir()
     assert resolved.agent_name
 
 
-def test_find_project_root_sem_cwd_legivel(unreadable_cwd: None) -> None:
+def test_find_project_root_without_readable_cwd(unreadable_cwd: None) -> None:
     assert find_project_root() is None
 
 
-def test_daemon_se_ancora_no_proprio_estado(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """O engine larga o diretório de quem o iniciou assim que sobe."""
+def test_daemon_anchors_in_its_own_state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The engine leaves its launcher's directory as soon as it starts."""
     home = tmp_path / "estado"
     monkeypatch.setattr("pulse.daemon.paths.GLOBAL_DIR", home)
     origin = tmp_path / "projeto-que-vai-sumir"

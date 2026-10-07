@@ -1,4 +1,4 @@
-"""O contrato em `contracts/openapi.yaml` lista as rotas que o engine serve."""
+"""The contract in `contracts/openapi.yaml` lists the routes the engine serves."""
 
 from __future__ import annotations
 

@@ -11,8 +11,6 @@ class PhaseStatus(str, Enum):
     DONE = "done"
     SKIPPED = "skipped"
     FAILED = "failed"
-    #: O agente rodou e declarou que não tinha como concluir. Ver
-    #: [pulse.orchestrator.outcome].
     BLOCKED = "blocked"
 
 
@@ -32,10 +30,9 @@ class LogKind(str, Enum):
 
 
 def format_elapsed(seconds: float) -> str:
-    """Duração legível numa coluna estreita.
+    """Readable duration for a narrow column.
 
-    `MM:SS` só vale até uma hora — uma spec retomada no dia seguinte virava
-    "966:46". Acima disso o passo muda: `1h06`, `2d03`.
+    `MM:SS` up to one hour, then `1h06`, then `2d03`.
     """
     total = int(max(0.0, seconds))
     if total < 3600:
@@ -55,12 +52,8 @@ class PhaseItem:
     status: PhaseStatus = PhaseStatus.PENDING
     started_at: float | None = None
     ended_at: float | None = None
-    #: Começo da espera em curso pelo usuário. Preenchido = relógio congelado.
     awaiting_since: float | None = None
-    #: Espera já contabilizada neste passo, descontada da duração.
     waiting_total: float = 0.0
-    #: Quantas vezes este step rodou. Passa de 1 só dentro de um laço, e é o que
-    #: a sidebar mostra como contador — uma linha por step, não por volta.
     rounds: int = 1
     files: int = 0
     issues: int = 0
@@ -68,17 +61,12 @@ class PhaseItem:
     _seen_issues: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def elapsed_label(self, now: float | None = None) -> str:
-        """Duração do passo. O relógio só anda enquanto o passo executa.
+        """Step duration; the clock only runs while the step executes.
 
-        A duração fechada tem precedência sobre o status: uma spec aberta pelo
-        histórico chega com a fase marcada como `running` e a duração já gravada
-        em `ended_at` — sem essa ordem, a coluna voltava a contar do zero do
-        processo e crescia sozinha numa tela que não está rodando nada.
-
-        Espera do usuário não é trabalho do agente: enquanto há pergunta aberta
-        o relógio congela em `awaiting_since`, e o que já foi esperado sai da
-        conta por `waiting_total`. Sem isso, uma aprovação deixada para o dia
-        seguinte aparecia como um passo que levou doze horas.
+        A closed duration (`ended_at`) wins over the status, since a run opened
+        from history may still be marked `running`. Time spent waiting on the
+        user is excluded: the clock freezes at `awaiting_since` and past waits
+        are subtracted via `waiting_total`.
         """
         if self.started_at is None:
             return ""
@@ -93,22 +81,20 @@ class PhaseItem:
         return format_elapsed(end - self.started_at - self.waiting_total)
 
     def closed_seconds(self) -> float:
-        """O tempo já fechado deste passo, líquido da espera. Zero se nunca fechou.
+        """Closed time of this step, net of waiting. Zero if it never closed.
 
-        É o ponto de partida quando o passo volta a rodar: uma nova volta do
-        laço soma ao que as anteriores gastaram, como `carried_seconds` no banco.
+        Used as the starting point when the step runs again, like
+        `carried_seconds` in the database.
         """
         if self.started_at is None or self.ended_at is None:
             return 0.0
         return max(0.0, self.ended_at - self.started_at - self.waiting_total)
 
     def display_status(self) -> str:
-        """O status como a tela deve nomeá-lo.
+        """The status as the UI should name it.
 
-        `awaiting_input` não é estado de step no banco — o step continua
-        `running`, porque não terminou. É sobreposto só na exibição, para a
-        sidebar poder dizer "precisa de você" sem que a máquina de estados
-        ganhe um estado a mais para tratar em todo lugar.
+        `awaiting_input` is not a stored step state (the step stays `running`);
+        it is overlaid only for display.
         """
         if self.awaiting_since is not None:
             return "awaiting_input"
@@ -126,8 +112,6 @@ class PhaseItem:
         self.awaiting_since = None
 
     def finish(self, ended_at: float | None = None) -> None:
-        # Fecha a espera antes de fechar o passo: um passo que termina com o
-        # relógio congelado ficaria para sempre na duração em que parou.
         self.end_waiting(ended_at)
         if self.status == PhaseStatus.RUNNING and self.started_at is not None:
             self.ended_at = ended_at if ended_at is not None else time.monotonic()
@@ -153,17 +137,14 @@ class ArtifactItem:
     path: str
     phase_id: str = ""
     ready: bool = False
-    #: Arquivo existe em disco e tem conteúdo. Só artefato exibível abre a aba:
-    #: um write pendente ou negado não deve escancarar um painel vazio.
     has_content: bool = False
 
 
 def workflow_steps(workflow_id: str) -> tuple[tuple[str, str], ...]:
-    """Steps de um workflow, para a sidebar montar antes de o ACP subir.
+    """A workflow's steps, so the sidebar can render before ACP starts.
 
-    Não há mapa hardcoded: a forma do workflow vem do banco, igual à do motor.
-    Workflow desconhecido devolve vazio — a sidebar preenche conforme os steps
-    forem começando.
+    The shape comes from the database; an unknown workflow returns empty and the
+    sidebar fills in as steps start.
     """
     from pulse.store.workflow_defs import get_workflow
 

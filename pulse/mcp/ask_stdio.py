@@ -47,7 +47,7 @@ def _handle_tools_call(request_id: int | str, params: dict[str, Any]) -> None:
             {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "error": {"code": -32603, "message": "PULSE_ASK_SOCKET não configurado"},
+                "error": {"code": -32603, "message": "PULSE_ASK_SOCKET not configured"},
             }
         )
         return
@@ -101,7 +101,7 @@ def _dispatch(message: dict[str, Any]) -> None:
             {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "error": {"code": -32601, "message": f"Método não suportado: {method}"},
+                "error": {"code": -32601, "message": f"Method not supported: {method}"},
             }
         )
 

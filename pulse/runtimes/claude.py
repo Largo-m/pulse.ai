@@ -5,24 +5,19 @@ from typing import Any
 
 from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
 
-#: O Claude Code não fala ACP nativamente; o adapter oficial vem por npm.
 CLAUDE_ACP_PACKAGE = "@agentclientprotocol/claude-agent-acp"
-#: Versão testada. O pacote é 0.x e publica várias por dia: sem pin, cada máquina
-#: rodaria um adapter diferente. Subir de propósito, depois de testar.
 CLAUDE_ACP_VERSION = "0.86.0"
 
 MODEL_CONFIG_ID = "model"
 
 
 class ClaudeRuntime(AgentRuntime):
-    """Claude Code — fala ACP pelo adapter npm, que herda o login do `claude` CLI.
+    """Claude Code, speaking ACP through the npm adapter that reuses the `claude` CLI login.
 
-    Três divergências em relação ao Cursor, tratadas aqui:
-
-    - os modos são `default`/`acceptEdits`/`plan`/`auto`/`bypassPermissions`,
-      não `agent`;
-    - o modelo se troca por `session/set_config_option`, não `session/set_model`;
-    - `authMethods` vem vazio: o adapter já está autenticado pelo CLI.
+    Differences from Cursor handled here:
+    - modes are `default`/`acceptEdits`/`plan`/`auto`/`bypassPermissions`, not `agent`;
+    - the model is set via `session/set_config_option`, not `session/set_model`;
+    - `authMethods` is empty: the adapter is already authenticated by the CLI.
     """
 
     id = "claude"
@@ -39,11 +34,6 @@ class ClaudeRuntime(AgentRuntime):
     )
     login_command = ("claude", "/login")
     login_label = "Executar `claude /login`"
-    # NÃO usar o modo `plan` aqui: um step que "só planeja" costuma ser
-    # justamente o que escreve o artefato. Em `plan` o Claude não escreve o
-    # arquivo pedido — grava um plano em ~/.claude/plans e espera aprovação, e
-    # o artefato nunca aparece na sessão. Quem limita escrita é a
-    # permission_policy do step, como no Cursor.
     interview_modes = ("default", "acceptEdits", "agent")
     execute_modes = ("default", "acceptEdits", "agent")
 
@@ -96,7 +86,6 @@ class ClaudeRuntime(AgentRuntime):
             return None
         option = model_config_option(session)
         if option is None:
-            # Adapter novo que já implemente `session/set_model`.
             return super().model_request(session, preferred_model, session_id=session_id)
         return ModelRequest(
             method="session/set_config_option",
@@ -110,7 +99,7 @@ class ClaudeRuntime(AgentRuntime):
 
 
 def model_config_option(session: dict[str, Any]) -> dict[str, Any] | None:
-    """Config option que carrega a lista de modelos."""
+    """Config option that carries the model list."""
     options = session.get("configOptions")
     if not isinstance(options, list):
         return None

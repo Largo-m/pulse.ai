@@ -1,4 +1,4 @@
-"""Estado de execução no SQLite — o que permite retomar uma run."""
+"""Run execution state in SQLite: what makes a run resumable."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_a_new_run_starts_with_every_step_pending(tmp_path: Path):
 
 
 def test_steps_keep_the_label_they_had_when_the_run_started(tmp_path: Path):
-    """Editar o workflow depois não pode reescrever o que já aconteceu."""
+    """Editing the workflow later must not rewrite what already happened."""
     record = _create(tmp_path)
 
     loaded = run_store.load_run(record.id)
@@ -89,7 +89,7 @@ def test_runs_are_scoped_to_their_workspace(tmp_path: Path):
 
 
 def test_a_repeated_tool_id_updates_the_log_line(tmp_path: Path):
-    """Tool-call em andamento vira uma linha só, não uma por atualização."""
+    """An in-progress tool call is a single line, not one per update."""
     record = _create(tmp_path)
     run_store.record_event(record.id, kind="Tool", title="Write", tool_id="t-1")
     run_store.record_event(record.id, kind="Tool", title="Write docs/x.md", tool_id="t-1")
@@ -124,7 +124,7 @@ def test_deleting_a_run_that_is_not_there_says_so(tmp_path: Path):
 
 
 def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
-    """Falha é o caso em que mais se quer voltar: o que já fechou está gravado."""
+    """Failure is when resuming matters most: settled steps are already stored."""
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = DONE
@@ -136,7 +136,7 @@ def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
 
 
 def test_the_step_position_comes_from_the_record(tmp_path: Path):
-    """O motor espaça as posições para o fan-out caber entre dois steps."""
+    """The engine spaces positions so fan-out fits between two steps."""
     record = run_store.create_run(
         run_id="run-spaced",
         workflow_id="demo",

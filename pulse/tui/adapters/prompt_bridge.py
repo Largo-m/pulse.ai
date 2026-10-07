@@ -71,34 +71,29 @@ def format_prompt_reply(request: PromptRequest, result: object | None) -> str:
 
 
 class PromptAbandoned(Exception):
-    """A tela largou a pergunta sem respondê-la. Ver [PromptBridge.abandon]."""
+    """The screen dropped the question without answering it. See [PromptBridge.abandon]."""
 
 
 class PromptBridge:
     def __init__(self) -> None:
         self._queue: Queue[PromptRequest] = Queue()
         self._closed = False
-        #: Largada por `abandon`: ninguém mais vai responder por esta ponte.
         self._abandoned = False
-        #: Futures entregues e ainda não resolvidos — inclusive o da pergunta
-        #: que já saiu da fila e está na tela, que `abandon` precisa alcançar.
         self._live: list[Future[Any]] = []
 
     def close(self) -> None:
-        """Fecha a ponte cancelando o que estiver aberto. Para run que acabou."""
+        """Close the bridge, cancelling anything open. Used when the run has ended."""
         self._closed = True
         for future in self._drain():
             future.set_result(None)
 
     def abandon(self) -> None:
-        """Larga a ponte **sem** responder nada — o usuário só saiu da tela.
+        """Drop the bridge **without** answering; the user only left the screen.
 
-        Responder `None` significa "cancelado" para o agente, o que é certo
-        quando a run acabou e errado quando ela continua no daemon esperando a
-        pessoa voltar. Quem está bloqueado em `request` recebe `PromptAbandoned`
-        em vez de uma resposta: a thread do stream morre, a pergunta não.
-        Vale também para quem perguntar **depois**: devolver `None` ali seria
-        responder "cancelado" em nome de uma tela que já não existe.
+        Answering `None` means "cancelled" to the agent, which is wrong while the
+        run keeps waiting in the daemon. Callers blocked in `request` (now or
+        later) get `PromptAbandoned` instead, so the stream thread dies but the
+        question survives.
         """
         self._closed = True
         self._abandoned = True
@@ -106,7 +101,7 @@ class PromptBridge:
             future.set_exception(PromptAbandoned())
 
     def _drain(self) -> list[Future[Any]]:
-        """Todo future ainda de pé: o da pergunta na tela e os que esperam fila."""
+        """Every pending future: the on-screen question and those still queued."""
         pending = [future for future in self._live if not future.done()]
         self._live.clear()
         while True:
@@ -274,8 +269,6 @@ class TextualPromptHandler:
         for letter, label in question.options:
             if value == letter:
                 return f"{letter}) {label}"
-        # Não casou com nenhuma letra: é o texto que o usuário escreveu em
-        # "Outro". Marcado para não ser confundido com rótulo de opção.
         return f"{FREE_TEXT_ANSWER_PREFIX}{value}"
 
     def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -304,9 +297,6 @@ class TextualPromptHandler:
         if not isinstance(options, list):
             options = []
 
-        # A política decide sozinha quando dá: a mesma função que o daemon usa
-        # antes de publicar a pergunta. Aqui ela cobre o caminho direto (CLI,
-        # teste) e o dock que reabre uma pergunta que sobrou de antes.
         decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
         if decided is not None:
             return decided

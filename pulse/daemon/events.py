@@ -19,8 +19,6 @@ class PromptRequest:
     event: threading.Event = field(default_factory=threading.Event)
     answer: Any = None
     cancelled: bool = False
-    #: Quando a pergunta foi aberta, em tempo de parede — é o que permite dizer
-    #: "esperando há 7min" numa tela que nasceu depois da pergunta.
     created_at: float = field(default_factory=time.time)
 
 
@@ -47,12 +45,11 @@ class EventBus:
                     self._subscribers.remove(queue)
 
     def subscribe(self, *, after: int = 0, poll: float = 5.0) -> Iterator[dict[str, Any]]:
-        """O passado da run e depois o vivo, na mesma sequência.
+        """The run's past events, then live ones, in one sequence.
 
-        `stream.replay_end` separa os dois: quem anexa no meio da run precisa
-        saber onde o passado acaba para não reabrir uma pergunta já respondida.
-        `stream.ping` é o batimento — dá ao consumidor um ponto de retorno
-        regular para largar o stream sem que a run precise emitir nada.
+        `stream.replay_end` marks where the past ends, so a late attacher does not
+        reopen an answered question. `stream.ping` is a heartbeat that gives the
+        consumer a regular point to drop the stream.
         """
         queue: Queue[dict[str, Any] | None] = Queue()
         with self._lock:
@@ -89,28 +86,24 @@ class PromptCorrelator:
         self._lock = threading.Lock()
 
     def pending(self) -> list[PromptRequest]:
-        """Perguntas sem resposta. É o que faz a Home dizer "aguardando você"."""
+        """Unanswered prompts; this is what makes Home show the run as awaiting input."""
         with self._lock:
             return list(self._pending.values())
 
     def pending_since(self) -> float | None:
-        """Quando a espera começou: a pergunta aberta há mais tempo.
+        """When the wait started: the oldest open prompt.
 
-        A mais antiga, e não a mais recente, porque é ela que mede há quanto
-        tempo a run está parada — uma segunda pergunta aberta depois não
-        rejuvenesce a espera.
+        The oldest, not the newest, so a later prompt does not reset the wait.
         """
         with self._lock:
             opened = [item.created_at for item in self._pending.values()]
         return min(opened) if opened else None
 
     def request(self, kind: str, payload: dict[str, Any], *, timeout: float | None = None) -> Any:
-        """Pergunta ao cliente e espera — sem prazo, por padrão.
+        """Ask the client and wait, with no timeout by default.
 
-        O prazo de uma hora que existia aqui matava a premissa do background: a
-        pessoa saía do cockpit, a pergunta expirava sozinha e o agente recebia
-        "cancelado" sem ninguém ter decidido nada. Sem ninguém para responder, a
-        run espera; quem encerra isso é `parar`, que é uma decisão.
+        Runs keep waiting in the background until someone answers; only an
+        explicit stop ends the wait.
         """
         prompt_id = str(uuid.uuid4())
         req = PromptRequest(id=prompt_id, kind=kind, payload=payload)
@@ -142,12 +135,10 @@ class PromptCorrelator:
         return True
 
     def cancel_all(self) -> int:
-        """Cancela toda pergunta aberta e devolve quantas eram.
+        """Cancel every open prompt and return how many there were.
 
-        Existe para a parada da run: o motor espera a resposta sem prazo, então
-        uma run parada enquanto perguntava algo ficaria com a thread presa em
-        `event.wait()` para sempre — o pedido de parada chegava, e nada nele
-        acordava quem estava bloqueado na pergunta.
+        Used when stopping a run: the engine waits without timeout, so otherwise
+        the thread would stay blocked in `event.wait()` forever.
         """
         with self._lock:
             open_ids = list(self._pending)
@@ -162,7 +153,5 @@ class PromptCorrelator:
                 return False
             req.cancelled = True
             req.event.set()
-        # Mesmo evento de quem respondeu: para o replay o que importa é que o id
-        # morreu, não como. Sem isto, anexar depois reabria a pergunta cancelada.
         self._bus.publish({"type": "prompt.answered", "id": prompt_id})
         return True

@@ -34,8 +34,6 @@ class EngineClient:
         self._prefer_uds = prefer_uds
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
         self._http_base = http_base
-        #: Curto para quem consulta de dentro do laço da TUI: socket órfão não
-        #: pode congelar a tela esperando um daemon que não existe mais.
         self._timeout = timeout
         self._client: httpx.Client | None = None
 
@@ -99,11 +97,7 @@ class EngineClient:
                                 continue
 
     def answer_prompt(self, prompt_id: str, answer: Any) -> dict[str, Any]:
-        """Responde a pergunta. 404 aqui não é erro: alguém chegou antes.
-
-        Duas janelas podem estar anexadas na mesma run; a primeira resposta
-        vence e a segunda encontra o prompt já resolvido.
-        """
+        """Answer a prompt. A 404 is not an error: another attached window answered first."""
         try:
             return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})
         except httpx.HTTPStatusError as error:
@@ -149,8 +143,6 @@ class EngineClient:
             return False
 
     def _stop_daemon(self) -> None:
-        # Import tardio: o servidor puxa uvicorn e a API inteira, e o cliente
-        # só precisa disto quando troca um daemon de protocolo antigo.
         from pulse.daemon.server import stop_daemon
 
         self.close()
@@ -158,9 +150,6 @@ class EngineClient:
 
     def _start_daemon(self) -> None:
         cmd = [sys.executable, "-m", "pulse.daemon", "serve"]
-        # stderr vai para arquivo, não para /dev/null: o daemon roda destacado
-        # do terminal, e era ali que sumia o traceback de uma run que morria
-        # sem passar pelo menu de retry.
         try:
             ensure_global_dir()
             stderr: Any = DAEMON_LOG_FILE.open("a", encoding="utf-8")

@@ -99,7 +99,7 @@ def test_history_detail_renders_steps_without_run_log(tmp_path: Path):
 
 
 def test_history_detail_replays_the_log_from_the_database(tmp_path: Path):
-    """Log é do Pulse: uma run feita em qualquer runtime reabre com o stream."""
+    """The log belongs to Pulse: a run from any runtime reopens with its stream."""
     run_id = _finished_run(tmp_path, "run-login", "Adicionar login social")
     run_store.record_event(
         run_id,
@@ -130,7 +130,7 @@ def test_history_detail_replays_the_log_from_the_database(tmp_path: Path):
 
 
 def test_deleting_a_run_asks_first_and_then_removes_it(tmp_path: Path):
-    """`d` abre a confirmação; confirmar tira a run da lista e do banco."""
+    """`d` opens the confirmation; confirming removes the run from the list and the database."""
     _finished_run(tmp_path, "run-login", "Adicionar login social")
     _finished_run(tmp_path, "run-token", "Corrigir refresh token")
 
@@ -160,11 +160,10 @@ def test_deleting_a_run_asks_first_and_then_removes_it(tmp_path: Path):
 
             await pilot.press("d")
             await pilot.pause()
-            assert isinstance(app.screen, ConfirmScreen), "remover pergunta antes"
-            # Cancelar vem primeiro: um Enter distraído não apaga nada.
+            assert isinstance(app.screen, ConfirmScreen), "removing asks first"
             await pilot.press("enter")
             await pilot.pause()
-            assert doomed.item_id in screen._items, "cancelar não removeu"
+            assert doomed.item_id in screen._items, "cancelling did not remove it"
 
             await pilot.press("d")
             await pilot.pause()
@@ -200,7 +199,7 @@ def test_delete_is_offered_only_when_there_is_a_run_under_the_cursor(tmp_path: P
 
 
 def test_the_history_only_removes_runs_from_its_own_workspace(tmp_path: Path):
-    """A mesma regra do `get`: o histórico só mexe no que ele mostra."""
+    """Same rule as `get`: history only touches what it shows."""
     other = tmp_path / "outro"
     other.mkdir()
     run_id = _finished_run(other, "run-de-fora", "Mexer em outro repo")
@@ -212,10 +211,10 @@ def test_the_history_only_removes_runs_from_its_own_workspace(tmp_path: Path):
 
 
 def test_a_run_waiting_for_the_user_is_listed_as_live(tmp_path: Path):
-    """`precisa de você` é run viva: vai para o topo e abre ao vivo.
+    """`precisa de você` is a live run: it goes to the top and opens live.
 
-    Sem isso ela cairia no meio do passado com o rótulo errado — e abrir pelo
-    histórico daria a página estática, de onde não dá para responder nada.
+    Otherwise it would sink among past runs with the wrong label, and opening it
+    from history would show the static page, where nothing can be answered.
     """
     from pulse.history.models import LIVE_STATUSES, HistoryStatus
 
@@ -229,14 +228,13 @@ def test_a_run_waiting_for_the_user_is_listed_as_live(tmp_path: Path):
     assert items[0].status is HistoryStatus.AWAITING_INPUT
     assert items[0].status in LIVE_STATUSES
     assert items[0].status_label == "precisa de você"
-    # Busca pelo rótulo acha a run: é por ele que a pessoa vai procurá-la.
     assert [item.run_id for item in HistoryCatalog(tmp_path).search("precisa")] == [
         "run-espera"
     ]
 
 
 def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
-    """Run travada como `executando` precisa poder sair — mas avisada."""
+    """A run stuck as `executando` must be removable, but with a warning."""
     from pulse.tui.screens.history import _delete_warning
 
     _finished_run(tmp_path, "run-viva", "Rodando agora")
@@ -251,11 +249,11 @@ def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
 
 
 def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
-    """Falhou não é terminou: o que sobrou de step é o que dá para retomar.
+    """Failed is not finished: the remaining steps are what can be resumed.
 
-    O histórico olhava só o status da run, então uma run que caiu no meio
-    voltava sem retomar nem refazer — e as tasks que faltavam pareciam nunca
-    ter existido.
+    History only looked at the run status, so a run that crashed midway came
+    back with neither resume nor restart, and the missing tasks seemed to never
+    have existed.
     """
     from pulse.tui.screens.history_detail import _pending_run
 
@@ -283,7 +281,7 @@ def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
 
 
 def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, monkeypatch):
-    """O daemon muda o status da run; a lista acompanha sem sair e voltar."""
+    """The daemon changes the run status; the list follows without leaving and returning."""
     import pulse.tui.screens.history as history_module
 
     monkeypatch.setattr(history_module, "REFRESH_SECONDS", 0.05)
@@ -318,7 +316,6 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
                     break
 
             assert screen._items["run-live"].status != before
-            # Redesenhar não pode tirar o cursor de onde a pessoa o deixou.
             assert options.get_option_at_index(options.highlighted).id == "run-old"
 
     asyncio.run(run())

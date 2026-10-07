@@ -6,8 +6,6 @@ from typing import Any
 from pulse.client.engine_client import EngineClient
 from pulse.daemon.protocol import PING, REPLAY_END
 
-#: `listen()` saiu porque a UI largou a run, não porque a run acabou. O cockpit
-#: usa isto para não marcar a tela como concluída ao sair.
 DETACHED = -1
 
 
@@ -24,12 +22,8 @@ class EngineRunSession:
         self._client = client or EngineClient()
         self._exit_code = 1
         self._owns_client = client is None
-        #: Conhecido só depois que o daemon aceita a run; parar antes disso
-        #: simplesmente não faz nada.
         self.run_id = ""
         self._detached = False
-        #: Ligado só por `attach`: numa run recém-criada não existe passado, e
-        #: tudo que chega é vivo. Ver [_dispatch].
         self._replaying = False
         self._replayed_prompts: dict[str, dict[str, Any]] = {}
 
@@ -57,7 +51,7 @@ class EngineRunSession:
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
     ) -> str:
-        """Cria a run no daemon e devolve o id. Não escuta nada."""
+        """Create the run in the daemon and return its id, without listening."""
         self._client.ensure_daemon()
         created = self._client.start_run(
             workflow_id,
@@ -69,11 +63,10 @@ class EngineRunSession:
         return self.run_id
 
     def attach(self, run_id: str) -> int:
-        """Escuta uma run que já está rodando, desde o começo dela.
+        """Listen to an already running run, from its beginning.
 
-        O daemon reenvia todo o histórico do barramento antes do vivo, então o
-        mesmo `stream` que desenharia a run ao vivo a reconstrói inteira — é o
-        que faz voltar ao cockpit mostrar o que estava lá quando se saiu.
+        The daemon replays the bus history before live events, so the same
+        `stream` rebuilds the whole run.
         """
         self.run_id = run_id
         self._replaying = True
@@ -88,8 +81,6 @@ class EngineRunSession:
                     break
                 self._dispatch(event)
         except Exception:
-            # Largar o stream fecha o client por baixo da leitura em voo; a
-            # exceção disso é o detach acontecendo, não uma run que quebrou.
             if not self._detached:
                 raise
         finally:
@@ -98,10 +89,10 @@ class EngineRunSession:
         return DETACHED if self._detached else self._exit_code
 
     def detach(self) -> None:
-        """Larga o stream sem tocar na run — ela segue no daemon.
+        """Drop the stream without touching the run, which keeps going in the daemon.
 
-        Fechar o client aborta a leitura em voo na hora; o `stream.ping` do
-        barramento é a garantia de que o laço acorda mesmo se não abortar.
+        Closing the client aborts the in-flight read; `stream.ping` guarantees
+        the loop wakes up even if it does not.
         """
         self._detached = True
         try:
@@ -110,7 +101,7 @@ class EngineRunSession:
             pass
 
     def stop(self) -> bool:
-        """Parar vem da UI, fora da thread que roda a run."""
+        """Stop requested from the UI, outside the thread running the run."""
         if not self.run_id:
             return False
         try:
@@ -122,8 +113,6 @@ class EngineRunSession:
     def _dispatch(self, event: dict[str, Any]) -> None:
         kind = str(event.get("type", ""))
         if kind == PING:
-            # Ocioso é o passado já entregue: rede de segurança caso o marcador
-            # de fim de replay não venha (daemon antigo, stream truncado).
             if self._replaying:
                 self._finish_replay()
             return
@@ -193,9 +182,6 @@ class EngineRunSession:
             return
         if kind == "prompt.request":
             if self._replaying:
-                # Durante o replay a pergunta é passado: abri-la reabriria algo
-                # que já foi respondido, e responder de novo bate num id que o
-                # daemon já esqueceu. Só o que sobrar no fim do replay está vivo.
                 self._replayed_prompts[str(event.get("id", ""))] = event
                 return
             self._handle_prompt(event)
@@ -212,7 +198,7 @@ class EngineRunSession:
             return
 
     def _finish_replay(self) -> None:
-        """Acabou o passado. O que restou de pergunta sem resposta está vivo."""
+        """Replay is over; any prompt still unanswered is live."""
         self._replaying = False
         pending = list(self._replayed_prompts.values())
         self._replayed_prompts.clear()
@@ -223,12 +209,10 @@ class EngineRunSession:
             self._handle_prompt(event)
 
     def _forget_prompt(self, prompt_id: str) -> None:
-        """Pergunta resolvida — no replay, é o que a tira da fila do fim.
+        """A prompt was resolved; during replay this drops it from the pending queue.
 
-        Ao vivo este evento só chega quando o laço não está preso numa pergunta,
-        ou seja, quando quem respondeu foi outra janela anexada na mesma run.
-        Não há dock para fechar aqui: a janela que está perguntando é a que está
-        bloqueada, e ela descobre pelo 404 ao responder.
+        Live, this only arrives when another attached window answered; the
+        blocked window learns via the 404 when it answers.
         """
         if prompt_id:
             self._replayed_prompts.pop(prompt_id, None)
@@ -283,8 +267,6 @@ class EngineRunSession:
         else:
             answer = {"outcome": {"outcome": "cancelled"}}
         if self._detached:
-            # A tela saiu enquanto a pergunta estava aberta: o que veio de lá
-            # não é resposta de ninguém. A pergunta fica no daemon esperando.
             return
         self._client.answer_prompt(prompt_id, answer)
 

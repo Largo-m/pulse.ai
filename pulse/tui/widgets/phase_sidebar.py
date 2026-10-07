@@ -23,10 +23,6 @@ class NavSelected(Message):
 
 PhaseSelected = NavSelected
 
-#: Estados em que a cor do status manda no nome do step: os que pedem atenção.
-#: Nos demais, o realce é da seleção. Comparados como texto porque
-#: `awaiting_input` é sobreposição de exibição, não membro de `PhaseStatus` —
-#: ver [PhaseItem.display_status].
 _ATTENTION = frozenset(
     {
         PhaseStatus.RUNNING.value,
@@ -88,8 +84,6 @@ class PhaseSidebar(Widget):
             return output
 
         for key, members in state.phase_groups():
-            # O step de fan-out não some da lista: ele vira o cabeçalho das
-            # tasks que gerou, e elas aparecem indentadas embaixo dele.
             if key:
                 output.append_text(self._render_group(state, key, members))
                 line += 2
@@ -114,7 +108,7 @@ class PhaseSidebar(Widget):
         key: str,
         members: list[tuple[int, PhaseItem]],
     ) -> Text:
-        """Cabeçalho do fan-out: o nome do step e quantas tasks já fecharam."""
+        """Fan-out header: the step name and how many tasks have settled."""
         statuses = [phase.status for _index, phase in members]
         done = sum(1 for status in statuses if status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
         if PhaseStatus.FAILED in statuses:
@@ -128,8 +122,6 @@ class PhaseSidebar(Widget):
         else:
             status = PhaseStatus.PENDING
 
-        # Uma task esperando o usuário manda no cabeçalho: é o grupo inteiro que
-        # não avança enquanto ninguém responde.
         shown = (
             "awaiting_input"
             if any(phase.awaiting_since is not None for _index, phase in members)
@@ -177,15 +169,11 @@ class PhaseSidebar(Widget):
         else:
             output.append(f"{indent}  ", style="#333333")
 
-        # A cor do status manda no nome só quando ele pede atenção (rodando,
-        # esperando resposta ou quebrado); nos demais, o realce é da seleção.
         shown = item.display_status()
         tone = status_color(shown)
         name_style = tone if shown in _ATTENTION else (
             "#E0E0E0" if accent else "#888888"
         )
-        # O contador das voltas de um laço fica fora do corte do rótulo: ele é
-        # curto, e é justamente o que não pode sumir num nome comprido.
         rounds = f" ×{item.rounds}" if item.rounds > 1 else ""
         label = f"{status_icon(shown)} {self._item_label(item, nested=nested)}"
         max_len = (24 if nested else 28) - len(rounds)
@@ -208,8 +196,6 @@ class PhaseSidebar(Widget):
     def _item_label(item: PhaseItem, *, nested: bool) -> str:
         if not nested:
             return item.label
-        # `implement:T1` → `T1`: o prefixo é o cabeçalho logo acima, repetir em
-        # cada filho só gastaria a largura da coluna.
         _base, _sep, task_id = item.id.partition(":")
         if not task_id or item.label == task_id or item.label.startswith(f"{task_id} "):
             return item.label or task_id

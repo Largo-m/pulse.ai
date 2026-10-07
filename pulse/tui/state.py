@@ -21,11 +21,7 @@ from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
-#: `implement:T1` — o motor batiza cada filho de fan-out com o id do step que o
-#: gerou. Ver [pulse.orchestrator.fanout.expand].
 FANOUT_SEP = ":"
-#: Sufixo que o runner põe no título dos turnos seguintes do mesmo step. Ver
-#: [pulse.acp.session_runner].
 _CONTINUATION = re.compile(r"\s+—\s+continuação \(\d+\)$")
 
 
@@ -43,7 +39,6 @@ class CockpitState:
     surface_title: str = "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
     agent_label: str = "Agent"
     model_label: str = ""
-    #: Branch em que a run trabalha. Vazio fora de repositório git.
     branch_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
@@ -55,9 +50,7 @@ class CockpitState:
     focus_target: str = "phases"
     running: bool = False
     stopped: bool = False
-    #: Há pergunta aberta: a run parou de trabalhar e espera o usuário.
     awaiting_input: bool = False
-    #: Ligado por `configure_workflow`: fora de uma run não há o que parar.
     can_stop: bool = False
     exit_code: int | None = None
     acp_session_id: str = ""
@@ -121,8 +114,6 @@ class CockpitState:
                 phase.finish(now)
         if matched is not None:
             if matched.status != PhaseStatus.RUNNING or matched.started_at is None:
-                # Um step que volta a rodar (outra volta do laço, um retry)
-                # continua do tempo que já tinha, em vez de recomeçar do zero.
                 matched.started_at = now - matched.closed_seconds()
                 matched.ended_at = None
                 matched.waiting_total = 0.0
@@ -135,11 +126,10 @@ class CockpitState:
         self.notify()
 
     def sync_phases(self, steps: list[dict[str, str]] | tuple[dict[str, str], ...]) -> None:
-        """Refaz a lista de fases a partir do que o motor está mesmo rodando.
+        """Rebuild the phase list from what the engine is actually running.
 
-        A lista muda no meio da run: um step de fan-out vira N, um por item. O
-        que já existe é preservado por id — recriar apagaria status, duração e
-        contadores de quem já rodou.
+        The list changes mid-run (a fan-out step becomes N steps). Existing
+        phases are preserved by id so status, duration and counters survive.
         """
         if not steps:
             return
@@ -153,8 +143,6 @@ class CockpitState:
         for phase, step in zip(self.phases, steps):
             phase.label = str(step.get("label", "")) or phase.label
             phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
-        # A seleção segue a fase, não o índice: o fan-out empurra tudo que vem
-        # depois dele para baixo.
         if selected is not None:
             for index, phase in enumerate(self.phases):
                 if phase.id == selected.id:
@@ -198,15 +186,11 @@ class CockpitState:
         self.notify()
 
     def begin_waiting(self, *, since: float | None = None) -> None:
-        """Abriu pergunta: congela o relógio do passo em curso.
+        """A question opened: freeze the running step's timer.
 
-        Se nenhum passo está `running` — a pergunta veio entre dois steps, como
-        o menu de retomada — só a flag da run acende: não há cronômetro andando
-        para congelar.
-
-        `since` é a hora de parede em que a espera começou. Sem ele, começou
-        agora; com ele, o relógio congela onde a run de fato parou, mesmo para
-        quem anexou horas depois.
+        If no step is running (e.g. a question between steps), only the run flag
+        is set. `since` is the wall-clock time the wait began; when given, the
+        timer freezes where the run actually stopped, even for late attachers.
         """
         self.awaiting_input = True
         now = time.monotonic()
@@ -243,11 +227,10 @@ class CockpitState:
         self.notify()
 
     def mark_stopped(self) -> None:
-        """Parar cortou o step em voo — ele volta para pendente e o relógio para.
+        """Stop interrupted the in-flight step: reset it to pending and clear its timer.
 
-        O step interrompido é refeito do começo ao retomar, então zerar o
-        cronômetro é o que descreve a verdade: o tempo que ele já tinha gasto
-        não conta para nada.
+        The interrupted step restarts from scratch on resume, so its spent time
+        no longer counts.
         """
         self.stopped = True
         self.awaiting_input = False
@@ -265,12 +248,10 @@ class CockpitState:
         if exit_code == 0:
             self.complete_active_phase()
         elif exit_code == RUN_STOPPED:
-            # Parada do usuário não é falha: nada vira "falhou" na sidebar.
             self.mark_stopped()
         else:
             self.fail_active()
         self.running = False
-        # A run acabou: não há mais ninguém esperando resposta de ninguém.
         self.awaiting_input = False
         self.exit_code = exit_code
         self.notify()
@@ -486,10 +467,10 @@ class CockpitState:
         return self.selected_phase()
 
     def base_step_label(self, step_id: str) -> str:
-        """Rótulo do step como a definição o nomeia (`implement` → Implementar).
+        """Step label as named by the workflow definition (`implement` → Implementar).
 
-        O fan-out apaga o step pai da run e põe os N filhos no lugar dele, então
-        o nome do pai só existe na definição do workflow.
+        Fan-out replaces the parent step with N children, so the parent's name
+        only exists in the workflow definition.
         """
         if self._base_labels_for != self.workflow_id:
             self._base_labels_for = self.workflow_id
@@ -497,10 +478,10 @@ class CockpitState:
         return self._base_labels.get(step_id, "")
 
     def phase_groups(self) -> list[tuple[str, list[tuple[int, PhaseItem]]]]:
-        """Fases na ordem, com os filhos de um fan-out reunidos sob o pai.
+        """Phases in order, with fan-out children grouped under their parent.
 
-        Chave vazia é fase solta. O índice vem junto porque a navegação continua
-        sendo sobre `phases` — agrupar é só desenho, não muda o que se seleciona.
+        An empty key means a standalone phase. Indices are included because
+        navigation still operates on `phases`; grouping is display-only.
         """
         groups: list[tuple[str, list[tuple[int, PhaseItem]]]] = []
         for index, phase in enumerate(self.phases):
@@ -578,8 +559,6 @@ class CockpitState:
                 item.phase_id = phase_id
             if self.follow_artifact:
                 self.selected_artifact_path = item.path
-            # A aba não abre sozinha: um artefato novo no meio da spec roubava a
-            # tela do stream. O trilho "ABRIR" (tecla `a`) fica anunciando.
             self.notify()
             return item
         item = ArtifactItem(
@@ -602,12 +581,10 @@ class CockpitState:
         return [item for item in self.artifacts if item.phase_id == pid]
 
     def displayable_artifacts(self) -> list[ArtifactItem]:
-        """Artefatos da fase que têm mesmo algo para mostrar."""
+        """Artifacts of the selected phase that actually have content to show."""
         return [item for item in self.visible_artifacts() if item.has_content]
 
     def phase_has_artifacts(self) -> bool:
-        # Gate da aba (trilho "ABRIR" e atalho `a`): sem artefato exibível não
-        # faz sentido oferecer abrir um painel que só diria "escrevendo…".
         return bool(self.displayable_artifacts())
 
     def selected_artifact(self) -> ArtifactItem | None:
@@ -666,15 +643,11 @@ class CockpitState:
         self.notify()
 
     def select_artifact_from_prompt(self, text: str) -> bool:
-        """Deixa a aba apontando para o artefato que a pergunta cita.
+        """Point the artifact tab at the artifact the question cites.
 
-        Só a seleção — abrir é do usuário, pela tecla `a`. A aba abrindo sozinha
-        a cada pergunta cobria o stream bem na hora em que o agente pedia uma
-        decisão, que é justamente o que precisa estar visível.
-
-        Pergunta que não cita artefato nenhum não mexe em nada: um palpite aqui
-        desligava o `follow_artifact` e a aba parava de acompanhar o artefato
-        vivo por causa de uma pergunta sem relação com arquivo.
+        Selection only; opening is left to the user (`a` key) so the stream stays
+        visible while the agent asks for a decision. A question citing no artifact
+        changes nothing, so `follow_artifact` stays on.
         """
         keys = artifact_paths_in_text(text, [item.path for item in self.artifacts])
         candidates = [item for item in self.artifacts if item.has_content]
@@ -756,9 +729,6 @@ class CockpitState:
 
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
-        # Nome exato primeiro: o título é o rótulo do step, e casar por trecho
-        # sozinho fazia uma task chamada "… (TaskSearch)" acender o step `tasks`
-        # lá em cima — a task ficava pendente e o log dela ia para outro lugar.
         base = _CONTINUATION.sub("", lowered).strip()
         exact = [
             phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
@@ -776,5 +746,3 @@ class CockpitState:
         if pending:
             return pending[0]
         return None
-
-

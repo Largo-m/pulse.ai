@@ -10,7 +10,7 @@ from pulse.tui.state import CockpitState
 
 
 class _FakeStream:
-    """Só o que o corte da run usa do stream."""
+    """Only the stream surface used when cutting a run."""
 
     def __init__(self) -> None:
         self.messages: list[str] = []
@@ -43,8 +43,8 @@ def _run(tmp_path) -> tuple[run_store.RunRecord, StepRecord]:
     return record, step
 
 
-def test_parar_devolve_o_step_cortado_para_pendente(tmp_path):
-    """O step interrompido não terminou nem falhou: volta a pendente."""
+def test_stop_returns_the_cut_step_to_pending(tmp_path):
+    """The interrupted step neither finished nor failed: it goes back to pending."""
     control = RunControl()
     control.stop()
     runner = _FakeRunner(control)
@@ -53,13 +53,12 @@ def test_parar_devolve_o_step_cortado_para_pendente(tmp_path):
     _release_step(runner, run=record, record=step, label="Um")
 
     assert step.status == PENDING
-    # E foi gravado: é isso que faz `resume_run_id` recomeçar por este step.
     reloaded = run_store.load_run(record.id)
     assert reloaded.step("one").status == PENDING
     assert runner._stream.messages == ["Run parada em Um"]
 
 
-def test_step_ja_fechado_nao_e_reaberto_pela_parada(tmp_path):
+def test_settled_step_is_not_reopened_by_stop(tmp_path):
     control = RunControl()
     control.stop()
     runner = _FakeRunner(control)
@@ -69,10 +68,10 @@ def test_step_ja_fechado_nao_e_reaberto_pela_parada(tmp_path):
 
     _release_step(runner, run=record, record=step, label="Um")
 
-    assert step.status == "done", "o que já fechou não volta para pendente"
+    assert step.status == "done", "a settled step does not go back to pending"
 
 
-def test_parar_nao_marca_falha_na_sidebar():
+def test_stop_does_not_mark_failure_in_sidebar():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -86,10 +85,10 @@ def test_parar_nao_marca_falha_na_sidebar():
     assert state.running is False
     assert state.stopped is True
     assert [phase.status.value for phase in state.phases] == ["pending"] * len(state.phases)
-    assert running.elapsed_label() == "", "sem step em curso, o relógio para"
+    assert running.elapsed_label() == "", "with no step in progress, the clock stops"
 
 
-def test_falha_de_verdade_continua_marcando_falha():
+def test_real_failure_still_marks_failure():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -101,8 +100,8 @@ def test_falha_de_verdade_continua_marcando_falha():
     assert state.stopped is False
 
 
-def test_todo_workflow_pode_parar():
-    """A sessão ACP é isolada por step: sempre há onde cortar."""
+def test_every_workflow_can_stop():
+    """The ACP session is isolated per step: there is always a place to cut."""
     make_workflow("qualquer", steps=[("only", "Único")])
     state = CockpitState()
     state.configure_workflow("qualquer")

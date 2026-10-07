@@ -1,9 +1,8 @@
-"""Esperar o usuário não conta como trabalho do agente.
+"""Waiting for the user does not count as agent work.
 
-Enquanto há pergunta aberta — permissão, questionário, aprovação, menu de retry —
-a run continua viva mas parada. Estes testes guardam as três consequências
-disso: o relógio do step congela, o tempo esperado sai da duração gravada, e a
-run passa a se chamar `awaiting_input` para quem a lista.
+While a prompt is open (permission, questionnaire, approval, retry menu) the run
+is alive but paused: the step clock freezes, the waited time is excluded from the
+stored duration, and the run is listed as `awaiting_input`.
 """
 
 from __future__ import annotations
@@ -29,22 +28,15 @@ def _run_with_step(step_id: str = "one") -> run_store.RunRecord:
     )
 
 
-# --------------------------------------------------------------------------- #
-# O relógio da tela
-# --------------------------------------------------------------------------- #
-
-
 def test_the_step_clock_freezes_while_the_question_is_open():
     phase = PhaseItem(id="one", label="Um", status=PhaseStatus.RUNNING, started_at=0.0)
     assert phase.elapsed_label(now=10.0) == "00:10"
 
     phase.begin_waiting(now=10.0)
-    # Cinco minutos depois a pergunta ainda está aberta: o relógio não andou.
     assert phase.elapsed_label(now=310.0) == "00:10"
     assert phase.display_status() == "awaiting_input"
 
     phase.end_waiting(now=310.0)
-    # E continua de onde parou, sem engolir os 10s que já tinham passado.
     assert phase.elapsed_label(now=320.0) == "00:20"
     assert phase.display_status() == PhaseStatus.RUNNING.value
 
@@ -55,7 +47,6 @@ def test_two_waits_in_the_same_step_both_come_off_the_clock():
     phase.end_waiting(now=65.0)
     phase.begin_waiting(now=70.0)
     phase.end_waiting(now=100.0)
-    # 100s de parede, 90s de espera: o agente trabalhou 10.
     assert phase.elapsed_label(now=100.0) == "00:10"
 
 
@@ -77,7 +68,6 @@ def test_cockpit_state_marks_the_running_phase_and_the_run():
     state.begin_waiting()
     assert state.awaiting_input is True
     assert state.phases[1].awaiting_since is not None
-    # Passo que já fechou não entra na espera: ele não está esperando nada.
     assert state.phases[0].awaiting_since is None
 
     state.end_waiting()
@@ -95,11 +85,6 @@ def test_stopping_a_waiting_run_clears_the_wait():
     assert state.phases[0].status == PhaseStatus.PENDING
 
 
-# --------------------------------------------------------------------------- #
-# O que fica gravado
-# --------------------------------------------------------------------------- #
-
-
 def test_waiting_seconds_accumulate_and_survive_save_step():
     run = _run_with_step()
     step = run.steps[0]
@@ -109,8 +94,6 @@ def test_waiting_seconds_accumulate_and_survive_save_step():
     run_store.add_waiting_seconds(run.id, step.step_id, 12.5)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 42.5
 
-    # O motor volta a gravar o step com um registro em memória que não sabe da
-    # espera; o que foi somado não pode ser zerado por isso.
     step.status = "done"
     run_store.save_step(run.id, step)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 42.5
@@ -123,7 +106,7 @@ def test_waiting_is_ignored_for_a_step_that_is_not_there():
 
 
 def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
-    """Banco que já estava na rua não pode quebrar — nem perder a run antiga."""
+    """An already-deployed database must not break or lose the old run."""
     import sqlite3
 
     from pulse.store.db import connect
@@ -145,7 +128,6 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
         db_path=db_path,
     )
     record = run_store.load_run("run-velha", db_path=db_path)
-    # Zero, e não erro: a run antiga não sabe quanto do tempo dela foi espera.
     assert record.steps[0].waiting_seconds == 0.0
 
 
@@ -161,13 +143,7 @@ def test_history_duration_discounts_the_wait():
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.DONE)]
     _stamp_elapsed(state, run.id)
-    # Dez minutos de parede, nove esperando: o passo levou um.
     assert state.phases[0].elapsed_label() == "01:00"
-
-
-# --------------------------------------------------------------------------- #
-# O que não é pergunta não pode virar espera
-# --------------------------------------------------------------------------- #
 
 
 def _permission(kind: str = "edit") -> dict:
@@ -182,8 +158,8 @@ def _permission(kind: str = "edit") -> dict:
 
 
 def _port_and_bus():
-    """O port do daemon visto como o motor o vê: pelo proxy do runner, que é
-    onde a política decide antes de abrir a espera."""
+    """The daemon port as the engine sees it: through the runner proxy, where
+    the policy decides before opening the wait."""
     from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
     from pulse.daemon.events import EventBus, PromptCorrelator
 
@@ -199,23 +175,23 @@ def _port_and_bus():
 
 
 def test_a_permission_the_policy_resolves_never_becomes_a_question():
-    """O bug que a feature escancarou: com o cockpit fechado, um `edit` sob
-    `deny_writes` parava a run para sempre — o daemon publicava uma pergunta que
-    não era pergunta, e não havia tela para respondê-la. A run ficava
-    "precisa de você" para uma decisão que a política já tinha tomado."""
+    """With the cockpit closed, an `edit` under `deny_writes` used to hang the run.
+
+    The daemon published a prompt nobody could answer for a decision the policy
+    had already made.
+    """
     for policy, expected in [("deny_writes", "reject-once"), ("auto_approve", "allow-once")]:
         port, correlator, bus = _port_and_bus()
         answer = port.respond_to_permission(_permission(), policy=policy)
         assert answer["outcome"]["optionId"] == expected
-        assert correlator.pending() == [], f"{policy} não pode deixar pergunta aberta"
+        assert correlator.pending() == [], f"{policy} must not leave a prompt open"
         assert [e for e in bus._history if e["type"] == "prompt.request"] == []
-        # Nem espera: regra decidida não acende "precisa de você", nem por um instante.
         assert [e for e in bus._history if e["type"] == "run.awaiting"] == [], policy
 
 
 def test_a_policy_decision_never_touches_the_run_status():
-    """Cada tool-call de um step `auto_approve` gravava `awaiting_input` e logo
-    `running` no banco — a run piscava na Home e no histórico."""
+    """Each tool call in an `auto_approve` step used to store `awaiting_input` then
+    `running`, making the run flicker in Home and history."""
     run = _run_with_step()
     run_store.save_step(run.id, run.steps[0])
     port, _correlator, _bus = _port_and_bus()
@@ -229,7 +205,7 @@ def test_a_policy_decision_never_touches_the_run_status():
 
 
 def test_the_terminal_veto_is_decided_without_asking_anyone():
-    """Terminal é veto do Pulse, não dúvida: nem com `ask` vira pergunta."""
+    """Terminal is a Pulse veto, not a question: not even `ask` prompts for it."""
     for kind in ("terminal", "shell", "bash", "run_command"):
         port, correlator, _bus = _port_and_bus()
         answer = port.respond_to_permission(_permission(kind), policy="ask")
@@ -238,7 +214,7 @@ def test_the_terminal_veto_is_decided_without_asking_anyone():
 
 
 def test_a_permission_that_needs_a_person_still_waits():
-    """`ask` é o caso em que perguntar é o ponto — esse continua esperando."""
+    """Under `ask`, asking is the point, so it still waits."""
     from concurrent.futures import ThreadPoolExecutor
 
     port, correlator, _bus = _port_and_bus()
@@ -253,11 +229,6 @@ def test_a_permission_that_needs_a_person_still_waits():
         assert asking.result(timeout=5)["outcome"]["optionId"] == "allow-once"
 
 
-# --------------------------------------------------------------------------- #
-# Como a espera é anunciada
-# --------------------------------------------------------------------------- #
-
-
 def test_waiting_runs_come_oldest_first_and_say_how_long(monkeypatch):
     import pulse.client.active_runs as active_runs_module
     from pulse.client.active_runs import awaiting_runs, describe, waiting_for
@@ -270,14 +241,12 @@ def test_waiting_runs_come_oldest_first_and_say_how_long(monkeypatch):
     ]
     monkeypatch.setattr(active_runs_module, "list_runs", lambda: runs)
 
-    # Quem espera há mais tempo vem primeiro: é quem mais segura alguém.
     assert [item["id"] for item in awaiting_runs()] == ["velha", "nova"]
 
     assert waiting_for(runs[0], now=now) == "30s"
     assert waiting_for(runs[1], now=now) == "1h06"
     assert waiting_for({"id": "x"}, now=now) == ""
 
-    # `describe` lê o relógio de verdade: a linha é escrita na hora de mostrar.
     line = describe(
         {
             "workflow_label": "Nova spec",
@@ -287,11 +256,6 @@ def test_waiting_runs_come_oldest_first_and_say_how_long(monkeypatch):
         }
     )
     assert line == "Nova spec · Especificar · precisa de você há 3min"
-
-
-# --------------------------------------------------------------------------- #
-# O proxy que observa toda pergunta
-# --------------------------------------------------------------------------- #
 
 
 class _Sink:
@@ -306,7 +270,7 @@ class _Sink:
 
 
 class _Port:
-    """Port que faz outra pergunta no meio da primeira — espera aninhada."""
+    """Port that asks another question in the middle of the first: a nested wait."""
 
     def __init__(self, runner: AcpSessionRunner | None = None) -> None:
         self._runner = runner
@@ -335,7 +299,7 @@ def test_every_question_opens_and_closes_exactly_one_wait():
 
 
 def test_a_question_inside_another_is_one_wait_only():
-    """Senão a espera aninhada descontaria duas vezes o mesmo tempo."""
+    """Otherwise the nested wait would discount the same time twice."""
     sink = _Sink()
     port = _Port()
     runner = _runner(sink, port)
@@ -363,11 +327,10 @@ def test_the_wait_lands_on_the_bound_run_and_step():
 
 
 def test_the_wait_travels_from_the_runner_to_the_screen():
-    """Contrato entre as duas pontas: o que o daemon publica é o que a tela lê.
+    """Contract between both ends: what the daemon publishes is what the screen reads.
 
-    Quem congela o relógio da tela é o evento do barramento, não o dock local —
-    duas janelas na mesma run têm de parar juntas. Se o nome do evento mudar de
-    um lado só, é aqui que aparece.
+    The bus event, not the local dock, freezes the screen clock so two windows on
+    the same run stop together. Renaming the event on one side only fails here.
     """
     from unittest.mock import MagicMock
 
@@ -398,20 +361,19 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
 
 
 def test_the_proxy_still_hides_nothing_from_whoever_asks():
-    """`_choose` do motor pergunta por `select_choice` no port; quem não tem
-    precisa continuar ouvindo "não tem"."""
+    """The engine's `_choose` probes the port for `select_choice`; ports without it
+    must still report that it is missing."""
     proxy = _WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
     try:
         proxy.select_choice
     except AttributeError:
         return
-    raise AssertionError("o proxy inventou um método que o port não tem")
+    raise AssertionError("the proxy invented a method the port does not have")
 
 
 def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
-    """Step começou há 10min, trabalhou 2 e está há 8 esperando. Quem anexa
-    agora tem de ver `02:00` congelado — não `10:00`, que conta a espera como
-    trabalho do agente."""
+    """A step started 10min ago, worked 2 and has waited 8: a reattach must show
+    `02:00` frozen, not `10:00`, which would count the wait as agent work."""
     from datetime import UTC, datetime, timedelta
 
     from pulse.client.run_session import EngineRunSession

@@ -13,7 +13,7 @@ def _point_at(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_a_daemon_never_clears_the_meta_of_another(monkeypatch, tmp_path: Path):
-    """Quem perdeu a corrida pela porta não pode deixar o vencedor órfão."""
+    """The daemon that lost the race for the port must not orphan the winner."""
     _point_at(monkeypatch, tmp_path)
     paths.write_daemon_meta(pid=111, http_host="127.0.0.1", http_port=1, socket_path=tmp_path / "daemon.sock")
 

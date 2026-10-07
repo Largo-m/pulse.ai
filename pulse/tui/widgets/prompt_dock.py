@@ -77,16 +77,12 @@ class PromptDock(Widget):
         self._finish(None)
 
     def hotkeys(self) -> dict[str, int]:
-        """Tecla → índice da opção, lida do rótulo que está na tela.
+        """Map key → option index, read from the label shown on screen.
 
-        O dock já rotula toda opção como `A)`, `B)`, `C)`
-        ([pulse.prompts.ask_question.format_option_label]), então a tecla é a
-        própria letra que a pessoa está lendo. Derivar do rótulo, e não de um
-        alfabeto próprio, é o que garante que a tecla nunca discorde do texto —
-        um rótulo que o agente já tenha numerado continua valendo a letra dele.
-
-        Rótulo sem o prefixo `X)` simplesmente não ganha atalho: inventar uma
-        letra que não está escrita seria um atalho invisível.
+        Options are labelled `A)`, `B)`, `C)`
+        ([pulse.prompts.ask_question.format_option_label]); deriving keys from
+        the label guarantees the key always matches the visible text. Labels
+        without an `X)` prefix get no hotkey.
         """
         keys: dict[str, int] = {}
         for index, (_option_id, label) in enumerate(self._request.choices):
@@ -96,15 +92,10 @@ class PromptDock(Widget):
         return keys
 
     def on_key(self, event: events.Key) -> None:
-        """A letra da opção escolhe direto, sem passar pelas setas.
+        """Pressing an option's letter selects it directly, without arrow keys.
 
-        Vale para qualquer questionário — o bloco de aprovação é só o caso mais
-        frequente, e é onde mais pesa: aprovar, ajustar, pular ou cancelar vira
-        uma tecla em vez de navegar até a linha.
-
-        Só em `SELECT`. Em `MULTI_SELECT` a tecla teria de alternar a marcação, e
-        o dock ainda não desenha marca nenhuma — o atalho pareceria não ter
-        funcionado.
+        `SELECT` only: in `MULTI_SELECT` the key would need to toggle a mark the
+        dock does not draw yet, so the shortcut would look broken.
         """
         if self._request.kind is not PromptKind.SELECT:
             return

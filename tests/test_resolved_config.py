@@ -280,10 +280,10 @@ def _both_runtimes() -> dict[str, AgentConfig]:
 
 
 def test_workflow_falls_back_to_an_installed_runtime(monkeypatch, tmp_path: Path):
-    """O pré-voo da run não pode reprovar por um runtime que não está na máquina.
+    """The run preflight must not fail because of a runtime missing from the machine.
 
-    O default do projeto é preferência; se o binário não existe, a run tem de
-    sair no runtime que existe em vez de morrer antes do primeiro step.
+    The project default is a preference; if its binary does not exist, the run
+    must use the installed runtime instead of dying before the first step.
     """
     cfg = _global(agents=_both_runtimes(), default_agent="claude")
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
@@ -299,7 +299,7 @@ def test_workflow_falls_back_to_an_installed_runtime(monkeypatch, tmp_path: Path
 
 
 def test_custom_agent_is_never_swapped_for_a_runtime(monkeypatch, tmp_path: Path):
-    """Agente declarado à mão tem binário próprio: não é um runtime do registry."""
+    """A hand-declared agent has its own binary: it is not a registry runtime."""
     cfg = _global(agents=_both_runtimes(), default_agent="claude")
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: cfg)
     init_project_config(tmp_path)
@@ -315,23 +315,23 @@ def test_custom_agent_is_never_swapped_for_a_runtime(monkeypatch, tmp_path: Path
 
 
 def test_a_new_project_inherits_the_machine_choice(monkeypatch, tmp_path: Path):
-    """O onboarding grava a máquina e cria o projeto logo depois: o projeto
-    recém-criado não pode trocar o runtime que a pessoa acabou de escolher."""
+    """Onboarding saves machine config and then creates the project.
+
+    The freshly created project must not override the runtime the user just chose.
+    """
     machine = _global(default_agent="claude", model="opus[1m]", permission_policy="auto_approve")
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: machine)
     init_project_config(tmp_path)
 
     resolved = resolve_config(tmp_path)
 
-    # O nome final depende do binário instalado (`runtime.fallback`); o que
-    # importa aqui é que a escolha não veio do projeto.
     assert resolved.sources["agent"] != "project.default"
     assert resolved.model == "opus[1m]"
     assert resolved.permission_policy == "auto_approve"
 
 
 def test_the_default_agent_follows_the_machine_policy(monkeypatch, tmp_path: Path):
-    """O `ask` fixo no agente `default` ganhava da máquina: o onboarding não mudava nada."""
+    """The hardcoded `ask` on the `default` agent beat the machine config: onboarding changed nothing."""
     machine = _global(permission_policy="auto_approve")
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: machine)
     init_project_config(tmp_path)

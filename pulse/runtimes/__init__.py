@@ -1,8 +1,8 @@
-"""Registry de runtimes de agente.
+"""Agent runtime registry.
 
-Um *runtime* é o backend que executa um Pulse agent: qual binário roda, como se
-fala ACP com ele, como se checa o ambiente e como se aplica modo e modelo.
-Adicionar um agente novo = um módulo aqui + uma entrada em `RUNTIMES`.
+A *runtime* is the backend that runs a Pulse agent: which binary, how to speak
+ACP with it, how to check the environment and how to apply mode and model.
+Adding a new agent means one module here plus an entry in `RUNTIMES`.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ def all_runtimes() -> list[AgentRuntime]:
 
 
 def get_runtime(name: str | None) -> AgentRuntime:
-    """Runtime pelo id; cai no default para `default`/desconhecido."""
+    """Runtime by id; falls back to the default for `default`/unknown ids."""
     if name:
         runtime = RUNTIMES.get(name.strip().lower())
         if runtime is not None:
@@ -44,13 +44,11 @@ def find_runtime(name: str | None) -> AgentRuntime | None:
 
 
 def runtime_for_command(command: list[str] | tuple[str, ...]) -> AgentRuntime:
-    """Runtime cujo comando ACP bate com `command` (para sessões já configuradas)."""
+    """Runtime whose ACP command matches `command` (for already configured sessions)."""
     parts = [_without_version(str(item)) for item in command]
     for runtime in RUNTIMES.values():
         if [_without_version(item) for item in runtime.acp_command] == parts:
             return runtime
-    # Nome do executável, e não substring do caminho: `agent` (Cursor) está
-    # dentro de `claude-agent-acp`.
     executable = Path(parts[0]).name if parts else ""
     for runtime in RUNTIMES.values():
         if executable == runtime.binary:
@@ -59,9 +57,9 @@ def runtime_for_command(command: list[str] | tuple[str, ...]) -> AgentRuntime:
 
 
 def _without_version(part: str) -> str:
-    """`@scope/pacote@1.2.3` e `@scope/pacote` são o mesmo comando ACP.
+    """Treat `@scope/package@1.2.3` and `@scope/package` as the same ACP command.
 
-    Sem isto, a config gravada antes do pin de versão deixaria de casar.
+    Keeps config saved before the version pin matching.
     """
     name, at, _version = part.rpartition("@")
     return name if at and name else part

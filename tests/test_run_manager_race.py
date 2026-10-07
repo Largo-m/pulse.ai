@@ -10,7 +10,7 @@ from pulse.daemon.runs import RunAlreadyActive, RunManager
 
 
 def test_two_concurrent_resumes_start_only_one_run(monkeypatch):
-    """Endpoints síncronos rodam num threadpool: dois "retomar" chegam juntos."""
+    """Sync endpoints run in a threadpool: two resume requests arrive together."""
     make_workflow("demo", steps=[("one", "Um")])
     release = threading.Event()
     executed: list[str] = []
@@ -23,7 +23,6 @@ def test_two_concurrent_resumes_start_only_one_run(monkeypatch):
     real_bus = runs_module.EventBus
 
     def slow_bus():
-        # Alarga a janela entre olhar `_runs` e gravar nele.
         time.sleep(0.05)
         return real_bus()
 

@@ -8,7 +8,7 @@ def test_stop_is_a_single_transition():
     control = RunControl(on_change=seen.append)
 
     assert control.stop() is True
-    assert control.stop() is False, "parar de novo não é uma transição"
+    assert control.stop() is False, "stopping again is not a transition"
     assert control.stopped is True
     assert control.interrupted is True
 
@@ -22,7 +22,7 @@ def test_checkpoint_blocks_only_after_stop():
 
     control.stop()
 
-    assert control.checkpoint() is False, "run parada não segue para o próximo step"
+    assert control.checkpoint() is False, "a stopped run does not move on to the next step"
 
 
 def test_stopped_exit_code_is_not_a_failure_code():
@@ -31,7 +31,7 @@ def test_stopped_exit_code_is_not_a_failure_code():
 
 def test_on_change_failure_never_breaks_the_caller():
     def _explode(_kind: str) -> None:
-        raise RuntimeError("bus caiu")
+        raise RuntimeError("bus down")
 
     control = RunControl(on_change=_explode)
     assert control.stop() is True

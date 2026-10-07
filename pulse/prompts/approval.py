@@ -1,8 +1,7 @@
-"""Leitura da aprovação que o agente devolve no bloco ` ```text `.
+"""Reading of the approval the agent returns in the ` ```text ` block.
 
-O Pulse não interpreta o conteúdo do que o agente produziu — só o desfecho do
-questionário de aprovação: seguir, ajustar, pular ou cancelar. É a única coisa
-que ele precisa saber para decidir se o próximo agente pode rodar.
+Pulse only interprets the approval questionnaire outcome (approve, adjust, skip
+or cancel) to decide whether the next agent may run.
 """
 
 from __future__ import annotations
@@ -18,8 +17,6 @@ from pulse.prompts.ask_question import (
     option_requires_description,
 )
 
-#: Resumo de um step injetado no prompt do seguinte. Sem teto, um step que
-#: despeja um arquivo inteiro estoura o contexto do próximo.
 SUMMARY_MAX_CHARS = 8_000
 
 APPROVE = "approve"
@@ -50,11 +47,10 @@ def picked_answers(answers_text: str) -> list[str]:
 
 
 def chosen_options(answers_text: str) -> list[str]:
-    """O que o usuário escolheu, sem o que ele digitou.
+    """What the user chose, without what they typed.
 
-    Texto livre ("Outro — …") e o detalhe de uma opção (`B) Ajustar — …`) são
-    orientação para o agente: "pode pular a seção de métricas" não pode pular o
-    step, nem "revise o fluxo de aprovação" aprová-lo.
+    Free text ("Outro — …") and option details (`B) Ajustar — …`) are guidance
+    for the agent and must not be read as skip/approve decisions.
     """
     chosen: list[str] = []
     for raw in picked_answers(answers_text):
@@ -89,19 +85,12 @@ def classify_outcome(answers_text: str) -> str:
 
 
 def answer_needs_description(*, prompt: str, label: str) -> bool:
-    """A escolha abre o campo de texto?
+    """Whether the choice opens the free-text field.
 
-    Duas razões, e a segunda é a que não depende de como o agente escreveu:
-
-    1. O rótulo pede — `(descreva)`, `[describe]`, `— especifique`.
-    2. É um portão de aprovação e a escolha **não** aprova, pula nem cancela.
-       Tudo que sobra volta ao agente como "o usuário quer mudanças", e sem texto
-       isso não diz *o que* mudar: o agente refaz o mesmo turno no escuro. Vale
-       para qualquer agente e qualquer step, mesmo que o rótulo seja um "Não"
-       seco, porque quem decide aqui é o desfecho, não a redação.
-
-    Classifica pelo mesmo `classify_outcome` que o motor usa depois — assim a
-    pergunta que a tela faz e a leitura que o motor faz não podem discordar.
+    True when the label asks for it (`(descreva)`, `[describe]`, `— especifique`),
+    or when it is an approval gate and the choice does not approve, skip or
+    cancel, so the agent learns *what* to change. Uses the same
+    `classify_outcome` as the engine so UI and engine cannot disagree.
     """
     if option_requires_description(label):
         return True

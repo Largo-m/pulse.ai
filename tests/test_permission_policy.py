@@ -28,7 +28,7 @@ def test_deny_writes_rejects_kinds_that_change_files(kind: str) -> None:
 
 @pytest.mark.parametrize("kind", ["execute", "other", ""])
 def test_deny_writes_asks_a_person_when_the_kind_may_write(kind: str) -> None:
-    """O Bash do Claude chega como `execute`: aprovar sozinho furava a política."""
+    """Claude's Bash arrives as `execute`: auto-approving it bypassed the policy."""
     assert _decide(kind, "deny_writes") is None
 
 

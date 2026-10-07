@@ -92,7 +92,7 @@ def test_textual_prompt_handler_permission_ask_uses_select():
 
 
 def test_textual_prompt_handler_permission_deny_writes_has_no_path_exception():
-    """Nenhuma pasta é "do Pulse": deny_writes recusa qualquer escrita."""
+    """No folder belongs to Pulse: deny_writes rejects every write."""
     bridge = PromptBridge()
     handler = TextualPromptHandler(bridge)
     result = handler.respond_to_permission(

@@ -1,17 +1,12 @@
-"""O pouco de git que o Pulse precisa saber.
+"""The little git that Pulse needs.
 
-O Pulse não versiona nada e não lê diff: o que ele faz aqui é abrir um lugar
-isolado para a run trabalhar (`git worktree`) e perguntar em que branch isso
-está acontecendo. Nada além disso — merge, push e revisão continuam sendo
-trabalho de quem usa o git.
+Pulse only opens an isolated place for a run to work (`git worktree`) and asks
+which branch it is on; merge, push and review remain the user's job. Uses the
+git CLI via `subprocess` rather than a library dependency.
 
-É o git CLI por `subprocess`, não uma biblioteca: a única operação de escrita é
-`worktree add`, e carregar uma dependência inteira por ela seria caro para quem
-nem liga a chave.
-
-Leitura nunca levanta — projeto fora de repositório, git ausente do PATH ou HEAD
-destacado devolvem vazio, e a sessão segue sem branch. Escrita levanta
-(`GitError`): é melhor a run não começar do que começar no diretório errado.
+Reads never raise: outside a repo, without git on PATH or on a detached HEAD
+they return empty. Writes raise `GitError`: better not to start a run than to
+start it in the wrong directory.
 """
 
 from __future__ import annotations
@@ -19,18 +14,13 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-#: Teto de cada comando. Nenhum dos que rodam aqui é demorado; o prazo existe
-#: para um git travado (credential helper, lock de index) não segurar a run.
 TIMEOUT = 15.0
 
-#: Até onde `add_worktree` tenta desambiguar um nome de branch já existente.
-#: Depois disso o problema não é colisão de nome, e inventar sufixo sem fim só
-#: esconderia isso.
 MAX_BRANCH_ATTEMPTS = 20
 
 
 class GitError(RuntimeError):
-    """Comando git que falhou e cujo resultado ninguém pode ignorar."""
+    """A failed git command whose result cannot be ignored."""
 
 
 def _run(args: list[str], *, cwd: Path | str) -> subprocess.CompletedProcess[str]:
@@ -45,12 +35,10 @@ def _run(args: list[str], *, cwd: Path | str) -> subprocess.CompletedProcess[str
 
 
 def _read(args: list[str], *, cwd: Path | str) -> str:
-    """Saída de um comando de leitura. Qualquer tropeço vira string vazia."""
+    """Output of a read command; any failure yields an empty string."""
     try:
         result = _run(args, cwd=cwd)
     except (OSError, subprocess.SubprocessError):
-        # git ausente do PATH, diretório que sumiu, prazo estourado: nenhum
-        # deles é motivo para a run não acontecer.
         return ""
     if result.returncode != 0:
         return ""
@@ -69,7 +57,7 @@ def _write(args: list[str], *, cwd: Path | str) -> str:
 
 
 def repo_root(path: Path | str) -> Path | None:
-    """Raiz do repositório que contém `path`, ou `None` se não houver."""
+    """Root of the repository containing `path`, or `None` if there is none."""
     candidate = Path(path)
     if not candidate.exists():
         return None
@@ -84,10 +72,10 @@ def is_repo(path: Path | str) -> bool:
 
 
 def current_branch(path: Path | str) -> str:
-    """Branch atual, ou vazio em HEAD destacado e fora de repositório.
+    """Current branch, or empty on a detached HEAD or outside a repository.
 
-    Vazio e não o sha: a tela mostra isto ao lado do modelo, e um sha solto ali
-    pareceria nome de branch para quem só bate o olho.
+    Empty rather than the sha, since the UI shows this next to the model and a
+    sha would look like a branch name.
     """
     candidate = Path(path)
     if not candidate.exists():
@@ -115,11 +103,11 @@ def add_worktree(
     *,
     start: str = "HEAD",
 ) -> str:
-    """Abre um worktree em `path`, numa branch nova, e devolve o nome dela.
+    """Open a worktree at `path` on a new branch and return the branch name.
 
-    O nome pedido pode já existir — uma run anterior cujo worktree foi removido
-    deixa a branch para trás. Em vez de falhar ou reaproveitar (o que faria duas
-    runs escreverem no mesmo histórico), o nome ganha sufixo: `…-2`, `…-3`.
+    If the name already exists (left by an earlier run), a suffix is added
+    (`...-2`, `...-3`) instead of failing or reusing it, so two runs never share
+    a history.
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -136,11 +124,10 @@ def add_worktree(
 
 
 def attach_worktree(repo: Path | str, path: Path | str, branch: str) -> None:
-    """Reabre um worktree em `path` numa branch que já existe.
+    """Reopen a worktree at `path` on an existing branch.
 
-    É o caminho da run retomada que perdeu o diretório: o trabalho dos steps que
-    já fecharam está commitado na branch dela, e uma branch nova a partir do HEAD
-    deixaria esse trabalho de fora.
+    Used when a resumed run lost its directory: finished steps' work is
+    committed on its branch, and a new branch from HEAD would leave it out.
     """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -149,17 +136,16 @@ def attach_worktree(repo: Path | str, path: Path | str, branch: str) -> None:
 
 
 def prune_worktrees(repo: Path | str) -> None:
-    """Esquece worktrees cujo diretório sumiu do disco.
+    """Forget worktrees whose directory is gone from disk.
 
-    Diretório apagado à mão continua registrado no git, e `worktree add` recusa
-    o mesmo caminho até alguém rodar `prune`. Falhar aqui não impede nada: o
-    `add` seguinte reporta o erro de verdade.
+    Otherwise `worktree add` refuses the same path. Failures are ignored; the
+    following `add` reports the real error.
     """
     _read(["worktree", "prune"], cwd=repo)
 
 
 def remove_worktree(repo: Path | str, path: Path | str, *, force: bool = False) -> None:
-    """Desfaz o worktree. Sem `force`, git recusa se houver mudança não salva."""
+    """Remove the worktree. Without `force`, git refuses if there are unsaved changes."""
     args = ["worktree", "remove"]
     if force:
         args.append("--force")
@@ -168,10 +154,10 @@ def remove_worktree(repo: Path | str, path: Path | str, *, force: bool = False) 
 
 
 def has_changes(path: Path | str) -> bool:
-    """Há trabalho não commitado aqui? Na dúvida, `True`.
+    """Whether there is uncommitted work here; `True` when in doubt.
 
-    Quem pergunta está prestes a apagar o diretório. Um erro de leitura não pode
-    virar "não tem nada aqui".
+    Callers are about to delete the directory, so a read error must not look
+    like "nothing here".
     """
     candidate = Path(path)
     if not candidate.exists():

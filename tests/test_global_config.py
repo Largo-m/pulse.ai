@@ -88,7 +88,7 @@ def test_save_global_config_creates_parent(tmp_path: Path):
 
 
 def test_saving_honours_pulse_db_like_loading_does(monkeypatch, tmp_path):
-    """Gravar num arquivo e ler de outro prendia o onboarding em loop."""
+    """Writing to one file and reading from another trapped onboarding in a loop."""
     from pulse.config.global_config import load_global_config, mark_onboarding_complete
 
     monkeypatch.setenv("PULSE_DB", str(tmp_path / "outro.db"))

@@ -1,12 +1,12 @@
-"""Estado de execução: runs, steps, log e artefatos.
+"""Execution state: runs, steps, log and artifacts.
 
-Tudo que o orquestrador precisa para responder "onde esta run parou" vive aqui.
-Nada disso vai para arquivo: o único conteúdo em disco é o que o agente escreve
-no workspace, e desse o Pulse guarda só o caminho (`run_artifacts`).
+Everything the orchestrator needs to know where a run stopped lives here. Of
+the files the agent writes to the workspace, Pulse only stores the path
+(`run_artifacts`).
 
-As tabelas são chaveadas por `run_id` e por `workspace_root`, não por
-`project_id`: registrar o projeto só para satisfazer uma FK marcaria o workspace
-como inicializado e faria o onboarding parar de rodar.
+Tables are keyed by `run_id` and `workspace_root`, not `project_id`:
+registering the project to satisfy an FK would mark the workspace as
+initialized and skip onboarding.
 """
 
 from __future__ import annotations
@@ -18,30 +18,17 @@ from typing import Any
 
 from pulse.store.db import connect, default_db_path
 
-#: Teto do detalhe gravado. É ele que segura a fala do agente inteira — em
-#: 2000 caracteres uma resposta longa reabria cortada no meio, e o histórico
-#: mostrava menos do que a sessão viva tinha mostrado.
 MAX_DETAIL = 20_000
 
 PENDING = "pending"
 RUNNING = "running"
-#: A run existe, o agente está vivo, e nada avança porque há uma pergunta aberta
-#: na tela de alguém. Status da **run**, não do step: o step continua `running`
-#: — ele não terminou, só parou de consumir tempo de agente. Ver
-#: [pulse.acp.session_runner._begin_user_wait].
 AWAITING_INPUT = "awaiting_input"
 DONE = "done"
 SKIPPED = "skipped"
 FAILED = "failed"
 STOPPED = "stopped"
-#: O agente rodou e declarou que não tinha como concluir. Diferente de `failed`,
-#: que é quebra técnica (sessão caiu, prazo estourou): aqui nada quebrou, a
-#: entrega é que não aconteceu. A distinção existe porque o que se faz com cada
-#: um é diferente — falha se refaz, bloqueio se destrava.
 BLOCKED = "blocked"
 
-#: Um step nesses estados não roda de novo ao retomar. `blocked` fica de fora de
-#: propósito: retomar uma run bloqueada tem de refazer o step que travou.
 SETTLED = frozenset({DONE, SKIPPED})
 
 
@@ -56,11 +43,8 @@ class StepRecord:
     acp_session_id: str = ""
     started_at: str = ""
     ended_at: str = ""
-    #: Tempo que este step passou esperando o usuário, descontado da duração.
     waiting_seconds: float = 0.0
-    #: Quantas vezes este step rodou nesta run. Passa de 1 só dentro de um laço.
     rounds: int = 1
-    #: Duração líquida das voltas anteriores do laço. Ver `carry_round`.
     carried_seconds: float = 0.0
 
 
@@ -68,22 +52,19 @@ class StepRecord:
 class RunRecord:
     id: str
     workflow_id: str
-    #: Raiz do projeto — a identidade da run, e o que o histórico casa.
     workspace_root: str
     user_prompt: str = ""
     status: str = PENDING
     current_step: str = ""
     created_at: str = ""
     updated_at: str = ""
-    #: Worktree desta run, quando ela não rodou na raiz do projeto.
     worktree_path: str = ""
-    #: Branch em que a run aconteceu — com ou sem worktree.
     branch: str = ""
     steps: list[StepRecord] = field(default_factory=list)
 
     @property
     def exec_root(self) -> str:
-        """Onde o agente trabalhou: o worktree, ou a raiz quando não houve um."""
+        """Where the agent worked: the worktree, or the root when there was none."""
         return self.worktree_path or self.workspace_root
 
     def step(self, step_id: str) -> StepRecord | None:
@@ -187,9 +168,6 @@ def create_run(
               (run_id, step_id, position, label, agent_id, status)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            # A posição vem do registro, não do índice: o motor espaça os steps
-            # (1000, 2000, …) justamente para o fan-out caber entre dois deles.
-            # Renumerar aqui punha as tasks do step 2 depois do step 3.
             [
                 (run_id, item.step_id, item.position or index, item.label, item.agent_id, PENDING)
                 for index, item in enumerate(steps, start=1)
@@ -240,12 +218,10 @@ def list_runs(
 
 
 def find_resumable(workspace: str | Path, *, db_path: Path | None = None) -> list[RunRecord]:
-    """Runs que pararam no meio — dá para retomar do step onde ficaram.
+    """Runs that stopped midway and can resume from their pending step.
 
-    Falha entra na lista: é o caso em que mais se quer voltar. Uma run que caiu
-    no quinto de dez steps guarda os quatro primeiros em `run_steps`, e retomar
-    roda só o que faltou. Só `completed` fica de fora, e ainda assim só quando
-    não sobrou step nenhum por fazer.
+    Failed runs are included. Only `completed` runs with no pending step are
+    excluded.
     """
     return [
         run
@@ -285,12 +261,11 @@ def set_workspace_context(
     branch: str = "",
     db_path: Path | None = None,
 ) -> None:
-    """Grava onde esta run trabalha e em que branch.
+    """Store where this run works and on which branch.
 
-    Separado de `create_run` porque o worktree só existe depois que a run tem
-    id: é o id que batiza o diretório. Separado de `update_run` porque não é
-    estado de execução — não muda enquanto a run anda, e retomar depende de
-    reler exatamente o que ficou aqui.
+    Separate from `create_run` because the worktree is named after the run id,
+    and from `update_run` because it is not execution state: it never changes
+    during the run and resuming rereads it as-is.
     """
     if not run_id:
         return
@@ -308,19 +283,6 @@ def set_workspace_context(
 def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
     connection = connect(db_path or default_db_path())
     try:
-        # Upsert, e não `UPDATE`: nem todo step existe desde o início da run. O
-        # fan-out cria os dele no meio, e um step acrescentado à definição
-        # depois também — com `UPDATE` os dois sumiam sem erro nenhum.
-        #
-        # Em conflito, só o estado é reescrito. `position`, `label` e `agent_id`
-        # foram copiados da definição quando a run começou, e editar o workflow
-        # depois não pode reescrever o que já aconteceu.
-        #
-        # `waiting_seconds` fica de fora do `DO UPDATE` de propósito: quem o
-        # move é `add_waiting_seconds`, chamado da thread da sessão enquanto o
-        # motor segura um `StepRecord` que não sabe da espera. Reescrevê-lo aqui
-        # zeraria o tempo de espera recém-somado no primeiro `save_step`.
-        # `carried_seconds` também, pelo mesmo motivo: só `carry_round` o move.
         connection.execute(
             """
             INSERT INTO run_steps
@@ -366,13 +328,10 @@ def add_waiting_seconds(
     *,
     db_path: Path | None = None,
 ) -> None:
-    """Soma tempo de espera do usuário ao step. Soma, e não atribui: um step
-    pode parar várias vezes — uma permissão, depois um questionário — e cada
-    parada tira o seu pedaço da duração.
+    """Add user wait time to the step (accumulates across multiple waits).
 
-    Step que ainda não existe na tabela é ignorado em silêncio: a espera pode
-    acontecer antes do primeiro `save_step` (o menu de retomada, por exemplo),
-    e perder a contabilidade vale mais do que criar linha sem dono.
+    A step not yet in the table is silently ignored: waits can happen before
+    the first `save_step` (e.g. the resume menu).
     """
     if not run_id or not step_id or seconds <= 0:
         return
@@ -391,18 +350,12 @@ def add_waiting_seconds(
 
 
 def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:
-    """Fecha a volta do step no relógio e devolve o tempo acumulado até aqui.
+    """Close the step's current loop round and return the accumulated time.
 
-    Uma volta nova do laço reabre `started_at`/`ended_at`. Sem guardar antes o
-    que a volta anterior gastou, o step voltava a zero a cada rodada — e um
-    review que rodou três vezes aparecia com o tempo só da última.
-
-    A duração líquida (parede menos espera) vai para `carried_seconds`, e a
-    espera zera junto: ela já foi descontada ali, e descontá-la de novo da volta
-    seguinte comeria tempo de trabalho.
-
-    Lido e escrito no banco, e não no `StepRecord`: a espera só existe lá — quem
-    a soma é a thread da sessão (ver `add_waiting_seconds`).
+    Net duration (wall time minus wait) moves to `carried_seconds` and the wait
+    resets, since a new round reopens `started_at`/`ended_at`. Works on the DB
+    rather than `StepRecord` because only the DB has the wait time (see
+    `add_waiting_seconds`).
     """
     connection = connect(db_path or default_db_path())
     try:
@@ -436,7 +389,7 @@ def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> fl
 
 
 def _net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
-    """Parede menos espera; zero quando a volta não tem começo e fim gravados."""
+    """Wall time minus wait; zero when the round has no recorded start and end."""
     try:
         start = datetime.fromisoformat(started_at)
         end = datetime.fromisoformat(ended_at)
@@ -446,11 +399,10 @@ def _net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> floa
 
 
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
-    """Apaga a run e tudo que pendura nela. `False` = não existia.
+    """Delete the run and everything attached to it. `False` = it did not exist.
 
-    Steps, eventos e artefatos vão junto por `ON DELETE CASCADE` — o que fica no
-    disco do workspace não é nosso para apagar: o Pulse grava caminho, não
-    arquivo.
+    Steps, events and artifacts go via `ON DELETE CASCADE`; workspace files are
+    left untouched since Pulse only stores paths.
     """
     connection = connect(db_path or default_db_path())
     try:
@@ -462,10 +414,9 @@ def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
 
 
 def delete_step(run_id: str, step_id: str, *, db_path: Path | None = None) -> None:
-    """Tira um step da run.
+    """Remove a step from the run.
 
-    Existe para o fan-out: o step que vira N some, e no lugar dele entram os N.
-    Deixar o original viraria uma linha a mais no painel, sem dono.
+    Used by fan-out: the original step is replaced by its N children.
     """
     connection = connect(db_path or default_db_path())
     try:
@@ -488,7 +439,7 @@ def record_event(
     tool_id: str = "",
     db_path: Path | None = None,
 ) -> None:
-    """Grava uma linha do log. Um `tool_id` repetido atualiza a linha existente."""
+    """Record a log row. A repeated `tool_id` updates the existing row."""
     if not run_id or not (title or detail):
         return
     connection = connect(db_path or default_db_path())
@@ -599,7 +550,7 @@ def list_artifacts(run_id: str, *, db_path: Path | None = None) -> list[dict[str
 
 
 def list_sessions(run_id: str, *, db_path: Path | None = None) -> list[dict[str, str]]:
-    """Sessões ACP de cada step, na ordem em que rodaram."""
+    """ACP sessions of each step, in the order they ran."""
     connection = connect(db_path or default_db_path())
     try:
         rows = connection.execute(

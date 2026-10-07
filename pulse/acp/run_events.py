@@ -1,7 +1,7 @@
-"""O log da run no banco do Pulse: o que o cockpit mostra, gravado para o histórico.
+"""Run log persisted in the Pulse database: what the cockpit shows, saved for history.
 
-Vive fora do [pulse.acp.session_runner] porque não é transporte ACP: é a
-tradução de `session/update` em linhas de `run_events` e em artefatos da run.
+Lives outside [pulse.acp.session_runner] because it is not ACP transport: it
+translates `session/update` into `run_events` rows and run artifacts.
 """
 
 from __future__ import annotations
@@ -15,28 +15,22 @@ from pulse.prompts.text_questionnaire import QUESTIONNAIRE_NOTICE, strip_questio
 
 
 class RunEventRecorder:
-    """Mixin do runner. Lê do runner: `_bound_run_id`, `_phase_id`,
-    `_session_id`, `_cwd` e `_stream`; o estado do log (`_text_buffer`,
-    `_tool_payloads`, `_tool_kinds`, `_tool_labeled`) também nasce no runner.
+    """Runner mixin.
+
+    Reads `_bound_run_id`, `_phase_id`, `_session_id`, `_cwd` and `_stream` from
+    the runner; the log state (`_text_buffer`, `_tool_payloads`, `_tool_kinds`,
+    `_tool_labeled`) is also initialized by the runner.
     """
 
-    #: Onde cada runtime põe o caminho do arquivo no `rawInput` do tool-call.
     _PATH_KEYS = ("path", "file_path", "target_file", "filePath", "abs_path")
-    #: Tool-calls que produzem artefato. É assim que o Pulse descobre o que o
-    #: agente escreveu — não há convenção de pasta nem de extensão.
     _WRITE_KINDS = frozenset({"edit", "write", "create"})
 
     def _record_run_event(self, params: dict[str, Any]) -> None:
-        """Grava no banco do Pulse o que o cockpit está mostrando.
+        """Persist to the Pulse database what the cockpit is showing.
 
-        Ler o log do runtime não serve: só o Cursor tem um, e o Pulse é
-        agnóstico ao agente que está rodando.
-
-        O que vai para o banco passa pelo **mesmo** rótulo que a tela ao vivo
-        usa ([pulse.history.tool_detail.build_tool_labels]): tipo do tool, alvo e
-        detalhe. Gravar o `title` cru do ACP com um `kind` fixo "Tool" era o que
-        fazia o histórico mostrar uma fileira de "v Tool" onde a sessão viva
-        mostra "Read pulse/store/runs.py" ou "Shell pytest -q".
+        The runtime's own log is not usable: only Cursor has one, and Pulse is
+        agent-agnostic. Rows use the same labels as the live screen
+        ([pulse.history.tool_detail.build_tool_labels]) so history matches it.
         """
         if not self._bound_run_id:
             return
@@ -58,9 +52,6 @@ class RunEventRecorder:
         merged = self._merge_tool_payload(tool_id, update)
         log_kind, title, detail = self._tool_labels(tool_id, merged)
         if title.strip() in {"", "…", "..."} and not detail.strip():
-            # Tool-call que ainda não disse o que vai fazer. Regravar o
-            # placeholder apagaria o rótulo bom que já está na linha: o
-            # `tool_id` reescreve a existente em vez de acrescentar.
             if tool_id in self._tool_labeled:
                 return
             title = "…"
@@ -77,10 +68,10 @@ class RunEventRecorder:
         return merged
 
     def _tool_labels(self, tool_id: str, update: dict[str, Any]) -> tuple[str, str, str]:
-        """(kind, título, detalhe) de um tool-call, como a tela viva os monta.
+        """(kind, title, detail) of a tool call, as the live screen builds them.
 
-        Rotular é acessório ao step: qualquer tropeço aqui cai no `title` cru do
-        ACP em vez de derrubar a run.
+        Labeling is incidental: any failure falls back to the raw ACP `title`
+        instead of breaking the run.
         """
         try:
             previous = self._tool_kinds.get(tool_id)
@@ -108,12 +99,10 @@ class RunEventRecorder:
         return ""
 
     def _record_artifacts(self, update: dict[str, Any], log_kind: str = "") -> None:
-        """Registra o que o tool-call escreveu.
+        """Record the files the tool call wrote.
 
-        O `kind` do ACP nem sempre vem — vários runtimes mandam só o nome do
-        tool. Por isso vale também a classificação de `build_tool_labels`, que é
-        a mesma que faz a aba de artefatos aparecer na sessão viva; sem ela o
-        histórico reabria sem nenhum artefato.
+        The ACP `kind` is not always sent, so the `build_tool_labels`
+        classification (the same one the live artifacts tab uses) also counts.
         """
         writes = str(update.get("kind") or "").lower() in self._WRITE_KINDS
         if not writes and log_kind not in {"Write", "Edit"}:
@@ -124,14 +113,13 @@ class RunEventRecorder:
 
                 record_artifact(self._bound_run_id, path, step_id=self._phase_id)
             except Exception:
-                # Registrar artefato é acessório: nunca derruba o step.
                 pass
 
     def _artifact_paths(self, update: dict[str, Any]) -> list[str]:
-        """Caminhos tocados pelo tool-call, relativos ao workspace.
+        """Paths touched by the tool call, relative to the workspace.
 
-        A mesma extração da tela viva, para o artefato gravado abrir pela aba do
-        histórico: caminho absoluto de outra máquina não resolve arquivo nenhum.
+        Same extraction as the live screen, so recorded artifacts open from the
+        history tab.
         """
         paths = extract_paths(update, cwd=self._cwd)
         if paths:
@@ -151,15 +139,12 @@ class RunEventRecorder:
                 if isinstance(value, str) and value.strip():
                     found.append(value.strip())
                     break
-        # `locations` e `rawInput` costumam trazer o mesmo arquivo.
         return list(dict.fromkeys(found))
 
     def _begin_phase(self, label: str) -> None:
-        """Abre o passo na tela e deixa a mesma marca no log gravado.
+        """Open the phase on screen and leave the same marker in the recorded log.
 
-        A tela viva escreve uma linha de info a cada passo (e a cada
-        continuação); sem gravá-la, o histórico colava dois turnos num bloco só,
-        sem dizer onde um terminou.
+        Without it, history would merge consecutive turns into a single block.
         """
         self._flush_text()
         self._stream.begin_phase(label)
@@ -172,20 +157,16 @@ class RunEventRecorder:
         kwargs: dict[str, Any],
         result: Any,
     ) -> None:
-        """Põe no log da run a pergunta que foi feita e a resposta que veio.
+        """Record in the run log the question asked and the answer given.
 
-        A tela viva desenha os dois balões ([pulse.tui.state.CockpitState.add_qa]),
-        mas quem os desenha não escreve no banco — gravar daqui é o que faz o
-        histórico reabrir com o questionário que decidiu o rumo da run, em vez
-        de só com a fala do agente e os tools.
+        The live screen draws both bubbles ([pulse.tui.state.CockpitState.add_qa])
+        but does not write to the database, so history relies on this.
         """
         if not self._bound_run_id:
             return
         try:
             pairs = build_prompt_qa(name, args, kwargs, result)
         except Exception as error:  # noqa: BLE001
-            # Sem esta linha, um payload que o montador não entende apagaria o
-            # diálogo do histórico sem rastro.
             self._save_event(
                 kind="Info",
                 title="Diálogo não registrado",
@@ -195,18 +176,15 @@ class RunEventRecorder:
         for question, answer in pairs:
             if not question.strip():
                 continue
-            # A fala que antecedeu a pergunta vai primeiro, senão ela desceria
-            # para debaixo do diálogo no próximo flush.
             self._flush_text()
             self._save_event(kind="Question", title="Pergunta", detail=question)
             self._save_event(kind="Answer", title="Você", detail=answer)
 
     def _flush_text(self) -> None:
-        """Fecha a fala acumulada do agente numa linha do log.
+        """Flush the agent's accumulated speech into a single log row.
 
-        O bloco de questionário não entra: ele vira dock na tela e balões de
-        Pergunta/Você aqui, então gravá-lo cru mostraria as mesmas perguntas
-        duas vezes. No lugar dele fica a mesma linha que o cockpit mostra.
+        The questionnaire block is stripped (it is already recorded as
+        question/answer rows) and replaced by the same notice the cockpit shows.
         """
         text = "".join(self._text_buffer).strip()
         self._text_buffer.clear()
@@ -236,5 +214,4 @@ class RunEventRecorder:
                 tool_id=tool_id,
             )
         except Exception:
-            # Log é acessório: falha ao gravar não pode derrubar o step.
             pass

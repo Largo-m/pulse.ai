@@ -17,9 +17,6 @@ from pulse.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 
-#: De quanto em quanto tempo a lista relê o banco. O status de uma run muda no
-#: daemon, outro processo: sem reler, a linha ficava em "executando" até a tela
-#: ser reaberta.
 REFRESH_SECONDS = 2.0
 
 
@@ -56,11 +53,10 @@ class HistoryListScreen(Screen[None]):
         self.set_interval(REFRESH_SECONDS, self._poll)
 
     def on_screen_resume(self) -> None:
-        # Voltar do cockpit ou do detalhe é quando o status mais mudou.
         self._refresh()
 
     def _poll(self) -> None:
-        """Relê o histórico fora do laço da tela — banco ocupado não trava nada."""
+        """Reload history off the screen loop so a busy database never blocks the UI."""
         self.run_worker(self._fetch, exclusive=True, thread=True)
 
     def _fetch(self) -> None:
@@ -68,12 +64,10 @@ class HistoryListScreen(Screen[None]):
         try:
             items = self._catalog.search(query)
         except Exception:
-            # Leitura que falhou agora é só um tique perdido: o próximo tenta de novo.
             return
         try:
             self.app.call_from_thread(self._apply, items, query)
         except Exception:
-            # A tela saiu enquanto o banco respondia.
             pass
 
     def _hint_text(self) -> str:
@@ -83,17 +77,15 @@ class HistoryListScreen(Screen[None]):
         self._apply(self._catalog.search(self._query), self._query, force=True)
 
     def _apply(self, items: list[HistoryItem], query: str, *, force: bool = False) -> None:
-        """Põe `items` na lista — redesenhando só se alguma linha mudou.
+        """Show `items` in the list, redrawing only when a row changed.
 
-        Redesenhar sempre faria o cursor pular para o topo a cada tique; e um
-        resultado de busca que chegou depois de a pessoa digitar outra coisa
-        já não é o que ela pediu.
+        Always redrawing would reset the cursor every tick; results for a stale
+        query are dropped.
         """
         if query != self._query or not self.is_mounted:
             return
         rows = [_row_key(item) for item in items]
         unchanged = rows == [_row_key(item) for item in self._items.values()]
-        # Antes de trocar `_items`: é por eles que o cursor vira uma run.
         selected = self._highlighted()
         self._items = {item.item_id: item for item in items}
         if unchanged and not force:
@@ -133,10 +125,6 @@ class HistoryListScreen(Screen[None]):
         item = self._items.get(str(option_id))
         if item is None:
             return
-        # Run que ainda está rodando no daemon abre ao vivo, não como página de
-        # histórico: o id da run é o mesmo dos dois lados. Item `executando`
-        # cujo daemon morreu não está nesta lista e cai no detalhe estático,
-        # que é o que existe para ele.
         if item.status in LIVE_STATUSES and item.run_id in active_run_ids():
             self.app.open_cockpit(
                 item.workflow_id,
@@ -172,8 +160,6 @@ class HistoryListScreen(Screen[None]):
             if removed:
                 self.notify(f"Run removida: {item.title}")
             else:
-                # Sumiu entre a listagem e o Enter — dizer isso é melhor do que
-                # deixar a linha piscar e voltar.
                 self.notify("Essa run já não estava mais no histórico")
 
         self.app.push_screen(
@@ -186,7 +172,7 @@ class HistoryListScreen(Screen[None]):
         )
 
     def _highlighted(self) -> HistoryItem | None:
-        """A run sob o cursor da lista, se houver lista e cursor."""
+        """The run under the list cursor, if any."""
         try:
             options = self.query_one("#history-options", OptionList)
         except Exception:
@@ -199,10 +185,10 @@ class HistoryListScreen(Screen[None]):
 
 
 def _delete_warning(item: HistoryItem) -> str:
-    """O que a remoção leva junto — e o risco, quando a run ainda está viva.
+    """Describe what deletion removes, plus a warning when the run looks live.
 
-    Run em andamento não é bloqueada de propósito: uma que ficou marcada como
-    `executando` porque o processo morreu precisa poder sair daqui.
+    Live runs are deliberately not blocked: a run stuck as running after its
+    process died must still be removable.
     """
     lines = [
         item.title,
@@ -214,7 +200,7 @@ def _delete_warning(item: HistoryItem) -> str:
 
 
 def _row_key(item: HistoryItem) -> tuple[str, ...]:
-    """O que a linha mostra — mudou isto, a lista é redesenhada."""
+    """What a row displays; when this changes the list is redrawn."""
     return (item.item_id, item.workflow_label, str(item.status), item.title)
 
 

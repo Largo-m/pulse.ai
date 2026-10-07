@@ -63,8 +63,6 @@ def _start() -> int:
 
 
 def _stop() -> int:
-    # Parar o engine leva junto o que ele está rodando. Enquanto a run era
-    # atrelada ao cockpit isso era óbvio; agora que ela sobrevive à TUI, não é.
     _warn_about_live_runs()
     if not stop_daemon():
         print("[pulse] pulse-engine não saiu depois do SIGTERM; continua rodando")

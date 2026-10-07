@@ -1,4 +1,4 @@
-"""O bloco `pulse:outcome`: o que o motor aceita como "entreguei"."""
+"""The `pulse:outcome` block: what the engine accepts as "delivered"."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_done_is_the_only_way_to_say_delivered():
 
 
 def test_text_without_the_block_is_not_a_delivery():
-    """Era exatamente isto que virava `done`: encerrar o turno falando bonito."""
+    """This is exactly what used to become `done`: ending the turn with nice words."""
     outcome = parse_outcome("terminei o que dava, mas falta a credencial do banco")
     assert outcome.status == MISSING
     assert not outcome.delivered
@@ -31,7 +31,6 @@ def test_needs_marks_what_the_agent_cannot_solve_alone():
     outcome = parse_outcome(_block("status: blocked\nreason: sem acesso\nneeds: user"))
     assert outcome.needs_user
 
-    # O exemplo do protocolo vem com comentário na linha; o valor é o token.
     with_comment = parse_outcome(
         _block("status: blocked\nreason: x\nneeds: permission   # só quando depender")
     )
@@ -39,14 +38,13 @@ def test_needs_marks_what_the_agent_cannot_solve_alone():
 
 
 def test_the_last_block_wins():
-    """Um step que passou por continuação tem dois blocos; vale o de baixo."""
+    """A step that went through a continuation has two blocks; the bottom one wins."""
     text = _block("status: blocked\nreason: falta config") + _block("status: done")
     assert parse_outcome(text).status == DONE
 
 
 def test_a_status_nobody_recognises_counts_as_blocked():
-    """O motor não tem como afirmar a entrega, e errar para o lado seguro custa
-    uma pergunta a mais na tela."""
+    """The engine cannot confirm delivery, and erring on the safe side costs one extra on-screen question."""
     outcome = parse_outcome(_block("status: parcialmente feito"))
     assert outcome.status == BLOCKED
     assert not outcome.delivered

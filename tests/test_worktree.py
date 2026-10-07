@@ -1,4 +1,4 @@
-"""Worktree por run: o git que o Pulse fala, e onde a run decide trabalhar."""
+"""Per-run worktree: the git Pulse speaks, and where the run decides to work."""
 
 from __future__ import annotations
 
@@ -17,11 +17,11 @@ from pulse.orchestrator.engine import _branch_name, _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
 
-pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git não está no PATH")
+pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
 
 def make_repo(path: Path) -> Path:
-    """Repositório com um commit — `worktree add` precisa de um HEAD de verdade."""
+    """Repository with one commit: `worktree add` needs a real HEAD."""
     path.mkdir(parents=True, exist_ok=True)
     run = lambda *args: subprocess.run(  # noqa: E731
         ["git", *args], cwd=path, check=True, capture_output=True, text=True
@@ -46,15 +46,10 @@ def make_run(workspace: Path, *, run_id: str = "run-1") -> run_store.RunRecord:
 
 
 class Resolved:
-    """O mínimo que `_prepare_workspace` lê de uma config resolvida."""
+    """The minimum `_prepare_workspace` reads from a resolved config."""
 
     def __init__(self, use_worktree: bool) -> None:
         self.use_worktree = use_worktree
-
-
-# --------------------------------------------------------------------------
-# pulse.vcs
-# --------------------------------------------------------------------------
 
 
 def test_repo_root_and_branch(tmp_path: Path) -> None:
@@ -63,7 +58,7 @@ def test_repo_root_and_branch(tmp_path: Path) -> None:
     assert vcs.current_branch(repo) == "main"
 
 
-def test_fora_de_repositorio_nao_levanta(tmp_path: Path) -> None:
+def test_outside_repository_does_not_raise(tmp_path: Path) -> None:
     plain = tmp_path / "sem-git"
     plain.mkdir()
     assert vcs.repo_root(plain) is None
@@ -71,27 +66,26 @@ def test_fora_de_repositorio_nao_levanta(tmp_path: Path) -> None:
     assert vcs.is_repo(plain) is False
 
 
-def test_caminho_inexistente_nao_levanta(tmp_path: Path) -> None:
+def test_missing_path_does_not_raise(tmp_path: Path) -> None:
     missing = tmp_path / "nao-existe"
     assert vcs.repo_root(missing) is None
     assert vcs.current_branch(missing) == ""
 
 
-def test_add_worktree_cria_branch_e_diretorio(tmp_path: Path) -> None:
+def test_add_worktree_creates_branch_and_directory(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     target = tmp_path / "wt"
     branch = vcs.add_worktree(repo, target, "pulse/demo-abc")
     assert branch == "pulse/demo-abc"
     assert (target / "README.md").exists()
     assert vcs.current_branch(target) == "pulse/demo-abc"
-    # A árvore de trabalho original não foi tocada.
     assert vcs.current_branch(repo) == "main"
 
 
-def test_branch_existente_ganha_sufixo(tmp_path: Path) -> None:
-    """Worktree removido deixa a branch para trás; o nome seguinte desvia dela.
+def test_existing_branch_gets_a_suffix(tmp_path: Path) -> None:
+    """A removed worktree leaves its branch behind; the next name avoids it.
 
-    Reaproveitar a branch faria duas runs escreverem no mesmo histórico.
+    Reusing the branch would make two runs write to the same history.
     """
     repo = make_repo(tmp_path / "repo")
     first = vcs.add_worktree(repo, tmp_path / "wt1", "pulse/demo-abc")
@@ -100,7 +94,7 @@ def test_branch_existente_ganha_sufixo(tmp_path: Path) -> None:
     assert second == "pulse/demo-abc-2"
 
 
-def test_remove_worktree_recusa_diretorio_sujo(tmp_path: Path) -> None:
+def test_remove_worktree_refuses_dirty_directory(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     target = tmp_path / "wt"
     vcs.add_worktree(repo, target, "pulse/demo-abc")
@@ -115,7 +109,7 @@ def test_remove_worktree_recusa_diretorio_sujo(tmp_path: Path) -> None:
     assert not target.exists()
 
 
-def test_remove_worktree_limpo(tmp_path: Path) -> None:
+def test_remove_clean_worktree(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     target = tmp_path / "wt"
     vcs.add_worktree(repo, target, "pulse/demo-abc")
@@ -124,13 +118,8 @@ def test_remove_worktree_limpo(tmp_path: Path) -> None:
     assert not target.exists()
 
 
-# --------------------------------------------------------------------------
-# _prepare_workspace
-# --------------------------------------------------------------------------
-
-
-def test_sem_isolamento_roda_na_raiz_e_grava_a_branch(tmp_path: Path) -> None:
-    """Chave desligada: nada de worktree, mas a branch aparece mesmo assim."""
+def test_without_isolation_runs_at_root_and_stores_branch(tmp_path: Path) -> None:
+    """Toggle off: no worktree, but the branch is still recorded."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
 
@@ -144,8 +133,8 @@ def test_sem_isolamento_roda_na_raiz_e_grava_a_branch(tmp_path: Path) -> None:
     assert stored.branch == "main"
 
 
-def test_projeto_fora_de_git_nao_isola(tmp_path: Path) -> None:
-    """Chave ligada sem repositório não pode impedir a run de rodar."""
+def test_project_outside_git_is_not_isolated(tmp_path: Path) -> None:
+    """Toggle on without a repository must not prevent the run."""
     plain = tmp_path / "sem-git"
     plain.mkdir()
     run = make_run(plain)
@@ -156,7 +145,7 @@ def test_projeto_fora_de_git_nao_isola(tmp_path: Path) -> None:
     assert branch == ""
 
 
-def test_isolamento_abre_worktree_e_grava_no_banco(tmp_path: Path) -> None:
+def test_isolation_opens_worktree_and_stores_it(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
 
@@ -166,28 +155,26 @@ def test_isolamento_abre_worktree_e_grava_no_banco(tmp_path: Path) -> None:
     assert exec_dir.is_dir()
     assert branch == _branch_name(run)
     assert vcs.current_branch(exec_dir) == branch
-    # A raiz do projeto continua intocada — é o ponto do isolamento.
     assert vcs.current_branch(repo) == "main"
 
     stored = run_store.load_run(run.id)
     assert stored is not None
     assert stored.worktree_path == str(exec_dir)
     assert stored.branch == branch
-    # A identidade da run continua sendo o projeto, senão o histórico a perde.
     assert stored.workspace_root == str(repo.resolve())
     assert stored.exec_root == str(exec_dir)
 
 
-def test_retomar_reusa_o_worktree_da_run(tmp_path: Path) -> None:
-    """Abrir um segundo worktree jogaria fora o que os steps já fecharam."""
+def test_resume_reuses_the_run_worktree(tmp_path: Path) -> None:
+    """Opening a second worktree would discard what finished steps produced."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
     first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
     (first / "entrega.md").write_text("trabalho do step 1\n", encoding="utf-8")
 
-    retomada = run_store.load_run(run.id)
-    assert retomada is not None
-    second, same_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, same_branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
     assert second == first
     assert same_branch == branch
@@ -200,8 +187,8 @@ def commit_in(path: Path, name: str) -> None:
         subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
 
 
-def test_worktree_removido_pelo_historico_reabre_a_branch_da_run(tmp_path: Path) -> None:
-    """Retomar depois do `w` continua de onde os steps pararam, não do HEAD."""
+def test_worktree_removed_from_history_reopens_run_branch(tmp_path: Path) -> None:
+    """Resuming after `w` continues where the steps stopped, not from HEAD."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
     first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
@@ -212,20 +199,20 @@ def test_worktree_removido_pelo_historico_reabre_a_branch_da_run(tmp_path: Path)
     assert item is not None
     assert catalog.remove_worktree(item) is True
 
-    retomada = run_store.load_run(run.id)
-    assert retomada is not None
-    second, same_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, same_branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
     assert same_branch == branch
     assert (second / "spec.md").exists()
     assert run_store.load_run(run.id).worktree_path == str(second)
 
 
-def test_worktree_apagado_a_mao_reabre_a_branch_da_run(tmp_path: Path) -> None:
-    """Diretório apagado sem o git saber não pode travar a retomada da run.
+def test_manually_deleted_worktree_reopens_run_branch(tmp_path: Path) -> None:
+    """A directory deleted behind git's back must not block resuming the run.
 
-    O git ainda tem o caminho registrado e recusaria o `add` ali; e cada
-    tentativa recusada deixava uma branch `-N` para trás.
+    Git still has the path registered and would refuse `add` there, and each
+    refused attempt left a `-N` branch behind.
     """
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
@@ -233,9 +220,9 @@ def test_worktree_apagado_a_mao_reabre_a_branch_da_run(tmp_path: Path) -> None:
     commit_in(first, "spec.md")
     shutil.rmtree(first)
 
-    retomada = run_store.load_run(run.id)
-    assert retomada is not None
-    second, same_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, same_branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
     assert second == first
     assert same_branch == branch
@@ -243,39 +230,39 @@ def test_worktree_apagado_a_mao_reabre_a_branch_da_run(tmp_path: Path) -> None:
     assert not vcs.branch_exists(repo, f"{branch}-2")
 
 
-def test_branch_do_projeto_nao_e_reanexada(tmp_path: Path) -> None:
-    """Run que começou na raiz grava `main`; ligar a chave depois abre branch nova."""
+def test_project_branch_is_not_reattached(tmp_path: Path) -> None:
+    """A run started at the root stores `main`; enabling the toggle later opens a new branch."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
     _prepare_workspace(run, repo, Resolved(use_worktree=False))
 
-    retomada = run_store.load_run(run.id)
-    assert retomada is not None
-    assert retomada.branch == "main"
-    target, branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    assert resumed.branch == "main"
+    target, branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
     assert branch == _branch_name(run)
     assert target == worktrees_dir() / run.id
     assert vcs.current_branch(repo) == "main"
 
 
-def test_branch_da_run_apagada_abre_outra(tmp_path: Path) -> None:
-    """Sem a branch não há o que reanexar: a run segue do HEAD, num nome novo."""
+def test_deleted_run_branch_opens_another(tmp_path: Path) -> None:
+    """Without the branch there is nothing to reattach: the run continues from HEAD."""
     repo = make_repo(tmp_path / "repo")
     run = make_run(repo)
     first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
     vcs.remove_worktree(repo, first)
     subprocess.run(["git", "branch", "-D", branch], cwd=repo, check=True, capture_output=True)
 
-    retomada = run_store.load_run(run.id)
-    assert retomada is not None
-    second, new_branch = _prepare_workspace(retomada, repo, Resolved(use_worktree=True))
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, new_branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
     assert second.is_dir()
     assert new_branch == branch
 
 
-def test_runs_simultaneas_nao_dividem_diretorio(tmp_path: Path) -> None:
+def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     one, _ = _prepare_workspace(make_run(repo, run_id="run-a"), repo, Resolved(True))
     two, _ = _prepare_workspace(make_run(repo, run_id="run-b"), repo, Resolved(True))
@@ -283,7 +270,7 @@ def test_runs_simultaneas_nao_dividem_diretorio(tmp_path: Path) -> None:
     assert one.is_dir() and two.is_dir()
 
 
-def test_branch_name_higieniza_o_workflow(tmp_path: Path) -> None:
+def test_branch_name_sanitizes_the_workflow(tmp_path: Path) -> None:
     run = run_store.RunRecord(
         id="0123456789abcdef",
         workflow_id="nova spec/v2",
@@ -292,12 +279,7 @@ def test_branch_name_higieniza_o_workflow(tmp_path: Path) -> None:
     assert _branch_name(run) == "pulse/nova-spec-v2-01234567"
 
 
-# --------------------------------------------------------------------------
-# Config do projeto
-# --------------------------------------------------------------------------
-
-
-def test_chave_do_projeto_chega_na_config_resolvida(tmp_path: Path) -> None:
+def test_project_toggle_reaches_resolved_config(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     init_project_config(repo)
     assert resolve_config(repo).use_worktree is False
@@ -309,8 +291,8 @@ def test_chave_do_projeto_chega_na_config_resolvida(tmp_path: Path) -> None:
     assert resolve_config(repo).use_worktree is False
 
 
-def test_chave_sobrevive_a_outras_edicoes_do_projeto(tmp_path: Path) -> None:
-    """Gravar modelo não pode desligar o isolamento de quem já o ligou."""
+def test_toggle_survives_other_project_edits(tmp_path: Path) -> None:
+    """Saving a model must not disable isolation that was turned on."""
     repo = make_repo(tmp_path / "repo")
     update_project_defaults(repo, use_worktree=True)
     update_project_defaults(repo, model="sonnet")

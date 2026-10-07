@@ -1,15 +1,13 @@
-"""Configuração de fábrica: as linhas que o Pulse já nasce sabendo rodar.
+"""Factory configuration: the rows Pulse ships knowing how to run.
 
-Isto **não** é um catálogo em código. Nada aqui é lido durante uma run: o motor
-([pulse.orchestrator.engine]) só conhece `workflow_defs`, `workflow_steps` e
-`agent_defs`. Este pacote roda uma vez, na primeira abertura do banco, converte
-os `.md` de fábrica em linha e sai do caminho. Depois disso o banco manda —
-editar um loop é `UPDATE`, não release.
+Not a code catalog: nothing here is read during a run; the engine
+([pulse.orchestrator.engine]) only knows `workflow_defs`, `workflow_steps` and
+`agent_defs`. This package runs once on first DB open, converts the factory
+`.md` files into rows, and gets out of the way.
 
-Os `.md` ficam em arquivo em vez de string Python porque são ~8 mil linhas de
-playbook que alguém precisa revisar em diff. O que o banco guarda é o texto já
-resolvido: os `<!-- include: nome -->` de `shared/` são expandidos aqui, na
-semeadura, para a linha do banco ser autossuficiente.
+The `.md` playbooks stay as files so they can be reviewed in diffs. The DB
+stores resolved text: `<!-- include: name -->` directives from `shared/` are
+expanded at seed time so each row is self-contained.
 """
 
 from __future__ import annotations
@@ -20,8 +18,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-#: `<!-- include: nome -->` → `shared/nome.md`. Marcador de comentário, e não
-#: `{{nome}}`, para não colidir com os placeholders que o motor resolve por run.
 INCLUDE = re.compile(r"^[ \t]*<!--[ \t]*include:[ \t]*([a-z0-9-]+)[ \t]*-->[ \t]*$", re.MULTILINE)
 
 
@@ -30,25 +26,10 @@ class FactoryStep:
     agent_id: str
     label: str
     requires_approval: bool
-    #: Roda uma vez por item que o step anterior enumerou, cada um em sessão
-    #: isolada e com linha própria no painel. Ver [pulse.orchestrator.fanout].
     fan_out: bool = False
-    #: Default = o id do agente, que é único dentro de cada loop de fábrica.
-    #: Explícito só onde já existe linha gravada com outro id — trocar o id
-    #: criaria um segundo step em vez de atualizar o primeiro. Também é o que
-    #: permite o mesmo agente aparecer duas vezes no mesmo loop.
     step_id: str = ""
-    #: `step_id` de um step anterior deste mesmo loop. Preenchido, este step
-    #: pode mandar a run voltar até lá e repetir o trecho — ver
-    #: [pulse.orchestrator.engine]. Quem pede a volta é o agente; isto é a
-    #: permissão.
     repeat_from: str = ""
-    #: Teto de voltas de quem abre o trecho, contando a primeira. Na última, só
-    #: ele roda. Sem teto, um agente que sempre pede mais uma rodada deixa a run
-    #: sem fim.
     repeat_max: int = 0
-    #: Arquivo de fase na pasta do agente, sem `.md`. Vazio = `PHASE.md`. Existe
-    #: para o mesmo agente rodar fora do loop para o qual a fase dele foi escrita.
     phase: str = ""
 
     def id(self) -> str:
@@ -62,13 +43,9 @@ class FactoryWorkflow:
     description: str
     steps: tuple[FactoryStep, ...]
     is_default: bool = False
-    #: Loop que já sabe qual é a tarefa — o menu entra direto na run, sem pedir
-    #: texto. Vazio = o usuário descreve o que quer.
     default_prompt: str = ""
 
 
-#: Rótulo de cada agente na UI. O resto (runtime, model, policy, descrição) sai
-#: do frontmatter do próprio `AGENT.md` — um lugar só para editar.
 AGENT_LABELS: dict[str, str] = {
     "prd": "PRD",
     "techspec": "Techspec",
@@ -84,11 +61,6 @@ AGENT_LABELS: dict[str, str] = {
     "codebase-docs": "Docs de codebase",
 }
 
-#: Os loops. Um step é `(agente, rótulo, pede aprovação)` — e a ordem é a lista.
-#: Não há ramificação: o motor percorre a lista. Quem escolhe entre spec completa
-#: e correção rápida é o usuário, no menu; e o `quick-plan` refaz a checagem de
-#: escopo, então um pedido grande que entrou pelo loop errado para no primeiro
-#: step em vez de seguir.
 WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="new-issue",
@@ -99,21 +71,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("techspec", "Techspec", True),
             FactoryStep("tasks", "Tasks", True),
             FactoryStep("implement", "Implementar", False, fan_out=True),
-            # A camada de merge: quem implementou não é quem revisa, e quem
-            # revisa não é quem conserta. O review aprova porque é ali que a
-            # pessoa decide o que vira correção — inclusive decidir que nada
-            # vira, pulando os dois.
-            #
-            # Os dois rodam com `ask`, e não com o `deny_writes` das fases de
-            # spec: o review **escreve** a rodada, e `deny_writes` recusa
-            # qualquer `write`/`edit` sem olhar o caminho — o artefato nunca
-            # chegaria ao disco nem ao painel. Ver [pulse.prompts.permission].
             FactoryStep("review", "Review", True),
-            # O laço: todo fix que trabalhou uma rodada volta ao revisor, porque
-            # só o review atesta que não sobrou nada a corrigir — o fix nunca
-            # fecha o laço. O teto de 3 é o mesmo do contrato de convergência:
-            # round 2 só aceita o que um fix quebrou, round 3 fecha e nenhum fix
-            # roda depois dele, round 4 não existe.
             FactoryStep(
                 "review-fix",
                 "Fix review",
@@ -132,9 +90,6 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("quick-implement", "Implementar", False),
         ),
     ),
-    # A mesma camada de merge do "Nova spec", fora do pipeline: revisa a branch
-    # atual contra a principal, sem PRD nem tasks. Por isso a fase é outra — a
-    # de fábrica lê artefatos de spec que aqui não existem.
     FactoryWorkflow(
         id="review",
         label="Review",
@@ -200,7 +155,7 @@ def _expand_includes(text: str) -> str:
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
-    """Frontmatter YAML raso do `AGENT.md` e o corpo depois dele."""
+    """Shallow YAML frontmatter of an `AGENT.md` and the body after it."""
     stripped = text.lstrip()
     if not stripped.startswith("---"):
         return {}, text
@@ -227,23 +182,20 @@ class FactoryAgent:
 
 @lru_cache(maxsize=None)
 def load_phase(agent_id: str, phase: str = "PHASE") -> str:
-    """O `prompt_template` de um step: o `<phase>.md` da pasta do agente.
+    """A step's `prompt_template`: the `<phase>.md` in the agent's folder.
 
-    Em cache: a semeadura pede o mesmo arquivo uma vez por step que o cita, e um
-    agente pode aparecer em mais de um step.
+    Cached because an agent may appear in more than one step.
     """
     return _expand_includes(_read(factory_dir() / "agents" / agent_id / f"{phase}.md")).strip()
 
 
 @lru_cache(maxsize=1)
 def load_agents() -> tuple[FactoryAgent, ...]:
-    """Lê os `.md` de fábrica. Em cache: só a semeadura precisa disso.
+    """Read the factory `.md` files (cached; only seeding needs them).
 
-    `runtime` e `model` do frontmatter são preferência de quem escreveu o
-    playbook, não o que a máquina tem — ficam de fora da linha. Campo vazio em
-    `agent_defs` significa "use o padrão da máquina", e gravar um valor concreto
-    congelaria a escolha feita no `pulse init`. Quem quiser fixar o par por
-    agente faz isso na tela de configurações, que grava em `agent_settings`.
+    Frontmatter `runtime` and `model` are left out of the row: an empty value in
+    `agent_defs` means "use the machine default", and a concrete value would
+    freeze the `pulse init` choice. Per-agent pinning lives in `agent_settings`.
     """
     agents: list[FactoryAgent] = []
     root = factory_dir() / "agents"
@@ -254,7 +206,6 @@ def load_agents() -> tuple[FactoryAgent, ...]:
             FactoryAgent(
                 id=agent_id,
                 label=label,
-                # Sem política declarada: vazio, que é "herde da máquina/projeto".
                 permission_policy=meta.get("permission_policy", ""),
                 instructions=body.strip(),
                 prompt_template=load_phase(agent_id),
@@ -264,20 +215,15 @@ def load_agents() -> tuple[FactoryAgent, ...]:
 
 
 def seed(connection: Any) -> None:
-    """Grava a configuração de fábrica. `INSERT OR IGNORE`: nunca desfaz edição.
+    """Write the factory configuration. `INSERT OR IGNORE`: never undoes edits.
 
-    Um agente ou step apagado do banco volta ao padrão na abertura seguinte — é
-    a mesma promessa que o `SEED` de [pulse.store.db] já fazia, e é o que dá para
-    prometer sem guardar "o usuário apagou isto de propósito".
+    An agent or step deleted from the DB is restored on the next open, since
+    intentional deletions are not tracked.
     """
     agents = [
         (agent.id, agent.label, agent.permission_policy, agent.instructions)
         for agent in load_agents()
     ]
-    # O agente genérico do workflow `default` não tem playbook nem fase: ele é o
-    # escape — o que o usuário pedir vai cru para o runtime configurado.
-    # Política vazia: o escape segue a política que a pessoa escolheu para a
-    # máquina ou o projeto, em vez de um `ask` que nada consegue sobrescrever.
     agents.append(("default", "Agente", "", ""))
     connection.executemany(
         """
@@ -288,7 +234,6 @@ def seed(connection: Any) -> None:
     )
 
     def template(step: FactoryStep) -> str:
-        # O agente genérico não tem pasta nem fase: o pedido vai cru.
         if step.agent_id == "default":
             return "{{user_prompt}}"
         return load_phase(step.agent_id, step.phase or "PHASE")
@@ -331,11 +276,10 @@ def seed(connection: Any) -> None:
 
 
 def inherit_policy_on_default_agent(connection: Any) -> None:
-    """Bancos semeados com `ask` no agente `default` passam a herdar a política.
+    """Make DBs seeded with `ask` on the `default` agent inherit the policy.
 
-    O `ask` fixo ganhava da máquina e do projeto em `_resolve_pulse_agent`, então
-    escolher a política no onboarding não mudava nada. Idempotente: depois da
-    primeira abertura nenhuma linha casa.
+    A hardcoded `ask` overrode machine and project policy in
+    `_resolve_pulse_agent`. Idempotent: after the first open no row matches.
     """
     connection.execute(
         "UPDATE agent_defs SET permission_policy = '' WHERE id = 'default' AND permission_policy = 'ask'"
@@ -343,12 +287,10 @@ def inherit_policy_on_default_agent(connection: Any) -> None:
 
 
 def backfill_default_prompts(connection: Any) -> None:
-    """Preenche `default_prompt` nos bancos semeados antes da coluna existir.
+    """Fill `default_prompt` in DBs seeded before the column existed.
 
-    O `ALTER` dá `''` a toda linha que já estava lá, e `seed` não roda num banco
-    já semeado — sem isto, "Analisar codebase" e "Setup do projeto" voltariam a
-    pedir texto em quem já usa o Pulse. Só toca no que está vazio: o loop que o
-    usuário editou continua como ele deixou.
+    The `ALTER` gives existing rows `''` and `seed` does not rerun. Only empty
+    values are touched, so user-edited loops are preserved.
     """
     connection.executemany(
         "UPDATE workflow_defs SET default_prompt = ? WHERE id = ? AND default_prompt = ''",
@@ -356,13 +298,8 @@ def backfill_default_prompts(connection: Any) -> None:
     )
 
 
-#: Trecho que só existe num `prompt_template` que ainda manda o agente pedir
-#: aprovação. É o sinal de "esta linha é a de fábrica antiga", e some no próprio
-#: UPDATE — por isso `drop_approval_from_unattended_steps` é idempotente.
 APPROVAL_MARK = "Aprovar {{step_label}} e avançar?"
 
-#: Steps que pediam aprovação e não pedem mais: os dois loops que rodam do
-#: começo ao fim sem ninguém olhando. `(workflow_id, step_id)`.
 UNATTENDED_STEPS: tuple[tuple[str, str], ...] = (
     ("setup-project", "setup-interview"),
     ("analyze-codebase", "codebase-explore"),
@@ -370,16 +307,11 @@ UNATTENDED_STEPS: tuple[tuple[str, str], ...] = (
 
 
 def drop_approval_from_unattended_steps(connection: Any) -> None:
-    """Tira o pedido de aprovação desses steps nos bancos já semeados.
+    """Remove the approval request from these steps in already-seeded DBs.
 
-    `seed` é `INSERT OR IGNORE` e não reescreve linha existente, então mudar o
-    playbook de fábrica não chega a quem já usa o Pulse. Aqui chega — mas só na
-    linha que ainda carrega o bloco de aprovação de fábrica: template que o
-    usuário reescreveu não é tocado.
-
-    Roda em toda abertura do banco, então sai cedo pelo `SELECT`: depois do
-    primeiro UPDATE nenhuma linha casa, e `load_agents` — que relê ~8 mil linhas
-    de playbook — nem chega a ser chamado.
+    `seed` never rewrites existing rows, so only rows still carrying the factory
+    approval block are updated; user-rewritten templates are left alone. Runs on
+    every DB open, so it exits early via `SELECT` before calling `load_agents`.
     """
     placeholders = ",".join("?" * len(UNATTENDED_STEPS))
     pending = connection.execute(
@@ -413,11 +345,10 @@ def _count_present(connection: Any, table: str, column: str, ids: tuple[str, ...
 
 
 def is_seeded(connection: Any) -> bool:
-    """Toda linha de fábrica já está lá?
+    """Whether every factory row is already present.
 
-    O `connect` é por operação, e reler ~8 mil linhas de playbook em cada um
-    seria caro à toa. Conta só os ids de fábrica: linha que o usuário criou não
-    entra na conta, e linha de fábrica que sumiu derruba o teste e volta.
+    Called on every `connect`, so it only counts factory ids instead of
+    rereading the playbooks; user-created rows are ignored.
     """
     agent_ids = (*AGENT_LABELS, "default")
     if _count_present(connection, "agent_defs", "id", agent_ids) != len(agent_ids):

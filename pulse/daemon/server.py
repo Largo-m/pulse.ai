@@ -46,24 +46,15 @@ def is_daemon_alive() -> bool:
 
 
 def _anchor_cwd() -> None:
-    """Ancora o daemon em `~/.pulse` em vez do diretório de quem o iniciou.
+    """Anchor the daemon in `~/.pulse` instead of the launcher's directory.
 
-    O engine sobe destacado (`start_new_session`) e herda o cwd do terminal que
-    o chamou — e aí fica, por semanas. Esse diretório não é dele: basta apagar o
-    projeto para o cwd do daemon virar uma pasta na Lixeira, onde o macOS nega
-    até `getcwd()` (`EPERM`). Toda run nova morria aí, antes do primeiro step,
-    porque resolver config começa perguntando onde estamos.
-
-    Ancorar não perde nada: a run roda com `cwd` explícito (o workspace, ou o
-    worktree dela), e o cwd do daemon só servia de chute para cliente que não
-    disse qual projeto queria — chute que já estava errado sempre que o engine
-    e a TUI nasceram em projetos diferentes.
+    The detached daemon would otherwise keep the launching terminal's cwd; if
+    that project is deleted, macOS denies `getcwd()` (`EPERM`) and every new run
+    fails. Runs always use an explicit `cwd`, so nothing is lost.
     """
     try:
         os.chdir(ensure_global_dir())
     except OSError:
-        # Sem o diretório de estado o daemon tem problema maior que o cwd; quem
-        # precisa dele levanta mais à frente, com mensagem melhor que esta.
         pass
 
 
@@ -82,10 +73,6 @@ def run_daemon(
 
     config_tcp = uvicorn.Config(app, host=host, port=port, log_level="warning")
     config_uds = uvicorn.Config(app, uds=str(sock), log_level="warning")
-    # A porta TCP primeiro: é ela que decide quem é o daemon. Quem perde a
-    # corrida sai aqui (o uvicorn encerra com SystemExit), antes de apagar o
-    # socket e o meta de quem ganhou — senão o daemon vivo ficava sem nenhum
-    # dos dois e `pulse daemon stop` não tinha mais como achá-lo.
     tcp_socket = config_tcp.bind_socket()
     if sock.exists():
         try:
@@ -93,7 +80,6 @@ def run_daemon(
         except OSError:
             pass
     uds_socket = config_uds.bind_socket()
-    # O uvicorn deixa o socket em 0o666 ao criar; o chmod só vale depois dele.
     os.chmod(sock, 0o600)
     write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock)
 
@@ -118,10 +104,10 @@ def run_daemon(
 
 
 def stop_daemon(timeout: float = 5.0) -> bool:
-    """SIGTERM no daemon do meta e espera ele sair. `False` = continua vivo.
+    """SIGTERM the daemon from the meta file and wait for it to exit. `False` = still alive.
 
-    Só limpa o meta quando o processo saiu: apagar o de um daemon que ainda
-    segura a porta é o que o deixava órfão, sem ninguém conseguir pará-lo.
+    The meta is only cleared once the process exits; clearing it earlier would
+    orphan a daemon still holding the port.
     """
     meta = read_daemon_meta() or {}
     pid = meta.get("pid")

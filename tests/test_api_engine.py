@@ -24,7 +24,6 @@ def test_status_and_workflows():
     assert workflows.status_code == 200
     listed = workflows.json()["workflows"]
     ids = {item["id"] for item in listed}
-    # Só o que está no banco: o Pulse não tem catálogo em código.
     assert ids >= {"default", "new-issue", "quick-fix", "review"}
     pipeline = next(item for item in listed if item["id"] == "new-issue")
     assert [step["agent"] for step in pipeline["steps"]] == [
@@ -127,7 +126,7 @@ def test_unknown_workflow_returns_404():
 
 
 def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
-    """Retomar é uma run nova sobre o mesmo registro — o flow recebe o id."""
+    """Resuming is a new run over the same record; the flow receives the id."""
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app, base_url="http://127.0.0.1")
@@ -148,7 +147,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
     assert entered.wait(timeout=5)
 
     assert seen["resume_run_id"] == "run-anterior"
-    assert "restart" not in seen, "não há refazer do zero: só retomar"
+    assert "restart" not in seen, "there is no restart from scratch, only resume"
 
 
 def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
@@ -160,7 +159,6 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
     def fake_run_workflow(**kwargs):
         control = kwargs["control"]
         entered.set()
-        # Só sai quando o usuário parar: é o cancel que encerra esta run.
         while True:
             if not control.checkpoint():
                 return RUN_STOPPED
@@ -181,10 +179,10 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
         payload = client.get(f"/api/runs/{run_id}").json()
         if payload.get("exit_code") is not None:
             assert payload["exit_code"] == RUN_STOPPED
-            assert payload["status"] == "stopped", "parar não é falhar"
+            assert payload["status"] == "stopped", "stopping is not failing"
             return
         time.sleep(0.05)
-    raise AssertionError("run não encerrou depois do stop")
+    raise AssertionError("run did not finish after stop")
 
 
 def test_control_endpoints_404_for_unknown_run():
@@ -214,7 +212,7 @@ def test_history_delete_endpoint(tmp_path: Path):
 
 
 def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
-    """`RunState.id` é o id do SQLite — sem isso "reabrir a run X" é chute."""
+    """`RunState.id` is the SQLite id; without that, "reopen run X" is a guess."""
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     seen: dict[str, object] = {}
@@ -265,10 +263,8 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
             break
         time.sleep(0.05)
     else:
-        raise AssertionError("a run nunca apareceu esperando resposta")
+        raise AssertionError("the run never showed up awaiting an answer")
 
-    # Esperar resposta não é "executando": é o estado que a Home anuncia e o
-    # histórico mostra como `precisa de você`.
     assert listed[0]["status"] == "awaiting_input"
     assert listed[0]["awaiting_since"] is not None
 
@@ -280,13 +276,11 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
 
 
 def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeypatch):
-    """Com o cockpit fechado, a run só pode parar no que exige uma pessoa.
+    """With the cockpit closed, a run may only stop on what needs a person.
 
-    Era aqui que a run morria de pé: `deny_writes` recusa escrita sozinho, mas
-    a decisão morava no cliente — sem cliente ligado, o daemon publicava a
-    pergunta e esperava para sempre uma resposta que ninguém tinha de dar. A
-    Home então anunciava "precisa de você", e quem entrava não via pendência
-    nenhuma: o cliente respondia calado pela política e o log voltava a andar.
+    `deny_writes` rejects writes on its own; when that decision lived in the
+    client, a run with no client attached waited forever on a prompt nobody
+    had to answer.
     """
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
@@ -315,8 +309,7 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
         "/api/workflows/default/runs", json={"prompt": "tarefa"}
     ).json()["id"]
 
-    # Ninguém chamou `/events`: não há tela nenhuma ligada nesta run.
-    assert done.wait(timeout=5), "a run travou numa permissão que a política resolve"
+    assert done.wait(timeout=5), "the run hung on a permission the policy resolves"
     assert decided[0]["outcome"]["optionId"] == "reject-once"
 
     state = manager.get(run_id)
@@ -327,10 +320,10 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
 
 
 def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
-    """Parar uma run parada numa pergunta tem de acordar quem espera.
+    """Stopping a run blocked on a question must wake the waiter.
 
-    O motor espera a resposta sem prazo, então `stop` sozinho não resolvia: a
-    thread ficava presa no `wait` da pergunta e a run nunca encerrava.
+    The engine waits for the answer with no timeout, so `stop` alone left the
+    thread stuck in the question's `wait` and the run never finished.
     """
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
@@ -361,13 +354,11 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
     while state.is_active() and time.monotonic() < deadline:
         time.sleep(0.01)
     assert not state.is_active()
-    # Pergunta cancelada chega ao motor como "ninguém respondeu", igual a
-    # fechar o dock — não como uma resposta inventada.
     assert answer == [None]
 
 
 def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
-    """Mesmo id, mesma run: duas threads sobre ela é que não dá."""
+    """Same id, same run: two threads over it is not allowed."""
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
     entered = threading.Event()
@@ -411,7 +402,6 @@ def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
 
     state = manager.get(run_id)
     assert state is not None
-    # Quem chega depois recebe o passado inteiro e só então o marcador.
     replayed = []
     for event in state.bus.subscribe():
         replayed.append(event["type"])
@@ -420,7 +410,6 @@ def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
     assert replayed[:3] == ["run.started", "phase.begin", "phase.info"]
     assert replayed[-1] == REPLAY_END
 
-    # `after` pula o que o cliente já viu.
     resumed = []
     for event in state.bus.subscribe(after=2):
         resumed.append(event["type"])
@@ -443,7 +432,6 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
         time.sleep(0.02)
     assert manager.get(first).finished_at is not None
 
-    # Recém-encerrada continua em memória: dá para reabrir e ver o replay.
     assert first in {item["id"] for item in manager.list_runs()}
 
     manager.get(first).finished_at -= runs_module.FINISHED_TTL + 1
@@ -452,7 +440,6 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
 
 
 def test_foreign_host_is_rejected() -> None:
-    # DNS rebinding: o navegador manda o nome do atacante no `Host`.
     client = TestClient(create_app(), base_url="http://attacker.example:8787")
     response = client.post("/api/workflows/feature/runs", json={"prompt": "x", "workspace": "/"})
     assert response.status_code == 400

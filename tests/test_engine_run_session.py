@@ -189,13 +189,11 @@ def test_engine_run_session_maps_run_finished_error():
     stream.error.assert_called_with("Workflow falhou", "Falha na sessão ACP: timeout")
 
 
-
-
 def test_attach_does_not_reopen_a_question_already_answered():
-    """Anexar reexecuta o passado da run — menos as perguntas que já fecharam.
+    """Attaching replays the run's past, except questions that already closed.
 
-    Sem isto, voltar ao cockpit reabria cada pergunta da run inteira e ainda
-    respondia a ids que o daemon já tinha esquecido.
+    Otherwise returning to the cockpit reopened every question of the run and
+    answered ids the daemon had already forgotten.
     """
     from pulse.daemon.protocol import REPLAY_END
 
@@ -214,7 +212,6 @@ def test_attach_does_not_reopen_a_question_already_answered():
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
     session.attach("run-1")
 
-    # p1 fechou durante o replay; p2 é a que ainda espera alguém.
     assert [prompt_id for prompt_id, _ in client.answers] == ["p2"]
     assert prompt_handler.ask_text.call_count == 1
 
@@ -238,7 +235,7 @@ def test_attach_lets_the_screen_know_where_the_past_ends():
 
 
 def test_a_fresh_run_never_defers_a_prompt():
-    """Run recém-criada não tem passado: tudo que chega é agora."""
+    """A freshly created run has no past: everything that arrives is live."""
     prompt_handler = MagicMock()
     prompt_handler.ask_text.return_value = "ok"
     client = _FakeClient(

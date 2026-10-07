@@ -1,14 +1,12 @@
-"""O orquestrador: qual agente roda agora e quando.
+"""The orchestrator: which agent runs now, and when.
 
-Esta é a única máquina de estados do Pulse, e ela não sabe nada sobre o que os
-agentes fazem. Um workflow é uma lista ordenada de steps vinda do banco
-([pulse.store.workflow_defs]); para cada step o motor resolve o agente, renderiza
-o `prompt_template`, abre uma sessão ACP isolada e grava o desfecho em
-`run_steps`. Não há fase com nome conhecido, artefato esperado nem ordem fixa.
+The only state machine in Pulse, agnostic of what agents do. A workflow is an
+ordered list of steps from the DB ([pulse.store.workflow_defs]); for each step the
+engine resolves the agent, renders `prompt_template`, opens an isolated ACP session
+and records the outcome in `run_steps`.
 
-Isolar a sessão por step é de propósito: o agente do step seguinte não herda o
-contexto do anterior, só o resumo que o Pulse repassa. É o que permite trocar de
-runtime entre steps e retomar uma run refazendo um step só.
+Sessions are isolated per step on purpose: the next step only receives the summary
+Pulse forwards, which allows switching runtimes between steps and redoing one step.
 """
 
 from __future__ import annotations
@@ -65,17 +63,12 @@ _POLICIES: dict[str, PermissionPolicy] = {
     "auto_approve": "auto_approve",
     "deny_writes": "deny_writes",
 }
-#: Fallback para runner sem controle (CLI, testes): nunca para.
 _NEVER_INTERRUPTED = RunControl()
-#: Código de saída de uma run que parou num step bloqueado. Não é falha nem
-#: parada do usuário: nada quebrou e ninguém apertou nada — um step declarou que
-#: não tinha como entregar, e a run não passa por cima disso. Vizinho de
-#: `RUN_STOPPED`, e como ele: quem vê oferece retomar, não erro.
 RUN_BLOCKED = 131
 
 
 class UnknownWorkflow(ValueError):
-    """Id que não existe em `workflow_defs`."""
+    """Id that does not exist in `workflow_defs`."""
 
 
 def run_workflow(
@@ -130,9 +123,6 @@ def run_workflow(
     try:
         exec_dir, branch = _prepare_workspace(run, workspace_root, resolved)
     except vcs.GitError as error:
-        # Sem o worktree a run só poderia rodar na árvore de trabalho da pessoa
-        # — que é exatamente o que a chave pediu para não acontecer. Melhor não
-        # começar do que começar no lugar errado.
         message = f"Não consegui abrir o worktree desta run: {error}"
         if cockpit:
             raise RuntimeError(message) from error
@@ -174,9 +164,6 @@ def run_workflow(
             fallback_model=resolved.model,
         )
     except Exception as error:  # noqa: BLE001
-        # Rede de segurança: o que passa por aqui já escapou do menu de retry,
-        # então o mínimo é não deixar o step gravado como "executando" — é esse
-        # estado que fazia a run voltar do histórico sem retomar nem refazer.
         _fail_running_steps(run)
         run_store.update_run(run.id, status=FAILED)
         if cockpit:
@@ -193,10 +180,9 @@ def _resolve_run(
     resume_run_id: str | None,
     run_id: str | None = None,
 ) -> run_store.RunRecord:
-    """A run no banco. `run_id` deixa quem chama batizá-la.
+    """The run in the DB. `run_id` lets the caller name it.
 
-    O daemon passa o id dele: sem isso a run tinha dois nomes — um na API, outro
-    no SQLite — e "reabrir a run X" virava chute pela mais recente do workspace.
+    The daemon passes its own id so the API and SQLite share one run id.
     """
     if resume_run_id:
         existing = run_store.load_run(resume_run_id)
@@ -224,26 +210,19 @@ def _prepare_workspace(
     workspace_root: Path,
     resolved: ResolvedConfig,
 ) -> tuple[Path, str]:
-    """Onde esta run trabalha, e em que branch.
+    """Where this run works, and on which branch.
 
-    Quatro casos, nesta ordem:
+    Four cases, in order:
+    1. Resumed run with an existing worktree: reuse it.
+    2. Resumed run that lost its worktree but still has its branch: reattach a
+       worktree on that branch, regardless of the setting.
+    3. No isolation (setting off, or not a git repo): run at the root on the
+       project's current branch.
+    4. Isolation on: `git worktree add` under `~/.pulse/worktrees/<run>` on a new
+       branch from HEAD.
 
-    1. **Run retomada que já tem worktree.** Reusa o que está gravado. Abrir um
-       segundo worktree ao retomar jogaria fora o que o primeiro produziu — o
-       trabalho dos steps que já fecharam está lá dentro.
-    2. **Run retomada que perdeu o worktree** (removido pelo histórico ou
-       apagado à mão) mas ainda tem a branch dela. Reabre o worktree nessa
-       branch, com ou sem a chave: a run começou isolada, e o que os steps
-       commitaram só existe ali.
-    3. **Sem isolamento** (chave desligada, ou projeto fora de repositório git).
-       A run roda na raiz, como sempre rodou, e a branch é a que o projeto tem
-       agora. É este caso que faz a branch aparecer na tela de quem nem liga a
-       chave.
-    4. **Isolamento ligado.** `git worktree add` em `~/.pulse/worktrees/<run>`,
-       numa branch nova a partir do HEAD.
-
-    A raiz do projeto continua sendo a identidade da run (`workspace_root`): é
-    por ela que o histórico a encontra. O que muda é só onde o agente escreve.
+    `workspace_root` stays the run's identity (history looks it up by it); only
+    where the agent writes changes.
     """
     if run.worktree_path and Path(run.worktree_path).exists():
         return Path(run.worktree_path), run.branch
@@ -273,12 +252,9 @@ def _prepare_workspace(
 
 
 def _branch_name(run: run_store.RunRecord) -> str:
-    """`pulse/<workflow>-<run curto>`.
+    """`pulse/<workflow>-<short run id>`.
 
-    O prefixo `pulse/` agrupa na listagem do git e diz de onde a branch veio; o
-    pedaço do id da run é o que a liga de volta ao histórico. Nome do workflow e
-    não da tarefa: o que o usuário pediu é texto livre, e virar nome de ref
-    exigiria higienizar frase inteira.
+    Uses the workflow name rather than the free-text task to avoid sanitizing it.
     """
     slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in run.workflow_id)
     slug = slug.strip("-") or "run"
@@ -286,22 +262,20 @@ def _branch_name(run: run_store.RunRecord) -> str:
 
 
 def _owns_branch(run: run_store.RunRecord) -> bool:
-    """A branch gravada foi aberta por esta run, e não é a do projeto?
+    """Whether the recorded branch was created by this run rather than the project's.
 
-    Sem worktree a run grava a branch atual do projeto (`main`, por exemplo), e
-    reanexar essa seria tomar a branch da árvore de trabalho da pessoa. Só conta
-    o nome que `_branch_name` deu, com ou sem o sufixo de `add_worktree`.
+    Prevents reattaching e.g. `main` from the user's working tree. Only names from
+    `_branch_name`, with or without the `add_worktree` suffix, count.
     """
     base = _branch_name(run)
     return run.branch == base or run.branch.startswith(f"{base}-")
 
 
 def _announce_context(stream: Any | None, exec_dir: Path, branch: str) -> None:
-    """Diz à tela onde a run trabalha, antes de qualquer step começar.
+    """Tell the UI where the run works, before any step starts.
 
-    Antes do primeiro `phase.begin` de propósito: é por este caminho que o
-    painel de artefatos descobre a pasta onde procurar os arquivos, e um
-    artefato gravado antes disso seria procurado na raiz errada.
+    Must precede the first `phase.begin`: the artifact pane uses it to know which
+    folder to watch.
     """
     set_context = getattr(stream, "set_context", None) if stream is not None else None
     if callable(set_context):
@@ -324,28 +298,18 @@ def _execute(
         runner.authenticate()
         _sync_steps(runner, run)
 
-        # Índice, e não `for`: um step pode mandar a run voltar para um anterior
-        # e repetir o trecho (`repeat_from`). O laço continua sem ramificação —
-        # não há condição sobre id de workflow nem sobre nome de fase: o motor lê
-        # um pedido declarado no bloco de desfecho e um teto gravado na
-        # definição, e os dois vêm do banco.
         loops = find_loops(definition)
         index = 0
         while index < len(definition.steps):
             definition_step = definition.steps[index]
             at = index
             index += 1
-            # Um step de fan-out só sabe quantos trabalhos tem depois que o
-            # anterior rodou — por isso a expansão acontece aqui, e não ao criar
-            # a run.
             units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
             _sync_steps(runner, run)
 
             for step, item in units:
                 record = run.step(step.step_id)
                 if record is None:
-                    # Step acrescentado à definição depois que a run começou:
-                    # entra como pendente em vez de ser ignorado silenciosamente.
                     record = StepRecord(
                         step_id=step.step_id,
                         position=step.position,
@@ -357,7 +321,6 @@ def _execute(
                 if record.status in SETTLED:
                     continue
 
-                # Parada pedida entre dois steps: encerra aqui, sem nada em voo.
                 if not _control(runner).checkpoint():
                     _notify(runner, "Run parada pelo usuário")
                     run_store.update_run(run.id, status="stopped")
@@ -405,10 +368,9 @@ def _execute(
 
 
 def _run_status(exit_code: int) -> str:
-    """Como a run fica registrada quando um step a interrompe.
+    """Run status recorded when a step interrupts the run.
 
-    Bloqueio não é falha: o histórico precisa distinguir "quebrou" de "ficou
-    esperando alguém" para poder oferecer a ação certa quando a run for reaberta.
+    Blocked is not failed: history must tell them apart to offer the right action.
     """
     if exit_code == RUN_STOPPED:
         return "stopped"
@@ -418,21 +380,12 @@ def _run_status(exit_code: int) -> str:
 
 
 def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
-    """O último step **que fechou** antes deste e deixou resumo.
+    """The last step before this one that settled (`done`/`skipped`) with a summary.
 
-    Só `done` e `skipped` contam. Um step que falhou ou travou também deixa
-    texto gravado, e passar esse texto adiante era o que fazia o step seguinte
-    trabalhar em cima de uma entrega que não existiu — recebendo "não consegui
-    migrar o schema" no lugar onde ele espera o que o anterior produziu.
-
-    A parada também acontece no primeiro filho de fan-out (`run:T1` para
-    `run`): ao retomar, o step pai já não existe na run, e sem isto a varredura
-    ia até o fim e devolvia o resumo da última task — o bloco `pulse:items`
-    sumia, o fan-out desmontava e a run voltava a rodar o step pai inteiro.
-
-    O registro inteiro, e não só o texto, porque o step seguinte precisa saber
-    **como** o anterior fechou: um step pulado e um concluído entregam o mesmo
-    tipo de resumo, e sem o status o pulo só valeria para quem o deu.
+    Failed or blocked steps are excluded so their text is not passed on as a
+    delivery. The scan also stops at the first fan-out child (`run:T1` for `run`)
+    so a resumed fan-out still sees the `pulse:items` block. The whole record is
+    returned because the next step also needs its status.
     """
     child = f"{step_id}:"
     previous: StepRecord | None = None
@@ -462,7 +415,7 @@ def _run_step(
     item: Item | None = None,
     may_close: bool = False,
 ) -> tuple[int, str]:
-    """`(código de saída, desfecho)` — `REPEAT` e `CLOSE` mexem no laço."""
+    """`(exit code, outcome)`; `REPEAT` and `CLOSE` drive the loop."""
     guidance = ""
     while True:
         outcome, reason = _attempt_step(
@@ -481,9 +434,6 @@ def _run_step(
         if outcome in {DONE, SKIPPED, REPEAT, CLOSE}:
             return 0, outcome
 
-        # O step não terminou porque o usuário parou a run, não porque falhou:
-        # não faz sentido perguntar "quer tentar de novo?" — é só encerrar
-        # deixando o step pendente para quem retomar.
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
             return RUN_STOPPED, FAILED
@@ -494,23 +444,14 @@ def _run_step(
             )
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
-        # Parar com o menu aberto cancela a pergunta e ela volta como "stop".
-        # Isso é a run parada pelo usuário, não um bloqueio nem uma falha.
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
             return RUN_STOPPED, FAILED
 
         if outcome == BLOCKED:
             if choice == "skip":
-                # Pulo explícito, e não o `done` de antes: o step não entregou,
-                # e quem vier depois — no painel, no histórico ou no resumo do
-                # step seguinte — precisa conseguir ver isso.
                 record.status = SKIPPED
                 record.ended_at = run_store.utc_now()
-                # `summary` é o que este step entrega ao próximo, e um step
-                # bloqueado não entregou nada: passar adiante o texto do
-                # bloqueio faria o step seguinte trabalhar em cima dele. O que
-                # o agente escreveu continua no log da run (`run_events`).
                 record.summary = ""
                 run_store.save_step(run.id, record)
                 _sync_steps(runner, run)
@@ -548,9 +489,6 @@ def _attempt_step(
     record.started_at = record.started_at or run_store.utc_now()
     run_store.save_step(run.id, record)
 
-    # `workspace` e não `exec_dir`: a config do projeto é achada pelo root
-    # registrado em `projects`, e um worktree não está lá. Resolver por ele
-    # faria as settings por agente sumirem sem erro nenhum.
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
     try:
         prompt_text = render(step.prompt_template, _context(run, step, exec_dir, item))
@@ -561,9 +499,6 @@ def _attempt_step(
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
 
-    # Um step tem um portão só. Onde há aprovação, quem atesta a entrega é a
-    # pessoa que aprovou; onde não há, é o desfecho que o agente declara. Pedir
-    # os dois no mesmo turno seria perguntar duas vezes a mesma coisa.
     declares_outcome = step.requires_outcome and not step.requires_approval
     if declares_outcome:
         prompt_text += outcome_protocol()
@@ -595,15 +530,6 @@ def _attempt_step(
                 build_continuation=_unblock_continuation(step) if declares_outcome else None,
             )
     except Exception as error:  # noqa: BLE001
-        # A sessão caiu: timeout, processo morto, protocolo quebrado. Isto
-        # subia até `run_workflow` e matava a run inteira calada — logo a falha
-        # que mais vale refazer, porque quase nunca é do step. Vira desfecho de
-        # tentativa, e quem decide é o usuário no menu de retry.
-        #
-        # `Exception` e não uma lista de tipos: a lista era (Timeout, Runtime,
-        # OSError), e bastava um `ValueError` vindo de um stdin já fechado para
-        # a run morrer sem menu nenhum. Nada que aconteça dentro de um step
-        # justifica derrubar a run sem perguntar.
         _fail(run, record)
         return FAILED, _session_error(error)
 
@@ -624,16 +550,12 @@ def _attempt_step(
             print_workflow_result(f"⏭  {record.label} pulado")
         return SKIPPED, ""
 
-    # Quem abre o laço e não achou nada a corrigir não pede aprovação: não há o
-    # que aprovar. Declara o fim no bloco de desfecho, e o laço acaba nele.
     if may_close and not result.get("approved") and parse_outcome(agent_text).closes:
         return _settle(run, record, cockpit, CLOSE)
 
     if step.requires_approval and not bool(result.get("approved")):
         _fail(run, record)
         if not str(result.get("approvalAnswers", "")).strip():
-            # Nenhuma pergunta chegou à pessoa: quem não aprovou foi o formato,
-            # não ela. Dizer "não aprovado" aqui mandava procurar o erro errado.
             return FAILED, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
         return FAILED, "step não aprovado"
 
@@ -643,14 +565,9 @@ def _attempt_step(
 
     repeats = False
     if declares_outcome:
-        # Lido do texto cru, não de `record.summary`: o resumo é truncado no
-        # fim, e é justamente no fim que o bloco de desfecho fica.
         declared = parse_outcome(agent_text)
         if not declared.delivered:
             return _block(run, record, _blocked_reason(declared))
-        # `repeat_from` é a permissão, `next: repeat` é o pedido. Sem os dois, o
-        # campo não quer dizer nada: um agente não cria laço onde o workflow não
-        # declarou um.
         repeats = bool(step.repeat_from) and declared.repeats
         if may_close and declared.closes:
             return _settle(run, record, cockpit, CLOSE)
@@ -661,7 +578,7 @@ def _attempt_step(
 def _settle(
     run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
 ) -> tuple[str, str]:
-    """Grava o step como entregue e devolve o desfecho para o laço do motor."""
+    """Record the step as delivered and return the outcome to the engine loop."""
     record.status = DONE
     record.ended_at = run_store.utc_now()
     run_store.save_step(run.id, record)
@@ -671,20 +588,10 @@ def _settle(
 
 
 def _unblock_continuation(step: StepDef) -> Callable[..., str]:
-    """A chance que o agente tem de se destravar sozinho, antes de acordar alguém.
+    """Give the agent one chance to unblock itself before involving the user.
 
-    Boa parte do que um agente chama de bloqueio está ao alcance dele: um
-    arquivo que ele podia ter criado, um caminho que ele não tentou, metade do
-    workspace que ele não leu. Escalar direto para a pessoa nesses casos é
-    interromper alguém por nada.
-
-    A continuação roda **na mesma sessão** (ver `run_isolated_prompt`), então o
-    agente não recomeça do zero, e é uma só por tentativa: quem repete o
-    bloqueio depois de ser cutucado está dizendo que precisa de gente.
-
-    Bloco de desfecho ausente também passa por aqui, e é o caso mais barato de
-    todos — o agente costuma ter feito o trabalho e só ter esquecido de
-    declarar. Sem isto, todo esquecimento viraria uma pergunta na tela.
+    Runs in the same session (see `run_isolated_prompt`), once per attempt. Also
+    covers a missing outcome block, usually just a forgotten declaration.
     """
     spent = False
 
@@ -699,8 +606,6 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
         if declared.status == MISSING:
             return build_outcome_reminder_prompt(step_id=step.step_id)
         if declared.needs_user:
-            # O agente já disse que depende de outra pessoa: mandar tentar de
-            # novo só o faria bater na mesma parede.
             return ""
         return build_unblock_prompt(step_id=step.step_id, reason=declared.reason)
 
@@ -717,7 +622,7 @@ def _blocked_reason(declared: Outcome) -> str:
 
 
 def _block(run: run_store.RunRecord, record: StepRecord, reason: str) -> tuple[str, str]:
-    """Grava o step como bloqueado: rodou, não quebrou, não entregou."""
+    """Record the step as blocked: it ran, did not crash, did not deliver."""
     record.status = BLOCKED
     record.ended_at = run_store.utc_now()
     run_store.save_step(run.id, record)
@@ -731,24 +636,20 @@ def _fail_running_steps(run: run_store.RunRecord) -> None:
 
 
 def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
-    """Fecha o step de novo depois do menu de retry/bloqueio.
+    """Re-stamp `ended_at` after the retry/blocked menu.
 
-    `_fail`/`_block` carimbam `ended_at` *antes* de perguntar, e a espera no
-    menu é descontada deste step (`run_steps.waiting_seconds`). Sem recarimbar,
-    o desconto caía fora da janela `started_at..ended_at` e a duração no
-    histórico encolhia, ou sumia de vez quando ficava negativa.
+    Menu wait time is subtracted from the step (`run_steps.waiting_seconds`), so
+    `ended_at` must cover it or the recorded duration shrinks or goes negative.
     """
     record.ended_at = run_store.utc_now()
     run_store.save_step(run.id, record)
 
 
 def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
-    """Grava a tentativa como falha antes de perguntar o que fazer.
+    """Record the attempt as failed before asking what to do.
 
-    Antes o step ficava `running` no banco enquanto o menu de retry estava na
-    tela, e uma queda ali (processo morto, cockpit fechado) deixava no histórico
-    um step eternamente "executando" — que o Pulse então não sabia retomar nem
-    refazer. Refazer volta o status para `running` em `_attempt_step`.
+    Prevents a step stuck as `running` in history if the process dies while the
+    retry menu is open. Retrying sets it back to `running` in `_attempt_step`.
     """
     record.status = FAILED
     record.ended_at = run_store.utc_now()
@@ -761,34 +662,16 @@ def _context(
     exec_dir: Path,
     item: Item | None = None,
 ) -> dict[str, str]:
-    """Valores que o `prompt_template` pode citar.
+    """Values `prompt_template` may reference.
 
-    Chaves genéricas de propósito: o motor não tem nome de artefato nem de fase
-    para oferecer. O que um step produziu chega no seguinte como `previous_summary`
-    e `artifacts` — o resto o agente descobre lendo o workspace.
-
-    `workspace` é onde o agente **trabalha**: o worktree da run, quando há um.
-    O agente não precisa saber que existe uma raiz de projeto em outro lugar —
-    para ele aquele diretório é o repositório.
-
-    `item_*` só tem valor num step de fan-out. Fora dele são strings vazias e não
-    chaves ausentes: o mesmo `prompt_template` roda nos dois modos, e chave
-    ausente é `TemplateError`.
-
-    `previous_status` acompanha `previous_summary`: é o desfecho do step de onde
-    aquele texto veio (`done` ou `skipped`), não um canal novo de informação.
-    Existe porque pular é uma escolha do usuário que o step seguinte precisa
-    poder respeitar — sem ela, pulado e concluído chegam indistinguíveis no
-    prompt do próximo. Vazio quando nenhum step anterior deixou resumo.
-
-    O pulo pelo menu de bloqueio limpa `summary` de propósito, então aquele step
-    some da varredura e o status reportado é o do anterior a ele. É o que a chave
-    promete — "o que o step anterior me entregou" —, e é diferente do pulo na
-    aprovação, que preserva o resumo.
+    Keys are generic: the engine knows no artifact or phase names. `workspace` is
+    where the agent works (the run's worktree, if any). `item_*` are empty strings
+    outside fan-out, so the same template works in both modes. `previous_status`
+    is the status (`done`/`skipped`) of the step `previous_summary` came from,
+    empty when none. A skip from the blocked menu clears `summary`, so that step
+    drops out and the earlier one is reported.
     """
     artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
-    # Irmãos do fan-out: mesmo step da definição, item diferente. Serve para o
-    # prompt poder dizer "task 2 de 7" sem o motor saber o que é uma task.
     prefix = f"{step.step_id.rsplit(':', 1)[0]}:" if item is not None else ""
     siblings = (
         [record for record in run.steps if record.step_id.startswith(prefix)] if prefix else []
@@ -824,11 +707,9 @@ def _activate_agent(
     step: StepDef,
     fallback_model: str | None,
 ) -> tuple[str | None, str]:
-    """Aplica runtime/model/policy do agente do step e devolve o que falta ao prompt.
+    """Apply the step agent's runtime/model/policy; return the model and instructions.
 
-    As `instructions` do agente vão inline no prompt em vez de virar arquivo no
-    disco do usuário: é o mesmo texto para qualquer runtime, e nenhum runtime
-    precisa saber que o Pulse existe.
+    Agent `instructions` are inlined into the prompt so they work with any runtime.
     """
     resolved = resolve_config(workspace=workspace, pulse_agent=step.agent_id)
     runner.use_agent(step.agent_id, _POLICIES.get(resolved.permission_policy, "ask"))
@@ -844,11 +725,10 @@ def _release_step(
     record: StepRecord,
     label: str,
 ) -> None:
-    """Solta o step cortado pela parada, devolvendo-o para pendente.
+    """Release the step cut by a stop, returning it to pending.
 
-    Ele não terminou nem falhou — o usuário cortou. Pendente é o que faz
-    `resume_run_id` recomeçar por ele e só por ele: os steps que já fecharam
-    continuam `done`/`skipped` e não são refeitos.
+    Pending makes `resume_run_id` restart from this step only; settled steps are
+    not redone.
     """
     if record.status in {RUNNING, FAILED, BLOCKED}:
         record.status = PENDING
@@ -859,7 +739,7 @@ def _release_step(
 
 
 def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
-    """Decide o que fazer com um step que falhou."""
+    """Decide what to do with a failed step."""
     return _choose(
         runner,
         title,
@@ -873,12 +753,9 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str
 
 
 def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
-    """Decide o que fazer com um step que o agente não teve como concluir.
+    """Decide what to do with a step the agent could not complete.
 
-    Tem uma opção a mais que o menu de falha: pular. Um bloqueio costuma ser
-    legítimo — falta um acesso, falta uma decisão — e às vezes a resposta certa
-    é seguir sem aquele step, o que precisa ficar registrado como `skipped` e
-    não escondido num `done`.
+    Adds a skip option, recorded as `skipped` rather than hidden as `done`.
     """
     return _choose(
         runner,
@@ -899,14 +776,10 @@ def _choose(
     reason: str,
     choices: list[tuple[str, str]],
 ) -> tuple[str, str]:
-    """Pergunta ao usuário e devolve `(escolha, orientação)`.
+    """Ask the user and return `(choice, guidance)`.
 
-    "Outro" deixa o usuário escrever o que o agente deve fazer — nem toda falha
-    se resolve repetindo a mesma tentativa.
-
-    Sem ninguém para perguntar (CLI, cockpit fechado, run do daemon), a resposta
-    é sempre parar. É a inversão que faltava: antes, o que ninguém via seguia
-    adiante sozinho.
+    "Outro" lets the user write what the agent should do. With nobody to ask
+    (CLI, closed cockpit, daemon run), the answer is always stop.
     """
     handler = getattr(runner, "_prompt_handler", None)
     select = getattr(handler, "select_choice", None)
@@ -921,7 +794,6 @@ def _choose(
             return "retry", guidance
         if _control(runner).interrupted:
             return "stop", ""
-        # desistiu de escrever: volta a perguntar em vez de parar por engano
         return _choose(runner, title, reason, choices)
     if choice in {value for _label, value in choices}:
         return str(choice), ""
@@ -933,16 +805,13 @@ def _session_error(error: BaseException) -> str:
         return f"o agente parou de responder — {error}"
     if isinstance(error, RuntimeError | OSError):
         return f"a sessão do agente caiu — {error}"
-    # Falha que não é de sessão: o tipo é a única pista que o usuário tem para
-    # decidir entre refazer e parar.
     return f"o step quebrou — {type(error).__name__}: {error}"
 
 
 def _revive_session(runner: AcpSessionRunner) -> None:
-    """Reergue o processo do agente antes de refazer o step.
+    """Restart the agent process before retrying the step.
 
-    Retry depois de uma sessão morta só repetiria a queda; e se reerguer também
-    falhar, a próxima tentativa cai rápido e o menu volta a aparecer.
+    Retrying on a dead session would just fail again.
     """
     ensure = getattr(runner, "ensure_process", None)
     if not callable(ensure):
@@ -979,10 +848,9 @@ def _notify(runner: AcpSessionRunner, message: str) -> None:
 
 
 def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
-    """Espelha `run_steps` no painel — a lista inteira, não só os status.
+    """Mirror `run_steps` to the panel, including the full step list.
 
-    A lista vai junto porque o fan-out a muda no meio da run: o painel montou as
-    fases pela definição, e um step que virou sete precisa aparecer como sete.
+    The list is sent because fan-out changes it mid-run.
     """
     stream = getattr(runner, "_stream", None)
     apply = getattr(stream, "apply_phase_statuses", None) if stream is not None else None

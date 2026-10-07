@@ -1,10 +1,6 @@
-"""Os textos que o próprio Pulse escreve.
+"""Prompt text written by Pulse itself (orchestrator protocol, not task content).
 
-Todo o resto do prompt é dado do usuário (`workflow_steps.prompt_template`).
-O que sobra aqui não descreve tarefa nenhuma — é só o protocolo do
-orquestrador: retomar um step depois do questionário, repassar uma orientação de
-nova tentativa, pedir o desfecho e dar ao agente a chance de destravar sozinho.
-Por isso são constantes, não template configurável.
+Everything else in the prompt comes from the user (`workflow_steps.prompt_template`).
 """
 
 from __future__ import annotations
@@ -117,27 +113,26 @@ status: done
 
 
 def outcome_protocol() -> str:
-    """Instrução de encerramento anexada ao prompt de um step sem aprovação.
+    """Closing instructions appended to the prompt of a step without approval.
 
-    Vai no prompt e não numa coluna do workflow porque é protocolo do motor, não
-    conteúdo do step: quem escreve `prompt_template` não deveria precisar saber
-    que o Pulse existe para que o Pulse saiba se o step entregou.
+    Engine protocol rather than step content, so `prompt_template` authors need
+    not know about it.
     """
     return _OUTCOME_PROTOCOL
 
 
 def build_unblock_prompt(*, step_id: str, reason: str) -> str:
-    """A chance que o agente tem de destravar sozinho, antes de acordar alguém."""
+    """Give the agent a chance to unblock itself before involving the user."""
     return _UNBLOCK.format(step_id=step_id, reason=reason.strip() or "(sem motivo declarado)")
 
 
 def build_outcome_reminder_prompt(*, step_id: str) -> str:
-    """Bloco esquecido não é bloqueio: primeiro se pergunta, depois se conclui."""
+    """A forgotten outcome block is not a block: ask for it before concluding."""
     return _OUTCOME_REMINDER.format(step_id=step_id)
 
 
 def guidance_block(guidance: str) -> str:
-    """Instrução que o usuário escreveu ao mandar refazer um step."""
+    """Guidance the user wrote when asking to retry a step."""
     text = guidance.strip()
     if not text:
         return ""

@@ -1,14 +1,9 @@
-"""Pergunta e resposta como a tela viva as mostrou.
+"""Question and answer pairs as the live screen showed them.
 
-Irmão de [pulse.history.tool_detail]: lá um tool-call vira `Read pulse/x.py`, aqui
-uma chamada ao prompt port vira o par de balões `Pergunta` / `Você` que o cockpit
-desenha quando alguém responde um dock.
-
-Quem grava o log está do lado do daemon, e lá só passa a chamada crua — os
-`params` do `AskQuestion` e o `selectedOptionIds` que voltou. Reconstruir o texto
-é o que faz o histórico dizer "A) Produto / plataforma" em vez de `__other__`.
-
-Puro: nada aqui lê banco nem toca tela.
+Sibling of [pulse.history.tool_detail]: a prompt-port call becomes the
+question / answer bubbles the cockpit draws when someone answers a dock. The
+daemon only logs the raw call (`params`, `selectedOptionIds`), so the text is
+rebuilt here. Pure: no database or UI access.
 """
 
 from __future__ import annotations
@@ -33,16 +28,10 @@ from pulse.prompts.text_questionnaire import (
     split_questionnaire_answers,
 )
 
-#: Resposta de quem fechou a pergunta sem responder. É o mesmo texto que
-#: `format_prompt_reply` põe no balão quando o dock devolve `None`.
 CANCELLED = "Cancelado"
-#: Sem escolha nenhuma — multi-select vazio, texto em branco.
 EMPTY = "—"
-#: O que separa a opção escolhida do complemento que a pessoa escreveu. O cliente
-#: devolve os dois num id só (`id::detalhe`), e ao vivo isso foram dois docks.
 _DETAIL_SEP = "::"
 
-#: (pergunta, resposta), na ordem em que apareceram na tela.
 QA = tuple[str, str]
 
 
@@ -52,10 +41,9 @@ def build_prompt_qa(
     kwargs: dict[str, Any],
     result: Any,
 ) -> list[QA]:
-    """O diálogo de uma chamada ao prompt port. Vazio = não foi pergunta.
+    """The dialog of a prompt-port call. Empty means it was not a question.
 
-    Não foi pergunta é o caso da permissão que a política resolve sozinha: ela
-    atravessa o port como qualquer outra, mas ninguém a viu.
+    E.g. a permission resolved by policy goes through the port but was never shown.
     """
     builder = _BUILDERS.get(name)
     if builder is None:
@@ -89,8 +77,6 @@ def _ask_question_qa(
             continue
         selected = _selected_ids(answers, question, position)
         if selected is None:
-            # A pessoa fechou o questionário aqui: o que vinha depois nunca
-            # chegou a ser perguntado, então não entra no log.
             pairs.append((prompt, CANCELLED))
             break
         choices = build_question_choices(question.get("options") or [], prompt=prompt)
@@ -107,7 +93,7 @@ def _question_prompt(question: dict[str, Any]) -> str:
 
 
 def _answers_by_question(result: Any) -> dict[str, list[str]] | None:
-    """As respostas indexadas por `questionId`. `None` = cancelado."""
+    """Answers indexed by `questionId`. `None` means cancelled."""
     outcome = result.get("outcome") if isinstance(result, dict) else None
     if not isinstance(outcome, dict) or outcome.get("outcome") != "answered":
         return None
@@ -118,8 +104,6 @@ def _answers_by_question(result: Any) -> dict[str, list[str]] | None:
         selected = answer.get("selectedOptionIds")
         if not isinstance(selected, list):
             continue
-        # A posição entra como chave reserva: há agente que devolve a resposta
-        # sem repetir o `questionId` que mandou.
         collected[str(answer.get("questionId", ""))] = [str(item) for item in selected]
         collected.setdefault(f"#{index}", [str(item) for item in selected])
     return collected
@@ -145,13 +129,11 @@ def _selected_label(choices: list[tuple[str, str]], selected: list[str]) -> str:
 
 
 def _option_label(choices: list[tuple[str, str]], selected: str) -> str:
-    """O rótulo da escolha, com o que a pessoa escreveu quando houve texto livre."""
+    """The choice label, plus the free text the user typed, if any."""
     option_id, separator, detail = selected.partition(_DETAIL_SEP)
     lookup = {str(item_id): label for item_id, label in choices}
     label = lookup.get(option_id)
     if label is None:
-        # Id que não casa com opção nenhuma é o texto que a pessoa digitou em
-        # "Outro" — o cliente o manda no lugar do id.
         return selected.strip()
     if separator and detail.strip():
         return f"{label} — {detail.strip()}"
@@ -195,7 +177,6 @@ def _permission_qa(
     policy = str(kwargs.get("policy") or "ask")
     allow_terminal = bool(kwargs.get("allow_terminal", False))
     if decide_permission(params, policy=policy, allow_terminal=allow_terminal) is not None:
-        # Regra não é pergunta: ninguém viu esta decisão.
         return []
 
     permission = params.get("permission")
@@ -253,8 +234,6 @@ def _choice_qa(args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> li
     return [(prompt, str(result).strip() or EMPTY)]
 
 
-#: Cada método do prompt port e como ele vira diálogo. O que não está aqui não é
-#: pergunta — `reset_capture`, `agent_text` e afins passam pelo mesmo proxy.
 _BUILDERS = {
     "respond_to_ask_question": _ask_question_qa,
     "run_parsed_questionnaire": _questionnaire_qa,

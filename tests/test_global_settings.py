@@ -1,4 +1,4 @@
-"""Global escreve em todos os agents; o específico depois vale só para ele."""
+"""Global writes to every agent; a later specific change applies only to that agent."""
 
 from __future__ import annotations
 
@@ -72,9 +72,6 @@ def test_unknown_field_is_ignored(tmp_path: Path):
     )
 
     assert load_agent_settings(project_id, "alpha")["model"] == "composer-2.5"
-
-
-# ------------------------------------------------------- pela tela de settings
 
 
 def test_saving_global_reaches_the_agent_used_by_the_run(tmp_path: Path):

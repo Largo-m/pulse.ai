@@ -1,4 +1,4 @@
-"""Anexar numa run retomada: o replay só tem o que veio depois da retomada."""
+"""Attaching to a resumed run: the replay only holds what came after the resume."""
 
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ def test_steps_closed_before_the_resume_get_their_log_back(tmp_path: Path):
     _resumed_run(tmp_path)
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
-    # O que o replay do barramento novo trouxe: só o step em curso.
     state.entries = [LogEntry(kind=LogKind.ASSISTANT, title="fazendo o dois", entry_id=1, phase_id="two")]
     state._next_entry_id = 2
 

@@ -715,8 +715,8 @@ def test_model_info_sets_header_without_duplicate_entry():
     assert any(entry.title == "Questionário interativo" for entry in state.entries)
 
 
-def test_bloco_de_desfecho_nao_vira_questionario():
-    """`pulse:outcome` é cerca de código, não pergunta: a fala continua visível."""
+def test_outcome_block_does_not_become_questionnaire():
+    """`pulse:outcome` is a code fence, not a question: the speech stays visible."""
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
     state.configure_workflow("demo")
@@ -740,7 +740,7 @@ def test_bloco_de_desfecho_nao_vira_questionario():
     assert "next: close" in spoken
 
 
-def test_cerca_sem_nome_com_pergunta_ainda_e_questionario():
+def test_unnamed_fence_with_question_is_still_questionnaire():
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
     state.configure_workflow("demo")

@@ -59,16 +59,12 @@ _GENERIC_GLOBS = frozenset({"*", "**", "**/*", "./**/*", "**/**"})
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:
-    """Caminho do jeito que a aba de artefatos o abre: relativo ao workspace.
+    """Path as the artifacts tab opens it: relative to the workspace.
 
-    O runtime reporta o mesmo arquivo de dois jeitos — absoluto em `locations`,
-    relativo em `rawInput`. Os dois têm que chegar na **mesma** string, senão o
-    artefato entra duas vezes e a aba aparece duplicada.
-
-    Por isso o relativo volta como está: `resolve()` num caminho relativo mede
-    a partir do cwd do *processo* (o daemon), não do workspace — daí
-    `.pulse/specs/x/PRD.md` falhava o `relative_to` e caía no corte de 4
-    segmentos, virando `specs/x/PRD.md`, que não abre arquivo nenhum.
+    The runtime reports the same file as absolute (`locations`) and relative
+    (`rawInput`); both must map to the same string or the artifact is duplicated.
+    Relative paths are returned as-is because `resolve()` would anchor them to
+    the daemon's cwd, not the workspace.
     """
     text = path.strip().strip("\"'`")
     if not text:
@@ -80,7 +76,6 @@ def shorten_path(path: str, *, cwd: str | None = None) -> str:
     except Exception:
         return text
     if not candidate.is_absolute():
-        # `removeprefix`, não `lstrip`: este come o ponto de `.pulse/` também.
         return text.removeprefix("./") or text
     if cwd:
         try:
@@ -89,8 +84,6 @@ def shorten_path(path: str, *, cwd: str | None = None) -> str:
             pass
     parts = candidate.parts
     if len(parts) > 4:
-        # Absoluto de fora do workspace: só o rabo, para caber na linha. Não
-        # abre arquivo — e é por isso que caminho relativo não passa por aqui.
         return str(Path(*parts[-4:]))
     return text
 

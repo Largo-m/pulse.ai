@@ -13,11 +13,6 @@ _HEADER_PATTERN = re.compile(
 _FENCED_BLOCK = re.compile(r"```(?:text)?\s*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 _QUESTION_LINE = re.compile(r"^(\d+)\.\s+(.+)$")
 _OPTION_LINE = re.compile(r"^([A-Z])\)\s+(.+)$")
-#: Onde a fala do agente vira questionário: cerca `text`, ou cerca sem nome cuja
-#: primeira linha já é pergunta. Qualquer cerca valia antes, e o bloco
-#: `pulse:outcome` — ou um trecho de código citado — escondia o resto da fala
-#: atrás de um "Questionário interativo" que não existia. A tela viva e o log
-#: gravado cortam aqui, e só aqui, para mostrarem a mesma fala.
 QUESTIONNAIRE_START = re.compile(
     r"```text"
     r"|```[ \t]*\n[ \t]*(?:\d+\.[ \t]|Preciso de algumas informações|I need some information)"
@@ -25,10 +20,7 @@ QUESTIONNAIRE_START = re.compile(
     r"|Apresentando todas as perguntas",
     re.IGNORECASE,
 )
-#: A linha que a tela põe no lugar do bloco de perguntas. O cockpit nunca mostra
-#: o questionário cru — ele vira dock — e o log gravado faz o mesmo.
 QUESTIONNAIRE_NOTICE = "Questionário interativo"
-#: Como [format_questionnaire_answers] marca a resposta de cada pergunta.
 _ANSWER_MARK = "→ "
 
 
@@ -46,7 +38,7 @@ class TextQuestionnaire:
     raw: str = ""
 
 
-def _strip_resposta_footer(block: str) -> str:
+def _strip_answer_footer(block: str) -> str:
     return re.sub(r"\nResposta:\s*$", "", block.strip(), flags=re.IGNORECASE).strip()
 
 
@@ -56,7 +48,7 @@ def extract_questionnaire_block(text: str) -> str | None:
 
     fenced = _FENCED_BLOCK.search(text)
     if fenced:
-        block = _strip_resposta_footer(fenced.group(1).strip())
+        block = _strip_answer_footer(fenced.group(1).strip())
         if _has_question_structure(block):
             return block
 
@@ -66,24 +58,23 @@ def extract_questionnaire_block(text: str) -> str | None:
 
     start = header.start(1)
     tail = text[start:]
-    resposta_index = re.search(r"\nResposta:\s*(?:\n|$)", tail, re.IGNORECASE)
-    if resposta_index:
-        block = tail[: resposta_index.start()].strip()
+    answer_match = re.search(r"\nResposta:\s*(?:\n|$)", tail, re.IGNORECASE)
+    if answer_match:
+        block = tail[: answer_match.start()].strip()
     else:
         block = tail.strip()
 
-    block = _strip_resposta_footer(block)
+    block = _strip_answer_footer(block)
     if _has_question_structure(block):
         return block
     return None
 
 
 def strip_questionnaire_block(text: str) -> tuple[str, bool]:
-    """A fala do agente sem o questionário, e se havia um.
+    """The agent's speech without the questionnaire, and whether there was one.
 
-    O bloco de perguntas não é fala: ele vira dock na tela e balões de
-    Pergunta/Você no log. Gravá-lo cru fazia a run reaberta mostrar as mesmas
-    perguntas duas vezes — uma no balão do assistente, outra no diálogo.
+    The question block is rendered as a dock and as Q/A bubbles in the log, so
+    keeping it would show the questions twice on a reopened run.
     """
     start = QUESTIONNAIRE_START.search(text)
     if start is None:
@@ -95,11 +86,9 @@ def split_questionnaire_answers(
     questionnaire: TextQuestionnaire,
     answers_text: str,
 ) -> list[tuple[str, str]]:
-    """Desfaz [format_questionnaire_answers] em pares (pergunta, resposta).
+    """Undo [format_questionnaire_answers] into (question, answer) pairs.
 
-    O cliente coleta pergunta a pergunta e devolve ao motor um texto só; quem
-    grava o log está do lado do daemon e só tem esse texto para reconstruir o
-    diálogo que a pessoa viu.
+    The daemon-side logger only has the combined answer text to rebuild the dialog.
     """
     replies = [
         line.strip()[len(_ANSWER_MARK) :].strip()
