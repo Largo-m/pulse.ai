@@ -47,13 +47,7 @@ from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.runtime.tty import is_cockpit_stream, is_interactive
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
-from pulse.store.runs import (
-    BLOCKED,
-    DONE,
-    FAILED,
-    SKIPPED,
-    StepRecord,
-)
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.store.workflow_defs import StepDef, WorkflowDef, get_agent, get_workflow
 
 _POLICIES: dict[str, PermissionPolicy] = {
@@ -404,7 +398,7 @@ def _run_step(
             _release_step(runner, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
 
-        blocked = record.status == BLOCKED
+        blocked = record.status == StepStatus.BLOCKED
         if blocked:
             choice, guidance = _offer_blocked(
                 runner, f"{record.label} está bloqueado", reason
@@ -803,8 +797,8 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
             {"id": item.step_id, "label": item.label, "rounds": item.rounds}
             for item in run.steps
         ],
-        done_ids=grouped[DONE],
-        skipped_ids=grouped[SKIPPED],
-        failed_ids=grouped[FAILED],
-        blocked_ids=grouped[BLOCKED],
+        done_ids=grouped[StepStatus.DONE],
+        skipped_ids=grouped[StepStatus.SKIPPED],
+        failed_ids=grouped[StepStatus.FAILED],
+        blocked_ids=grouped[StepStatus.BLOCKED],
     )

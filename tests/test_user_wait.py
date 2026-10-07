@@ -19,7 +19,7 @@ from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
 from pulse.runcontrol import RUN_STOPPED
 from pulse.store import runs as run_store
-from pulse.store.runs import AWAITING_INPUT, RUNNING, RunStatus, StepRecord
+from pulse.store.runs import RunStatus, StepRecord, StepStatus
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
 
@@ -376,9 +376,9 @@ def test_the_wait_lands_on_the_bound_run_and_step(monkeypatch):
     port = _SlowAnswer(run.id)
     _bound(run, port)._prompt_handler.ask_text("e agora?")
 
-    assert port.seen == [AWAITING_INPUT], "Home and history must see the run waiting"
+    assert port.seen == [RunStatus.AWAITING_INPUT], "Home and history must see the run waiting"
     record = run_store.load_run(run.id)
-    assert record.status == RUNNING
+    assert record.status == RunStatus.RUNNING
     assert record.steps[0].waiting_seconds == 90.0
 
 
@@ -479,7 +479,7 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
 
     run = _run_with_step()
     step = run.steps[0]
-    step.status = RUNNING
+    step.status = StepStatus.RUNNING
     step.started_at = (datetime.now(UTC) - timedelta(minutes=10)).replace(microsecond=0)
     store_step(run.id, step)
 

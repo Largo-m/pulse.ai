@@ -11,7 +11,7 @@ from tests.conftest import make_workflow, store_run_status, store_step
 
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus
@@ -33,7 +33,7 @@ def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
         ],
     )
     for step in record.steps:
-        step.status = DONE
+        step.status = StepStatus.DONE
         store_step(record.id, step)
     store_run_status(record.id, "completed")
     return record.id
@@ -269,7 +269,7 @@ def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
         ],
     )
     plan = record.steps[0]
-    plan.status = DONE
+    plan.status = StepStatus.DONE
     store_step(record.id, plan)
     store_run_status(record.id, "failed")
 

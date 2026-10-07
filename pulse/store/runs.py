@@ -28,14 +28,7 @@ from pulse.domain.run import (
 from pulse.store.db import connect, default_db_path
 
 __all__ = [
-    "AWAITING_INPUT",
-    "BLOCKED",
-    "DONE",
-    "FAILED",
-    "PENDING",
-    "RUNNING",
     "SETTLED",
-    "SKIPPED",
     "InvalidTransition",
     "RunRecord",
     "RunStatus",
@@ -46,14 +39,6 @@ __all__ = [
 ]
 
 MAX_DETAIL = 20_000
-
-PENDING = StepStatus.PENDING
-RUNNING = StepStatus.RUNNING
-DONE = StepStatus.DONE
-SKIPPED = StepStatus.SKIPPED
-FAILED = StepStatus.FAILED
-BLOCKED = StepStatus.BLOCKED
-AWAITING_INPUT = RunStatus.AWAITING_INPUT
 
 
 def _root(workspace: str | Path) -> str:
@@ -161,7 +146,14 @@ def create_run(
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
-                (run_id, item.step_id, item.position or index, item.label, item.agent_id, PENDING)
+                (
+                    run_id,
+                    item.step_id,
+                    item.position or index,
+                    item.label,
+                    item.agent_id,
+                    StepStatus.PENDING,
+                )
                 for index, item in enumerate(steps, start=1)
             ],
         )

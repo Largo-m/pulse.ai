@@ -5,7 +5,7 @@ from tests.conftest import make_workflow, store_step
 from pulse.orchestrator.engine import _release_step
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
-from pulse.store.runs import PENDING, RUNNING, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.state import CockpitState
 
 
@@ -38,7 +38,7 @@ def _run(tmp_path) -> tuple[run_store.RunRecord, StepRecord]:
         steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
     )
     step = record.steps[0]
-    step.status = RUNNING
+    step.status = StepStatus.RUNNING
     store_step(record.id, step)
     return record, step
 
@@ -52,9 +52,9 @@ def test_stop_returns_the_cut_step_to_pending(tmp_path):
 
     _release_step(runner, run=record, record=step, label="Um")
 
-    assert step.status == PENDING
+    assert step.status == StepStatus.PENDING
     reloaded = run_store.load_run(record.id)
-    assert reloaded.step("one").status == PENDING
+    assert reloaded.step("one").status == StepStatus.PENDING
     assert runner._stream.messages == ["Run parada em Um"]
 
 

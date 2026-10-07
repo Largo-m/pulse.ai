@@ -8,7 +8,7 @@ from pathlib import Path
 from tests.conftest import make_workflow, store_step
 
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, RUNNING, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import restore_run
 from pulse.tui.state import CockpitState, PhaseStatus
 
@@ -27,7 +27,7 @@ def _run_with_history(workspace: Path) -> str:
         ],
     )
     plan = record.steps[0]
-    plan.status = DONE
+    plan.status = StepStatus.DONE
     plan.started_at = datetime(2026, 9, 29, 10, 0, tzinfo=UTC)
     plan.ended_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
     store_step(record.id, plan)
@@ -83,7 +83,7 @@ def test_a_step_interrupted_by_a_crash_comes_back_as_pending(tmp_path: Path):
     run_id = _run_with_history(tmp_path)
     record = run_store.load_run(run_id)
     build = record.step("build")
-    build.status = RUNNING
+    build.status = StepStatus.RUNNING
     build.started_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
     store_step(run_id, build)
 

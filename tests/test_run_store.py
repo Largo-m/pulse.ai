@@ -8,7 +8,7 @@ from pathlib import Path
 from tests.conftest import store_step, store_run_status
 from pulse.store import runs as run_store
 from pulse.store.db import connect
-from pulse.store.runs import DONE, PENDING, RUNNING, SKIPPED, StepRecord
+from pulse.store.runs import RunStatus, StepRecord, StepStatus
 
 
 def _create(tmp_path: Path, run_id: str = "run-1") -> run_store.RunRecord:
@@ -29,9 +29,9 @@ def test_a_new_run_starts_with_every_step_pending(tmp_path: Path):
 
     loaded = run_store.load_run(record.id)
     assert loaded is not None
-    assert loaded.status == RUNNING
+    assert loaded.status == RunStatus.RUNNING
     assert loaded.current_step == "one"
-    assert [step.status for step in loaded.steps] == [PENDING, PENDING]
+    assert [step.status for step in loaded.steps] == [StepStatus.PENDING, StepStatus.PENDING]
 
 
 def test_steps_keep_the_label_they_had_when_the_run_started(tmp_path: Path):
@@ -46,7 +46,7 @@ def test_steps_keep_the_label_they_had_when_the_run_started(tmp_path: Path):
 def test_next_pending_skips_what_is_already_settled(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
-    first.status = SKIPPED
+    first.status = StepStatus.SKIPPED
     store_step(record.id, first)
 
     loaded = run_store.load_run(record.id)
@@ -57,7 +57,7 @@ def test_next_pending_skips_what_is_already_settled(tmp_path: Path):
 def test_a_finished_run_is_not_resumable(tmp_path: Path):
     record = _create(tmp_path)
     for step in record.steps:
-        step.status = DONE
+        step.status = StepStatus.DONE
         store_step(record.id, step)
     store_run_status(record.id, "completed")
 
@@ -67,7 +67,7 @@ def test_a_finished_run_is_not_resumable(tmp_path: Path):
 def test_a_run_cut_in_the_middle_is_resumable(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
-    first.status = DONE
+    first.status = StepStatus.DONE
     store_step(record.id, first)
     store_run_status(record.id, "stopped")
 
@@ -130,7 +130,7 @@ def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
     """Failure is when resuming matters most: settled steps are already stored."""
     record = _create(tmp_path)
     first = record.steps[0]
-    first.status = DONE
+    first.status = StepStatus.DONE
     store_step(record.id, first)
     store_run_status(record.id, "failed")
 
@@ -170,7 +170,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
         "/tmp/wt",
         "pulse/demo-1",
     )
-    assert [step.status for step in loaded.steps] == [DONE, RUNNING]
+    assert [step.status for step in loaded.steps] == [StepStatus.DONE, StepStatus.RUNNING]
 
 
 def test_save_deletes_the_step_a_fan_out_replaced(tmp_path: Path):

@@ -18,7 +18,7 @@ from pulse.config.project_config import update_project_defaults
 from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _prepare_workspace
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.screens.settings import SettingsScreen
@@ -41,7 +41,7 @@ def _run_in(workspace: Path, *, run_id: str = "run-1", branch: str = "", worktre
     if branch or worktree:
         record.work_in(worktree_path=worktree, branch=branch)
     for step in record.steps:
-        step.status = DONE
+        step.status = StepStatus.DONE
     record.complete()
     run_store.save(record)
     return record.id
@@ -260,7 +260,7 @@ def test_removing_the_worktree_never_rewrites_the_steps_of_the_run(
     daemon_delivers()
     stored = run_store.load_run(live.id)
     assert stored is not None
-    assert stored.step("plan").status == DONE
+    assert stored.step("plan").status == StepStatus.DONE
 
 
 @git_only
