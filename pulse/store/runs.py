@@ -11,6 +11,7 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ from pulse.domain.run import (
     RunStatus,
     StepRecord,
     StepStatus,
-    net_seconds,
+    fan_out_child_id,
     utc_now,
 )
 from pulse.store.db import connect, default_db_path
@@ -40,6 +41,7 @@ __all__ = [
     "RunStatus",
     "StepRecord",
     "StepStatus",
+    "fan_out_child_id",
     "utc_now",
 ]
 
@@ -58,6 +60,29 @@ def _root(workspace: str | Path) -> str:
     return str(Path(workspace).resolve())
 
 
+def _now_text() -> str:
+    return utc_now().isoformat()
+
+
+def _stamp(value: Any) -> datetime | None:
+    """Stamp read from storage; empty or unreadable is no stamp, naive is UTC.
+
+    Older rows were written by hand-rolled code; a bad value must not break history.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _stamp_text(value: datetime | None) -> str:
+    return value.isoformat() if value is not None else ""
+
+
 def _step(row: Any) -> StepRecord:
     return StepRecord(
         step_id=str(row["step_id"]),
@@ -67,8 +92,8 @@ def _step(row: Any) -> StepRecord:
         status=StepStatus.parse(str(row["status"] or "")),
         summary=str(row["summary"] or ""),
         acp_session_id=str(row["acp_session_id"] or ""),
-        started_at=str(row["started_at"] or ""),
-        ended_at=str(row["ended_at"] or ""),
+        started_at=_stamp(row["started_at"]),
+        ended_at=_stamp(row["ended_at"]),
         waiting_seconds=float(row["waiting_seconds"] or 0.0),
         rounds=int(row["rounds"] or 1),
         carried_seconds=float(row["carried_seconds"] or 0.0),
@@ -108,7 +133,7 @@ def create_run(
     steps: list[StepRecord],
     db_path: Path | None = None,
 ) -> RunRecord:
-    now = utc_now()
+    now = _now_text()
     connection = connect(db_path or default_db_path())
     try:
         connection.execute(
@@ -197,165 +222,83 @@ def find_resumable(workspace: str | Path, *, db_path: Path | None = None) -> lis
     ]
 
 
-def update_run(
-    run_id: str,
-    *,
-    status: str | None = None,
-    current_step: str | None = None,
-    db_path: Path | None = None,
-) -> None:
-    sets: list[str] = ["updated_at = ?"]
-    values: list[Any] = [utc_now()]
-    if status is not None:
-        sets.append("status = ?")
-        values.append(status)
-    if current_step is not None:
-        sets.append("current_step = ?")
-        values.append(current_step)
-    values.append(run_id)
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(f"UPDATE runs SET {', '.join(sets)} WHERE id = ?", values)
-        connection.commit()
-    finally:
-        connection.close()
+def save(run: RunRecord, *, db_path: Path | None = None) -> None:
+    """Persist the whole aggregate in one transaction.
 
-
-def save_run(run: RunRecord, *, db_path: Path | None = None) -> None:
-    """Persist the run's status and current step as the aggregate left them."""
-    update_run(run.id, status=run.status, current_step=run.current_step, db_path=db_path)
-
-
-def set_workspace_context(
-    run_id: str,
-    *,
-    worktree_path: str = "",
-    branch: str = "",
-    db_path: Path | None = None,
-) -> None:
-    """Store where this run works and on which branch.
-
-    Separate from `create_run` because the worktree is named after the run id,
-    and from `update_run` because it is not execution state: it never changes
-    during the run and resuming rereads it as-is.
-    """
-    if not run_id:
-        return
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            "UPDATE runs SET worktree_path = ?, branch = ?, updated_at = ? WHERE id = ?",
-            (worktree_path, branch, utc_now(), run_id),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def save_step(run_id: str, step: StepRecord, *, db_path: Path | None = None) -> None:
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            """
-            INSERT INTO run_steps
-              (run_id, step_id, position, label, agent_id,
-               status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
-               rounds)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id, step_id) DO UPDATE SET
-              status = excluded.status,
-              summary = excluded.summary,
-              acp_session_id = excluded.acp_session_id,
-              started_at = excluded.started_at,
-              ended_at = excluded.ended_at,
-              rounds = excluded.rounds
-            """,
-            (
-                run_id,
-                step.step_id,
-                step.position,
-                step.label,
-                step.agent_id,
-                step.status,
-                step.summary,
-                step.acp_session_id,
-                step.started_at,
-                step.ended_at,
-                step.waiting_seconds,
-                step.rounds,
-            ),
-        )
-        connection.execute(
-            "UPDATE runs SET updated_at = ? WHERE id = ?", (utc_now(), run_id)
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def add_waiting_seconds(
-    run_id: str,
-    step_id: str,
-    seconds: float,
-    *,
-    db_path: Path | None = None,
-) -> None:
-    """Add user wait time to the step (accumulates across multiple waits).
-
-    A step not yet in the table is silently ignored: waits can happen before
-    the first `save_step` (e.g. the resume menu).
-    """
-    if not run_id or not step_id or seconds <= 0:
-        return
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            """
-            UPDATE run_steps SET waiting_seconds = waiting_seconds + ?
-            WHERE run_id = ? AND step_id = ?
-            """,
-            (float(seconds), run_id, step_id),
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
-def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:
-    """Close the step's current loop round and return the accumulated time.
-
-    Net duration (wall time minus wait) moves to `carried_seconds` and the wait
-    resets, since a new round reopens `started_at`/`ended_at`. Works on the DB
-    rather than `StepRecord` because only the DB has the wait time (see
-    `add_waiting_seconds`).
+    Writes the run row, deletes the steps it dropped and upserts every step, so
+    a crash never leaves the run and its steps out of step with each other.
     """
     connection = connect(db_path or default_db_path())
     try:
-        row = connection.execute(
-            """
-            SELECT started_at, ended_at, waiting_seconds, carried_seconds
-            FROM run_steps WHERE run_id = ? AND step_id = ?
-            """,
-            (run_id, step_id),
-        ).fetchone()
-        if row is None:
-            return 0.0
-        carried = float(row["carried_seconds"] or 0.0)
-        carried += net_seconds(
-            str(row["started_at"] or ""),
-            str(row["ended_at"] or ""),
-            float(row["waiting_seconds"] or 0.0),
-        )
         connection.execute(
             """
-            UPDATE run_steps
-            SET carried_seconds = ?, waiting_seconds = 0, started_at = '', ended_at = ''
-            WHERE run_id = ? AND step_id = ?
+            UPDATE runs
+            SET status = ?, current_step = ?, worktree_path = ?, branch = ?, updated_at = ?
+            WHERE id = ?
             """,
-            (carried, run_id, step_id),
+            (run.status, run.current_step, run.worktree_path, run.branch, _now_text(), run.id),
+        )
+        connection.executemany(
+            "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?",
+            [(run.id, step_id) for step_id in run.removed_step_ids()],
+        )
+        for step in run.steps:
+            _upsert_step(connection, run.id, step)
+        connection.commit()
+    finally:
+        connection.close()
+    run.forget_removed_steps()
+
+
+def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
+    connection.execute(
+        """
+        INSERT INTO run_steps
+          (run_id, step_id, position, label, agent_id,
+           status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
+           rounds, carried_seconds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, step_id) DO UPDATE SET
+          status = excluded.status,
+          summary = excluded.summary,
+          acp_session_id = excluded.acp_session_id,
+          started_at = excluded.started_at,
+          ended_at = excluded.ended_at,
+          waiting_seconds = excluded.waiting_seconds,
+          rounds = excluded.rounds,
+          carried_seconds = excluded.carried_seconds
+        """,
+        (
+            run_id,
+            step.step_id,
+            step.position,
+            step.label,
+            step.agent_id,
+            step.status,
+            step.summary,
+            step.acp_session_id,
+            _stamp_text(step.started_at),
+            _stamp_text(step.ended_at),
+            step.waiting_seconds,
+            step.rounds,
+            step.carried_seconds,
+        ),
+    )
+
+
+def clear_worktree(run_id: str, *, db_path: Path | None = None) -> None:
+    """Forget the run's worktree directory; the branch stays, it still holds the work.
+
+    History does not own the run aggregate, so it touches this one column instead
+    of saving a snapshot over steps the daemon may have moved on since.
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "UPDATE runs SET worktree_path = '', updated_at = ? WHERE id = ?",
+            (_now_text(), run_id),
         )
         connection.commit()
-        return carried
     finally:
         connection.close()
 
@@ -371,21 +314,6 @@ def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
         cursor = connection.execute("DELETE FROM runs WHERE id = ?", (run_id,))
         connection.commit()
         return cursor.rowcount > 0
-    finally:
-        connection.close()
-
-
-def delete_step(run_id: str, step_id: str, *, db_path: Path | None = None) -> None:
-    """Remove a step from the run.
-
-    Used by fan-out: the original step is replaced by its N children.
-    """
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?", (run_id, step_id)
-        )
-        connection.commit()
     finally:
         connection.close()
 
@@ -435,7 +363,7 @@ def record_event(
                     title[:300],
                     detail[:MAX_DETAIL],
                     tool_id,
-                    utc_now(),
+                    _now_text(),
                 ),
             )
         connection.commit()
@@ -487,7 +415,7 @@ def record_artifact(
             VALUES (?, ?, ?, ?)
             ON CONFLICT(run_id, path) DO NOTHING
             """,
-            (run_id, path.strip(), step_id, utc_now()),
+            (run_id, path.strip(), step_id, _now_text()),
         )
         connection.commit()
     finally:

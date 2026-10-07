@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
+from tests.conftest import store_step, store_run_status
 from pulse.store import runs as run_store
+from pulse.store.db import connect
 from pulse.store.runs import DONE, PENDING, RUNNING, SKIPPED, StepRecord
 
 
@@ -44,7 +47,7 @@ def test_next_pending_skips_what_is_already_settled(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = SKIPPED
-    run_store.save_step(record.id, first)
+    store_step(record.id, first)
 
     loaded = run_store.load_run(record.id)
     assert loaded is not None
@@ -55,8 +58,8 @@ def test_a_finished_run_is_not_resumable(tmp_path: Path):
     record = _create(tmp_path)
     for step in record.steps:
         step.status = DONE
-        run_store.save_step(record.id, step)
-    run_store.update_run(record.id, status="completed")
+        store_step(record.id, step)
+    store_run_status(record.id, "completed")
 
     assert run_store.find_resumable(tmp_path) == []
 
@@ -65,8 +68,8 @@ def test_a_run_cut_in_the_middle_is_resumable(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = DONE
-    run_store.save_step(record.id, first)
-    run_store.update_run(record.id, status="stopped")
+    store_step(record.id, first)
+    store_run_status(record.id, "stopped")
 
     pending = run_store.find_resumable(tmp_path)
     assert [item.id for item in pending] == [record.id]
@@ -128,8 +131,8 @@ def test_a_run_that_failed_is_still_resumable(tmp_path: Path):
     record = _create(tmp_path)
     first = record.steps[0]
     first.status = DONE
-    run_store.save_step(record.id, first)
-    run_store.update_run(record.id, status="failed")
+    store_step(record.id, first)
+    store_run_status(record.id, "failed")
 
     pending = run_store.find_resumable(tmp_path)
     assert [item.id for item in pending] == [record.id]
@@ -150,3 +153,101 @@ def test_the_step_position_comes_from_the_record(tmp_path: Path):
     loaded = run_store.load_run(record.id)
     assert loaded is not None
     assert [step.position for step in loaded.steps] == [1000, 2000]
+
+
+def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
+    record = _create(tmp_path)
+    record.start_step("one").deliver()
+    record.start_step("two")
+    record.work_in(worktree_path="/tmp/wt", branch="pulse/demo-1")
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert (loaded.current_step, loaded.worktree_path, loaded.branch) == (
+        "two",
+        "/tmp/wt",
+        "pulse/demo-1",
+    )
+    assert [step.status for step in loaded.steps] == [DONE, RUNNING]
+
+
+def test_save_deletes_the_step_a_fan_out_replaced(tmp_path: Path):
+    record = _create(tmp_path)
+    record.expand_step(
+        "two",
+        [
+            StepRecord(step_id="two:T1", position=3, label="T1"),
+            StepRecord(step_id="two:T2", position=4, label="T2"),
+        ],
+    )
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert [step.step_id for step in loaded.steps] == ["one", "two:T1", "two:T2"]
+    assert record.removed_step_ids() == frozenset()
+
+
+def test_save_persists_the_time_the_step_owns(tmp_path: Path):
+    """Wait and carried time live on the step, so saving the run must write them."""
+    record = _create(tmp_path)
+    step = record.steps[0]
+    step.add_wait(42.0)
+    step.carried_seconds = 15.0
+
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id)
+    assert loaded is not None
+    assert loaded.steps[0].waiting_seconds == 42.0
+    assert loaded.steps[0].carried_seconds == 15.0
+
+
+def _write_stamps(run_id: str, step_id: str, started_at: str, ended_at: str) -> None:
+    """Leave the stamps as an older Pulse (or a hand edit) wrote them."""
+    connection = connect()
+    try:
+        connection.execute(
+            "UPDATE run_steps SET started_at = ?, ended_at = ? WHERE run_id = ? AND step_id = ?",
+            (started_at, ended_at, run_id, step_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_step_stamps_round_trip_as_utc_datetimes(tmp_path: Path):
+    record = _create(tmp_path)
+    started = record.start_step("one").started_at
+    record.steps[0].deliver()
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert (loaded.started_at, loaded.ended_at) == (started, record.steps[0].ended_at)
+    assert loaded.started_at.tzinfo is not None
+    assert loaded.ended_at >= loaded.started_at
+
+
+def test_a_stored_stamp_without_a_timezone_loads_as_utc(tmp_path: Path):
+    record = _create(tmp_path)
+    _write_stamps(record.id, "one", "2026-10-01T10:00:00", "2026-10-01T10:05:00")
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert loaded.started_at == datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    assert loaded.round_seconds() == 300.0
+
+
+def test_an_empty_or_corrupt_stored_stamp_loads_as_no_stamp(tmp_path: Path):
+    """A bad stamp must not crash history; the step just has no measured time."""
+    record = _create(tmp_path)
+    _write_stamps(record.id, "one", "", "não é data")
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert (loaded.started_at, loaded.ended_at) == (None, None)
+    assert loaded.elapsed_seconds() is None

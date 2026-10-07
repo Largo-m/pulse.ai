@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, store_step
 
 from pulse.orchestrator.engine import _release_step
 from pulse.runcontrol import RUN_STOPPED, RunControl
@@ -39,7 +39,7 @@ def _run(tmp_path) -> tuple[run_store.RunRecord, StepRecord]:
     )
     step = record.steps[0]
     step.status = RUNNING
-    run_store.save_step(record.id, step)
+    store_step(record.id, step)
     return record, step
 
 
@@ -64,7 +64,7 @@ def test_settled_step_is_not_reopened_by_stop(tmp_path):
     runner = _FakeRunner(control)
     record, step = _run(tmp_path)
     step.status = "done"
-    run_store.save_step(record.id, step)
+    store_step(record.id, step)
 
     _release_step(runner, run=record, record=step, label="Um")
 

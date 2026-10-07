@@ -147,7 +147,7 @@ run_workflow(workflow_id, user_prompt, …)
        ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
        ├─ classify_outcome(…)          approve | adjust | skip | cancel
        ├─ parse_outcome(…)             done | blocked  (step sem aprovação)
-       └─ save_step(status, summary)   desfecho no banco
+       └─ record.deliver()/block()…   desfecho no agregado → save(run)
 ```
 
 ### Sessão ACP isolada por step
@@ -282,7 +282,8 @@ ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
   o evento `run.awaiting` vai pelo barramento para toda tela anexada;
 * o cronômetro do step congela, e o tempo esperado é somado em
   `run_steps.waiting_seconds` — a duração que a sidebar e o histórico mostram é
-  sempre `ended_at - started_at - waiting_seconds`. Sem esse desconto, uma
+  sempre `ended_at - started_at - waiting_seconds` (`StepRecord.elapsed_seconds()`,
+  somando as voltas de um laço). Sem esse desconto, uma
   aprovação deixada para o dia seguinte aparecia como um step de doze horas;
 * a Home anuncia a sessão no painel de avisos, com a mesma lista que o
   `pulse daemon status` imprime.
@@ -290,7 +291,12 @@ ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
 O ponto único onde isso é observado é
 [`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
 `PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
-caminho de pergunta que escape da contagem.
+caminho de pergunta que escape da contagem. O runner não grava nada: avisa a
+porta `UserWaitListener` ([`pulse/ports.py`](pulse/ports.py)), e o motor liga a
+ela o [`RunWaits`](pulse/orchestrator/waits.py), que aplica a intenção no
+agregado (`run.await_input()` e `run.end_wait(step_id, segundos)`) e salva a
+run inteira. Uma run que terminou com a pergunta aberta (parar) mantém o fim que
+teve — fechar a pergunta não a devolve a `running`.
 
 **O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
 veto a terminal são regra, e regra o Pulse aplica onde a run roda:
@@ -349,7 +355,10 @@ artefatos reaponta sozinho para o diretório certo.
 branch onde foi escrito. Sai pelo detalhe do histórico (`w`), ou junto quando a
 run é apagada, e em nenhum dos dois com `--force`: worktree com mudança não
 commitada é mantido, porque quem apaga uma linha do histórico não está pedindo
-para jogar trabalho fora. A branch sempre fica.
+para jogar trabalho fora. A branch sempre fica. Enquanto o daemon executa a
+run, o `w` não remove: o agente trabalha ali, e é o daemon quem salva o
+agregado. O histórico só limpa a coluna do caminho (`run_store.clear_worktree`),
+nunca grava a run inteira por cima do que o daemon acabou de salvar.
 
 O git falado aqui é o CLI por `subprocess`, em [`pulse/vcs/`](pulse/vcs/).
 Leitura nunca levanta (sem git no PATH, a sessão só fica sem branch); só

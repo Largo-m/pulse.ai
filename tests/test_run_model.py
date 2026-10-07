@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from pulse.daemon.runs import RunState
@@ -9,6 +11,7 @@ from pulse.domain.run import (
     RunStatus,
     StepRecord,
     StepStatus,
+    fan_out_child_id,
 )
 from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
 
@@ -98,15 +101,15 @@ def test_an_empty_session_id_keeps_the_previous_one():
 
 @pytest.mark.parametrize("status", [StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED])
 def test_release_returns_an_interrupted_step_to_pending(status: StepStatus):
-    step = StepRecord(step_id="one", status=status, ended_at="2026-01-01T00:00:00+00:00")
+    step = StepRecord(step_id="one", status=status, ended_at=datetime(2026, 1, 1, tzinfo=UTC))
 
     assert step.release() is True
     assert step.status == StepStatus.PENDING
-    assert step.ended_at == ""
+    assert step.ended_at is None
 
 
 def test_release_leaves_a_settled_step_alone():
-    step = StepRecord(step_id="one", status=StepStatus.DONE, ended_at="x")
+    step = StepRecord(step_id="one", status=StepStatus.DONE, ended_at=datetime(2026, 1, 1, tzinfo=UTC))
 
     assert step.release() is False
     assert step.status == StepStatus.DONE
@@ -119,18 +122,41 @@ def test_reopening_a_round_clears_the_attempt_and_counts_only_on_the_opener():
     other = _running("fix")
     other.deliver()
 
-    opener.reopen_round(carried_seconds=12.5, opener=True)
-    other.reopen_round(carried_seconds=3.0, opener=False)
+    opener.reopen_round(opener=True)
+    other.reopen_round(opener=False)
 
     assert (opener.rounds, other.rounds) == (2, 1)
     assert opener.status == StepStatus.PENDING
-    assert (opener.summary, opener.acp_session_id, opener.started_at) == ("", "", "")
-    assert opener.carried_seconds == 12.5
+    assert (opener.summary, opener.acp_session_id) == ("", "")
+    assert (opener.started_at, opener.ended_at) == (None, None)
+
+
+def test_each_round_carries_its_net_time_into_the_next():
+    """A round of 10min with 4min waiting adds 6min; the wait does not follow the step."""
+    step = StepRecord(
+        step_id="review",
+        status=StepStatus.DONE,
+        started_at=datetime(2026, 10, 1, 10, 0, tzinfo=UTC),
+        ended_at=datetime(2026, 10, 1, 10, 10, tzinfo=UTC),
+        waiting_seconds=240.0,
+        carried_seconds=60.0,
+    )
+
+    step.reopen_round(opener=True)
+
+    assert step.carried_seconds == 60.0 + 360.0
+    assert step.waiting_seconds == 0.0
+
+
+def test_a_round_that_never_ran_carries_nothing():
+    step = StepRecord(step_id="fix", carried_seconds=30.0)
+    step.reopen_round(opener=False)
+    assert step.carried_seconds == 30.0
 
 
 def test_a_running_step_cannot_be_reopened():
     with pytest.raises(InvalidTransition):
-        _running().reopen_round(carried_seconds=0.0, opener=True)
+        _running().reopen_round(opener=True)
 
 
 def test_closing_with_the_loop_depends_on_whether_the_step_ran_before():
@@ -143,14 +169,118 @@ def test_closing_with_the_loop_depends_on_whether_the_step_ran_before():
     assert (ran.status, never.status) == (StepStatus.DONE, StepStatus.SKIPPED)
 
 
-def test_begin_step_points_the_run_at_a_known_step():
+def test_start_step_points_the_run_at_the_step_and_starts_it():
     run = _run(StepRecord(step_id="one"))
 
-    run.begin_step("one")
+    started = run.start_step("one")
 
+    assert started is run.step("one")
     assert (run.status, run.current_step) == (RunStatus.RUNNING, "one")
+    assert started.status == StepStatus.RUNNING
+
+
+def test_an_unknown_step_cannot_start():
+    run = _run(StepRecord(step_id="one"))
+
     with pytest.raises(InvalidTransition):
-        run.begin_step("ghost")
+        run.start_step("ghost")
+    assert (run.status, run.current_step) == (RunStatus.PENDING, "")
+
+
+def test_a_step_cannot_start_while_another_is_running():
+    """One ACP session per step: two running steps would share nobody's session."""
+    run = _run(StepRecord(step_id="one"), StepRecord(step_id="two"))
+    run.start_step("one")
+
+    with pytest.raises(InvalidTransition):
+        run.start_step("two")
+    assert run.current_step == "one"
+    assert run.step("two").status == StepStatus.PENDING
+
+
+def test_a_retry_starts_the_same_step_again():
+    run = _run(StepRecord(step_id="one"))
+    run.start_step("one").fail()
+
+    run.start_step("one")
+
+    assert run.step("one").status == StepStatus.RUNNING
+
+
+def test_ending_a_wait_charges_the_step_and_resumes_the_run():
+    run = _run(StepRecord(step_id="one"))
+    run.start_step("one")
+    run.await_input()
+
+    run.end_wait("one", 30.0)
+
+    assert run.status == RunStatus.RUNNING
+    assert run.step("one").waiting_seconds == 30.0
+
+
+def test_a_wait_without_a_step_only_resumes_the_run():
+    """The resume menu asks before any step exists."""
+    run = _run(StepRecord(step_id="one"))
+    run.start_step("one")
+    run.await_input()
+
+    run.end_wait("ghost", 30.0)
+
+    assert run.status == RunStatus.RUNNING
+    assert run.step("one").waiting_seconds == 0.0
+
+
+def test_reopening_a_loop_counts_the_round_only_on_the_opener():
+    run = _run(_running("review"), StepRecord(step_id="fix"), StepRecord(step_id="after"))
+    run.step("review").deliver()
+
+    run.reopen_loop(["review", "fix", "ghost"], opener_id="review")
+
+    assert [step.status for step in run.steps] == [StepStatus.PENDING] * 3
+    assert (run.step("review").rounds, run.step("fix").rounds) == (2, 1)
+    assert run.step("after").rounds == 1
+
+
+@pytest.mark.parametrize(
+    ("opener_rounds", "status"), [(1, StepStatus.SKIPPED), (2, StepStatus.DONE)]
+)
+def test_closing_a_loop_settles_what_is_left_by_whether_the_opener_ran_before(
+    opener_rounds: int, status: StepStatus
+):
+    """Steps that ran in an earlier round delivered something; ones that never ran did not."""
+    run = _run(
+        StepRecord(step_id="review", status=StepStatus.DONE, rounds=opener_rounds),
+        StepRecord(step_id="fix"),
+        StepRecord(step_id="check", status=StepStatus.SKIPPED),
+    )
+
+    run.close_loop(["fix", "check", "ghost"], opener_id="review")
+
+    assert run.step("fix").status == status
+    assert run.step("check").status == StepStatus.SKIPPED, "a settled step is left alone"
+
+
+def test_elapsed_is_none_until_a_round_closes():
+    assert StepRecord(step_id="one").elapsed_seconds() is None
+    assert _running().elapsed_seconds() is None
+
+
+def test_elapsed_sums_the_carried_rounds_and_the_closed_one_minus_waits():
+    start = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    step = StepRecord(
+        step_id="review",
+        status=StepStatus.DONE,
+        started_at=start,
+        ended_at=start + timedelta(minutes=10),
+        waiting_seconds=240.0,
+        carried_seconds=60.0,
+    )
+
+    assert step.elapsed_seconds() == 60.0 + 360.0
+
+
+def test_elapsed_of_an_open_round_is_what_earlier_rounds_carried():
+    assert StepRecord(step_id="one", carried_seconds=30.0).elapsed_seconds() == 30.0
 
 
 def test_a_run_completes_only_when_every_step_settled():
@@ -188,9 +318,8 @@ def test_a_crash_fails_only_the_running_steps():
     done.deliver()
     run = _run(running, done)
 
-    failed = run.fail_running_steps()
+    run.fail_running_steps()
 
-    assert failed == [running]
     assert (running.status, done.status) == (StepStatus.FAILED, StepStatus.DONE)
 
 
@@ -213,3 +342,163 @@ def test_daemon_run_state_finishes_once_with_the_mapped_status():
     assert (state.status, state.exit_code, state.is_active()) == (RunStatus.BLOCKED, RUN_BLOCKED, False)
     with pytest.raises(RuntimeError):
         state.finish(0)
+
+
+def test_add_step_keeps_the_step_the_run_already_had():
+    known = StepRecord(step_id="one", status=StepStatus.DONE)
+    run = _run(known)
+
+    assert run.add_step(StepRecord(step_id="one")) is known
+    assert run.add_step(StepRecord(step_id="two")).step_id == "two"
+    assert [step.step_id for step in run.steps] == ["one", "two"]
+
+
+def test_expand_step_puts_the_children_where_the_base_was():
+    run = _run(StepRecord(step_id="a"), StepRecord(step_id="fan"), StepRecord(step_id="z"))
+
+    run.expand_step("fan", [StepRecord(step_id="fan:1"), StepRecord(step_id="fan:2")])
+
+    assert [step.step_id for step in run.steps] == ["a", "fan:1", "fan:2", "z"]
+    assert run.removed_step_ids() == {"fan"}
+
+
+def test_expanding_again_on_resume_keeps_the_children_it_has():
+    done = StepRecord(step_id="fan:1", status=StepStatus.DONE)
+    run = _run(done, StepRecord(step_id="fan:2"))
+
+    run.expand_step("fan", [StepRecord(step_id="fan:1"), StepRecord(step_id="fan:2")])
+
+    assert run.steps[0] is done
+    assert len(run.steps) == 2
+    assert run.removed_step_ids() == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("status", "settled", "ended"),
+    [
+        (StepStatus.PENDING, False, False),
+        (StepStatus.RUNNING, False, False),
+        (StepStatus.DONE, True, True),
+        (StepStatus.SKIPPED, True, True),
+        (StepStatus.FAILED, False, True),
+        (StepStatus.BLOCKED, False, True),
+    ],
+)
+def test_settled_and_ended_split_the_statuses(status: StepStatus, settled: bool, ended: bool):
+    step = StepRecord(step_id="one", status=status)
+
+    assert (step.settled, step.has_ended) == (settled, ended)
+
+
+def test_history_steps_share_the_domain_rule_for_settled():
+    from pulse.history.models import HistoryStep
+
+    assert HistoryStep(id="a", label="A", status=StepStatus.SKIPPED).settled
+    assert not HistoryStep(id="b", label="B", status=StepStatus.BLOCKED).settled
+
+
+def test_only_positive_waits_come_off_the_step():
+    """A clock glitch must never add agent time back by subtracting a negative wait."""
+    step = _running()
+    step.add_wait(30.0)
+    step.add_wait(12.5)
+    step.add_wait(0.0)
+    step.add_wait(-5.0)
+    assert step.waiting_seconds == 42.5
+
+
+def test_only_a_running_run_waits_for_input_and_only_a_waiting_one_resumes():
+    run = _run(StepRecord(step_id="one"))
+    assert run.await_input() is False, "a run that has not begun a step is not paused on anyone"
+    assert run.status == RunStatus.PENDING
+
+    run.start_step("one")
+    assert run.await_input() is True
+    assert run.status == RunStatus.AWAITING_INPUT
+    assert run.await_input() is False, "a nested question is the same wait"
+
+    assert run.resume_work() is True
+    assert run.status == RunStatus.RUNNING
+    assert run.resume_work() is False
+
+
+def test_a_run_that_ended_during_a_question_keeps_its_ending():
+    """Stopping while a question is open used to flip the run back to `running` when it closed."""
+    run = _run(StepRecord(step_id="one"))
+    run.start_step("one")
+    run.await_input()
+    run.end(RUN_STOPPED)
+
+    assert run.resume_work() is False
+    assert run.status == RunStatus.STOPPED
+
+
+def _settled(step_id: str, summary: str, *, skip: bool = False) -> StepRecord:
+    step = _running(step_id)
+    step.record_reply(session_id="", summary=summary)
+    if skip:
+        step.skip()
+    else:
+        step.deliver()
+    return step
+
+
+def test_the_previous_delivery_is_the_last_settled_step_with_a_summary():
+    blocked = _running("check")
+    blocked.record_reply(session_id="", summary="não consegui")
+    blocked.block()
+    run = _run(
+        _settled("plan", "plano"),
+        _settled("spec", "", skip=True),
+        blocked,
+        StepRecord(step_id="build"),
+    )
+
+    previous = run.previous_delivery("build")
+
+    assert previous is not None
+    assert previous.step_id == "plan", "a blocked text is not a delivery, an empty skip says nothing"
+
+
+def test_a_resumed_fan_out_still_sees_the_step_that_listed_the_items():
+    """The scan stops at the first child, not at a base step the run no longer has."""
+    run = _run(
+        _settled("plan", "```pulse:items\nT1: um\n```"),
+        _settled(fan_out_child_id("build", "T1"), "feito T1"),
+        StepRecord(step_id=fan_out_child_id("build", "T2")),
+    )
+
+    previous = run.previous_delivery("build")
+
+    assert previous is not None
+    assert previous.step_id == "plan"
+
+
+def test_fan_out_siblings_are_the_children_of_the_same_step():
+    run = _run(
+        StepRecord(step_id="plan"),
+        StepRecord(step_id=fan_out_child_id("build", "T1")),
+        StepRecord(step_id=fan_out_child_id("build", "T2")),
+        StepRecord(step_id=fan_out_child_id("buildx", "T1")),
+    )
+
+    siblings = run.fan_out_siblings(fan_out_child_id("build", "T2"))
+
+    assert [step.step_id for step in siblings] == ["build:T1", "build:T2"]
+    assert run.fan_out_siblings("plan") == []
+
+
+def test_step_ids_by_status_groups_every_step_in_run_order():
+    run = _run(
+        StepRecord(step_id="a", status=StepStatus.DONE),
+        StepRecord(step_id="b", status=StepStatus.BLOCKED),
+        StepRecord(step_id="c", status=StepStatus.DONE),
+        StepRecord(step_id="d"),
+    )
+
+    grouped = run.step_ids_by_status()
+
+    assert grouped[StepStatus.DONE] == ["a", "c"]
+    assert grouped[StepStatus.BLOCKED] == ["b"]
+    assert grouped[StepStatus.PENDING] == ["d"]
+    assert grouped[StepStatus.FAILED] == [], "every status is present, even when empty"

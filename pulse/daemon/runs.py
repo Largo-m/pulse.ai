@@ -31,7 +31,6 @@ class RunState:
     exit_code: int | None = None
     bus: EventBus = field(default_factory=EventBus)
     correlator: PromptCorrelator | None = None
-    cancel_requested: bool = False
     control: RunControl | None = None
     resume_run_id: str | None = None
     started_at: float = field(default_factory=time.time)
@@ -189,7 +188,6 @@ class RunManager:
         state = self.get(run_id)
         if state is None:
             return False
-        state.cancel_requested = True
         if state.correlator is not None:
             state.correlator.cancel_all()
         if state.control is not None:

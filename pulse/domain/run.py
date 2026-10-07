@@ -68,25 +68,24 @@ class RunStatus(StrEnum):
 
 
 SETTLED = frozenset({StepStatus.DONE, StepStatus.SKIPPED})
+ENDED = SETTLED | {StepStatus.FAILED, StepStatus.BLOCKED}
 _INTERRUPTED = frozenset({StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED})
+
+
+FAN_OUT_SEPARATOR = ":"
+
+
+def fan_out_child_id(base_step_id: str, item_id: str) -> str:
+    """Id of the step a fan-out runs for one item: `review:T1` for `review`."""
+    return f"{base_step_id}{FAN_OUT_SEPARATOR}{item_id}"
 
 
 class InvalidTransition(RuntimeError):
     """A status change the run or step does not allow from its current state."""
 
 
-def utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
-
-
-def net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
-    """Wall time minus wait; zero when the round has no recorded start and end."""
-    try:
-        start = datetime.fromisoformat(started_at)
-        end = datetime.fromisoformat(ended_at)
-    except ValueError:
-        return 0.0
-    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(microsecond=0)
 
 
 @dataclass
@@ -98,8 +97,8 @@ class StepRecord:
     status: StepStatus = StepStatus.PENDING
     summary: str = ""
     acp_session_id: str = ""
-    started_at: str = ""
-    ended_at: str = ""
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     waiting_seconds: float = 0.0
     rounds: int = 1
     carried_seconds: float = 0.0
@@ -107,6 +106,31 @@ class StepRecord:
     @property
     def settled(self) -> bool:
         return self.status in SETTLED
+
+    @property
+    def has_ended(self) -> bool:
+        """Settled, or its last attempt failed or blocked: it has a closed attempt to show."""
+        return self.status in ENDED
+
+    def round_seconds(self) -> float | None:
+        """Net time of the current round (wall time minus wait); `None` while it is open."""
+        if self.started_at is None or self.ended_at is None:
+            return None
+        wall = (self.ended_at - self.started_at).total_seconds()
+        return max(0.0, wall - max(0.0, self.waiting_seconds))
+
+    def elapsed_seconds(self) -> float | None:
+        """Net time across loop rounds; `None` when no round has closed yet."""
+        current = self.round_seconds()
+        if current is None:
+            return self.carried_seconds or None
+        return self.carried_seconds + current
+
+    def add_wait(self, seconds: float) -> None:
+        """Time spent waiting for the user: it comes off the step's duration."""
+        if seconds <= 0:
+            return
+        self.waiting_seconds += seconds
 
     def start(self) -> None:
         """Begin an attempt. Retries keep the first `started_at` of the round."""
@@ -166,24 +190,24 @@ class StepRecord:
         if self.status not in _INTERRUPTED:
             return False
         self.status = StepStatus.PENDING
-        self.ended_at = ""
+        self.ended_at = None
         return True
 
-    def reopen_round(self, *, carried_seconds: float, opener: bool) -> None:
-        """Start a new loop round on the same row.
+    def reopen_round(self, *, opener: bool) -> None:
+        """Start a new loop round on the same row; the opener counts the rounds.
 
-        `carried_seconds` is the net time of all previous rounds; the opener is
-        the step that counts the rounds.
+        The round's net time (wall time minus wait) moves to `carried_seconds`
+        before its start and end are cleared, so panel and history show the sum.
         """
         self._require_not({StepStatus.RUNNING}, "reopen")
         if opener:
             self.rounds += 1
-        self.carried_seconds = carried_seconds
+        self.carried_seconds += self.round_seconds() or 0.0
         self.waiting_seconds = 0.0
         self.status = StepStatus.PENDING
         self.summary = ""
-        self.started_at = ""
-        self.ended_at = ""
+        self.started_at = None
+        self.ended_at = None
         self.acp_session_id = ""
 
     def close_with_loop(self, *, ran_before: bool) -> None:
@@ -223,6 +247,7 @@ class RunRecord:
     worktree_path: str = ""
     branch: str = ""
     steps: list[StepRecord] = field(default_factory=list)
+    _removed: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
 
     @property
     def exec_root(self) -> str:
@@ -235,21 +260,150 @@ class RunRecord:
                 return item
         return None
 
+    def previous_delivery(self, step_id: str) -> StepRecord | None:
+        """The last step before this one that settled with a summary.
+
+        Failed or blocked steps are excluded so their text is not passed on as a
+        delivery. The scan stops at the step or its first fan-out child, so a
+        resumed fan-out still sees the step that listed the items.
+        """
+        children = f"{step_id}{FAN_OUT_SEPARATOR}"
+        previous: StepRecord | None = None
+        for item in self.steps:
+            if item.step_id == step_id or item.step_id.startswith(children):
+                break
+            if item.summary and item.settled:
+                previous = item
+        return previous
+
+    def fan_out_siblings(self, child_id: str) -> list[StepRecord]:
+        """Every step the same fan-out produced, in run order, `child_id` included."""
+        base, separator, _item = child_id.rpartition(FAN_OUT_SEPARATOR)
+        if not separator:
+            return []
+        prefix = f"{base}{FAN_OUT_SEPARATOR}"
+        return [item for item in self.steps if item.step_id.startswith(prefix)]
+
     def next_pending(self) -> StepRecord | None:
         for item in self.steps:
             if not item.settled:
                 return item
         return None
 
+    def step_ids_by_status(self) -> dict[StepStatus, list[str]]:
+        """Step ids per status, in run order; every status is a key."""
+        grouped: dict[StepStatus, list[str]] = {status: [] for status in StepStatus}
+        for item in self.steps:
+            grouped[item.status].append(item.step_id)
+        return grouped
+
     def is_incomplete(self) -> bool:
         return any(not item.settled for item in self.steps)
 
-    def begin_step(self, step_id: str) -> None:
-        """Point the run at the step about to execute."""
-        if self.step(step_id) is None:
+    def add_step(self, record: StepRecord) -> StepRecord:
+        """Append a step the run did not know yet; returns the one it already had."""
+        existing = self.step(record.step_id)
+        if existing is not None:
+            return existing
+        self.steps.append(record)
+        self._removed.discard(record.step_id)
+        return record
+
+    def expand_step(self, step_id: str, children: list[StepRecord]) -> None:
+        """Replace a fan-out step with one child per item, in its place.
+
+        Children already present (a resumed fan-out) are kept as they are.
+        """
+        at = len(self.steps)
+        base = self.step(step_id)
+        if base is not None:
+            at = self.steps.index(base)
+            self.steps.remove(base)
+            self._removed.add(step_id)
+        for offset, child in enumerate(children):
+            if self.step(child.step_id) is None:
+                self.steps.insert(at + offset, child)
+                self._removed.discard(child.step_id)
+
+    def removed_step_ids(self) -> frozenset[str]:
+        """Steps dropped since the last save, which storage must delete."""
+        return frozenset(self._removed)
+
+    def forget_removed_steps(self) -> None:
+        """Called by storage once the deletions are committed."""
+        self._removed.clear()
+
+    def work_in(self, *, worktree_path: str, branch: str) -> None:
+        """Where the agent works for this run: a worktree, or the root when empty."""
+        self.worktree_path = worktree_path
+        self.branch = branch
+
+    def await_input(self) -> bool:
+        """A question is open: the run is alive but paused on the user.
+
+        Only a running run waits. A question outside it (the resume menu) leaves
+        the status alone. Returns whether anything changed.
+        """
+        if self.status != RunStatus.RUNNING:
+            return False
+        self.status = RunStatus.AWAITING_INPUT
+        return True
+
+    def resume_work(self) -> bool:
+        """The question was answered and the run is working again.
+
+        A run that ended while the question was open (a stop) keeps its ending.
+        Returns whether anything changed.
+        """
+        if self.status != RunStatus.AWAITING_INPUT:
+            return False
+        self.status = RunStatus.RUNNING
+        return True
+
+    def start_step(self, step_id: str) -> StepRecord:
+        """Run this step now; a retry starts the same step again.
+
+        One step runs at a time: each has its own ACP session.
+        """
+        record = self.step(step_id)
+        if record is None:
             raise InvalidTransition(f"run {self.id}: unknown step {step_id}")
+        running = [item.step_id for item in self.steps if item.status == StepStatus.RUNNING]
+        if running and running != [step_id]:
+            raise InvalidTransition(f"run {self.id}: cannot start {step_id} while {running} runs")
+        record.start()
         self.status = RunStatus.RUNNING
         self.current_step = step_id
+        return record
+
+    def end_wait(self, step_id: str, seconds: float) -> None:
+        """The user answered: the wait comes off the step and the run works again.
+
+        A wait with no step (the resume menu) only resumes the run.
+        """
+        record = self.step(step_id)
+        if record is not None:
+            record.add_wait(seconds)
+        self.resume_work()
+
+    def reopen_loop(self, step_ids: list[str], *, opener_id: str) -> None:
+        """Start another loop round on these steps; only the opener counts it."""
+        for step_id in step_ids:
+            record = self.step(step_id)
+            if record is not None:
+                record.reopen_round(opener=step_id == opener_id)
+
+    def close_loop(self, step_ids: list[str], *, opener_id: str) -> None:
+        """Settle the loop's remaining steps without running them.
+
+        Whether they delivered before depends on the opener having run more than one round.
+        """
+        opener = self.step(opener_id)
+        ran_before = opener is not None and opener.rounds > 1
+        for step_id in step_ids:
+            record = self.step(step_id)
+            if record is not None and not record.settled:
+                record.close_with_loop(ran_before=ran_before)
 
     def complete(self) -> None:
         """Every step settled; the workflow is over."""
@@ -263,9 +417,8 @@ class RunRecord:
             raise InvalidTransition(f"run {self.id}: a clean exit must go through complete()")
         self.status = RunStatus.for_exit_code(exit_code)
 
-    def fail_running_steps(self) -> list[StepRecord]:
-        """Fail the steps a crash left `running`; returns them so they can be saved."""
-        running = [item for item in self.steps if item.status == StepStatus.RUNNING]
-        for item in running:
-            item.fail()
-        return running
+    def fail_running_steps(self) -> None:
+        """Fail the steps a crash left `running`."""
+        for item in self.steps:
+            if item.status == StepStatus.RUNNING:
+                item.fail()

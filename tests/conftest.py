@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from pulse.store import runs as run_store
+from pulse.store.runs import RunStatus, StepRecord
 from pulse.store.workflow_defs import AgentDef, StepDef, WorkflowDef, save_agent, save_workflow
 
 
@@ -56,3 +58,19 @@ def make_workflow(
 @pytest.fixture
 def demo_workflow() -> WorkflowDef:
     return make_workflow()
+
+
+def store_step(run_id: str, step: StepRecord) -> None:
+    """Fixture shortcut: write one step of a stored run as a past execution left it."""
+    record = run_store.load_run(run_id)
+    assert record is not None, run_id
+    record.steps = [step if item.step_id == step.step_id else item for item in record.steps]
+    run_store.save(record)
+
+
+def store_run_status(run_id: str, status: str) -> None:
+    """Fixture shortcut: leave a stored run in `status`, as the daemon would."""
+    record = run_store.load_run(run_id)
+    assert record is not None, run_id
+    record.status = RunStatus(status)
+    run_store.save(record)
