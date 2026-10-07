@@ -185,6 +185,8 @@ def _resolve_run(
     if resume_run_id:
         existing = run_store.load_run(resume_run_id)
         if existing is not None:
+            # A killed daemon leaves its step `running`; one step runs at a time.
+            existing.fail_running_steps()
             return existing
     return run_store.create_run(
         run_id=run_id or str(uuid.uuid4()),

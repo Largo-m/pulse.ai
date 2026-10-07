@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, store_step
 
 from pulse.domain import run as run_model
 from pulse.orchestrator import engine
@@ -685,6 +685,52 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
     assert code == 0
     assert len(second.prompts) == 1, "the already-finished step does not run again"
     assert len(run_store.list_runs(tmp_path)) == 1, "resuming does not create another run"
+
+
+def test_resuming_after_a_crash_reruns_the_step_it_left_running(
+    wired, monkeypatch, tmp_path: Path
+):
+    """A killed daemon leaves its step `running`; only one step may run at a time.
+
+    Resume must release that step, or a step added to the workflow before it
+    can never start and the whole resume fails.
+    """
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
+    first = _Runner([_approved(), {"approved": False, "outcome": "continue"}])
+    first._prompt_handler.choice = "stop"
+    _install(monkeypatch, first)
+    run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=first._stream,
+        prompt_handler=first._prompt_handler,
+        render_header=False,
+    )
+    crashed = run_store.list_runs(tmp_path)[0]
+    two = crashed.step("two")
+    two.status = run_model.StepStatus.RUNNING
+    store_step(crashed.id, two)
+
+    make_workflow("demo", steps=[("one", "Um"), ("new", "Novo"), ("two", "Dois")])
+    second = _Runner([_approved(), _approved()])
+    _install(monkeypatch, second)
+    code = run_workflow(
+        workflow_id="demo",
+        user_prompt="x",
+        stream=second._stream,
+        prompt_handler=second._prompt_handler,
+        render_header=False,
+        resume_run_id=crashed.id,
+    )
+
+    assert code == 0
+    resumed = run_store.load_run(crashed.id)
+    assert {step.step_id: step.status for step in resumed.steps} == {
+        "one": "done",
+        "new": "done",
+        "two": "done",
+    }
+    assert len(second.prompts) == 2, "the new step and the interrupted one run; `one` does not"
 
 
 def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Path):
