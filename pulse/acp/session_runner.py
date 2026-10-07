@@ -21,8 +21,13 @@ from pulse.prompts.permission import PermissionPolicy, decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
 from pulse.runcontrol import RunControl
 
+# An agent that asks until no doubt is left needs room; the cap only stops an
+# endless question loop, and hitting it sends the step to the retry menu.
 MAX_PHASE_APPROVAL_TURNS = 12
 
+# The work plus one continuation, the agent's chance to unblock itself. An agent
+# that repeats the block after one nudge needs a person; more turns only burn
+# tokens to reach the same menu.
 MAX_PROMPT_TURNS = 2
 
 CANCEL_GRACE_SECONDS = 10.0

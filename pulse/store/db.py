@@ -186,11 +186,19 @@ def default_db_path() -> Path:
 ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "fan_out", "INTEGER NOT NULL DEFAULT 0"),
     ("workflow_defs", "default_prompt", "TEXT NOT NULL DEFAULT ''"),
+    # On for existing databases too: steps that settled as `done` just by ending
+    # the turn are exactly the ones that must now declare their outcome.
     ("workflow_steps", "requires_outcome", "INTEGER NOT NULL DEFAULT 1"),
+    # An old run cannot tell how much of its time was waiting; zero is what it showed.
     ("run_steps", "waiting_seconds", "REAL NOT NULL DEFAULT 0"),
+    # Off for existing databases: a worktree changes where the agent writes, and
+    # that must never start happening because of an upgrade.
     ("project_settings", "use_worktree", "INTEGER NOT NULL DEFAULT 0"),
+    # Empty is the truth for an old run: it ran in the project root, branch unknown.
     ("runs", "worktree_path", "TEXT NOT NULL DEFAULT ''"),
     ("runs", "branch", "TEXT NOT NULL DEFAULT ''"),
+    # No step repeated before; a loop switched on by an upgrade would change the
+    # cost of every run.
     ("workflow_steps", "repeat_from", "TEXT NOT NULL DEFAULT ''"),
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
     ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
