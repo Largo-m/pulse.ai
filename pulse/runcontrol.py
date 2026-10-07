@@ -29,30 +29,24 @@ class RunControl:
         self._on_change = on_change
 
     @property
-    def stopped(self) -> bool:
-        return self._stopped
-
-    @property
     def interrupted(self) -> bool:
         """A stop was requested; the in-flight turn must be cancelled."""
         return self._stopped
 
     def stop(self) -> bool:
+        """Request the stop; `False` when it was already requested.
+
+        The state changes before `on_change` runs, so a failing listener cannot
+        leave the run going.
+        """
         with self._lock:
             if self._stopped:
                 return False
             self._stopped = True
-        self._emit(STOPPED)
+        if self._on_change is not None:
+            self._on_change(STOPPED)
         return True
 
     def checkpoint(self) -> bool:
         """Cut point between steps. `False` when the run must not continue."""
         return not self._stopped
-
-    def _emit(self, kind: str) -> None:
-        if self._on_change is None:
-            return
-        try:
-            self._on_change(kind)
-        except Exception:
-            pass
