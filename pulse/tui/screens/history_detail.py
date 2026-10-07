@@ -251,9 +251,6 @@ def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
     """
     if not item.is_incomplete:
         return None
-    done = sum(1 for step in item.steps if step.status in {"done", "skipped"})
-    current = next(
-        (step.label for step in item.steps if step.status not in {"done", "skipped"}),
-        "—",
-    )
+    done = sum(1 for step in item.steps if step.settled)
+    current = next((step.label for step in item.steps if not step.settled), "—")
     return item.run_id, f"{current} · steps {done}/{len(item.steps)}"

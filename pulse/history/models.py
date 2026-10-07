@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from pulse.domain.run import SETTLED
 from pulse.status_labels import status_label
 
 
@@ -25,6 +26,10 @@ class HistoryStep:
     label: str
     status: str
     acp_session_id: str = ""
+
+    @property
+    def settled(self) -> bool:
+        return self.status in SETTLED
 
 
 @dataclass
@@ -66,4 +71,4 @@ class HistoryItem:
             return False
         if not self.steps:
             return self.status is HistoryStatus.PENDING or self.status in LIVE_STATUSES
-        return any(step.status not in {"done", "skipped"} for step in self.steps)
+        return any(not step.settled for step in self.steps)

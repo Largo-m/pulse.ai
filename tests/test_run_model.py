@@ -242,3 +242,27 @@ def test_expanding_again_on_resume_keeps_the_children_it_has():
     assert run.steps[0] is done
     assert len(run.steps) == 2
     assert run.removed_step_ids() == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("status", "settled", "ended"),
+    [
+        (StepStatus.PENDING, False, False),
+        (StepStatus.RUNNING, False, False),
+        (StepStatus.DONE, True, True),
+        (StepStatus.SKIPPED, True, True),
+        (StepStatus.FAILED, False, True),
+        (StepStatus.BLOCKED, False, True),
+    ],
+)
+def test_settled_and_ended_split_the_statuses(status: StepStatus, settled: bool, ended: bool):
+    step = StepRecord(step_id="one", status=status)
+
+    assert (step.settled, step.has_ended) == (settled, ended)
+
+
+def test_history_steps_share_the_domain_rule_for_settled():
+    from pulse.history.models import HistoryStep
+
+    assert HistoryStep(id="a", label="A", status="skipped").settled
+    assert not HistoryStep(id="b", label="B", status="blocked").settled

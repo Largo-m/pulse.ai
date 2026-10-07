@@ -15,17 +15,18 @@ from pathlib import Path
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
+from pulse.store.runs import StepStatus
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
 
 _NO_LOGS = "Nenhum log persistido para esta run."
 _STEP_TO_PHASE = {
-    "pending": PhaseStatus.PENDING,
-    "running": PhaseStatus.RUNNING,
-    "done": PhaseStatus.DONE,
-    "skipped": PhaseStatus.SKIPPED,
-    "failed": PhaseStatus.FAILED,
-    "blocked": PhaseStatus.BLOCKED,
+    StepStatus.PENDING: PhaseStatus.PENDING,
+    StepStatus.RUNNING: PhaseStatus.RUNNING,
+    StepStatus.DONE: PhaseStatus.DONE,
+    StepStatus.SKIPPED: PhaseStatus.SKIPPED,
+    StepStatus.FAILED: PhaseStatus.FAILED,
+    StepStatus.BLOCKED: PhaseStatus.BLOCKED,
 }
 
 
@@ -105,13 +106,9 @@ def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> 
     record = run_store.load_run(run_id)
     if record is None:
         return
-    settled = {
-        step.step_id
-        for step in record.steps
-        if step.status in {"done", "skipped", "failed", "blocked"}
-    }
+    ended = {step.step_id for step in record.steps if step.has_ended}
     logged = {entry.phase_id for entry in state.entries if entry.phase_id}
-    missing = settled - logged
+    missing = ended - logged
     if not missing:
         return
     restored = [

@@ -465,6 +465,6 @@ class CockpitScreen(Screen[None]):
 
 def _run_summary(record) -> str:
     """Where the run stopped, for the resume choice screen."""
-    done = sum(1 for step in record.steps if step.status in {"done", "skipped"})
+    done = sum(1 for step in record.steps if step.settled)
     current = record.current_step or (record.steps[0].step_id if record.steps else "—")
     return f"{current} · steps {done}/{len(record.steps)}"

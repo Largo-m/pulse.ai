@@ -11,16 +11,17 @@ from pathlib import Path
 from pulse import vcs
 from pulse.history.models import LIVE_STATUSES, HistoryItem, HistoryStatus, HistoryStep
 from pulse.store import runs as run_store
+from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow
 
 _RUN_TO_HISTORY = {
-    "pending": HistoryStatus.PENDING,
-    "running": HistoryStatus.IN_PROGRESS,
-    "awaiting_input": HistoryStatus.AWAITING_INPUT,
-    "completed": HistoryStatus.DONE,
-    "failed": HistoryStatus.FAILED,
-    "stopped": HistoryStatus.STOPPED,
-    "blocked": HistoryStatus.BLOCKED,
+    RunStatus.PENDING: HistoryStatus.PENDING,
+    RunStatus.RUNNING: HistoryStatus.IN_PROGRESS,
+    RunStatus.AWAITING_INPUT: HistoryStatus.AWAITING_INPUT,
+    RunStatus.COMPLETED: HistoryStatus.DONE,
+    RunStatus.FAILED: HistoryStatus.FAILED,
+    RunStatus.STOPPED: HistoryStatus.STOPPED,
+    RunStatus.BLOCKED: HistoryStatus.BLOCKED,
 }
 
 

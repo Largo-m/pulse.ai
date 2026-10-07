@@ -68,6 +68,7 @@ class RunStatus(StrEnum):
 
 
 SETTLED = frozenset({StepStatus.DONE, StepStatus.SKIPPED})
+ENDED = SETTLED | {StepStatus.FAILED, StepStatus.BLOCKED}
 _INTERRUPTED = frozenset({StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED})
 
 
@@ -107,6 +108,11 @@ class StepRecord:
     @property
     def settled(self) -> bool:
         return self.status in SETTLED
+
+    @property
+    def has_ended(self) -> bool:
+        """Settled, or its last attempt failed or blocked: it has a closed attempt to show."""
+        return self.status in ENDED
 
     def start(self) -> None:
         """Begin an attempt. Retries keep the first `started_at` of the round."""
