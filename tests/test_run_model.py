@@ -266,3 +266,39 @@ def test_history_steps_share_the_domain_rule_for_settled():
 
     assert HistoryStep(id="a", label="A", status="skipped").settled
     assert not HistoryStep(id="b", label="B", status="blocked").settled
+
+
+def test_only_positive_waits_come_off_the_step():
+    """A clock glitch must never add agent time back by subtracting a negative wait."""
+    step = _running()
+    step.add_wait(30.0)
+    step.add_wait(12.5)
+    step.add_wait(0.0)
+    step.add_wait(-5.0)
+    assert step.waiting_seconds == 42.5
+
+
+def test_only_a_running_run_waits_for_input_and_only_a_waiting_one_resumes():
+    run = _run(StepRecord(step_id="one"))
+    assert run.await_input() is False, "a run that has not begun a step is not paused on anyone"
+    assert run.status == RunStatus.PENDING
+
+    run.begin_step("one")
+    assert run.await_input() is True
+    assert run.status == RunStatus.AWAITING_INPUT
+    assert run.await_input() is False, "a nested question is the same wait"
+
+    assert run.resume_work() is True
+    assert run.status == RunStatus.RUNNING
+    assert run.resume_work() is False
+
+
+def test_a_run_that_ended_during_a_question_keeps_its_ending():
+    """Stopping while a question is open used to flip the run back to `running` when it closed."""
+    run = _run(StepRecord(step_id="one"))
+    run.begin_step("one")
+    run.await_input()
+    run.end(RUN_STOPPED)
+
+    assert run.resume_work() is False
+    assert run.status == RunStatus.STOPPED

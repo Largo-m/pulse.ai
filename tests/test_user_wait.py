@@ -10,8 +10,12 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import threading
+
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.history.events import PhaseItem, PhaseStatus
+from pulse.orchestrator.waits import RunWaits
+from pulse.runcontrol import RUN_STOPPED
 from pulse.store import runs as run_store
 from pulse.store.runs import AWAITING_INPUT, RUNNING, RunStatus, StepRecord
 from pulse.tui.hydrate import _stamp_elapsed
@@ -85,24 +89,49 @@ def test_stopping_a_waiting_run_clears_the_wait():
     assert state.phases[0].status == PhaseStatus.PENDING
 
 
-def test_waiting_seconds_accumulate_and_survive_save_step():
+def test_waits_accumulate_on_the_step_and_survive_a_save():
     run = _run_with_step()
-    step = run.steps[0]
-    run_store.save_step(run.id, step)
+    run.begin_step("one")
+    waits = RunWaits(run)
 
-    run_store.add_waiting_seconds(run.id, step.step_id, 30.0)
-    run_store.add_waiting_seconds(run.id, step.step_id, 12.5)
+    waits.user_wait_ended("one", 30.0)
+    waits.user_wait_ended("one", 12.5)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 42.5
 
-    step.status = "done"
-    run_store.save_step(run.id, step)
+    run.steps[0].start()
+    run.steps[0].deliver()
+    run_store.save(run)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 42.5
 
 
-def test_waiting_is_ignored_for_a_step_that_is_not_there():
+def test_a_wait_for_a_step_that_is_not_there_charges_nobody():
+    """The resume menu asks before any step runs."""
     run = _run_with_step()
-    run_store.add_waiting_seconds(run.id, "fantasma", 10.0)
+    RunWaits(run).user_wait_ended("fantasma", 10.0)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 0.0
+
+
+def test_concurrent_waits_lose_no_time():
+    """Waits close on the ACP reader, the MCP bridge and the engine thread alike."""
+    run = _run_with_step()
+    run.begin_step("one")
+    waits = RunWaits(run)
+    workers = 8
+    start = threading.Barrier(workers)
+
+    def close_one() -> None:
+        start.wait()
+        for _ in range(25):
+            waits.user_wait_ended("one", 1.0)
+
+    threads = [threading.Thread(target=close_one) for _ in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert run.steps[0].waiting_seconds == workers * 25
+    assert run_store.load_run(run.id).steps[0].waiting_seconds == workers * 25
 
 
 def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
@@ -137,8 +166,8 @@ def test_history_duration_discounts_the_wait():
     step.started_at = "2026-10-01T10:00:00+00:00"
     step.ended_at = "2026-10-01T10:10:00+00:00"
     step.status = "done"
-    run_store.save_step(run.id, step)
-    run_store.add_waiting_seconds(run.id, step.step_id, 540.0)
+    step.add_wait(540.0)
+    run_store.save(run)
 
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.DONE)]
@@ -193,15 +222,16 @@ def test_a_policy_decision_never_touches_the_run_status():
     """Each tool call in an `auto_approve` step used to store `awaiting_input` then
     `running`, making the run flicker in Home and history."""
     run = _run_with_step()
-    run_store.save_step(run.id, run.steps[0])
+    run.begin_step("one")
+    run_store.save(run)
     port, _correlator, _bus = _port_and_bus()
     runner = port._on_enter.__self__
-    runner.bind_run(run.id)
-    run_store.update_run(run.id, status=RunStatus.BLOCKED)
+    runner.bind_run(run.id, RunWaits(run))
 
     port.respond_to_permission(_permission(), policy="auto_approve")
 
-    assert run_store.load_run(run.id).status == RunStatus.BLOCKED
+    assert run.status == RunStatus.RUNNING
+    assert run_store.load_run(run.id).status == RunStatus.RUNNING
 
 
 def test_the_terminal_veto_is_decided_without_asking_anyone():
@@ -309,21 +339,80 @@ def test_a_question_inside_another_is_one_wait_only():
     assert len(port.asked) == 2
 
 
-def test_the_wait_lands_on_the_bound_run_and_step():
+class _StatusProbe(_Port):
+    """Port that reads the stored run status while its question is open."""
+
+    def __init__(self, run_id: str) -> None:
+        super().__init__()
+        self._run_id = run_id
+        self.seen: list[str] = []
+
+    def ask_text(self, prompt: str, *, title: str = "") -> str:
+        self.seen.append(run_store.load_run(self._run_id).status)
+        return "ok"
+
+
+def _bound(run: run_store.RunRecord, port: _Port) -> AcpSessionRunner:
+    runner = _runner(_Sink(), port)
+    runner.bind_run(run.id, RunWaits(run))
+    runner._phase_id = run.steps[0].step_id
+    return runner
+
+
+def test_the_wait_lands_on_the_bound_run_and_step(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     run = _run_with_step()
-    run_store.save_step(run.id, run.steps[0])
-    sink = _Sink()
-    runner = _runner(sink, _Port())
-    runner.bind_run(run.id)
-    runner._phase_id = "one"
+    run.begin_step("one")
+    run_store.save(run)
 
-    runner._begin_user_wait()
-    assert run_store.load_run(run.id).status == AWAITING_INPUT
-    runner._end_user_wait()
+    class _SlowAnswer(_StatusProbe):
+        def ask_text(self, prompt: str, *, title: str = "") -> str:
+            clock[0] += 90.0
+            return super().ask_text(prompt, title=title)
 
+    port = _SlowAnswer(run.id)
+    _bound(run, port)._prompt_handler.ask_text("e agora?")
+
+    assert port.seen == [AWAITING_INPUT], "Home and history must see the run waiting"
     record = run_store.load_run(run.id)
     assert record.status == RUNNING
-    assert record.steps[0].waiting_seconds >= 0.0
+    assert record.steps[0].waiting_seconds == 90.0
+
+
+def test_a_wait_that_closes_after_a_stop_keeps_the_run_stopped():
+    """The stop ends the run while the question is still on screen."""
+    run = _run_with_step()
+    run.begin_step("one")
+    run_store.save(run)
+
+    class _StopWhileAsking(_Port):
+        def ask_text(self, prompt: str, *, title: str = "") -> str:
+            run.end(RUN_STOPPED)
+            run_store.save(run)
+            return ""
+
+    _bound(run, _StopWhileAsking())._prompt_handler.ask_text("e agora?")
+
+    assert run_store.load_run(run.id).status == RunStatus.STOPPED
+
+
+def test_a_wait_the_run_cannot_record_still_answers_the_agent():
+    """Recording the wait is bookkeeping; losing it must not lose the user's answer."""
+
+    class _Broken:
+        def user_wait_began(self) -> None:
+            raise OSError("disk full")
+
+        def user_wait_ended(self, step_id: str, seconds: float) -> None:
+            raise OSError("disk full")
+
+    sink = _Sink()
+    runner = _runner(sink, _Port())
+    runner.bind_run("", _Broken())
+
+    assert runner._prompt_handler.ask_text("e agora?") == "ok"
+    assert sink.events == ["begin", "end"]
 
 
 def test_the_wait_travels_from_the_runner_to_the_screen():

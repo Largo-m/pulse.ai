@@ -168,9 +168,9 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
             agent_id="tester",
             status="running",
             started_at=(now - timedelta(seconds=300)).isoformat(),
+            waiting_seconds=240.0,
         ),
     )
-    run_store.add_waiting_seconds("run-wait", "one", 240.0)
 
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])

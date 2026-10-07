@@ -37,6 +37,7 @@ from pulse.orchestrator.prompts import (
     guidance_block,
     outcome_protocol,
 )
+from pulse.orchestrator.waits import RunWaits
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import CANCEL, SKIP, format_summary
 from pulse.prompts.permission import PermissionPolicy
@@ -148,7 +149,7 @@ def run_workflow(
         runtime=runtime,
         control=control,
     )
-    runner.bind_run(run.id)
+    runner.bind_run(run.id, RunWaits(run))
 
     try:
         return _execute(

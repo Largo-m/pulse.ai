@@ -114,6 +114,12 @@ class StepRecord:
         """Settled, or its last attempt failed or blocked: it has a closed attempt to show."""
         return self.status in ENDED
 
+    def add_wait(self, seconds: float) -> None:
+        """Time spent waiting for the user: it comes off the step's duration."""
+        if seconds <= 0:
+            return
+        self.waiting_seconds += seconds
+
     def start(self) -> None:
         """Begin an attempt. Retries keep the first `started_at` of the round."""
         self._require_not(SETTLED, "start")
@@ -288,6 +294,28 @@ class RunRecord:
         """Where the agent works for this run: a worktree, or the root when empty."""
         self.worktree_path = worktree_path
         self.branch = branch
+
+    def await_input(self) -> bool:
+        """A question is open: the run is alive but paused on the user.
+
+        Only a running run waits. A question outside it (the resume menu) leaves
+        the status alone. Returns whether anything changed.
+        """
+        if self.status != RunStatus.RUNNING:
+            return False
+        self.status = RunStatus.AWAITING_INPUT
+        return True
+
+    def resume_work(self) -> bool:
+        """The question was answered and the run is working again.
+
+        A run that ended while the question was open (a stop) keeps its ending.
+        Returns whether anything changed.
+        """
+        if self.status != RunStatus.AWAITING_INPUT:
+            return False
+        self.status = RunStatus.RUNNING
+        return True
 
     def begin_step(self, step_id: str) -> None:
         """Point the run at the step about to execute."""

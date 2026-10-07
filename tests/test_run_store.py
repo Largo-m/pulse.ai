@@ -189,13 +189,16 @@ def test_save_deletes_the_step_a_fan_out_replaced(tmp_path: Path):
     assert record.removed_step_ids() == frozenset()
 
 
-def test_save_leaves_the_wait_time_to_the_store(tmp_path: Path):
-    """The session runner adds wait time straight to the DB; a stale record must not erase it."""
+def test_save_persists_the_time_the_step_owns(tmp_path: Path):
+    """Wait and carried time live on the step, so saving the run must write them."""
     record = _create(tmp_path)
-    run_store.add_waiting_seconds(record.id, "one", 42.0)
+    step = record.steps[0]
+    step.add_wait(42.0)
+    step.carried_seconds = 15.0
 
     run_store.save(record)
 
     loaded = run_store.load_run(record.id)
     assert loaded is not None
     assert loaded.steps[0].waiting_seconds == 42.0
+    assert loaded.steps[0].carried_seconds == 15.0

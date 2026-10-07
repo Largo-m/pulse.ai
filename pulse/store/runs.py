@@ -226,8 +226,6 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
 
     Writes the run row, deletes the steps it dropped and upserts every step, so
     a crash never leaves the run and its steps out of step with each other.
-    `waiting_seconds` and `carried_seconds` are left to `add_waiting_seconds`
-    and `carry_round`, which own them.
     """
     connection = connect(db_path or default_db_path())
     try:
@@ -295,15 +293,17 @@ def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
         INSERT INTO run_steps
           (run_id, step_id, position, label, agent_id,
            status, summary, acp_session_id, started_at, ended_at, waiting_seconds,
-           rounds)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           rounds, carried_seconds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(run_id, step_id) DO UPDATE SET
           status = excluded.status,
           summary = excluded.summary,
           acp_session_id = excluded.acp_session_id,
           started_at = excluded.started_at,
           ended_at = excluded.ended_at,
-          rounds = excluded.rounds
+          waiting_seconds = excluded.waiting_seconds,
+          rounds = excluded.rounds,
+          carried_seconds = excluded.carried_seconds
         """,
         (
             run_id,
@@ -318,36 +318,9 @@ def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
             step.ended_at,
             step.waiting_seconds,
             step.rounds,
+            step.carried_seconds,
         ),
     )
-
-
-def add_waiting_seconds(
-    run_id: str,
-    step_id: str,
-    seconds: float,
-    *,
-    db_path: Path | None = None,
-) -> None:
-    """Add user wait time to the step (accumulates across multiple waits).
-
-    A step not yet in the table is silently ignored: waits can happen before
-    the step is first saved (e.g. the resume menu).
-    """
-    if not run_id or not step_id or seconds <= 0:
-        return
-    connection = connect(db_path or default_db_path())
-    try:
-        connection.execute(
-            """
-            UPDATE run_steps SET waiting_seconds = waiting_seconds + ?
-            WHERE run_id = ? AND step_id = ?
-            """,
-            (float(seconds), run_id, step_id),
-        )
-        connection.commit()
-    finally:
-        connection.close()
 
 
 def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:

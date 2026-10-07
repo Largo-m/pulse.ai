@@ -290,7 +290,12 @@ ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
 O ponto único onde isso é observado é
 [`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
 `PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
-caminho de pergunta que escape da contagem.
+caminho de pergunta que escape da contagem. O runner não grava nada: avisa a
+porta `UserWaitListener` ([`pulse/ports.py`](pulse/ports.py)), e o motor liga a
+ela o [`RunWaits`](pulse/orchestrator/waits.py), que aplica a intenção no
+agregado (`run.await_input()`, `step.add_wait()`, `run.resume_work()`) e salva a
+run inteira. Uma run que terminou com a pergunta aberta (parar) mantém o fim que
+teve — fechar a pergunta não a devolve a `running`.
 
 **O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
 veto a terminal são regra, e regra o Pulse aplica onde a run roda:

@@ -69,7 +69,7 @@ class _Runner:
         self.closed = False
         self.revivals = 0
 
-    def bind_run(self, run_id: str) -> None:
+    def bind_run(self, run_id: str, waits: object = None) -> None:
         self.run_id = run_id
 
     def start(self) -> None:
