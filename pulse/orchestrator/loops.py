@@ -11,9 +11,6 @@ from dataclasses import dataclass
 from pulse.store import runs as run_store
 from pulse.store.workflow_defs import WorkflowDef
 
-REPEAT = "repeat"
-CLOSE = "close"
-
 
 @dataclass(frozen=True)
 class Loop:

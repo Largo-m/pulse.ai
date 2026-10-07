@@ -28,8 +28,8 @@ from pulse.orchestrator.cli_output import (
     print_workflow_result,
 )
 from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
-from pulse.orchestrator.loops import CLOSE, REPEAT, close_loop, find_loops, repeat_loop
-from pulse.orchestrator.outcome import MISSING, Outcome, parse_outcome
+from pulse.orchestrator.loops import close_loop, find_loops, repeat_loop
+from pulse.orchestrator.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.orchestrator.prompts import (
     build_continuation_prompt,
     build_outcome_reminder_prompt,
@@ -344,13 +344,13 @@ def _execute(
                     run_store.save(run)
                     return exit_code
 
-                if signal == CLOSE and opens_loop:
+                if signal == LoopSignal.CLOSE and opens_loop:
                     index = close_loop(run, definition, loops[at])
                     _sync_steps(runner, run)
                     _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
-                if signal == REPEAT and at in loops and loops[at].end == at:
+                if signal == LoopSignal.REPEAT and at in loops and loops[at].end == at:
                     target, message = repeat_loop(run, definition, loops[at], record.label)
                     _notify(runner, message)
                     if target is not None:
@@ -379,11 +379,11 @@ def _run_step(
     fallback_model: str | None,
     item: Item | None = None,
     may_close: bool = False,
-) -> tuple[int, str]:
-    """`(exit code, outcome)`; `REPEAT` and `CLOSE` drive the loop."""
+) -> tuple[int, LoopSignal | None]:
+    """`(exit code, loop signal)`; how the step ended is in `record.status`."""
     guidance = ""
     while True:
-        outcome, reason = _attempt_step(
+        signal, reason = _attempt_step(
             runner=runner,
             cockpit=cockpit,
             run=run,
@@ -396,14 +396,15 @@ def _run_step(
             item=item,
             may_close=may_close,
         )
-        if outcome in {DONE, SKIPPED, REPEAT, CLOSE}:
-            return 0, outcome
+        if record.settled:
+            return 0, signal
 
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED, FAILED
+            return RUN_STOPPED, None
 
-        if outcome == BLOCKED:
+        blocked = record.status == BLOCKED
+        if blocked:
             choice, guidance = _offer_blocked(
                 runner, f"{record.label} está bloqueado", reason
             )
@@ -411,22 +412,22 @@ def _run_step(
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED, FAILED
+            return RUN_STOPPED, None
 
-        if outcome == BLOCKED:
+        if blocked:
             if choice == "skip":
                 record.skip_blocked()
                 run_store.save(run)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
-                return 0, SKIPPED
+                return 0, None
             if choice != "retry":
                 _close_after_menu(run, record)
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
-                return RUN_BLOCKED, BLOCKED
+                return RUN_BLOCKED, None
         elif choice != "retry":
             _close_after_menu(run, record)
-            return 1, FAILED
+            return 1, None
         _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
@@ -447,7 +448,9 @@ def _attempt_step(
     guidance: str,
     item: Item | None = None,
     may_close: bool = False,
-) -> tuple[str, str]:
+) -> tuple[LoopSignal | None, str]:
+    """`(loop signal, reason)`. How the attempt ended is the step's status;
+    `reason` explains a failure or a block to the person deciding what next."""
     record.start()
     run_store.save(run)
 
@@ -456,7 +459,7 @@ def _attempt_step(
         prompt_text = render(step.prompt_template, _context(run, step, exec_dir, item))
     except TemplateError as error:
         _fail(run, record)
-        return FAILED, str(error)
+        return None, str(error)
     if instructions:
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
@@ -493,7 +496,7 @@ def _attempt_step(
             )
     except Exception as error:  # noqa: BLE001
         _fail(run, record)
-        return FAILED, _session_error(error)
+        return None, _session_error(error)
 
     agent_text = str(result.get("phaseSummary", ""))
     record.record_reply(
@@ -503,27 +506,27 @@ def _attempt_step(
     outcome = str(result.get("outcome", ""))
     if outcome in {CANCEL, "cancelled"} or result.get("stopReason") == "cancelled":
         _fail(run, record)
-        return FAILED, "step cancelado"
+        return None, "step cancelado"
 
     if outcome == SKIP:
         record.skip()
         run_store.save(run)
         if not cockpit:
             print_workflow_result(f"⏭  {record.label} pulado")
-        return SKIPPED, ""
+        return None, ""
 
     if may_close and not result.get("approved") and parse_outcome(agent_text).closes:
-        return _settle(run, record, cockpit, CLOSE)
+        return _settle(run, record, cockpit, LoopSignal.CLOSE)
 
     if step.requires_approval and not bool(result.get("approved")):
         _fail(run, record)
         if not str(result.get("approvalAnswers", "")).strip():
-            return FAILED, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
-        return FAILED, "step não aprovado"
+            return None, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
+        return None, "step não aprovado"
 
     if not step.requires_approval and not _prompt_succeeded(result):
         _fail(run, record)
-        return FAILED, str(result.get("stopReason") or "o agente não concluiu o step")
+        return None, str(result.get("stopReason") or "o agente não concluiu o step")
 
     repeats = False
     if declares_outcome:
@@ -532,20 +535,20 @@ def _attempt_step(
             return _block(run, record, _blocked_reason(declared))
         repeats = bool(step.repeat_from) and declared.repeats
         if may_close and declared.closes:
-            return _settle(run, record, cockpit, CLOSE)
+            return _settle(run, record, cockpit, LoopSignal.CLOSE)
 
-    return _settle(run, record, cockpit, REPEAT if repeats else DONE)
+    return _settle(run, record, cockpit, LoopSignal.REPEAT if repeats else None)
 
 
 def _settle(
-    run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
-) -> tuple[str, str]:
-    """Record the step as delivered and return the outcome to the engine loop."""
+    run: run_store.RunRecord, record: StepRecord, cockpit: bool, signal: LoopSignal | None
+) -> tuple[LoopSignal | None, str]:
+    """Record the step as delivered and pass the agent's loop signal on."""
     record.deliver()
     run_store.save(run)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
-    return outcome, ""
+    return signal, ""
 
 
 def _unblock_continuation(step: StepDef) -> Callable[..., str]:
@@ -564,7 +567,7 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
         if declared.delivered:
             return ""
         spent = True
-        if declared.status == MISSING:
+        if declared.status == OutcomeStatus.MISSING:
             return build_outcome_reminder_prompt(step_id=step.step_id)
         if declared.needs_user:
             return ""
@@ -574,7 +577,7 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
 
 
 def _blocked_reason(declared: Outcome) -> str:
-    if declared.status == MISSING:
+    if declared.status == OutcomeStatus.MISSING:
         return (
             "o agente encerrou sem declarar o desfecho do step — "
             "não dá para afirmar que ele entregou o que o step pede"
@@ -582,11 +585,13 @@ def _blocked_reason(declared: Outcome) -> str:
     return declared.reason or "o agente declarou bloqueio sem dizer o motivo"
 
 
-def _block(run: run_store.RunRecord, record: StepRecord, reason: str) -> tuple[str, str]:
+def _block(
+    run: run_store.RunRecord, record: StepRecord, reason: str
+) -> tuple[LoopSignal | None, str]:
     """Record the step as blocked: it ran, did not crash, did not deliver."""
     record.block()
     run_store.save(run)
-    return BLOCKED, reason
+    return None, reason
 
 
 def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
