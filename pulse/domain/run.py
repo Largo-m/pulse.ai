@@ -360,10 +360,6 @@ class RunRecord:
         self.status = RunStatus.RUNNING
         return True
 
-    def drop_worktree(self) -> None:
-        """The worktree directory is gone; the branch stays, it still holds the work."""
-        self.worktree_path = ""
-
     def start_step(self, step_id: str) -> StepRecord:
         """Run this step now; a retry starts the same step again.
 
@@ -421,9 +417,8 @@ class RunRecord:
             raise InvalidTransition(f"run {self.id}: a clean exit must go through complete()")
         self.status = RunStatus.for_exit_code(exit_code)
 
-    def fail_running_steps(self) -> list[StepRecord]:
-        """Fail the steps a crash left `running`; returns them so they can be saved."""
-        running = [item for item in self.steps if item.status == StepStatus.RUNNING]
-        for item in running:
-            item.fail()
-        return running
+    def fail_running_steps(self) -> None:
+        """Fail the steps a crash left `running`."""
+        for item in self.steps:
+            if item.status == StepStatus.RUNNING:
+                item.fail()

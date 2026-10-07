@@ -318,9 +318,8 @@ def test_a_crash_fails_only_the_running_steps():
     done.deliver()
     run = _run(running, done)
 
-    failed = run.fail_running_steps()
+    run.fail_running_steps()
 
-    assert failed == [running]
     assert (running.status, done.status) == (StepStatus.FAILED, StepStatus.DONE)
 
 
@@ -432,14 +431,6 @@ def test_a_run_that_ended_during_a_question_keeps_its_ending():
 
     assert run.resume_work() is False
     assert run.status == RunStatus.STOPPED
-
-
-def test_dropping_the_worktree_keeps_the_branch():
-    run = _run()
-    run.work_in(worktree_path="/wt/run-1", branch="pulse/demo-run-1")
-    run.drop_worktree()
-    assert (run.worktree_path, run.branch) == ("", "pulse/demo-run-1")
-    assert run.exec_root == "/tmp"
 
 
 def _settled(step_id: str, summary: str, *, skip: bool = False) -> StepRecord:
