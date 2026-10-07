@@ -8,6 +8,7 @@ stored duration, and the run is listed as `awaiting_input`.
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import threading
@@ -92,7 +93,7 @@ def test_stopping_a_waiting_run_clears_the_wait():
 
 def test_waits_accumulate_on_the_step_and_survive_a_save():
     run = _run_with_step()
-    run.begin_step("one")
+    run.start_step("one")
     waits = RunWaits(run)
 
     waits.user_wait_ended("one", 30.0)
@@ -115,7 +116,7 @@ def test_a_wait_for_a_step_that_is_not_there_charges_nobody():
 def test_concurrent_waits_lose_no_time():
     """Waits close on the ACP reader, the MCP bridge and the engine thread alike."""
     run = _run_with_step()
-    run.begin_step("one")
+    run.start_step("one")
     waits = RunWaits(run)
     workers = 8
     start = threading.Barrier(workers)
@@ -164,8 +165,8 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
 def test_history_duration_discounts_the_wait():
     run = _run_with_step()
     step = run.steps[0]
-    step.started_at = "2026-10-01T10:00:00+00:00"
-    step.ended_at = "2026-10-01T10:10:00+00:00"
+    step.started_at = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    step.ended_at = datetime(2026, 10, 1, 10, 10, tzinfo=UTC)
     step.status = "done"
     step.add_wait(540.0)
     run_store.save(run)
@@ -223,7 +224,7 @@ def test_a_policy_decision_never_touches_the_run_status():
     """Each tool call in an `auto_approve` step used to store `awaiting_input` then
     `running`, making the run flicker in Home and history."""
     run = _run_with_step()
-    run.begin_step("one")
+    run.start_step("one")
     run_store.save(run)
     port, _correlator, _bus = _port_and_bus()
     runner = port._on_enter.__self__
@@ -364,7 +365,7 @@ def test_the_wait_lands_on_the_bound_run_and_step(monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(time, "monotonic", lambda: clock[0])
     run = _run_with_step()
-    run.begin_step("one")
+    run.start_step("one")
     run_store.save(run)
 
     class _SlowAnswer(_StatusProbe):
@@ -384,7 +385,7 @@ def test_the_wait_lands_on_the_bound_run_and_step(monkeypatch):
 def test_a_wait_that_closes_after_a_stop_keeps_the_run_stopped():
     """The stop ends the run while the question is still on screen."""
     run = _run_with_step()
-    run.begin_step("one")
+    run.start_step("one")
     run_store.save(run)
 
     class _StopWhileAsking(_Port):
@@ -474,7 +475,7 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     run = _run_with_step()
     step = run.steps[0]
     step.status = RUNNING
-    step.started_at = (datetime.now(UTC) - timedelta(minutes=10)).replace(microsecond=0).isoformat()
+    step.started_at = (datetime.now(UTC) - timedelta(minutes=10)).replace(microsecond=0)
     store_step(run.id, step)
 
     state = CockpitState()

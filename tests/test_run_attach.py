@@ -118,8 +118,8 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
             label="Um",
             agent_id="tester",
             status="done",
-            started_at=(now - timedelta(seconds=90)).isoformat(),
-            ended_at=(now - timedelta(seconds=60)).isoformat(),
+            started_at=now - timedelta(seconds=90),
+            ended_at=now - timedelta(seconds=60),
         ),
     )
     store_step(
@@ -130,7 +130,7 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
             label="Dois",
             agent_id="tester",
             status="running",
-            started_at=(now - timedelta(seconds=45)).isoformat(),
+            started_at=now - timedelta(seconds=45),
         ),
     )
 
@@ -168,7 +168,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
             label="Um",
             agent_id="tester",
             status="running",
-            started_at=(now - timedelta(seconds=300)).isoformat(),
+            started_at=now - timedelta(seconds=300),
             waiting_seconds=240.0,
         ),
     )

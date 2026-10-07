@@ -287,8 +287,9 @@ para cada definition_step em definition.steps:
        ├─ record = run.step(step_id)  ← step novo na definição entra como pending
        ├─ record.status ∈ SETTLED?    ← done/skipped: pula (é isso que faz retomada)
        ├─ control.checkpoint()        ◄── PONTO DE CORTE do parar, nada em voo
-       ├─ run.begin_step(step_id); run_store.save(run)
-       ├─ _run_step(...)              ← tentativa + retry (§5)
+       ├─ _run_step(...)              ← tentativa + retry (§5); cada tentativa
+       │                                 abre com run.start_step(step_id), que
+       │                                 recusa um segundo step em execução
        ├─ _sync_steps()
        └─ exit_code ≠ 0 → grava status e sai
 

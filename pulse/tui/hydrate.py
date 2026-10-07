@@ -148,11 +148,9 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
     for phase in state.phases:
         if phase.status != PhaseStatus.RUNNING:
             continue
-        begin = _parse_stamp(started.get(phase.id, ""))
+        begin = started.get(phase.id)
         if begin is None:
             continue
-        if begin.tzinfo is None:
-            begin = begin.replace(tzinfo=UTC)
         spent = (now_wall - begin).total_seconds()
         if spent < 0:
             continue
@@ -171,48 +169,13 @@ def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
     record = run_store.load_run(run_id)
     if record is None:
         return
-    durations = {step.step_id: _step_seconds(step) for step in record.steps}
+    durations = {step.step_id: step.elapsed_seconds() for step in record.steps}
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
             phase.started_at = 0.0
             phase.ended_at = seconds
             phase.waiting_total = 0.0
-
-
-def _step_seconds(step: run_store.StepRecord) -> float | None:
-    """Step duration summed across loop iterations.
-
-    The current (or not yet started) iteration has no end stamp; time carried
-    from previous iterations still counts.
-    """
-    current = _seconds(step.started_at, step.ended_at, step.waiting_seconds)
-    carried = max(0.0, step.carried_seconds)
-    if current is None:
-        return carried or None
-    return carried + current
-
-
-def _seconds(started_at: str, ended_at: str, waiting_seconds: float = 0.0) -> float | None:
-    """Net step duration: wall time minus time spent waiting for the user.
-
-    Matches the discount applied by the live session."""
-    start = _parse_stamp(started_at)
-    end = _parse_stamp(ended_at)
-    if start is None or end is None:
-        return None
-    delta = (end - start).total_seconds() - max(0.0, waiting_seconds)
-    return delta if delta >= 0 else None
-
-
-def _parse_stamp(value: str) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
 
 
 _BODY_KINDS = frozenset({LogKind.ASSISTANT, LogKind.QUESTION, LogKind.ANSWER})

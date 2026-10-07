@@ -84,18 +84,8 @@ class InvalidTransition(RuntimeError):
     """A status change the run or step does not allow from its current state."""
 
 
-def utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat()
-
-
-def net_seconds(started_at: str, ended_at: str, waiting_seconds: float) -> float:
-    """Wall time minus wait; zero when the round has no recorded start and end."""
-    try:
-        start = datetime.fromisoformat(started_at)
-        end = datetime.fromisoformat(ended_at)
-    except ValueError:
-        return 0.0
-    return max(0.0, (end - start).total_seconds() - max(0.0, waiting_seconds))
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(microsecond=0)
 
 
 @dataclass
@@ -107,8 +97,8 @@ class StepRecord:
     status: StepStatus = StepStatus.PENDING
     summary: str = ""
     acp_session_id: str = ""
-    started_at: str = ""
-    ended_at: str = ""
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
     waiting_seconds: float = 0.0
     rounds: int = 1
     carried_seconds: float = 0.0
@@ -121,6 +111,20 @@ class StepRecord:
     def has_ended(self) -> bool:
         """Settled, or its last attempt failed or blocked: it has a closed attempt to show."""
         return self.status in ENDED
+
+    def round_seconds(self) -> float | None:
+        """Net time of the current round (wall time minus wait); `None` while it is open."""
+        if self.started_at is None or self.ended_at is None:
+            return None
+        wall = (self.ended_at - self.started_at).total_seconds()
+        return max(0.0, wall - max(0.0, self.waiting_seconds))
+
+    def elapsed_seconds(self) -> float | None:
+        """Net time across loop rounds; `None` when no round has closed yet."""
+        current = self.round_seconds()
+        if current is None:
+            return self.carried_seconds or None
+        return self.carried_seconds + current
 
     def add_wait(self, seconds: float) -> None:
         """Time spent waiting for the user: it comes off the step's duration."""
@@ -186,7 +190,7 @@ class StepRecord:
         if self.status not in _INTERRUPTED:
             return False
         self.status = StepStatus.PENDING
-        self.ended_at = ""
+        self.ended_at = None
         return True
 
     def reopen_round(self, *, opener: bool) -> None:
@@ -198,12 +202,12 @@ class StepRecord:
         self._require_not({StepStatus.RUNNING}, "reopen")
         if opener:
             self.rounds += 1
-        self.carried_seconds += net_seconds(self.started_at, self.ended_at, self.waiting_seconds)
+        self.carried_seconds += self.round_seconds() or 0.0
         self.waiting_seconds = 0.0
         self.status = StepStatus.PENDING
         self.summary = ""
-        self.started_at = ""
-        self.ended_at = ""
+        self.started_at = None
+        self.ended_at = None
         self.acp_session_id = ""
 
     def close_with_loop(self, *, ran_before: bool) -> None:
@@ -286,6 +290,13 @@ class RunRecord:
                 return item
         return None
 
+    def step_ids_by_status(self) -> dict[StepStatus, list[str]]:
+        """Step ids per status, in run order; every status is a key."""
+        grouped: dict[StepStatus, list[str]] = {status: [] for status in StepStatus}
+        for item in self.steps:
+            grouped[item.status].append(item.step_id)
+        return grouped
+
     def is_incomplete(self) -> bool:
         return any(not item.settled for item in self.steps)
 
@@ -353,12 +364,50 @@ class RunRecord:
         """The worktree directory is gone; the branch stays, it still holds the work."""
         self.worktree_path = ""
 
-    def begin_step(self, step_id: str) -> None:
-        """Point the run at the step about to execute."""
-        if self.step(step_id) is None:
+    def start_step(self, step_id: str) -> StepRecord:
+        """Run this step now; a retry starts the same step again.
+
+        One step runs at a time: each has its own ACP session.
+        """
+        record = self.step(step_id)
+        if record is None:
             raise InvalidTransition(f"run {self.id}: unknown step {step_id}")
+        running = [item.step_id for item in self.steps if item.status == StepStatus.RUNNING]
+        if running and running != [step_id]:
+            raise InvalidTransition(f"run {self.id}: cannot start {step_id} while {running} runs")
+        record.start()
         self.status = RunStatus.RUNNING
         self.current_step = step_id
+        return record
+
+    def end_wait(self, step_id: str, seconds: float) -> None:
+        """The user answered: the wait comes off the step and the run works again.
+
+        A wait with no step (the resume menu) only resumes the run.
+        """
+        record = self.step(step_id)
+        if record is not None:
+            record.add_wait(seconds)
+        self.resume_work()
+
+    def reopen_loop(self, step_ids: list[str], *, opener_id: str) -> None:
+        """Start another loop round on these steps; only the opener counts it."""
+        for step_id in step_ids:
+            record = self.step(step_id)
+            if record is not None:
+                record.reopen_round(opener=step_id == opener_id)
+
+    def close_loop(self, step_ids: list[str], *, opener_id: str) -> None:
+        """Settle the loop's remaining steps without running them.
+
+        Whether they delivered before depends on the opener having run more than one round.
+        """
+        opener = self.step(opener_id)
+        ran_before = opener is not None and opener.rounds > 1
+        for step_id in step_ids:
+            record = self.step(step_id)
+            if record is not None and not record.settled:
+                record.close_with_loop(ran_before=ran_before)
 
     def complete(self) -> None:
         """Every step settled; the workflow is over."""

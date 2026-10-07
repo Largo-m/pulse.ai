@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tests.conftest import store_step, store_run_status
 from pulse.store import runs as run_store
+from pulse.store.db import connect
 from pulse.store.runs import DONE, PENDING, RUNNING, SKIPPED, StepRecord
 
 
@@ -155,9 +157,8 @@ def test_the_step_position_comes_from_the_record(tmp_path: Path):
 
 def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
     record = _create(tmp_path)
-    record.begin_step("two")
-    record.steps[0].start()
-    record.steps[0].deliver()
+    record.start_step("one").deliver()
+    record.start_step("two")
     record.work_in(worktree_path="/tmp/wt", branch="pulse/demo-1")
 
     run_store.save(record)
@@ -169,7 +170,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
         "/tmp/wt",
         "pulse/demo-1",
     )
-    assert [step.status for step in loaded.steps] == [DONE, PENDING]
+    assert [step.status for step in loaded.steps] == [DONE, RUNNING]
 
 
 def test_save_deletes_the_step_a_fan_out_replaced(tmp_path: Path):
@@ -203,3 +204,50 @@ def test_save_persists_the_time_the_step_owns(tmp_path: Path):
     assert loaded is not None
     assert loaded.steps[0].waiting_seconds == 42.0
     assert loaded.steps[0].carried_seconds == 15.0
+
+
+def _write_stamps(run_id: str, step_id: str, started_at: str, ended_at: str) -> None:
+    """Leave the stamps as an older Pulse (or a hand edit) wrote them."""
+    connection = connect()
+    try:
+        connection.execute(
+            "UPDATE run_steps SET started_at = ?, ended_at = ? WHERE run_id = ? AND step_id = ?",
+            (started_at, ended_at, run_id, step_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_step_stamps_round_trip_as_utc_datetimes(tmp_path: Path):
+    record = _create(tmp_path)
+    started = record.start_step("one").started_at
+    record.steps[0].deliver()
+    run_store.save(record)
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert (loaded.started_at, loaded.ended_at) == (started, record.steps[0].ended_at)
+    assert loaded.started_at.tzinfo is not None
+    assert loaded.ended_at >= loaded.started_at
+
+
+def test_a_stored_stamp_without_a_timezone_loads_as_utc(tmp_path: Path):
+    record = _create(tmp_path)
+    _write_stamps(record.id, "one", "2026-10-01T10:00:00", "2026-10-01T10:05:00")
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert loaded.started_at == datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    assert loaded.round_seconds() == 300.0
+
+
+def test_an_empty_or_corrupt_stored_stamp_loads_as_no_stamp(tmp_path: Path):
+    """A bad stamp must not crash history; the step just has no measured time."""
+    record = _create(tmp_path)
+    _write_stamps(record.id, "one", "", "não é data")
+
+    loaded = run_store.load_run(record.id).steps[0]
+
+    assert (loaded.started_at, loaded.ended_at) == (None, None)
+    assert loaded.elapsed_seconds() is None

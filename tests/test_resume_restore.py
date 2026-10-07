@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 from tests.conftest import make_workflow, store_step
@@ -27,8 +28,8 @@ def _run_with_history(workspace: Path) -> str:
     )
     plan = record.steps[0]
     plan.status = DONE
-    plan.started_at = "2026-09-29T10:00:00+00:00"
-    plan.ended_at = "2026-09-29T10:02:30+00:00"
+    plan.started_at = datetime(2026, 9, 29, 10, 0, tzinfo=UTC)
+    plan.ended_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
     store_step(record.id, plan)
 
     run_store.record_event(
@@ -83,7 +84,7 @@ def test_a_step_interrupted_by_a_crash_comes_back_as_pending(tmp_path: Path):
     record = run_store.load_run(run_id)
     build = record.step("build")
     build.status = RUNNING
-    build.started_at = "2026-09-29T10:02:30+00:00"
+    build.started_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
     store_step(run_id, build)
 
     state = _state()

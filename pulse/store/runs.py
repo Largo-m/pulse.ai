@@ -11,6 +11,7 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,29 @@ def _root(workspace: str | Path) -> str:
     return str(Path(workspace).resolve())
 
 
+def _now_text() -> str:
+    return utc_now().isoformat()
+
+
+def _stamp(value: Any) -> datetime | None:
+    """Stamp read from storage; empty or unreadable is no stamp, naive is UTC.
+
+    Older rows were written by hand-rolled code; a bad value must not break history.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _stamp_text(value: datetime | None) -> str:
+    return value.isoformat() if value is not None else ""
+
+
 def _step(row: Any) -> StepRecord:
     return StepRecord(
         step_id=str(row["step_id"]),
@@ -68,8 +92,8 @@ def _step(row: Any) -> StepRecord:
         status=StepStatus.parse(str(row["status"] or "")),
         summary=str(row["summary"] or ""),
         acp_session_id=str(row["acp_session_id"] or ""),
-        started_at=str(row["started_at"] or ""),
-        ended_at=str(row["ended_at"] or ""),
+        started_at=_stamp(row["started_at"]),
+        ended_at=_stamp(row["ended_at"]),
         waiting_seconds=float(row["waiting_seconds"] or 0.0),
         rounds=int(row["rounds"] or 1),
         carried_seconds=float(row["carried_seconds"] or 0.0),
@@ -109,7 +133,7 @@ def create_run(
     steps: list[StepRecord],
     db_path: Path | None = None,
 ) -> RunRecord:
-    now = utc_now()
+    now = _now_text()
     connection = connect(db_path or default_db_path())
     try:
         connection.execute(
@@ -212,7 +236,7 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
             SET status = ?, current_step = ?, worktree_path = ?, branch = ?, updated_at = ?
             WHERE id = ?
             """,
-            (run.status, run.current_step, run.worktree_path, run.branch, utc_now(), run.id),
+            (run.status, run.current_step, run.worktree_path, run.branch, _now_text(), run.id),
         )
         connection.executemany(
             "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?",
@@ -253,8 +277,8 @@ def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
             step.status,
             step.summary,
             step.acp_session_id,
-            step.started_at,
-            step.ended_at,
+            _stamp_text(step.started_at),
+            _stamp_text(step.ended_at),
             step.waiting_seconds,
             step.rounds,
             step.carried_seconds,
@@ -322,7 +346,7 @@ def record_event(
                     title[:300],
                     detail[:MAX_DETAIL],
                     tool_id,
-                    utc_now(),
+                    _now_text(),
                 ),
             )
         connection.commit()
@@ -374,7 +398,7 @@ def record_artifact(
             VALUES (?, ?, ?, ?)
             ON CONFLICT(run_id, path) DO NOTHING
             """,
-            (run_id, path.strip(), step_id, utc_now()),
+            (run_id, path.strip(), step_id, _now_text()),
         )
         connection.commit()
     finally:

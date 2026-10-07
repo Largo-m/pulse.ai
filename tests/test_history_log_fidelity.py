@@ -28,7 +28,7 @@ from pulse.prompts.text_questionnaire import (
     parse_text_questionnaire,
 )
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
 
 
@@ -74,7 +74,7 @@ def _hydrated(workspace: Path, run_id: str = "run-1"):
         prompt="fazer algo",
         status=HistoryStatus.DONE,
         updated_at="2026-09-30T10:00:00+00:00",
-        steps=[HistoryStep(id="plan", label="Planejar", status="done")],
+        steps=[HistoryStep(id="plan", label="Planejar", status=StepStatus.DONE)],
     )
     return hydrate_history_item(item, workspace)
 

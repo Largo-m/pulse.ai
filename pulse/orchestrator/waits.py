@@ -27,8 +27,5 @@ class RunWaits:
     def user_wait_ended(self, step_id: str, seconds: float) -> None:
         """A wait before the step exists (the resume menu) only resumes the run."""
         with self._lock:
-            step = self._run.step(step_id)
-            if step is not None:
-                step.add_wait(seconds)
-            self._run.resume_work()
+            self._run.end_wait(step_id, seconds)
             run_store.save(self._run)
