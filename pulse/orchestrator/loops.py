@@ -78,17 +78,14 @@ def reopen_loop(
 
     Rounds reuse the same `step_id`s so the panel keeps one row per step. On the
     `last` round only the opener is reopened, so the closer never gets the final
-    word on its own fix. Elapsed time accumulates via [pulse.store.runs.carry_round].
+    word on its own fix. Elapsed time accumulates in each step's `carried_seconds`.
     """
     steps = definition.steps[loop.start : loop.start + 1 if last else loop.end + 1]
     for step in steps:
         record = run.step(step.step_id)
         if record is None:
             continue
-        record.reopen_round(
-            carried_seconds=run_store.carry_round(run.id, step.step_id),
-            opener=step.step_id == definition.steps[loop.start].step_id,
-        )
+        record.reopen_round(opener=step.step_id == definition.steps[loop.start].step_id)
     run_store.save(run)
 
 

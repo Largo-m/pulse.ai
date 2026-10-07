@@ -21,7 +21,6 @@ from pulse.domain.run import (
     RunStatus,
     StepRecord,
     StepStatus,
-    net_seconds,
     utc_now,
 )
 from pulse.store.db import connect, default_db_path
@@ -321,45 +320,6 @@ def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
             step.carried_seconds,
         ),
     )
-
-
-def carry_round(run_id: str, step_id: str, *, db_path: Path | None = None) -> float:
-    """Close the step's current loop round and return the accumulated time.
-
-    Net duration (wall time minus wait) moves to `carried_seconds` and the wait
-    resets, since a new round reopens `started_at`/`ended_at`. Works on the DB
-    rather than `StepRecord` because only the DB has the wait time (see
-    `add_waiting_seconds`).
-    """
-    connection = connect(db_path or default_db_path())
-    try:
-        row = connection.execute(
-            """
-            SELECT started_at, ended_at, waiting_seconds, carried_seconds
-            FROM run_steps WHERE run_id = ? AND step_id = ?
-            """,
-            (run_id, step_id),
-        ).fetchone()
-        if row is None:
-            return 0.0
-        carried = float(row["carried_seconds"] or 0.0)
-        carried += net_seconds(
-            str(row["started_at"] or ""),
-            str(row["ended_at"] or ""),
-            float(row["waiting_seconds"] or 0.0),
-        )
-        connection.execute(
-            """
-            UPDATE run_steps
-            SET carried_seconds = ?, waiting_seconds = 0, started_at = '', ended_at = ''
-            WHERE run_id = ? AND step_id = ?
-            """,
-            (carried, run_id, step_id),
-        )
-        connection.commit()
-        return carried
-    finally:
-        connection.close()
 
 
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:

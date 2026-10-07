@@ -181,16 +181,16 @@ class StepRecord:
         self.ended_at = ""
         return True
 
-    def reopen_round(self, *, carried_seconds: float, opener: bool) -> None:
-        """Start a new loop round on the same row.
+    def reopen_round(self, *, opener: bool) -> None:
+        """Start a new loop round on the same row; the opener counts the rounds.
 
-        `carried_seconds` is the net time of all previous rounds; the opener is
-        the step that counts the rounds.
+        The round's net time (wall time minus wait) moves to `carried_seconds`
+        before its start and end are cleared, so panel and history show the sum.
         """
         self._require_not({StepStatus.RUNNING}, "reopen")
         if opener:
             self.rounds += 1
-        self.carried_seconds = carried_seconds
+        self.carried_seconds += net_seconds(self.started_at, self.ended_at, self.waiting_seconds)
         self.waiting_seconds = 0.0
         self.status = StepStatus.PENDING
         self.summary = ""

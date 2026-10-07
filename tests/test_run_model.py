@@ -119,18 +119,45 @@ def test_reopening_a_round_clears_the_attempt_and_counts_only_on_the_opener():
     other = _running("fix")
     other.deliver()
 
-    opener.reopen_round(carried_seconds=12.5, opener=True)
-    other.reopen_round(carried_seconds=3.0, opener=False)
+    opener.reopen_round(opener=True)
+    other.reopen_round(opener=False)
 
     assert (opener.rounds, other.rounds) == (2, 1)
     assert opener.status == StepStatus.PENDING
-    assert (opener.summary, opener.acp_session_id, opener.started_at) == ("", "", "")
-    assert opener.carried_seconds == 12.5
+    assert (opener.summary, opener.acp_session_id, opener.started_at, opener.ended_at) == (
+        "",
+        "",
+        "",
+        "",
+    )
+
+
+def test_each_round_carries_its_net_time_into_the_next():
+    """A round of 10min with 4min waiting adds 6min; the wait does not follow the step."""
+    step = StepRecord(
+        step_id="review",
+        status=StepStatus.DONE,
+        started_at="2026-10-01T10:00:00+00:00",
+        ended_at="2026-10-01T10:10:00+00:00",
+        waiting_seconds=240.0,
+        carried_seconds=60.0,
+    )
+
+    step.reopen_round(opener=True)
+
+    assert step.carried_seconds == 60.0 + 360.0
+    assert step.waiting_seconds == 0.0
+
+
+def test_a_round_that_never_ran_carries_nothing():
+    step = StepRecord(step_id="fix", carried_seconds=30.0)
+    step.reopen_round(opener=False)
+    assert step.carried_seconds == 30.0
 
 
 def test_a_running_step_cannot_be_reopened():
     with pytest.raises(InvalidTransition):
-        _running().reopen_round(carried_seconds=0.0, opener=True)
+        _running().reopen_round(opener=True)
 
 
 def test_closing_with_the_loop_depends_on_whether_the_step_ran_before():
