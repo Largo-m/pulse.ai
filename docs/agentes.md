@@ -526,7 +526,7 @@ T2 — Montar o CSV a partir do relatório
 ```
 step `implement` (fan_out, placeholder em run_steps)
   │
-  ├─ parse_items(_previous_summary(run, step_id))   ← o ÚLTIMO bloco do texto
+  ├─ parse_items(run.previous_delivery(step_id).summary)   ← o ÚLTIMO bloco do texto
   ├─ vazio? → roda uma vez, como se fan_out não existisse
   │
   └─ N itens:
