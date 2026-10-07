@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.conftest import store_step
 from pulse.history.events import LogEntry, LogKind
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
@@ -23,7 +24,7 @@ def _resumed_run(tmp_path: Path) -> run_store.RunRecord:
         ],
     )
     record.steps[0].status = "done"
-    run_store.save_step(record.id, record.steps[0])
+    store_step(record.id, record.steps[0])
     run_store.record_event(record.id, kind="Assistant", title="fiz o um", detail="fiz o um", step_id="one")
     run_store.record_event(record.id, kind="Assistant", title="fazendo o dois", detail="fazendo o dois", step_id="two")
     return record

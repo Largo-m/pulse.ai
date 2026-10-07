@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from enum import StrEnum
 
 BLOCK = re.compile(r"```pulse:outcome[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 FIELD = re.compile(
@@ -16,9 +17,19 @@ FIELD = re.compile(
     re.IGNORECASE,
 )
 
-DONE = "done"
-BLOCKED = "blocked"
-MISSING = "missing"
+
+class OutcomeStatus(StrEnum):
+    DONE = "done"
+    BLOCKED = "blocked"
+    MISSING = "missing"
+
+
+class LoopSignal(StrEnum):
+    """What the agent asks of the loop around its step (the `next` field)."""
+
+    REPEAT = "repeat"
+    CLOSE = "close"
+
 
 _DONE_WORDS = frozenset({"done", "ok", "concluido", "concluído", "sucesso", "success", "pronto"})
 _BLOCKED_WORDS = frozenset(
@@ -55,24 +66,24 @@ REASON_MAX_CHARS = 400
 class Outcome:
     """What the agent declared when closing the step."""
 
-    status: str
+    status: OutcomeStatus
     reason: str = ""
     needs: str = ""
-    next: str = ""
+    next: LoopSignal | None = None
 
     @property
     def delivered(self) -> bool:
-        return self.status == DONE
+        return self.status == OutcomeStatus.DONE
 
     @property
     def repeats(self) -> bool:
         """The agent requests another loop round (only when the step delivered)."""
-        return self.delivered and self.next in _REPEAT_WORDS
+        return self.delivered and self.next == LoopSignal.REPEAT
 
     @property
     def closes(self) -> bool:
         """The agent says the loop is over; see [pulse.orchestrator.loops.close_loop]."""
-        return self.delivered and self.next in _CLOSE_WORDS
+        return self.delivered and self.next == LoopSignal.CLOSE
 
     @property
     def needs_user(self) -> bool:
@@ -90,7 +101,7 @@ def parse_outcome(text: str) -> Outcome:
     """
     matches = BLOCK.findall(text or "")
     if not matches:
-        return Outcome(status=MISSING)
+        return Outcome(status=OutcomeStatus.MISSING)
 
     fields: dict[str, str] = {}
     for line in matches[-1].splitlines():
@@ -112,16 +123,24 @@ def parse_outcome(text: str) -> Outcome:
     nxt = _first_word(fields.get("next", ""))
 
     if raw_status in _DONE_WORDS:
-        return Outcome(status=DONE, next=nxt)
+        return Outcome(status=OutcomeStatus.DONE, next=_loop_signal(nxt))
     if raw_status in _BLOCKED_WORDS:
-        return Outcome(status=BLOCKED, reason=reason, needs=needs)
+        return Outcome(status=OutcomeStatus.BLOCKED, reason=reason, needs=needs)
     if not raw_status:
-        return Outcome(status=MISSING)
+        return Outcome(status=OutcomeStatus.MISSING)
     return Outcome(
-        status=BLOCKED,
+        status=OutcomeStatus.BLOCKED,
         reason=reason or f"o agente declarou um desfecho que o Pulse não conhece: `{raw_status}`",
         needs=needs,
     )
+
+
+def _loop_signal(word: str) -> LoopSignal | None:
+    if word in _REPEAT_WORDS:
+        return LoopSignal.REPEAT
+    if word in _CLOSE_WORDS:
+        return LoopSignal.CLOSE
+    return None
 
 
 def _clean(value: str) -> str:

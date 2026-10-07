@@ -15,7 +15,7 @@ from pulse.acp.run_events import RunEventRecorder
 from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.ports import NullPromptPort, NullStreamSink, NullUserWaitListener, UserWaitListener
 from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
 from pulse.prompts.permission import PermissionPolicy, decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
@@ -128,6 +128,7 @@ class AcpSessionRunner(RunEventRecorder):
         self._session_id: str | None = None
         self.last_session_id = ""
         self._bound_run_id = ""
+        self._waits: UserWaitListener = NullUserWaitListener()
         self._phase_id = ""
         self._text_buffer: list[str] = []
         self._tool_payloads: dict[str, dict[str, Any]] = {}
@@ -149,7 +150,7 @@ class AcpSessionRunner(RunEventRecorder):
         if self._user_waits > 1:
             return
         self._wait_started = time.monotonic()
-        self._mark_run_status(awaiting=True)
+        self._tell_waits(self._waits.user_wait_began)
         self._notify_stream("begin_user_wait")
 
     def _end_user_wait(self) -> None:
@@ -159,30 +160,21 @@ class AcpSessionRunner(RunEventRecorder):
         if self._user_waits > 0:
             return
         started, self._wait_started = self._wait_started, None
-        if started is not None and self._bound_run_id:
-            self._save_waiting(time.monotonic() - started)
-        self._mark_run_status(awaiting=False)
+        seconds = time.monotonic() - started if started is not None else 0.0
+        self._tell_waits(lambda: self._waits.user_wait_ended(self._phase_id, seconds))
         self._notify_stream("end_user_wait")
 
-    def _save_waiting(self, seconds: float) -> None:
+    def _tell_waits(self, notify: Callable[[], None]) -> None:
+        """Called inside the prompt handler, so a failure goes to the run log, not up."""
         try:
-            from pulse.store.runs import add_waiting_seconds
-
-            add_waiting_seconds(self._bound_run_id, self._phase_id, seconds)
-        except Exception:
-            pass
-
-    def _mark_run_status(self, *, awaiting: bool) -> None:
-        """Update the run status in the database so Home and history see it awaiting input."""
-        if not self._bound_run_id:
-            return
-        try:
-            from pulse.store.runs import RunStatus, update_run
-
-            status = RunStatus.AWAITING_INPUT if awaiting else RunStatus.RUNNING
-            update_run(self._bound_run_id, status=status)
-        except Exception:
-            pass
+            notify()
+        # The user's answer must reach the agent even if the wait is not recorded.
+        except Exception as error:  # noqa: BLE001
+            self._save_event(
+                kind="Info",
+                title="Espera não registrada",
+                detail=f"{type(error).__name__}: {error}",
+            )
 
     def _notify_stream(self, method: str) -> None:
         handler = getattr(self._stream, method, None)
@@ -625,9 +617,10 @@ class AcpSessionRunner(RunEventRecorder):
         }
         return self._request("session/new", params)
 
-    def bind_run(self, run_id: str) -> None:
-        """Bind the runner to a run so log and artifacts are recorded on it."""
+    def bind_run(self, run_id: str, waits: UserWaitListener | None = None) -> None:
+        """Bind the runner to a run so log, artifacts and user waits are recorded on it."""
         self._bound_run_id = run_id
+        self._waits = waits or NullUserWaitListener()
 
     @property
     def control(self) -> RunControl:
