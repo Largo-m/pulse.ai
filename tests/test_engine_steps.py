@@ -14,7 +14,6 @@ from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
-from pulse.tui.hydrate import _step_seconds
 
 
 class _Stream:
@@ -69,7 +68,7 @@ class _Runner:
         self.closed = False
         self.revivals = 0
 
-    def bind_run(self, run_id: str) -> None:
+    def bind_run(self, run_id: str, waits: object = None) -> None:
         self.run_id = run_id
 
     def start(self) -> None:
@@ -1077,7 +1076,7 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
     monkeypatch.setattr(
         run_model,
         "utc_now",
-        lambda: (start + timedelta(seconds=next(seconds))).isoformat(),
+        lambda: start + timedelta(seconds=next(seconds)),
     )
 
     run_workflow(
@@ -1093,7 +1092,7 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
     assert review.rounds == 2
     assert review.carried_seconds > 0
     assert review.started_at and review.ended_at
-    assert _step_seconds(review) > review.carried_seconds
+    assert review.elapsed_seconds() > review.carried_seconds
 
 
 def _clean(summary: str = "nada a corrigir", *, approval: bool = False) -> dict:
@@ -1290,10 +1289,10 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     """
     make_workflow("demo", steps=[("one", "Um")])
     clock = [datetime(2026, 1, 1, tzinfo=UTC)]
-    monkeypatch.setattr(run_model, "utc_now", lambda: clock[0].isoformat())
+    monkeypatch.setattr(run_model, "utc_now", lambda: clock[0])
 
     runner = _Runner([RuntimeError("o processo do agente encerrou")])
-    stamped_before_menu: list[str] = []
+    stamped_before_menu: list[datetime] = []
 
     def stop_after_ten_minutes(prompt, choices, *, title=""):
         stamped_before_menu.append(run_store.list_runs(tmp_path)[0].step("one").ended_at)
@@ -1314,9 +1313,7 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     assert code == 1
     step = run_store.list_runs(tmp_path)[0].step("one")
     assert stamped_before_menu and stamped_before_menu[0]
-    assert datetime.fromisoformat(step.ended_at) - datetime.fromisoformat(
-        stamped_before_menu[0]
-    ) == timedelta(minutes=10)
+    assert step.ended_at - stamped_before_menu[0] == timedelta(minutes=10)
 
 
 def test_stopping_while_the_blocked_menu_is_open_stops_the_run(

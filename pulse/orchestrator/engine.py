@@ -28,8 +28,8 @@ from pulse.orchestrator.cli_output import (
     print_workflow_result,
 )
 from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
-from pulse.orchestrator.loops import CLOSE, REPEAT, close_loop, find_loops, repeat_loop
-from pulse.orchestrator.outcome import MISSING, Outcome, parse_outcome
+from pulse.orchestrator.loops import close_loop, find_loops, repeat_loop
+from pulse.orchestrator.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.orchestrator.prompts import (
     build_continuation_prompt,
     build_outcome_reminder_prompt,
@@ -37,8 +37,10 @@ from pulse.orchestrator.prompts import (
     guidance_block,
     outcome_protocol,
 )
+from pulse.orchestrator.turn import MenuChoice, TurnResult
+from pulse.orchestrator.waits import RunWaits
 from pulse.ports import NullPromptPort, NullStreamSink
-from pulse.prompts.approval import CANCEL, SKIP, format_summary
+from pulse.prompts.approval import format_summary
 from pulse.prompts.permission import PermissionPolicy
 from pulse.prompts.render import TemplateError, render
 from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED, RunControl
@@ -49,13 +51,11 @@ from pulse.store.runs import (
     BLOCKED,
     DONE,
     FAILED,
-    SETTLED,
     SKIPPED,
     StepRecord,
 )
 from pulse.store.workflow_defs import StepDef, WorkflowDef, get_agent, get_workflow
 
-_SUCCESS_STOPS = frozenset({"end_turn", "end", "stop"})
 _POLICIES: dict[str, PermissionPolicy] = {
     "ask": "ask",
     "auto_approve": "auto_approve",
@@ -148,7 +148,7 @@ def run_workflow(
         runtime=runtime,
         control=control,
     )
-    runner.bind_run(run.id)
+    runner.bind_run(run.id, RunWaits(run))
 
     try:
         return _execute(
@@ -299,7 +299,8 @@ def _execute(
             definition_step = definition.steps[index]
             at = index
             index += 1
-            units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
+            previous = run.previous_delivery(definition_step.step_id)
+            units = expand(run, definition_step, previous.summary if previous else "")
             run_store.save(run)
             _sync_steps(runner, run)
 
@@ -313,7 +314,7 @@ def _execute(
                     )
                 )
 
-                if record.status in SETTLED:
+                if record.settled:
                     continue
 
                 if not _control(runner).checkpoint():
@@ -322,8 +323,6 @@ def _execute(
                     run_store.save(run)
                     return RUN_STOPPED
 
-                run.begin_step(step.step_id)
-                run_store.save(run)
                 opens_loop = at in loops and loops[at].start == at
                 exit_code, signal = _run_step(
                     runner=runner,
@@ -343,13 +342,13 @@ def _execute(
                     run_store.save(run)
                     return exit_code
 
-                if signal == CLOSE and opens_loop:
+                if signal == LoopSignal.CLOSE and opens_loop:
                     index = close_loop(run, definition, loops[at])
                     _sync_steps(runner, run)
                     _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
-                if signal == REPEAT and at in loops and loops[at].end == at:
+                if signal == LoopSignal.REPEAT and at in loops and loops[at].end == at:
                     target, message = repeat_loop(run, definition, loops[at], record.label)
                     _notify(runner, message)
                     if target is not None:
@@ -366,29 +365,6 @@ def _execute(
         runner.close()
 
 
-def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
-    """The last step before this one that settled (`done`/`skipped`) with a summary.
-
-    Failed or blocked steps are excluded so their text is not passed on as a
-    delivery. The scan also stops at the first fan-out child (`run:T1` for `run`)
-    so a resumed fan-out still sees the `pulse:items` block. The whole record is
-    returned because the next step also needs its status.
-    """
-    child = f"{step_id}:"
-    previous: StepRecord | None = None
-    for record in run.steps:
-        if record.step_id == step_id or record.step_id.startswith(child):
-            break
-        if record.summary and record.status in SETTLED:
-            previous = record
-    return previous
-
-
-def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
-    record = _previous_settled(run, step_id)
-    return record.summary if record is not None else ""
-
-
 def _run_step(
     *,
     runner: AcpSessionRunner,
@@ -401,11 +377,11 @@ def _run_step(
     fallback_model: str | None,
     item: Item | None = None,
     may_close: bool = False,
-) -> tuple[int, str]:
-    """`(exit code, outcome)`; `REPEAT` and `CLOSE` drive the loop."""
+) -> tuple[int, LoopSignal | None]:
+    """`(exit code, loop signal)`; how the step ended is in `record.status`."""
     guidance = ""
     while True:
-        outcome, reason = _attempt_step(
+        signal, reason = _attempt_step(
             runner=runner,
             cockpit=cockpit,
             run=run,
@@ -418,14 +394,15 @@ def _run_step(
             item=item,
             may_close=may_close,
         )
-        if outcome in {DONE, SKIPPED, REPEAT, CLOSE}:
-            return 0, outcome
+        if record.settled:
+            return 0, signal
 
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED, FAILED
+            return RUN_STOPPED, None
 
-        if outcome == BLOCKED:
+        blocked = record.status == BLOCKED
+        if blocked:
             choice, guidance = _offer_blocked(
                 runner, f"{record.label} está bloqueado", reason
             )
@@ -433,22 +410,22 @@ def _run_step(
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if _control(runner).interrupted:
             _release_step(runner, run=run, record=record, label=record.label)
-            return RUN_STOPPED, FAILED
+            return RUN_STOPPED, None
 
-        if outcome == BLOCKED:
-            if choice == "skip":
+        if blocked:
+            if choice == MenuChoice.SKIP:
                 record.skip_blocked()
                 run_store.save(run)
                 _sync_steps(runner, run)
                 _notify(runner, f"{record.label} pulado pelo usuário")
-                return 0, SKIPPED
-            if choice != "retry":
+                return 0, None
+            if choice != MenuChoice.RETRY:
                 _close_after_menu(run, record)
                 _notify(runner, f"Run bloqueada em {record.label}: {reason}")
-                return RUN_BLOCKED, BLOCKED
-        elif choice != "retry":
+                return RUN_BLOCKED, None
+        elif choice != MenuChoice.RETRY:
             _close_after_menu(run, record)
-            return 1, FAILED
+            return 1, None
         _revive_session(runner)
         if guidance:
             _notify(runner, f"Refazendo {record.label} com orientação do usuário")
@@ -469,8 +446,10 @@ def _attempt_step(
     guidance: str,
     item: Item | None = None,
     may_close: bool = False,
-) -> tuple[str, str]:
-    record.start()
+) -> tuple[LoopSignal | None, str]:
+    """`(loop signal, reason)`. How the attempt ended is the step's status;
+    `reason` explains a failure or a block to the person deciding what next."""
+    run.start_step(record.step_id)
     run_store.save(run)
 
     model, instructions = _activate_agent(runner, workspace, step, fallback_model)
@@ -478,7 +457,7 @@ def _attempt_step(
         prompt_text = render(step.prompt_template, _context(run, step, exec_dir, item))
     except TemplateError as error:
         _fail(run, record)
-        return FAILED, str(error)
+        return None, str(error)
     if instructions:
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
@@ -489,7 +468,7 @@ def _attempt_step(
 
     try:
         if step.requires_approval:
-            result = runner.run_isolated_phase(
+            raw = runner.run_isolated_phase(
                 workflow=run.workflow_id,
                 phase_label=record.label or step.step_id,
                 initial_prompt=prompt_text,
@@ -505,7 +484,7 @@ def _attempt_step(
                 phase_id=step.step_id,
             )
         else:
-            result = runner.run_isolated_prompt(
+            raw = runner.run_isolated_prompt(
                 workflow=run.workflow_id,
                 phase_label=record.label or step.step_id,
                 prompt_text=prompt_text,
@@ -515,59 +494,58 @@ def _attempt_step(
             )
     except Exception as error:  # noqa: BLE001
         _fail(run, record)
-        return FAILED, _session_error(error)
+        return None, _session_error(error)
 
-    agent_text = str(result.get("phaseSummary", ""))
+    turn = TurnResult.parse(raw)
     record.record_reply(
-        session_id=runner.last_session_id or "", summary=format_summary(agent_text)
+        session_id=runner.last_session_id or "", summary=format_summary(turn.summary)
     )
 
-    outcome = str(result.get("outcome", ""))
-    if outcome in {CANCEL, "cancelled"} or result.get("stopReason") == "cancelled":
+    if turn.cancelled:
         _fail(run, record)
-        return FAILED, "step cancelado"
+        return None, "step cancelado"
 
-    if outcome == SKIP:
+    if turn.skipped:
         record.skip()
         run_store.save(run)
         if not cockpit:
             print_workflow_result(f"⏭  {record.label} pulado")
-        return SKIPPED, ""
+        return None, ""
 
-    if may_close and not result.get("approved") and parse_outcome(agent_text).closes:
-        return _settle(run, record, cockpit, CLOSE)
+    if may_close and not turn.approved and parse_outcome(turn.summary).closes:
+        return _settle(run, record, cockpit, LoopSignal.CLOSE)
 
-    if step.requires_approval and not bool(result.get("approved")):
+    if step.requires_approval and not turn.approved:
         _fail(run, record)
-        if not str(result.get("approvalAnswers", "")).strip():
-            return FAILED, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
-        return FAILED, "step não aprovado"
+        if not turn.has_approval_answers:
+            return None, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
+        return None, "step não aprovado"
 
-    if not step.requires_approval and not _prompt_succeeded(result):
+    if not step.requires_approval and not turn.ended_cleanly:
         _fail(run, record)
-        return FAILED, str(result.get("stopReason") or "o agente não concluiu o step")
+        return None, turn.stop_reason or "o agente não concluiu o step"
 
     repeats = False
     if declares_outcome:
-        declared = parse_outcome(agent_text)
+        declared = parse_outcome(turn.summary)
         if not declared.delivered:
             return _block(run, record, _blocked_reason(declared))
         repeats = bool(step.repeat_from) and declared.repeats
         if may_close and declared.closes:
-            return _settle(run, record, cockpit, CLOSE)
+            return _settle(run, record, cockpit, LoopSignal.CLOSE)
 
-    return _settle(run, record, cockpit, REPEAT if repeats else DONE)
+    return _settle(run, record, cockpit, LoopSignal.REPEAT if repeats else None)
 
 
 def _settle(
-    run: run_store.RunRecord, record: StepRecord, cockpit: bool, outcome: str
-) -> tuple[str, str]:
-    """Record the step as delivered and return the outcome to the engine loop."""
+    run: run_store.RunRecord, record: StepRecord, cockpit: bool, signal: LoopSignal | None
+) -> tuple[LoopSignal | None, str]:
+    """Record the step as delivered and pass the agent's loop signal on."""
     record.deliver()
     run_store.save(run)
     if not cockpit:
         print_workflow_result(f"✓ {record.label}")
-    return outcome, ""
+    return signal, ""
 
 
 def _unblock_continuation(step: StepDef) -> Callable[..., str]:
@@ -582,11 +560,11 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
         nonlocal spent
         if spent:
             return ""
-        declared = parse_outcome(str(result.get("phaseSummary", "")))
+        declared = parse_outcome(TurnResult.parse(result).summary)
         if declared.delivered:
             return ""
         spent = True
-        if declared.status == MISSING:
+        if declared.status == OutcomeStatus.MISSING:
             return build_outcome_reminder_prompt(step_id=step.step_id)
         if declared.needs_user:
             return ""
@@ -596,7 +574,7 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
 
 
 def _blocked_reason(declared: Outcome) -> str:
-    if declared.status == MISSING:
+    if declared.status == OutcomeStatus.MISSING:
         return (
             "o agente encerrou sem declarar o desfecho do step — "
             "não dá para afirmar que ele entregou o que o step pede"
@@ -604,11 +582,13 @@ def _blocked_reason(declared: Outcome) -> str:
     return declared.reason or "o agente declarou bloqueio sem dizer o motivo"
 
 
-def _block(run: run_store.RunRecord, record: StepRecord, reason: str) -> tuple[str, str]:
+def _block(
+    run: run_store.RunRecord, record: StepRecord, reason: str
+) -> tuple[LoopSignal | None, str]:
     """Record the step as blocked: it ran, did not crash, did not deliver."""
     record.block()
     run_store.save(run)
-    return BLOCKED, reason
+    return None, reason
 
 
 def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
@@ -637,11 +617,8 @@ def _context(
     drops out and the earlier one is reported.
     """
     artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
-    prefix = f"{step.step_id.rsplit(':', 1)[0]}:" if item is not None else ""
-    siblings = (
-        [record for record in run.steps if record.step_id.startswith(prefix)] if prefix else []
-    )
-    previous = _previous_settled(run, step.step_id)
+    siblings = run.fan_out_siblings(step.step_id) if item is not None else []
+    previous = run.previous_delivery(step.step_id)
     return {
         "user_prompt": run.user_prompt.strip(),
         "workspace": str(exec_dir),
@@ -701,21 +678,23 @@ def _release_step(
     _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
 
 
-def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[MenuChoice, str]:
     """Decide what to do with a failed step."""
     return _choose(
         runner,
         title,
         reason,
         [
-            ("Refazer", "retry"),
-            ("Outro — dizer o que fazer", "guidance"),
-            ("Parar", "stop"),
+            ("Refazer", MenuChoice.RETRY),
+            ("Outro — dizer o que fazer", MenuChoice.GUIDANCE),
+            ("Parar", MenuChoice.STOP),
         ],
     )
 
 
-def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[str, str]:
+def _offer_blocked(
+    runner: AcpSessionRunner, title: str, reason: str
+) -> tuple[MenuChoice, str]:
     """Decide what to do with a step the agent could not complete.
 
     Adds a skip option, recorded as `skipped` rather than hidden as `done`.
@@ -725,10 +704,10 @@ def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[s
         title,
         reason,
         [
-            ("Refazer — já resolvi", "retry"),
-            ("Outro — dizer o que fazer", "guidance"),
-            ("Pular este step", "skip"),
-            ("Parar a run", "stop"),
+            ("Refazer — já resolvi", MenuChoice.RETRY),
+            ("Outro — dizer o que fazer", MenuChoice.GUIDANCE),
+            ("Pular este step", MenuChoice.SKIP),
+            ("Parar a run", MenuChoice.STOP),
         ],
     )
 
@@ -737,8 +716,8 @@ def _choose(
     runner: AcpSessionRunner,
     title: str,
     reason: str,
-    choices: list[tuple[str, str]],
-) -> tuple[str, str]:
+    choices: list[tuple[str, MenuChoice]],
+) -> tuple[MenuChoice, str]:
     """Ask the user and return `(choice, guidance)`.
 
     "Outro" lets the user write what the agent should do. With nobody to ask
@@ -749,18 +728,18 @@ def _choose(
     prompt = reason.strip() or "O step não foi concluído."
     if not callable(select):
         _notify(runner, f"{title}: {prompt}")
-        return "stop", ""
+        return MenuChoice.STOP, ""
     choice = select(prompt, choices, title=title)
-    if choice == "guidance":
+    if choice == MenuChoice.GUIDANCE:
         guidance = _ask_guidance(runner, title)
         if guidance:
-            return "retry", guidance
+            return MenuChoice.RETRY, guidance
         if _control(runner).interrupted:
-            return "stop", ""
+            return MenuChoice.STOP, ""
         return _choose(runner, title, reason, choices)
     if choice in {value for _label, value in choices}:
-        return str(choice), ""
-    return "stop", ""
+        return MenuChoice(choice), ""
+    return MenuChoice.STOP, ""
 
 
 def _session_error(error: BaseException) -> str:
@@ -795,10 +774,6 @@ def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:
     return str(answer or "").strip()
 
 
-def _prompt_succeeded(result: dict[str, Any]) -> bool:
-    return str(result.get("stopReason") or "") in _SUCCESS_STOPS
-
-
 def _control(runner: AcpSessionRunner) -> RunControl:
     return getattr(runner, "control", None) or _NEVER_INTERRUPTED
 
@@ -819,13 +794,14 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
     apply = getattr(stream, "apply_phase_statuses", None) if stream is not None else None
     if not callable(apply):
         return
+    grouped = run.step_ids_by_status()
     apply(
         steps=[
             {"id": item.step_id, "label": item.label, "rounds": item.rounds}
             for item in run.steps
         ],
-        done_ids=[item.step_id for item in run.steps if item.status == DONE],
-        skipped_ids=[item.step_id for item in run.steps if item.status == SKIPPED],
-        failed_ids=[item.step_id for item in run.steps if item.status == FAILED],
-        blocked_ids=[item.step_id for item in run.steps if item.status == BLOCKED],
+        done_ids=grouped[DONE],
+        skipped_ids=grouped[SKIPPED],
+        failed_ids=grouped[FAILED],
+        blocked_ids=grouped[BLOCKED],
     )

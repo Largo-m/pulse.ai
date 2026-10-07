@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from pulse.domain.run import SETTLED
+from pulse.domain.run import SETTLED, StepStatus
 from pulse.status_labels import status_label
 
 
@@ -24,7 +24,7 @@ LIVE_STATUSES = frozenset({HistoryStatus.IN_PROGRESS, HistoryStatus.AWAITING_INP
 class HistoryStep:
     id: str
     label: str
-    status: str
+    status: StepStatus
     acp_session_id: str = ""
 
     @property

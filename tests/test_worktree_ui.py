@@ -39,11 +39,11 @@ def _run_in(workspace: Path, *, run_id: str = "run-1", branch: str = "", worktre
         steps=[StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester")],
     )
     if branch or worktree:
-        run_store.set_workspace_context(record.id, worktree_path=worktree, branch=branch)
+        record.work_in(worktree_path=worktree, branch=branch)
     for step in record.steps:
         step.status = DONE
-        run_store.save_step(record.id, step)
-    run_store.update_run(record.id, status="completed")
+    record.complete()
+    run_store.save(record)
     return record.id
 
 
@@ -140,6 +140,7 @@ def test_remove_worktree_through_catalog(tmp_path: Path):
     record = run_store.load_run(run_id)
     assert record is not None
     exec_dir, _branch = _prepare_workspace(record, repo, type("R", (), {"use_worktree": True})())
+    assert _branch
 
     item = HistoryCatalog(repo).get(run_id)
     assert item is not None
@@ -150,6 +151,7 @@ def test_remove_worktree_through_catalog(tmp_path: Path):
     stored = run_store.load_run(run_id)
     assert stored is not None
     assert stored.worktree_path == ""
+    assert stored.branch == _branch, "the branch still holds the work"
 
 
 @git_only

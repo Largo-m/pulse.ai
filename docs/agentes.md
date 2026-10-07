@@ -287,12 +287,13 @@ para cada definition_step em definition.steps:
        ├─ record = run.step(step_id)  ← step novo na definição entra como pending
        ├─ record.status ∈ SETTLED?    ← done/skipped: pula (é isso que faz retomada)
        ├─ control.checkpoint()        ◄── PONTO DE CORTE do parar, nada em voo
-       ├─ update_run(status=running, current_step=…)
-       ├─ _run_step(...)              ← tentativa + retry (§5)
+       ├─ _run_step(...)              ← tentativa + retry (§5); cada tentativa
+       │                                 abre com run.start_step(step_id), que
+       │                                 recusa um segundo step em execução
        ├─ _sync_steps()
        └─ exit_code ≠ 0 → grava status e sai
 
-update_run(status="completed")
+run.complete(); run_store.save(run)
 finally: runner.close()
 ```
 
@@ -526,7 +527,7 @@ T2 — Montar o CSV a partir do relatório
 ```
 step `implement` (fan_out, placeholder em run_steps)
   │
-  ├─ parse_items(_previous_summary(run, step_id))   ← o ÚLTIMO bloco do texto
+  ├─ parse_items(run.previous_delivery(step_id).summary)   ← o ÚLTIMO bloco do texto
   ├─ vazio? → roda uma vez, como se fan_out não existisse
   │
   └─ N itens:

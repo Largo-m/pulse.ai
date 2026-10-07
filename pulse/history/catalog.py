@@ -80,7 +80,10 @@ class HistoryCatalog:
                 removed = True
             except vcs.GitError:
                 return False
-        run_store.set_workspace_context(item.run_id, worktree_path="", branch=item.branch)
+        record = run_store.load_run(item.run_id)
+        if record is not None:
+            record.drop_worktree()
+            run_store.save(record)
         item.worktree_path = ""
         return removed or not Path(path).exists()
 
