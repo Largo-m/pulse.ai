@@ -44,7 +44,7 @@ def test_render_qa_entries_in_stream():
 
 
 def test_elapsed_label_does_not_show_966_minutes():
-    """Spec retomada no dia seguinte virava "966:46" na coluna do tempo."""
+    """A spec resumed the next day used to show "966:46" in the time column."""
     from pulse.history.events import format_elapsed
 
     assert format_elapsed(0) == "00:00"
@@ -57,7 +57,7 @@ def test_elapsed_label_does_not_show_966_minutes():
 
 
 def test_elapsed_label_only_runs_while_the_step_runs():
-    """Só passo executando tem relógio andando; o resto fica congelado."""
+    """Only a running step has a ticking clock; the rest stay frozen."""
     import time
 
     from pulse.history.events import PhaseItem, PhaseStatus
@@ -67,8 +67,6 @@ def test_elapsed_label_only_runs_while_the_step_runs():
     running = PhaseItem(id="prd", label="PRD", status=PhaseStatus.RUNNING, started_at=100.0)
     assert running.elapsed_label(163.0) == "01:03"
 
-    # Spec aberta pelo histórico: a fase vem como `running`, mas com a duração
-    # já fechada — a coluna não pode voltar a contar contra o relógio de agora.
     hydrated = PhaseItem(
         id="prd",
         label="PRD",

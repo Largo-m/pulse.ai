@@ -25,7 +25,6 @@ def load_agent_settings(project_id: str, agent_id: str, *, db_path=None) -> dict
     }
 
 
-#: Campos que o "global" das configurações escreve em todos os agents.
 GLOBAL_FIELDS = ("runtime", "model", "permission_policy")
 
 
@@ -37,11 +36,10 @@ def apply_setting_to_all_agents(
     agent_ids: list[str] | tuple[str, ...] = (),
     db_path=None,
 ) -> None:
-    """Escreve um valor global em todo agent do projeto.
+    """Write a global value into every agent of the project.
 
-    O global sobrescreve o que já estava lá — inclusive os específicos. Depois
-    dele, trocar um agent sozinho volta a valer só para aquele agent, porque a
-    escrita é ponto no tempo e não uma camada que fica por cima.
+    Overwrites existing per-agent values. It is a point-in-time write, not a
+    layer on top, so a later per-agent change applies only to that agent.
     """
     if field not in GLOBAL_FIELDS or not value:
         return

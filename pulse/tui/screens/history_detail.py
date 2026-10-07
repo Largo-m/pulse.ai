@@ -8,6 +8,7 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 
 from pulse import vcs
+from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
 from pulse.tui.hydrate import hydrate_history_item
@@ -47,10 +48,7 @@ class HistoryDetailScreen(Screen[None]):
     def __init__(self, item: HistoryItem, workspace: Path | None = None) -> None:
         super().__init__()
         self.item = item
-        #: A raiz do projeto — é por ela que o histórico acha a run.
         self._workspace = Path(workspace or Path.cwd())
-        # Onde esta run trabalhou, que pode não ser a raiz do projeto: o painel
-        # de artefatos lê arquivo do disco, e o worktree é onde eles estão.
         self._cwd = item.worktree_path or str(self._workspace)
         self.state = hydrate_history_item(item, Path(self._cwd))
         self._pending = _pending_run(item)
@@ -88,14 +86,17 @@ class HistoryDetailScreen(Screen[None]):
         )
 
     def action_remove_worktree(self) -> None:
-        """Desfaz o worktree desta run, depois de confirmar.
+        """Remove this run's worktree after confirmation.
 
-        A remoção é manual porque o worktree **é** a entrega: ele guarda o que
-        o agente escreveu, na branch onde escreveu. Quem decide que já tirou o
-        que queria de lá é quem revisou.
+        Removal is manual because the worktree is the deliverable: the reviewer
+        decides when they are done with it. A run the daemon still executes keeps
+        it: the agent works there and the daemon would write the path back.
         """
         path = self.item.worktree_path
         if not path or not Path(path).exists():
+            return
+        if self.item.run_id in active_run_ids():
+            self.notify("Worktree mantido — a run está em andamento")
             return
         dirty = vcs.has_changes(path)
         detail = [path, f"Branch: {self.item.branch or '—'}"]
@@ -248,16 +249,13 @@ class HistoryDetailScreen(Screen[None]):
 
 
 def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
-    """Id e resumo da run, quando ainda há step por fazer.
+    """Run id and summary when there are still steps left to run.
 
-    Qualquer workflow é retomável: a sessão ACP é isolada por step, então
-    retomar é rodar o primeiro step que não terminou.
+    Any workflow is resumable: ACP sessions are per step, so resuming runs the
+    first unfinished step.
     """
     if not item.is_incomplete:
         return None
-    done = sum(1 for step in item.steps if step.status in {"done", "skipped"})
-    current = next(
-        (step.label for step in item.steps if step.status not in {"done", "skipped"}),
-        "—",
-    )
+    done = sum(1 for step in item.steps if step.settled)
+    current = next((step.label for step in item.steps if not step.settled), "—")
     return item.run_id, f"{current} · steps {done}/{len(item.steps)}"

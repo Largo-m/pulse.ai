@@ -31,15 +31,15 @@ def check_auth(runtime: str = "cursor") -> CheckResult:
 
 
 def run_agent_checks(runtime: str) -> list[CheckResult]:
-    """Checks de ambiente do runtime pedido."""
+    """Environment checks for the given runtime."""
     return [_as_result(check) for check in get_runtime(runtime).checks()]
 
 
 def check_runtime_ready(runtime: str) -> CheckResult | None:
-    """Primeiro check bloqueante do runtime, ou None quando está pronto.
+    """First blocking check of the runtime, or None when it is ready.
 
-    Só `fail` bloqueia: um `warn` (ex.: `claude auth status` inconclusivo) não
-    deve impedir o workflow de começar.
+    Only `fail` blocks: a `warn` (e.g. inconclusive `claude auth status`) must
+    not prevent the workflow from starting.
     """
     for check in run_agent_checks(runtime):
         if check.status == "fail":
@@ -48,14 +48,14 @@ def check_runtime_ready(runtime: str) -> CheckResult | None:
 
 
 def active_runtime_id() -> str:
-    """Runtime que o Pulse usaria agora, segundo a config resolvida."""
+    """Runtime Pulse would use now, according to the resolved config."""
     from pulse.config.resolved import resolve_config
 
     return get_runtime(resolve_config().agent_name).id
 
 
 def other_runtimes_summary(active: str) -> list[CheckResult]:
-    """Disponibilidade dos demais runtimes, como aviso — não reprova o doctor."""
+    """Availability of the other runtimes as warnings; never fails the doctor."""
     results: list[CheckResult] = []
     for runtime in all_runtimes():
         if runtime.id == active:
@@ -83,21 +83,17 @@ def other_runtimes_summary(active: str) -> list[CheckResult]:
 
 
 def run_doctor_checks(active: str | None = None) -> list[CheckResult]:
-    """Checks do runtime ativo + resumo dos demais.
+    """Checks for the active runtime plus a summary of the others.
 
-    Só o runtime ativo reprova: uma máquina que tem só o Claude não deve falhar
-    o doctor por não ter o Cursor instalado.
+    Only the active runtime can fail, so a machine with only Claude does not
+    fail the doctor for lacking Cursor.
     """
     runtime_id = active or active_runtime_id()
     return [*run_environment_checks([runtime_id]), *other_runtimes_summary(runtime_id)]
 
 
 def check_git() -> CheckResult:
-    """Git no PATH. Nunca `fail`: worktree é opcional.
-
-    Quem não liga a chave de isolamento roda perfeitamente sem git — reprovar o
-    doctor por isso seria cobrar uma dependência que o Pulse não tem.
-    """
+    """Git on PATH. Never `fail`: per-run worktrees are optional."""
     from pulse import vcs
 
     if vcs.git_available():
@@ -116,7 +112,7 @@ def check_git() -> CheckResult:
 
 
 def run_environment_checks(runtimes: list[str] | None = None) -> list[CheckResult]:
-    """Checks do(s) runtime(s) pedido(s); sem argumento, todos os registrados."""
+    """Checks for the given runtimes; all registered ones when omitted."""
     names = runtimes if runtimes is not None else [runtime.id for runtime in all_runtimes()]
     results: list[CheckResult] = []
     seen: set[str] = set()

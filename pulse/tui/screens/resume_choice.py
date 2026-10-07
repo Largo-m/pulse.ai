@@ -7,14 +7,12 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
-#: Valores devolvidos pela tela.
 RESUME = "resume"
-#: Sai sem escolher nada — a tela de trás continua onde estava.
 BACK = "back"
 
 
 class ResumeChoiceScreen(ModalScreen[str | None]):
-    """Pergunta o que fazer com um workflow que ficou pela metade."""
+    """Asks what to do with a workflow that was left unfinished."""
 
     BINDINGS = [
         ("escape", "back", "Voltar"),

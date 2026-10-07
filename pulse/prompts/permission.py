@@ -8,7 +8,6 @@ PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
 
 _PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"})
 
-#: Kinds do ACP que não mexem em nada (agentclientprotocol.com/protocol/tool-calls).
 _READ_ONLY_KINDS = frozenset({"read", "search", "fetch", "think"})
 _WRITE_KINDS = frozenset({"edit", "delete", "move"})
 
@@ -29,7 +28,7 @@ def _permission_choice_label(option: dict[str, Any]) -> str:
 
 
 def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
-    """As opções do pedido de permissão, numeradas como o dock as mostra."""
+    """Permission request options, lettered as the dock shows them."""
     choices: list[tuple[str, str]] = []
     index = 0
     for option in options:
@@ -71,10 +70,10 @@ def permission_cancelled() -> dict[str, Any]:
 
 
 def pick_permission_option(options: list[Any], *, prefer: str) -> str | None:
-    """A primeira opção do lado pedido, com `*_once` na frente de `*_always`.
+    """First option matching `prefer`, with `*_once` ahead of `*_always`.
 
-    `allow_always` faz o agente lembrar da escolha (ACP) e não perguntar mais —
-    isto é, a política de um step vazaria para os steps seguintes da sessão.
+    `allow_always` makes the agent remember the choice (ACP), which would leak
+    one step's policy into later steps of the session.
     """
     matches: list[tuple[str, str]] = []
     for option in options:
@@ -91,7 +90,7 @@ def pick_permission_option(options: list[Any], *, prefer: str) -> str | None:
 
 
 def permission_kind(params: dict[str, Any]) -> str:
-    """O que o agente quer fazer, como o ACP nomeia: `edit`, `execute`…"""
+    """What the agent wants to do, as ACP names it: `edit`, `execute`…"""
     permission = params.get("permission")
     if not isinstance(permission, dict):
         permission = {}
@@ -110,17 +109,12 @@ def decide_permission(
     policy: PermissionPolicy,
     allow_terminal: bool = False,
 ) -> dict[str, Any] | None:
-    """A resposta que a política dá sozinha. `None` = só uma pessoa decide.
+    """The answer the policy gives on its own. `None` means a person must decide.
 
-    Isto vive fora da TUI porque **não é pergunta**: `auto_approve`,
-    `deny_writes` e o veto a terminal são regra, e regra o Pulse aplica onde a
-    run roda. Enquanto essa decisão morava só no cliente, uma run cujo cockpit
-    tinha sido fechado parava para sempre num `edit` que ninguém precisava ver —
-    o daemon publicava a pergunta, não havia tela para respondê-la, e a run
-    ficava "precisando de você" para decidir o que a política já tinha decidido.
-
-    `None` = perguntar: sempre em `ask`, e em `deny_writes` quando o kind não
-    diz se escreve (`execute`, desconhecido).
+    Lives outside the TUI so the daemon applies policy where the run executes;
+    otherwise a run with no attached cockpit would block on a prompt the policy
+    already resolves. `None` always under `ask`, and under `deny_writes` when the
+    kind does not say whether it writes (`execute`, unknown).
     """
     options = params.get("options")
     if not isinstance(options, list):
@@ -139,14 +133,10 @@ def decide_permission(
         return chosen("allow", "allow-once")
 
     if policy == "deny_writes":
-        # Sem exceção por caminho: o Pulse não sabe qual pasta é "dele".
-        # Step que precisa escrever é step com `ask` ou `auto_approve`.
         if kind in _READ_ONLY_KINDS:
             return chosen("allow", "allow-once")
         if kind in _WRITE_KINDS or "write" in kind:
             return chosen("reject", "reject-once")
-        # `execute` (o Bash do Claude) e kind desconhecido podem escrever ou
-        # não; só quem lê o comando sabe. Aprovar sozinho furava a política.
         return None
 
     return None
@@ -181,5 +171,3 @@ def permission_target_paths(params: dict[str, Any]) -> list[str]:
     if isinstance(permission, dict):
         add(permission.get("title"))
     return found
-
-

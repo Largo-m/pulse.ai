@@ -1,9 +1,8 @@
-"""Artefatos exibidos no cockpit.
+"""Artifacts shown in the cockpit.
 
-Artefato é qualquer arquivo que o agente escreveu — o Pulse descobre pelos
-tool-calls do ACP, não por convenção de pasta ou extensão. Por isso não há mais
-filtro por `.pulse/specs/**.md`: o caminho chega pronto do runtime e aqui só é
-normalizado e lido.
+An artifact is any file the agent wrote, discovered from ACP tool-calls rather
+than by folder or extension convention; paths arrive from the runtime and are
+only normalized and read here.
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ MAX_ARTIFACT_CHARS = 200_000
 
 
 def artifact_key(path: str) -> str:
-    """Forma canônica de um caminho: barras normais, sem `file://`."""
+    """Canonical form of a path: forward slashes, no `file://` prefix."""
     text = str(path or "").strip().replace("\\", "/")
     if text.startswith("file://"):
         text = text[7:]
@@ -22,11 +21,10 @@ def artifact_key(path: str) -> str:
 
 
 def artifact_paths_in_text(text: str, known: list[str]) -> list[str]:
-    """Artefatos conhecidos que o texto cita.
+    """Known artifacts cited by the text.
 
-    Procura só entre os que a run já registrou, em vez de adivinhar caminho por
-    regex: sem uma convenção de nome, qualquer padrão inventado casaria com
-    trecho de código e apontaria a aba para um arquivo que não é artefato.
+    Only searches among artifacts the run already registered; guessing paths via
+    regex would match code snippets and point the tab at non-artifact files.
     """
     haystack = str(text or "").replace("\\", "/")
     found: list[str] = []
@@ -64,7 +62,7 @@ def resolve_artifact_path(path: str, cwd: str | None = None) -> Path:
 
 
 def artifact_has_content(path: str, cwd: str | None = None) -> bool:
-    """Arquivo existe e não está vazio — há algo de fato para exibir."""
+    """File exists and is non-empty, so there is something to display."""
     target = resolve_artifact_path(path, cwd)
     try:
         return target.is_file() and target.stat().st_size > 0

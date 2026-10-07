@@ -1,9 +1,10 @@
-"""Anexar numa run retomada: o replay só tem o que veio depois da retomada."""
+"""Attaching to a resumed run: the replay only holds what came after the resume."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from tests.conftest import store_step
 from pulse.history.events import LogEntry, LogKind
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
@@ -23,7 +24,7 @@ def _resumed_run(tmp_path: Path) -> run_store.RunRecord:
         ],
     )
     record.steps[0].status = "done"
-    run_store.save_step(record.id, record.steps[0])
+    store_step(record.id, record.steps[0])
     run_store.record_event(record.id, kind="Assistant", title="fiz o um", detail="fiz o um", step_id="one")
     run_store.record_event(record.id, kind="Assistant", title="fazendo o dois", detail="fazendo o dois", step_id="two")
     return record
@@ -33,7 +34,6 @@ def test_steps_closed_before_the_resume_get_their_log_back(tmp_path: Path):
     _resumed_run(tmp_path)
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
-    # O que o replay do barramento novo trouxe: só o step em curso.
     state.entries = [LogEntry(kind=LogKind.ASSISTANT, title="fazendo o dois", entry_id=1, phase_id="two")]
     state._next_entry_id = 2
 

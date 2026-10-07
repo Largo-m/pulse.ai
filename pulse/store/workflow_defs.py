@@ -1,9 +1,7 @@
-"""Definições de workflow, step e agente — a única fonte do que o Pulse roda.
+"""Workflow, step and agent definitions: the single source of what Pulse runs.
 
-O Pulse não tem catálogo em código. Quem responde "quais workflows existem" e
-"qual o próximo agente" é esta tabela; o pacote não traz `.md` nem `.py` com
-nome de fase. A configuração de fábrica é semeada em [pulse.store.db] na
-primeira abertura do banco.
+There is no catalog in code; factory definitions are seeded by
+[pulse.store.db] the first time the database is opened.
 """
 
 from __future__ import annotations
@@ -19,7 +17,6 @@ from pulse.store.db import connect, default_db_path
 class AgentDef:
     id: str
     label: str
-    #: Vazio = cai no padrão da máquina. Ver `pulse.config.resolved`.
     runtime: str = ""
     model: str = ""
     permission_policy: str = ""
@@ -35,18 +32,9 @@ class StepDef:
     agent_id: str
     prompt_template: str
     requires_approval: bool
-    #: Roda uma vez por item que o step anterior enumerou. Ver
-    #: [pulse.orchestrator.fanout].
     fan_out: bool = False
-    #: Exige o bloco `pulse:outcome` para fechar como concluído. Ver
-    #: [pulse.orchestrator.outcome]. Sem efeito quando há aprovação: ali quem
-    #: atesta a entrega é a pessoa.
     requires_outcome: bool = True
-    #: `step_id` de um step anterior. Preenchido, este step pode mandar a run
-    #: voltar até lá e repetir o trecho — ver [pulse.orchestrator.engine]. Quem
-    #: pede a volta é o agente (`next: repeat`); esta coluna é a permissão.
     repeat_from: str = ""
-    #: Teto de voltas, contando a primeira. Zero = não repete.
     repeat_max: int = 0
 
 
@@ -56,8 +44,6 @@ class WorkflowDef:
     label: str
     description: str = ""
     is_default: bool = False
-    #: Tarefa que o loop já sabe qual é (ex.: "Mapear codebase existente"). Com
-    #: valor, o menu entra direto na run em vez de pedir texto ao usuário.
     default_prompt: str = ""
     steps: tuple[StepDef, ...] = ()
 
@@ -179,10 +165,10 @@ def save_agent(agent: AgentDef, *, db_path: Path | None = None) -> None:
 
 
 def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None:
-    """Grava a definição e substitui os steps.
+    """Save the definition and replace its steps.
 
-    Os steps são reescritos por inteiro, não mesclados: um step removido da
-    definição tem de sumir, e casar por id deixaria órfão silencioso.
+    Steps are rewritten wholesale, not merged, so a removed step disappears
+    instead of lingering as a silent orphan.
     """
     connection = connect(db_path or default_db_path())
     try:

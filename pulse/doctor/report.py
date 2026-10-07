@@ -110,5 +110,5 @@ def run_doctor(*, test_acp: bool = False) -> int:
 
 
 def run_agent_login(runtime: str = "cursor") -> int:
-    """Dispara o fluxo de login do runtime (`agent login`, `claude /login`, …)."""
+    """Start the runtime login flow (`agent login`, `claude /login`, ...)."""
     return get_runtime(runtime).login()

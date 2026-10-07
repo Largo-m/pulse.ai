@@ -11,16 +11,13 @@ from typing import Any
 from pulse.config.paths import safe_cwd
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.orchestrator.engine import RUN_BLOCKED, run_workflow
-from pulse.runcontrol import RUN_STOPPED, RunControl
+from pulse.orchestrator.engine import run_workflow
+from pulse.runcontrol import RunControl
 from pulse.store import runs as run_store
-from pulse.store.runs import AWAITING_INPUT
+from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
-#: Quanto tempo uma run encerrada continua anexável em memória. Depois disso o
-#: replay some e quem quiser revê-la usa o histórico, que lê do banco.
 FINISHED_TTL = 15 * 60.0
-#: Teto de runs encerradas guardadas, independente do TTL.
 FINISHED_KEEP = 10
 
 
@@ -30,13 +27,11 @@ class RunState:
     workflow_id: str
     prompt: str
     workspace: str
-    status: str = "running"
+    status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
     bus: EventBus = field(default_factory=EventBus)
     correlator: PromptCorrelator | None = None
-    cancel_requested: bool = False
     control: RunControl | None = None
-    #: Run anterior a retomar, do primeiro step que não fechou.
     resume_run_id: str | None = None
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
@@ -44,9 +39,17 @@ class RunState:
     def is_active(self) -> bool:
         return self.finished_at is None
 
+    def finish(self, exit_code: int) -> None:
+        """The engine returned; record how the run ended."""
+        if not self.is_active():
+            raise RuntimeError(f"run {self.id} already finished")
+        self.exit_code = exit_code
+        self.status = RunStatus.for_exit_code(exit_code)
+        self.finished_at = time.time()
+
 
 class RunAlreadyActive(Exception):
-    """Retomar uma run que já está rodando. O id é o mesmo; a run também."""
+    """Raised when resuming a run that is already running."""
 
 
 class RunManager:
@@ -80,9 +83,6 @@ class RunManager:
     ) -> RunState:
         if get_workflow(workflow_id) is None:
             raise ValueError(f"workflow desconhecido: {workflow_id}")
-        # Retomar continua a mesma run, então ela mantém o id — é isso que faz
-        # `RunState.id` e `runs.id` no SQLite serem a mesma coisa, e o que
-        # permite anexar numa run pelo id em vez de chutar a mais recente.
         run_id = resume_run_id or str(uuid.uuid4())
         self._prune()
         bus = EventBus()
@@ -101,9 +101,6 @@ class RunManager:
             control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
         )
-        # Checar e registrar sob o mesmo lock: dois "retomar" da mesma run ao
-        # mesmo tempo (endpoints síncronos rodam num threadpool) passariam os
-        # dois por uma checagem feita antes.
         with self._lock:
             existing = self._runs.get(run_id)
             if existing is not None and existing.is_active():
@@ -123,10 +120,9 @@ class RunManager:
             return self._runs.get(run_id)
 
     def list_runs(self) -> list[dict[str, Any]]:
-        """As runs que o daemon tem em memória — ativas primeiro, mais nova no topo.
+        """Runs held in daemon memory: active first, newest on top.
 
-        É o que a Home consulta para saber que há algo rodando em background e o
-        que o cockpit usa para reabrir sem recriar nada.
+        Home uses it to find background runs; the cockpit uses it to reattach.
         """
         with self._lock:
             states = list(self._runs.values())
@@ -144,11 +140,7 @@ class RunManager:
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
             "prompt": state.prompt,
             "workspace": state.workspace,
-            # `awaiting_input` é derivado, não guardado: `RunState.status` é o
-            # desfecho da run, e esperar não é desfecho nenhum. Quem lista
-            # precisa ver a diferença entre uma run trabalhando e uma parada
-            # esperando resposta.
-            "status": AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
+            "status": RunStatus.AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
             "active": state.is_active(),
             "awaiting_prompt": awaiting,
             "awaiting_since": since,
@@ -159,10 +151,9 @@ class RunManager:
 
     @staticmethod
     def _current_step_label(state: RunState) -> str:
-        """Em que passo a run está, lido do banco — a fonte que o motor atualiza.
+        """The run's current step, read from the database the engine updates.
 
-        Banco indisponível não vale derrubar a listagem: a Home mostra a run sem
-        o passo em vez de não mostrar a run.
+        A database error returns empty instead of breaking the listing.
         """
         try:
             record = run_store.load_run(state.id)
@@ -174,12 +165,10 @@ class RunManager:
         return step.label if step is not None else ""
 
     def _prune(self) -> None:
-        """Solta as runs encerradas que ninguém vai mais anexar.
+        """Drop finished runs nobody will attach to anymore.
 
-        O replay vive no `EventBus` de cada run; guardar todas para sempre é
-        vazamento. O passado continua no banco — o que se perde aqui é só a
-        possibilidade de reabrir a run *ao vivo*, que para run encerrada não
-        existe mesmo.
+        Each run's replay lives in its `EventBus`; keeping them forever leaks
+        memory. Past data remains in the database.
         """
         now = time.time()
         with self._lock:
@@ -195,15 +184,10 @@ class RunManager:
                     self._runs.pop(state.id, None)
 
     def cancel(self, run_id: str) -> bool:
-        """Corta o step em voo e encerra a run. Retomável por `resume_run_id`."""
+        """Cut the in-flight step and end the run. Resumable via `resume_run_id`."""
         state = self.get(run_id)
         if state is None:
             return False
-        state.cancel_requested = True
-        # Antes do `stop`: uma run parada no meio de uma pergunta está bloqueada
-        # esperando resposta sem prazo, e o pedido de parada sozinho não acorda
-        # quem está nesse `wait`. Cancelar devolve `None` ao motor, que é o
-        # mesmo que a pessoa fechar a pergunta.
         if state.correlator is not None:
             state.correlator.cancel_all()
         if state.control is not None:
@@ -243,13 +227,8 @@ class RunManager:
                 run_id=state.id,
             )
         except Exception as error:
-            # O traceback vai para o stderr do daemon (`~/.pulse/daemon.log`):
-            # daqui para cima só sobrevive a mensagem, e uma run que morre por
-            # um tipo de exceção inesperado precisa deixar onde olhar.
             traceback.print_exc()
-            state.status = "failed"
-            state.exit_code = 1
-            state.finished_at = time.time()
+            state.finish(1)
             state.bus.publish(
                 {
                     "type": "run.finished",
@@ -260,18 +239,7 @@ class RunManager:
             )
             state.bus.close()
             return
-        state.exit_code = exit_code
-        if exit_code == 0:
-            state.status = "completed"
-        elif exit_code == RUN_STOPPED:
-            state.status = "stopped"
-        elif exit_code == RUN_BLOCKED:
-            # Nada quebrou: um step declarou que não tinha como entregar e a run
-            # não passou por cima. Quem consulta a API precisa ver a diferença.
-            state.status = "blocked"
-        else:
-            state.status = "failed"
-        state.finished_at = time.time()
+        state.finish(exit_code)
         state.bus.publish(
             {
                 "type": "run.finished",

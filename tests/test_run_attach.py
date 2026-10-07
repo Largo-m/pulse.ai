@@ -1,9 +1,8 @@
-"""Sair do cockpit larga a tela, não a run.
+"""Leaving the cockpit drops the screen, not the run.
 
-A run vive no daemon; o cockpit é uma janela sobre ela. O que estes testes
-guardam é a diferença entre as duas coisas: desanexar não cancela, não responde
-pergunta nenhuma e não deixa thread presa, e voltar reencontra o relógio no
-ponto em que estava.
+The run lives in the daemon; the cockpit is a window onto it. Detaching does not
+cancel, answers no question and leaves no stuck thread, and coming back finds the
+clock where it was.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.conftest import store_step, store_run_status
 from pulse.client.run_session import DETACHED, EngineRunSession
 from pulse.history.events import PhaseStatus
 from pulse.store import runs as run_store
@@ -26,7 +26,7 @@ from pulse.tui.state import CockpitState
 
 
 class _BlockingClient:
-    """Stream que não acaba — como o de uma run que ainda está trabalhando."""
+    """A stream that never ends, like that of a run still working."""
 
     def __init__(self) -> None:
         self.cancelled: list[str] = []
@@ -63,12 +63,11 @@ def test_detaching_leaves_the_run_alone():
         time.sleep(0.1)
         session.detach()
         assert future.result(timeout=5) == DETACHED
-    # Largar a tela não é parar a run: ninguém pediu cancelamento.
     assert client.cancelled == []
 
 
 def test_abandoning_the_bridge_frees_the_thread_without_answering():
-    """A pergunta continua de pé no daemon; quem morre é a thread da tela."""
+    """The question stays open in the daemon; only the screen thread dies."""
     bridge = PromptBridge()
     with ThreadPoolExecutor(max_workers=1) as pool:
         asking = pool.submit(
@@ -83,7 +82,7 @@ def test_abandoning_the_bridge_frees_the_thread_without_answering():
 
 
 def test_closing_the_bridge_still_cancels_what_is_open():
-    """Run encerrada é outro caso: aí responder "cancelado" é a verdade."""
+    """A finished run is a different case: there, answering "cancelled" is the truth."""
     bridge = PromptBridge()
     with ThreadPoolExecutor(max_workers=1) as pool:
         asking = pool.submit(bridge.request, PromptKind.TEXT, title="t", prompt="?")
@@ -108,10 +107,10 @@ def _seed_run(tmp_path: Path, *, run_id: str = "run-live") -> None:
 
 
 def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
-    """O replay remarca `phase.begin` agora; a hora de verdade é do banco."""
+    """Replay restamps `phase.begin` as now; the real time comes from the database."""
     _seed_run(tmp_path)
     now = datetime.now(UTC).replace(microsecond=0)
-    run_store.save_step(
+    store_step(
         "run-live",
         StepRecord(
             step_id="one",
@@ -119,11 +118,11 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
             label="Um",
             agent_id="tester",
             status="done",
-            started_at=(now - timedelta(seconds=90)).isoformat(),
-            ended_at=(now - timedelta(seconds=60)).isoformat(),
+            started_at=now - timedelta(seconds=90),
+            ended_at=now - timedelta(seconds=60),
         ),
     )
-    run_store.save_step(
+    store_step(
         "run-live",
         StepRecord(
             step_id="two",
@@ -131,31 +130,29 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
             label="Dois",
             agent_id="tester",
             status="running",
-            started_at=(now - timedelta(seconds=45)).isoformat(),
+            started_at=now - timedelta(seconds=45),
         ),
     )
 
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
     state.phases[0].status = PhaseStatus.DONE
-    # Como o replay deixa: o step em curso começando "agora".
     state.begin_phase("Dois")
 
     stamp_live_elapsed(state, "run-live")
 
     assert state.phases[0].elapsed_label() == "00:30"
-    # O step vivo continua contando, mas de onde parou — não do zero.
     spent = time.monotonic() - state.phases[1].started_at
     assert 44 <= spent <= 50
     assert state.phases[1].ended_at is None
 
 
 def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path):
-    """Quem volta para uma run que está esperando encontra o relógio parado.
+    """Coming back to a waiting run finds the clock stopped.
 
-    O `run.awaiting` vem pelo replay junto com o resto do passado, então a tela
-    reconstruída já nasce sabendo que a run não está trabalhando — e os minutos
-    que a pergunta passou aberta não entram na duração do step.
+    `run.awaiting` arrives through replay with the rest of the past, so the
+    rebuilt screen already knows the run is not working, and the minutes the
+    question stayed open do not count toward the step duration.
     """
     from unittest.mock import MagicMock
 
@@ -163,7 +160,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
 
     _seed_run(tmp_path, run_id="run-wait")
     now = datetime.now(UTC).replace(microsecond=0)
-    run_store.save_step(
+    store_step(
         "run-wait",
         StepRecord(
             step_id="one",
@@ -171,17 +168,16 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
             label="Um",
             agent_id="tester",
             status="running",
-            started_at=(now - timedelta(seconds=300)).isoformat(),
+            started_at=now - timedelta(seconds=300),
+            waiting_seconds=240.0,
         ),
     )
-    run_store.add_waiting_seconds("run-wait", "one", 240.0)
 
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
     sink = CockpitSink(state, on_change=MagicMock(), cwd=str(tmp_path))
     session = EngineRunSession(stream=sink, prompt_handler=MagicMock(), client=MagicMock())
 
-    # Como o replay entrega: o step começou e a run parou para perguntar algo.
     session._dispatch({"type": "phase.begin", "title": "Um"})
     session._dispatch({"type": "run.awaiting", "waiting": True})
 
@@ -190,9 +186,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
 
     stamp_live_elapsed(state, "run-wait")
 
-    # Cinco minutos de parede, quatro esperando: o passo levou um.
     assert state.phases[0].elapsed_label() == "01:00"
-    # E segue congelado: o relógio só volta quando alguém responder.
     assert state.phases[0].elapsed_label(now=time.monotonic() + 120) == "01:00"
 
     session._dispatch({"type": "run.awaiting", "waiting": False})
@@ -201,7 +195,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
 
 
 def test_history_puts_what_is_running_above_the_past(tmp_path: Path):
-    """Em andamento é o único item da lista em que ainda dá para entrar."""
+    """In-progress runs are the only list items you can still enter."""
     from pulse.history.catalog import HistoryCatalog
     from pulse.history.models import HistoryStatus
 
@@ -218,17 +212,15 @@ def test_history_puts_what_is_running_above_the_past(tmp_path: Path):
             user_prompt=run_id,
             steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
         )
-        run_store.update_run(run_id, status=status)
+        store_run_status(run_id, status)
 
     items = HistoryCatalog(tmp_path).list_items()
     assert {item.run_id for item in items[:2]} == {"rodando", "rodando-2"}, (
-        "as runs em execução têm que vir primeiro"
+        "running runs must come first"
     )
     assert all(item.status is HistoryStatus.IN_PROGRESS for item in items[:2])
     assert all(item.status is not HistoryStatus.IN_PROGRESS for item in items[2:])
 
-    # Dentro de cada grupo a ordem do banco é preservada (mais recente no topo):
-    # a reordenação é estável, não um `sort` que embaralha o resto.
     from_db = [record.id for record in run_store.list_runs(tmp_path)]
     for group in (items[:2], items[2:]):
         ids = [item.run_id for item in group]
@@ -246,14 +238,14 @@ def test_searching_keeps_the_running_run_on_top(tmp_path: Path):
             user_prompt="alfa",
             steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
         )
-        run_store.update_run(run_id, status=status)
+        store_run_status(run_id, status)
 
     found = HistoryCatalog(tmp_path).search("alfa")
     assert [item.run_id for item in found] == ["alfa-viva", "alfa-velha"]
 
 
 def test_an_abandoned_bridge_never_answers_later_questions():
-    """Pergunta que chega depois de largar a ponte não vira "cancelado"."""
+    """A question arriving after the bridge was abandoned does not become "cancelled"."""
     bridge = PromptBridge()
     bridge.abandon()
     with pytest.raises(PromptAbandoned):
@@ -261,7 +253,7 @@ def test_an_abandoned_bridge_never_answers_later_questions():
 
 
 class _OnePromptClient:
-    """Stream que entrega uma pergunta e anota o que voltou para o daemon."""
+    """A stream that delivers one question and records what went back to the daemon."""
 
     def __init__(self) -> None:
         self.answers: list = []
@@ -283,7 +275,7 @@ class _OnePromptClient:
 
 
 def test_a_detached_session_does_not_answer_for_the_screen():
-    """Desanexada no meio da pergunta, a sessão não manda o `None` ao daemon."""
+    """Detached mid-question, the session does not send `None` to the daemon."""
     client = _OnePromptClient()
     handler = MagicMock()
     session = EngineRunSession(stream=MagicMock(), prompt_handler=handler, client=client)

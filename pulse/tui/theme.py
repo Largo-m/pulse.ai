@@ -584,7 +584,6 @@ ConfirmScreen #confirm-box {{
     height: auto;
     padding: 1 2;
     background: {BG_PANEL};
-    /* Vermelho porque o que passa por aqui não volta. */
     border: solid {ERROR};
 }}
 

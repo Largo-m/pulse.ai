@@ -1,19 +1,20 @@
-"""Retomar reabre a run com o passado dela, não com a tela em branco."""
+"""Resuming reopens the run with its past, not with a blank screen."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, store_step
 
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, RUNNING, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import restore_run
 from pulse.tui.state import CockpitState, PhaseStatus
 
 
 def _run_with_history(workspace: Path) -> str:
-    """Uma run com o primeiro step fechado, log, tool e duração gravados."""
+    """A run with the first step closed and its log, tool and duration recorded."""
     make_workflow("demo", steps=[("plan", "Planejar"), ("build", "Construir")])
     record = run_store.create_run(
         run_id="run-1",
@@ -26,10 +27,10 @@ def _run_with_history(workspace: Path) -> str:
         ],
     )
     plan = record.steps[0]
-    plan.status = DONE
-    plan.started_at = "2026-09-29T10:00:00+00:00"
-    plan.ended_at = "2026-09-29T10:02:30+00:00"
-    run_store.save_step(record.id, plan)
+    plan.status = StepStatus.DONE
+    plan.started_at = datetime(2026, 9, 29, 10, 0, tzinfo=UTC)
+    plan.ended_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
+    store_step(record.id, plan)
 
     run_store.record_event(
         record.id, step_id="plan", kind="Assistant", title="Plano pronto", detail="Plano pronto"
@@ -47,7 +48,7 @@ def _state() -> CockpitState:
     return state
 
 
-def test_retomar_traz_log_tool_e_duracao_dos_steps_anteriores(tmp_path: Path):
+def test_resume_brings_back_log_tool_and_duration_of_previous_steps(tmp_path: Path):
     run_id = _run_with_history(tmp_path)
     state = _state()
 
@@ -55,16 +56,16 @@ def test_retomar_traz_log_tool_e_duracao_dos_steps_anteriores(tmp_path: Path):
 
     titles = [entry.title for entry in state.entries]
     assert "Plano pronto" in titles
-    assert "read README.md" in titles, "o tool também volta, não só a fala do agente"
+    assert "read README.md" in titles, "the tool comes back too, not only the agent speech"
 
     plan = state.phases[0]
     assert plan.status == PhaseStatus.DONE
-    assert plan.elapsed_label() != "", "o step anterior mostra quanto demorou"
+    assert plan.elapsed_label() != "", "the previous step shows how long it took"
     assert state.phases[1].status == PhaseStatus.PENDING
 
 
-def test_a_run_ao_vivo_acrescenta_em_vez_de_reescrever_o_que_voltou(tmp_path: Path):
-    """Id repetido faria o stream reescrever uma linha antiga."""
+def test_the_live_run_appends_instead_of_rewriting_what_came_back(tmp_path: Path):
+    """A repeated id would make the stream rewrite an old line."""
     run_id = _run_with_history(tmp_path)
     state = _state()
 
@@ -77,14 +78,14 @@ def test_a_run_ao_vivo_acrescenta_em_vez_de_reescrever_o_que_voltou(tmp_path: Pa
     assert len(set(ids)) == len(ids)
 
 
-def test_step_que_a_queda_pegou_no_meio_volta_como_pendente(tmp_path: Path):
-    """`running` no banco é step interrompido — nada está em curso ao reabrir."""
+def test_a_step_interrupted_by_a_crash_comes_back_as_pending(tmp_path: Path):
+    """`running` in the database is an interrupted step: nothing is in progress on reopen."""
     run_id = _run_with_history(tmp_path)
     record = run_store.load_run(run_id)
     build = record.step("build")
-    build.status = RUNNING
-    build.started_at = "2026-09-29T10:02:30+00:00"
-    run_store.save_step(run_id, build)
+    build.status = StepStatus.RUNNING
+    build.started_at = datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC)
+    store_step(run_id, build)
 
     state = _state()
     restore_run(state, run_id, tmp_path)
@@ -93,8 +94,8 @@ def test_step_que_a_queda_pegou_no_meio_volta_como_pendente(tmp_path: Path):
     assert state.phases[1].elapsed_label() == ""
 
 
-def test_run_que_nao_existe_deixa_a_tela_como_estava(tmp_path: Path):
-    """Histórico é contexto, não requisito: a run nova continua podendo rodar."""
+def test_a_missing_run_leaves_the_screen_as_it_was(tmp_path: Path):
+    """History is context, not a requirement: the new run can still run."""
     state = _state()
 
     restore_run(state, "nao-existe", tmp_path)
@@ -103,8 +104,8 @@ def test_run_que_nao_existe_deixa_a_tela_como_estava(tmp_path: Path):
     assert [phase.status for phase in state.phases] == [PhaseStatus.PENDING] * 2
 
 
-def test_o_cockpit_reabre_com_o_passado_antes_de_a_run_recomecar(tmp_path: Path, monkeypatch):
-    """A tela, não só o estado: é o `on_mount` do cockpit que chama o restore."""
+def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Path, monkeypatch):
+    """The screen, not just the state: the cockpit `on_mount` calls the restore."""
     import asyncio
 
     import pytest
@@ -127,7 +128,6 @@ def test_o_cockpit_reabre_com_o_passado_antes_de_a_run_recomecar(tmp_path: Path,
             screen = CockpitScreen(
                 "demo", "fazer algo", workspace=tmp_path, resume_run_id=run_id
             )
-            # A run em si não roda: o que se testa é o que a tela mostra ao abrir.
             monkeypatch.setattr(screen, "_run_workflow", lambda: None)
             app.push_screen(screen)
             await pilot.pause()
@@ -140,8 +140,8 @@ def test_o_cockpit_reabre_com_o_passado_antes_de_a_run_recomecar(tmp_path: Path,
     asyncio.run(run())
 
 
-def test_a_escolha_oferece_voltar_no_lugar_de_so_visualizar():
-    """"Só visualizar" prometia uma tela; "Voltar" diz o que a tecla faz."""
+def test_the_choice_offers_back_instead_of_view_only():
+    """"Só visualizar" promised a screen; "Voltar" says what the key does."""
     import asyncio
 
     import pytest
@@ -170,13 +170,13 @@ def test_a_escolha_oferece_voltar_no_lugar_de_so_visualizar():
                 str(options.get_option_at_index(index).id)
                 for index in range(options.option_count)
             ]
-            assert ids == [RESUME, BACK], "refazer do zero saiu; sobrou retomar"
+            assert ids == [RESUME, BACK], "restart from scratch is gone; only resume remains"
 
             screen.action_back()
             await pilot.pause()
-            assert chosen == [None], "voltar não escolhe nada: quem chamou fica onde está"
+            assert chosen == [None], "back picks nothing: the caller stays where it is"
 
     asyncio.run(run())
     from pulse.tui.screens.resume_choice import ResumeChoiceScreen as Screen
 
-    assert not hasattr(Screen, "action_just_view"), "'Só visualizar' saiu de vez"
+    assert not hasattr(Screen, "action_just_view"), "'Só visualizar' is gone for good"

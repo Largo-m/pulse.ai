@@ -28,15 +28,15 @@ def _workflow(*steps: tuple[str, str]) -> WorkflowDef:
     )
 
 
-def test_faixa_que_cruza_outra_e_ignorada():
-    """c volta para a, d volta para b: a segunda faixa sobrescrevia a primeira."""
+def test_a_range_crossing_another_is_ignored():
+    """c goes back to a, d goes back to b: the second range used to overwrite the first."""
     loops = find_loops(_workflow(("a", ""), ("b", ""), ("c", "a"), ("d", "b")))
 
     assert loops[2] == Loop(start=0, end=2)
     assert 3 not in loops
 
 
-def test_faixas_separadas_valem_as_duas():
+def test_separate_ranges_both_count():
     loops = find_loops(_workflow(("a", ""), ("b", "a"), ("c", ""), ("d", "c")))
 
     assert loops[1] == Loop(start=0, end=1)

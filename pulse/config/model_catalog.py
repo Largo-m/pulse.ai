@@ -8,7 +8,7 @@ from pulse.config.paths import safe_cwd
 from pulse.config.resolved import resolve_config
 
 def _default_models() -> list[str]:
-    """União dos modelos declarados por cada runtime registrado."""
+    """Union of the models declared by each registered runtime."""
     from pulse.runtimes import all_runtimes
 
     models: list[str] = []

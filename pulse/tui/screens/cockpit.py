@@ -29,12 +29,6 @@ from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 _PROMPT_BLOCKED = {
-    # Com um prompt aberto quem está travado é o usuário, não o agente: cortar
-    # o turno aqui deixaria a pergunta sem ninguém para respondê-la.
-    #
-    # Sair (`escape_back`/`back_to_menu`) não está nesta lista de propósito: a
-    # run segue no daemon e a pergunta continua pendente, esperando a pessoa
-    # voltar. Parar, que decide pelo agente, continua bloqueado.
     "stop_run",
     "toggle_artifact_pane",
     "close_artifact_pane",
@@ -76,16 +70,11 @@ class CockpitScreen(Screen[None]):
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
         self.resume_run_id = resume_run_id
-        #: Run que já está rodando no daemon. A tela escuta em vez de criar.
         self.attach_run_id = attach_run_id
         self.state = CockpitState()
         self.state.configure_workflow(workflow_id)
         self.bridge = PromptBridge()
-        #: A raiz do projeto: é com ela que o daemon resolve a config e é por
-        #: ela que as runs deste workspace são encontradas.
         self._workspace = str(workspace or Path.cwd())
-        #: Onde a run trabalha — igual à raiz, até o `run.context` dizer que é
-        #: um worktree. Só o painel de artefatos e os caminhos de arquivo usam.
         self._cwd = self._workspace
         self.sink = CockpitSink(
             self.state,
@@ -98,12 +87,8 @@ class CockpitScreen(Screen[None]):
         self._worker = None
         self._dirty = False
         self._prompt_open = False
-        #: Criada na thread da run; as teclas de controle falam com ela por HTTP.
         self._session = None
-        #: Ligado ao sair: a run continua, esta tela é que acabou.
         self._detached = False
-        #: Ligado quando o stream da run acabou de verdade (`run.finished` ou
-        #: erro). Até lá a run está viva no daemon, tenha ela aberto step ou não.
         self._run_over = False
 
     def compose(self) -> ComposeResult:
@@ -123,12 +108,10 @@ class CockpitScreen(Screen[None]):
         self._worker = self.run_worker(self._run_workflow, exclusive=True, thread=True)
 
     def on_unmount(self) -> None:
-        """A tela morreu. Se a run não morreu junto, nada aqui a responde.
+        """Detach from a still-alive run instead of cancelling its pending prompts.
 
-        Vale tanto para o `q` (que já desanexou) quanto para sair do Pulse com
-        o cockpit aberto: o daemon é outro processo, a run continua lá e a
-        pergunta aberta tem que continuar esperando. Só quando a run já acabou
-        é que cancelar o que sobrou é a verdade.
+        The run lives in the daemon process, so open prompts must keep waiting;
+        leftovers are only cancelled once the run is over.
         """
         if self._run_alive():
             self._detached = True
@@ -140,24 +123,18 @@ class CockpitScreen(Screen[None]):
         self.bridge.close()
 
     def _run_alive(self) -> bool:
-        """A run ainda existe no daemon — a pergunta é se esta tela a solta.
+        """Whether the run still exists in the daemon.
 
-        Não é `state.running`: esse só liga no primeiro `phase.begin`. Antes
-        dele a run já está no daemon (resolvendo config, abrindo o worktree), e
-        sair nessa janela fechava a ponte sem desanexar — a sessão seguia
-        ouvindo com a ponte fechada e respondia "cancelado" sozinha a toda
-        pergunta que a run fizesse depois, inclusive às da tela reanexada.
+        Not `state.running`, which only flips on the first `phase.begin`; leaving
+        before that must still detach, or the session auto-cancels later prompts.
         """
         return not self._run_over
 
     def _restore_previous_run(self) -> None:
-        """Retomar continua a mesma run: a tela abre com o passado dela.
+        """Hydrate the cockpit with the resumed run's past steps, logs and durations.
 
-        Sem isto o cockpit nascia vazio e os steps que já tinham fechado voltavam
-        como "concluído" e nada mais — sem log, sem tool e sem duração.
-
-        Anexar não passa por aqui: lá quem reconstrói é o replay do barramento,
-        completado por `restore_settled_steps` no fim dele (`_on_replay_end`).
+        Attach does not use this: it is rebuilt by the bus replay plus
+        `restore_settled_steps` in `_on_replay_end`.
         """
         if self.attach_run_id or not self.resume_run_id:
             return
@@ -169,15 +146,12 @@ class CockpitScreen(Screen[None]):
                 self._cwd = exec_root
                 self.sink.set_cwd(exec_root)
         except (OSError, ValueError):
-            # Histórico é contexto, não requisito: não vale impedir a run de
-            # continuar porque o banco não abriu.
             pass
 
     def _on_replay_end(self) -> None:
-        """Fim do replay: acertar o relógio, que o replay não reproduz.
+        """Fix step timings after replay using the real times from `run_steps`.
 
-        Os `phase.begin` reaplicados marcaram "agora" como início de cada step;
-        quem sabe a hora de verdade é `run_steps`.
+        Replayed `phase.begin` events stamp "now" as each step's start.
         """
         if not self.attach_run_id:
             return
@@ -187,15 +161,14 @@ class CockpitScreen(Screen[None]):
             restore_settled_steps(self.state, self.attach_run_id, Path(self._workspace))
             stamp_live_elapsed(self.state, self.attach_run_id)
         except (OSError, ValueError):
-            # Duração é acabamento: não vale derrubar a run reanexada por isso.
             pass
         self._dirty = True
 
     def _on_context(self, cwd: str) -> None:
-        """A run disse onde trabalha — o painel de artefatos tem que ir junto.
+        """Follow the run's working directory with the artifact pane.
 
-        Chega da thread da run, então nada de `query_one` aqui: o painel é
-        reapontado no próximo `_sync_ui`, que roda no laço da tela.
+        Called from the run thread, so no `query_one` here; the pane is
+        repointed on the next `_sync_ui` in the screen loop.
         """
         if not cwd or cwd == self._cwd:
             return
@@ -291,7 +264,6 @@ class CockpitScreen(Screen[None]):
                     resume_run_id=self.resume_run_id,
                 )
         except PromptAbandoned:
-            # Saímos da tela com uma pergunta aberta. A run segue no daemon.
             return
         except Exception as error:
             if self._detached:
@@ -318,8 +290,6 @@ class CockpitScreen(Screen[None]):
             self._offer_resume()
             return
         elif code == RUN_BLOCKED:
-            # "Falhou" seria a palavra errada: o agente rodou e disse que não
-            # tinha como entregar. O que resolve é destravar e retomar.
             self.state.add_info(
                 "Run bloqueada — resolva o que o step pediu e retome de onde parou"
             )
@@ -332,9 +302,6 @@ class CockpitScreen(Screen[None]):
                     "Workflow falhou",
                     f"O fluxo encerrou com código {code}.",
                 )
-            # Falha também é run pela metade: o que já rodou está em
-            # `run_steps`, então oferecer retomar aqui evita mandar o usuário
-            # ao histórico só para descobrir que dá para continuar.
             if self._resumable_run() is not None:
                 self.state.add_info("Dá para retomar do step que falhou")
             self._sync_ui(force=True)
@@ -343,18 +310,16 @@ class CockpitScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def action_stop_run(self) -> None:
-        """`s` corta o step em execução e encerra a run — retomável depois."""
+        """`s` cuts the running step and ends the run, which stays resumable."""
         session = self._session
         if session is None or not self.state.running or not self.state.can_stop:
             return
         session.stop()
-        # O corte do turno leva alguns instantes; o estado real chega pelo
-        # evento `run.stopped`, mas a intenção aparece na hora.
         self.state.add_info("Parando — cortando o step em execução")
         self._sync_ui(force=True)
 
     def _offer_resume(self) -> None:
-        """Depois de parar, oferece o mesmo retomar do histórico."""
+        """After stopping, offer the same resume choice as the history screen."""
         pending = self._resumable_run()
         if pending is None:
             return
@@ -376,19 +341,15 @@ class CockpitScreen(Screen[None]):
         )
 
     def _resumable_run(self) -> tuple[str, str] | None:
-        """Run parada que dá para retomar: a desta tela, ou a mais recente."""
+        """Resumable stopped run: this screen's run, or the most recent one."""
         from pulse.store import runs as run_store
 
-        # Com N runs vivas, "a mais recente do workspace" pode ser a de outra
-        # tela. Quando esta run tem id conhecido é por ele que se pergunta.
         known = self.attach_run_id or self.resume_run_id
         try:
             if known:
                 record = run_store.load_run(known)
                 pending = [record] if record is not None and record.is_incomplete() else []
             else:
-                # Pela raiz do projeto, não pelo `_cwd`: com worktree o `_cwd`
-                # é o diretório da run, e nenhuma run é indexada por ele.
                 pending = run_store.find_resumable(Path(self._workspace))
         except (OSError, ValueError):
             return None
@@ -488,11 +449,10 @@ class CockpitScreen(Screen[None]):
         self._sync_ui(force=True)
 
     def action_back_to_menu(self) -> None:
-        """Sair é largar a tela, não a run.
+        """Leave the screen, not the run.
 
-        A run vive no daemon, então sair só desliga este observador: o stream é
-        solto e as perguntas abertas continuam pendentes lá, esperando a pessoa
-        voltar. A Home mostra a run e reabre por ela.
+        The run lives in the daemon; this only detaches the observer and open
+        prompts stay pending until the user reattaches from Home.
         """
         if self._run_alive():
             self._detached = True
@@ -504,7 +464,7 @@ class CockpitScreen(Screen[None]):
 
 
 def _run_summary(record) -> str:
-    """Onde a run parou, para a tela de escolha."""
-    done = sum(1 for step in record.steps if step.status in {"done", "skipped"})
+    """Where the run stopped, for the resume choice screen."""
+    done = sum(1 for step in record.steps if step.settled)
     current = record.current_step or (record.steps[0].step_id if record.steps else "—")
     return f"{current} · steps {done}/{len(record.steps)}"

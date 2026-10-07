@@ -15,47 +15,33 @@ from pulse.acp.run_events import RunEventRecorder
 from pulse.runtimes import AgentRuntime, runtime_for_command
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.ports import NullPromptPort, NullStreamSink
+from pulse.ports import NullPromptPort, NullStreamSink, NullUserWaitListener, UserWaitListener
 from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
 from pulse.prompts.permission import PermissionPolicy, decide_permission
 from pulse.prompts.text_questionnaire import parse_text_questionnaire
 from pulse.runcontrol import RunControl
 
-#: Teto de rodadas de pergunta/resposta dentro de um step. Um agente que
-#: pergunta até não sobrar dúvida precisa de folga; o teto existe só para não
-#: deixar um agente em loop infinito — ao estourar, o step cai no retry.
+# An agent that asks until no doubt is left needs room; the cap only stops an
+# endless question loop, and hitting it sends the step to the retry menu.
 MAX_PHASE_APPROVAL_TURNS = 12
 
-#: Turnos de um step sem aprovação: o trabalho, mais uma continuação. A segunda
-#: é a chance de o agente destravar sozinho o que declarou bloqueado. Duas e não
-#: mais: um agente que repete o bloqueio depois de ser cutucado uma vez está
-#: dizendo que precisa de gente, e insistir só gasta token para chegar ao mesmo
-#: menu. Ver [pulse.orchestrator.engine._attempt_step].
+# The work plus one continuation, the agent's chance to unblock itself. An agent
+# that repeats the block after one nudge needs a person; more turns only burn
+# tokens to reach the same menu.
 MAX_PROMPT_TURNS = 2
 
-#: Depois de pedir `session/cancel`, quanto esperamos o agente fechar o turno
-#: por conta própria antes de considerar cancelado mesmo assim.
 CANCEL_GRACE_SECONDS = 10.0
-#: `session/close` é arrumação: um agente que não responde a ele em 10s não vai
-#: responder em 600, e esperar o timeout inteiro dobrava o custo de um travamento.
 CLOSE_TIMEOUT_SECONDS = 10.0
 
-#: `session/prompt` é o único pedido sem prazo previsível: implementar uma task
-#: leva o tempo que levar. Para ele o relógio é de *silêncio* — ver `_request`.
 _IDLE_CLOCK_METHODS = frozenset({"session/prompt"})
 
 
 class _WatchedPrompts:
-    """Proxy do prompt port que avisa quando há uma pergunta na tela.
+    """Prompt port proxy that signals when a question is on screen.
 
-    Enquanto o usuário decide, o agente fica calado — e silêncio é justamente o
-    que o relógio de `session/prompt` mede. Sem isto, uma aprovação que demorou
-    mais que o timeout derrubava o step por "timeout", culpando o agente por
-    uma espera que era nossa.
-
-    É também o único ponto por onde **toda** pergunta passa — a do agente, a do
-    questionário e a do menu de retry do motor —, e por isso o lugar de onde o
-    diálogo vai para o log da run (`on_answer`).
+    While the user decides, the agent is silent, which the `session/prompt` idle
+    clock would otherwise count as a timeout. Every question passes through here,
+    so it is also where the dialog is recorded to the run log (`on_answer`).
     """
 
     def __init__(self, inner: Any, *, on_enter, on_exit, on_answer=None) -> None:
@@ -65,16 +51,11 @@ class _WatchedPrompts:
         self._on_answer = on_answer
 
     def __getattr__(self, name: str) -> Any:
-        # AttributeError vaza de propósito: quem pergunta por `select_choice`
-        # num port que não tem precisa continuar ouvindo "não tem".
         attr = getattr(self._inner, name)
         if not callable(attr):
             return attr
 
         def watched(*args: Any, **kwargs: Any) -> Any:
-            # O que a política resolve não é pergunta: decidir aqui, antes de
-            # abrir a espera, é o que impede cada tool-call de um step
-            # `auto_approve` de piscar a run para `awaiting_input` e de volta.
             if name == "respond_to_permission":
                 decided = _policy_decision(args, kwargs)
                 if decided is not None:
@@ -95,14 +76,13 @@ class _WatchedPrompts:
         try:
             self._on_answer(name, args, kwargs, result)
         except Exception:
-            # Registrar o diálogo é acessório: não pode derrubar a pergunta que
-            # a pessoa acabou de responder.
             pass
 
 
 def _policy_decision(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any] | None:
-    """A resposta de `respond_to_permission(params, *, policy, allow_terminal)`
-    que a política dá sozinha. `None` = só uma pessoa decide."""
+    """Answer to `respond_to_permission(params, *, policy, allow_terminal)` decided by policy alone.
+
+    `None` means only a person can decide."""
     params = args[0] if args else kwargs.get("params")
     if not isinstance(params, dict):
         return None
@@ -129,13 +109,11 @@ class AcpSessionRunner(RunEventRecorder):
         control: RunControl | None = None,
     ) -> None:
         self._command = command
-        #: Sem controle externo (CLI), o padrão nunca para.
         self._control = control or RunControl()
         self._runtime = runtime or runtime_for_command(command)
         self._cwd = cwd
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
-        #: Algum pedido estourou o prazo: o processo pode estar de pé e mudo.
         self._hung = False
         self._stream = stream or NullStreamSink()
         self._prompt_handler = _WatchedPrompts(
@@ -154,77 +132,54 @@ class AcpSessionRunner(RunEventRecorder):
         self._next_id = 1
         self._session_id: str | None = None
         self.last_session_id = ""
-        #: Run a que este runner está ligado (`bind_run`). Vazio = não grava log.
         self._bound_run_id = ""
+        self._waits: UserWaitListener = NullUserWaitListener()
         self._phase_id = ""
-        #: Texto do agente acumulado até o próximo tool call / fim do prompt.
         self._text_buffer: list[str] = []
-        #: Tool-calls já vistos nesta run, acumulados update a update. O ACP
-        #: manda o `rawInput` num evento e o `rawOutput` noutro: gravar só o
-        #: último deixava o log do histórico sem o arquivo que o tool tocou.
         self._tool_payloads: dict[str, dict[str, Any]] = {}
-        #: Classificação já atribuída a cada tool-call, para um update tardio
-        #: não rebatizar de "Tool" o que já entrou como "Write".
         self._tool_kinds: dict[str, str] = {}
-        #: Tool-calls que já gravaram um rótulo de verdade (não "…").
         self._tool_labeled: set[str] = set()
         self._run_id = str(uuid.uuid4())
         self._auth_methods: list[str] = []
         self.ask_question_count = 0
-        #: Última vez que o agente deu sinal de vida, para o relógio de silêncio.
         self._activity = time.monotonic()
-        #: Perguntas abertas na tela. Enquanto houver, o silêncio é nosso.
         self._user_waits = 0
-        #: Começo da espera em curso, para descontá-la da duração do step.
         self._wait_started: float | None = None
 
     def _begin_user_wait(self) -> None:
-        """Abriu pergunta: a run para de trabalhar e passa a esperar alguém.
+        """A question opened: the run stops working and waits for the user.
 
-        Só a borda (0→1) conta. Pergunta aninhada — um questionário que pede
-        uma permissão no meio — é a mesma espera, e contá-la duas vezes
-        descontaria o dobro do tempo da duração do step.
+        Only the 0->1 edge counts, so nested questions are not double-counted.
         """
         self._user_waits += 1
         if self._user_waits > 1:
             return
         self._wait_started = time.monotonic()
-        self._mark_run_status(awaiting=True)
+        self._tell_waits(self._waits.user_wait_began)
         self._notify_stream("begin_user_wait")
 
     def _end_user_wait(self) -> None:
-        """Respondeu (ou desistiu): o relógio do step volta a andar."""
+        """Question answered (or dismissed): the step clock resumes."""
         self._user_waits = max(0, self._user_waits - 1)
         self._activity = time.monotonic()
         if self._user_waits > 0:
             return
         started, self._wait_started = self._wait_started, None
-        if started is not None and self._bound_run_id:
-            self._save_waiting(time.monotonic() - started)
-        self._mark_run_status(awaiting=False)
+        seconds = time.monotonic() - started if started is not None else 0.0
+        self._tell_waits(lambda: self._waits.user_wait_ended(self._phase_id, seconds))
         self._notify_stream("end_user_wait")
 
-    def _save_waiting(self, seconds: float) -> None:
+    def _tell_waits(self, notify: Callable[[], None]) -> None:
+        """Called inside the prompt handler, so a failure goes to the run log, not up."""
         try:
-            from pulse.store.runs import add_waiting_seconds
-
-            add_waiting_seconds(self._bound_run_id, self._phase_id, seconds)
-        except Exception:
-            # Contabilizar espera é acessório: falhar aqui não pode derrubar o
-            # step que a pessoa acabou de destravar.
-            pass
-
-    def _mark_run_status(self, *, awaiting: bool) -> None:
-        """Status da run no banco — é por ele que a Home e o histórico sabem
-        que esta sessão está esperando alguém."""
-        if not self._bound_run_id:
-            return
-        try:
-            from pulse.store.runs import AWAITING_INPUT, RUNNING, update_run
-
-            update_run(self._bound_run_id, status=AWAITING_INPUT if awaiting else RUNNING)
-        except Exception:
-            pass
+            notify()
+        # The user's answer must reach the agent even if the wait is not recorded.
+        except Exception as error:  # noqa: BLE001
+            self._save_event(
+                kind="Info",
+                title="Espera não registrada",
+                detail=f"{type(error).__name__}: {error}",
+            )
 
     def _notify_stream(self, method: str) -> None:
         handler = getattr(self._stream, method, None)
@@ -318,8 +273,6 @@ class AcpSessionRunner(RunEventRecorder):
                     }
 
                 if build_continuation is None:
-                    # Sem como retomar a conversa, insistir só repetiria o mesmo
-                    # turno: devolve não-aprovado e deixa o motor decidir.
                     break
                 next_prompt = build_continuation(
                     phase_summary=phase_summary,
@@ -349,13 +302,10 @@ class AcpSessionRunner(RunEventRecorder):
         build_continuation: Callable[..., str] | None = None,
         max_turns: int = MAX_PROMPT_TURNS,
     ) -> dict[str, Any]:
-        """Roda o step numa sessão própria, com direito a continuação.
+        """Run the step in its own session, allowing continuation turns.
 
-        `build_continuation` recebe o resultado do turno e devolve o próximo
-        prompt, ou vazio para encerrar. É o que deixa o motor mandar o agente
-        destravar o que ele mesmo declarou bloqueado **sem trocar de sessão**:
-        uma sessão nova perderia tudo que ele já descobriu e o faria recomeçar
-        do zero, que é justamente o que não se quer de uma segunda chance.
+        `build_continuation` receives the turn result and returns the next prompt,
+        or empty to stop. Continuing in the same session preserves the agent's context.
         """
         if phase_id:
             self._phase_id = phase_id
@@ -370,9 +320,6 @@ class AcpSessionRunner(RunEventRecorder):
         self.apply_mode(session, execute=agent_mode)
 
         next_prompt = prompt_text
-        # O resumo é a soma dos turnos, não só o do último: o turno que
-        # destravou costuma ser curto ("criei o arquivo e conclui"), e entregar
-        # só ele ao step seguinte jogaria fora o trabalho descrito no primeiro.
         parts: list[str] = []
         result: dict[str, Any] = {}
         try:
@@ -411,8 +358,6 @@ class AcpSessionRunner(RunEventRecorder):
             self._command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            # Ninguém lê o stderr do agente: num PIPE, quando o buffer enche (o
-            # `npx` do Claude escreve bastante), o agente bloqueia e parece mudo.
             stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
@@ -422,10 +367,10 @@ class AcpSessionRunner(RunEventRecorder):
         self._reader.start()
 
     def ensure_process(self) -> bool:
-        """Reergue o processo do agente se ele não está mais de pé.
+        """Restart the agent process if it is no longer alive.
 
-        Devolve `True` quando precisou reiniciar. Existe para o retry de um step
-        que caiu junto com a sessão: sem isto, "Refazer" só repetiria a queda.
+        Returns `True` when a restart was needed, so retrying a step whose
+        session crashed does not just repeat the crash.
         """
         alive = self._process is not None and self._process.poll() is None
         if alive and not self._hung:
@@ -477,8 +422,6 @@ class AcpSessionRunner(RunEventRecorder):
             except json.JSONDecodeError:
                 continue
 
-            # Qualquer linha serve como sinal de vida: é o que segura o relógio
-            # de silêncio de um `session/prompt` longo.
             self._activity = time.monotonic()
 
             if message.get("method") and message.get("id") is not None:
@@ -507,7 +450,6 @@ class AcpSessionRunner(RunEventRecorder):
         method = str(message.get("method", ""))
         params = message.get("params", {})
         request_id = message.get("id")
-
 
         try:
             if method == "cursor/ask_question":
@@ -556,10 +498,6 @@ class AcpSessionRunner(RunEventRecorder):
             }
         )
 
-        # Para `session/prompt` o prazo conta do último sinal de vida, não do
-        # envio: um step que trabalha por meia hora, falando o tempo todo, não é
-        # um step travado. Para o resto do protocolo, que é pergunta e resposta
-        # imediata, o prazo continua sendo o total.
         idle_clock = method in _IDLE_CLOCK_METHODS
         limit = self._timeout_seconds if timeout is None else timeout
         self._activity = time.monotonic()
@@ -567,24 +505,18 @@ class AcpSessionRunner(RunEventRecorder):
         cancelling = False
         while True:
             if self._user_waits:
-                # A pergunta está na tela: o relógio espera o usuário.
                 self._activity = time.monotonic()
             if not cancelling and idle_clock:
                 deadline = self._activity + limit
             if time.monotonic() >= deadline:
                 break
 
-            # Parar corta o turno em voo. Só vale para `session/prompt`:
-            # o resto do protocolo é rápido e cancelar no meio deixaria a
-            # sessão num estado que o agente não sabe descrever.
             if not cancelling and method == "session/prompt" and self._control.interrupted:
                 self._cancel_active_session()
                 cancelling = True
                 deadline = time.monotonic() + CANCEL_GRACE_SECONDS
 
             if self._process is not None and self._process.poll() is not None:
-                # Sem processo não há resposta para esperar — nem os 10 minutos
-                # de timeout que `session/close` gastaria à toa no caminho.
                 raise RuntimeError(f"o processo do agente encerrou durante `{method}`")
 
             remaining = deadline - time.monotonic()
@@ -600,20 +532,17 @@ class AcpSessionRunner(RunEventRecorder):
             if "error" in response:
                 error = response["error"]
                 if cancelling:
-                    # O agente reclamou do cancelamento: o corte é o que importa.
                     return {"stopReason": "cancelled"}
                 raise RuntimeError(error.get("message", "Erro ACP desconhecido"))
             return response.get("result", {})
 
         if cancelling:
-            # O agente não fechou o turno no prazo — a sessão é descartada logo
-            # em seguida (`close_session`), então seguir como cancelado é seguro.
             return {"stopReason": "cancelled"}
         self._hung = True
         raise TimeoutError(f"o agente ficou {int(limit)}s sem dar sinal em `{method}`")
 
     def _cancel_active_session(self) -> None:
-        """Pede ao agente para abortar o turno da sessão ativa."""
+        """Ask the agent to abort the active session's turn."""
         session_id = self._session_id
         if session_id is None:
             return
@@ -626,7 +555,6 @@ class AcpSessionRunner(RunEventRecorder):
                 }
             )
         except (RuntimeError, OSError, ValueError):
-            # Processo já caiu ou stdin fechou: o turno morre junto, tudo bem.
             pass
 
     def initialize(self) -> dict[str, Any]:
@@ -656,7 +584,7 @@ class AcpSessionRunner(RunEventRecorder):
             return {}
 
     def apply_model(self, session: dict[str, Any], preferred_model: str | None) -> None:
-        """Aplica o modelo pelo dialeto do runtime, sem derrubar a sessão se falhar."""
+        """Apply the model using the runtime dialect, without failing the session on error."""
         if self._session_id is None:
             return
         request = self._runtime.model_request(
@@ -694,13 +622,14 @@ class AcpSessionRunner(RunEventRecorder):
         }
         return self._request("session/new", params)
 
-    def bind_run(self, run_id: str) -> None:
-        """Liga o runner à run: log e artefatos passam a ser gravados nela."""
+    def bind_run(self, run_id: str, waits: UserWaitListener | None = None) -> None:
+        """Bind the runner to a run so log, artifacts and user waits are recorded on it."""
         self._bound_run_id = run_id
+        self._waits = waits or NullUserWaitListener()
 
     @property
     def control(self) -> RunControl:
-        """Parada desta run — o motor consulta nos pontos de corte."""
+        """Stop control for this run, checked by the engine at cut points."""
         return self._control
 
     def set_permission_policy(self, policy: PermissionPolicy) -> None:
@@ -711,8 +640,6 @@ class AcpSessionRunner(RunEventRecorder):
         self._permission_policy = policy
 
     def _activate_session(self, session_id: str) -> None:
-        # Os ids de tool-call valem dentro de uma sessão: o acumulado da
-        # anterior só ocuparia memória e poderia casar id repetido.
         self._tool_payloads.clear()
         self._tool_kinds.clear()
         self._tool_labeled.clear()

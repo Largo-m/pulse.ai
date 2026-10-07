@@ -1,4 +1,4 @@
-"""Os portões antes de o motor abrir a sessão ACP."""
+"""Gates checked before the engine opens the ACP session."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def test_cockpit_bypasses_interactive_gate(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(engine, "resolve_config", lambda **_kwargs: _resolved(tmp_path))
 
     class _Runner:
-        def bind_run(self, run_id: str) -> None:
+        def bind_run(self, run_id: str, waits: object = None) -> None:
             pass
 
     monkeypatch.setattr(engine, "AcpSessionRunner", lambda *_a, **_k: _Runner())
@@ -96,7 +96,7 @@ def test_cockpit_surfaces_runtime_failures(monkeypatch, tmp_path: Path):
 
 
 def test_unknown_workflow_is_an_error(monkeypatch):
-    """Sem catálogo em código, um id que não está no banco não existe."""
+    """With no catalog in code, an id missing from the database does not exist."""
     monkeypatch.setattr(engine, "is_interactive", lambda: False)
     with pytest.raises(UnknownWorkflow, match="desconhecido"):
         run_workflow(

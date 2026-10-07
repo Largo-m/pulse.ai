@@ -4,7 +4,6 @@ from tests.conftest import make_workflow
 
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus, progress_bar
 
-#: Os testes semeiam o workflow que vão usar: o Pulse não conhece nenhum.
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 PAIR = [("plan", "Planejar"), ("build", "Construir")]
 
@@ -71,18 +70,17 @@ def test_begin_phase_preserves_timer_across_same_phase_tasks():
 
 
 def test_a_new_round_of_the_loop_keeps_counting_from_the_previous_one(monkeypatch):
-    """O laço devolve `Review` a rodar: o cronômetro soma, não recomeça do zero."""
+    """The loop sends `Review` back to running: the timer accumulates, it does not reset."""
     clock = iter([100.0, 130.0, 200.0])
     monkeypatch.setattr("pulse.tui.state.time.monotonic", lambda: next(clock))
     state = _state("pair", PAIR)
 
-    state.begin_phase("Planejar")  # 100
-    state.begin_phase("Construir")  # 130: Planejar fecha com 30s
+    state.begin_phase("Planejar")
+    state.begin_phase("Construir")
     assert state.phases[0].closed_seconds() == 30.0
 
-    state.begin_phase("Planejar")  # 200: segunda volta, parte dos 30s já gastos
+    state.begin_phase("Planejar")
     assert state.phases[0].ended_at is None
-    # Aos 250: 30s da primeira volta + 50s da segunda.
     assert state.phases[0].elapsed_label(250.0) == "01:20"
 
 
@@ -225,7 +223,7 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     ]
     assert state.selected_artifact_path == "docs/STATE.md"
     assert state.follow_artifact is True
-    assert state.artifact_pane_open is False  # a aba só abre a pedido
+    assert state.artifact_pane_open is False
 
     again = state.upsert_artifact("docs/PROJECT.md", ready=True, has_content=True)
     assert again is first
@@ -274,7 +272,6 @@ def test_select_artifact_from_prompt_points_at_matching_file_without_opening():
     assert selected is True
     assert state.selected_artifact_path == "docs/PRD.md"
     assert state.follow_artifact is False
-    # A aba fica apontada, mas quem abre é o usuário com `a`.
     assert state.artifact_pane_open is False
 
 
@@ -358,7 +355,7 @@ def test_configure_single_step_workflow():
 
 
 def test_pane_stays_closed_while_artifact_has_no_content():
-    """Write anunciado mas ainda sem arquivo em disco não deve abrir a aba."""
+    """A Write announced but not yet on disk must not open the tab."""
     state = _state()
     state.begin_phase("Dois")
     state.upsert_artifact("docs/TECHSPEC.md", ready=False)
@@ -366,14 +363,13 @@ def test_pane_stays_closed_while_artifact_has_no_content():
     assert state.artifact_pane_open is False
     assert state.phase_has_artifacts() is False
     assert state.displayable_artifacts() == []
-    # o artefato existe na coleção — a aba, se aberta à mão, mostra "escrevendo…"
     assert [item.path for item in state.visible_artifacts()] == [
         "docs/TECHSPEC.md"
     ]
 
 
 def test_artifact_with_content_is_offered_but_never_opens_alone():
-    """Abrir sozinho roubava a tela do stream no meio da spec."""
+    """Opening on its own stole the stream view in the middle of the spec."""
     state = _state()
     state.begin_phase("Dois")
     path = "docs/TECHSPEC.md"
@@ -383,19 +379,19 @@ def test_artifact_with_content_is_offered_but_never_opens_alone():
     state.upsert_artifact(path, ready=True, has_content=True)
 
     assert state.artifact_pane_open is False
-    assert state.phase_has_artifacts() is True  # o trilho "ABRIR" aparece
+    assert state.phase_has_artifacts() is True
 
     state.open_artifact_pane()
     assert state.artifact_pane_open is True
 
 
 def test_write_that_never_lands_never_opens_the_pane():
-    """Escrita negada/falha conclui sem arquivo: nada a exibir, nada a abrir."""
+    """A denied/failed write completes with no file: nothing to show, nothing to open."""
     state = _state()
     state.begin_phase("Dois")
     path = "docs/TECHSPEC.md"
     state.upsert_artifact(path, ready=False)
-    state.upsert_artifact(path, ready=True)  # concluiu, mas sem conteúdo
+    state.upsert_artifact(path, ready=True)
 
     assert state.artifact_pane_open is False
     assert state.phase_has_artifacts() is False
@@ -429,7 +425,7 @@ def test_select_from_prompt_ignores_artifacts_without_content():
 
 
 def test_fan_out_replaces_one_phase_with_the_items():
-    """O painel montou as fases pela definição; o fan-out muda isso na run."""
+    """The panel built phases from the definition; fan-out changes that during the run."""
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -453,14 +449,13 @@ def test_fan_out_replaces_one_phase_with_the_items():
         "Criar o endpoint",
         "Montar o CSV",
     ]
-    # O step que já fechou não volta para pendente ao entrar a lista nova.
     assert state.phases[0].status == PhaseStatus.DONE
     assert state.total_count() == 3
     assert state.done_count() == 1
 
 
 def test_the_fan_out_items_stay_grouped_under_the_step_that_made_them():
-    """`Implementar` não some da sidebar: as tasks entram embaixo dele."""
+    """`Implementar` stays in the sidebar: the tasks are nested under it."""
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -477,12 +472,11 @@ def test_the_fan_out_items_stay_grouped_under_the_step_that_made_them():
     assert [key for key, _members in groups] == ["", "run"]
     assert [phase.id for _index, phase in groups[1][1]] == ["run:T1", "run:T2"]
     assert state.base_step_label("run") == "Implementar"
-    # Agrupar é desenho: a navegação continua plana, sobre `phases`.
     assert state.nav_items() == [("phase", 0), ("phase", 1), ("phase", 2)]
 
 
 def test_syncing_the_list_keeps_what_a_phase_already_gathered():
-    """Recriar a fase apagaria status, relógio e contadores de quem já rodou."""
+    """Recreating the phase would wipe status, timer and counters of phases that already ran."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -498,7 +492,7 @@ def test_syncing_the_list_keeps_what_a_phase_already_gathered():
 
 
 def test_an_empty_list_leaves_the_phases_alone():
-    """Sink antigo (sem `steps`) não pode zerar o painel."""
+    """An old sink (without `steps`) must not reset the panel."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
     state.configure_workflow("demo")
@@ -509,7 +503,7 @@ def test_an_empty_list_leaves_the_phases_alone():
 
 
 def test_a_task_whose_title_contains_an_earlier_step_id_lights_itself():
-    """`(TaskSearch)` tem `tasks` dentro: casar por trecho acendia o step errado."""
+    """`(TaskSearch)` contains `tasks`: substring matching lit the wrong step."""
     state = _state("chain", [("tasks", "Tasks"), ("implement", "Implementar")])
     state.apply_phase_statuses(
         steps=[

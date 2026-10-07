@@ -95,7 +95,7 @@ run_workflow(workflow_id, user_prompt, …)
        runner.use_agent(…)
        render(step.prompt_template)   valores da run
        run_isolated_phase | run_isolated_prompt
-       save_step(status, summary)     desfecho no banco
+       record.deliver()/block()…      desfecho no agregado → save(run)
 ```
 
 A sessão ACP é **isolada por step**. O agente do step seguinte não herda o
@@ -390,7 +390,7 @@ banco — na raiz, "Configurações" e "Sair" acabariam abaixo de N workflows. O
 volta um passo de cada vez (fecha o campo de tarefa, depois sai do submenu).
 
 No item vai só `label · description`, e a `description` de fábrica é curta de
-propósito ("pipeline completo", "até 3 arquivos"). A cadeia de steps — o que é
+propósito ("da ideia ao código revisado", "mudança pequena, até 3 arquivos"). A cadeia de steps — o que é
 longo — vai para a dica, montada a partir de `workflow_steps` e trocada conforme
 o item destacado. A dica tem sempre duas linhas, mesmo sem descrição: alternar a
 altura faria a lista pular a cada tecla.

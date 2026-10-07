@@ -100,7 +100,6 @@ def test_run_agent_checks_routes_by_runtime(monkeypatch):
     _which(monkeypatch, None)
     assert run_agent_checks("cursor")[0].name == "Cursor CLI"
     assert run_agent_checks("claude")[0].name == "Claude Code CLI"
-    # runtime desconhecido cai no default
     assert run_agent_checks("default")[0].name == "Cursor CLI"
 
 

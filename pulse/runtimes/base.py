@@ -10,20 +10,20 @@ from typing import Any
 
 @dataclass(frozen=True)
 class RuntimeCheck:
-    """Resultado de uma verificação de ambiente de um runtime."""
+    """Result of a runtime environment check."""
 
     name: str
-    status: str  # "ok" | "warn" | "fail"
+    status: str
     message: str
     detail: str | None = None
 
 
 @dataclass(frozen=True)
 class ModelRequest:
-    """Chamada JSON-RPC que aplica um modelo na sessão.
+    """JSON-RPC call that applies a model to the session.
 
-    Nem todo agente ACP implementa `session/set_model`: o Claude expõe o modelo
-    como config option. Cada runtime devolve a chamada certa.
+    Not every ACP agent implements `session/set_model` (Claude exposes the model
+    as a config option), so each runtime returns the right call.
     """
 
     method: str
@@ -32,7 +32,7 @@ class ModelRequest:
 
 
 def run_cli(command: list[str], *, timeout: float = 15.0) -> subprocess.CompletedProcess[str] | None:
-    """Executa um CLI capturando a saída; None quando o binário falha ou trava."""
+    """Run a CLI capturing its output; None when the binary fails or hangs."""
     try:
         return subprocess.run(
             command,
@@ -46,34 +46,28 @@ def run_cli(command: list[str], *, timeout: float = 15.0) -> subprocess.Complete
 
 
 class AgentRuntime:
-    """Como um agente concreto fala ACP.
+    """How a concrete agent speaks ACP.
 
-    Os defaults desta classe seguem o protocolo ACP puro e são derivados do que o
-    agente anuncia em `initialize`/`session/new`. Cada runtime sobrescreve apenas
-    o que diverge — binário, autenticação e preferências de modo.
+    Defaults follow plain ACP and derive from what the agent advertises in
+    `initialize`/`session/new`. Subclasses override only what differs: binary,
+    authentication and mode preferences.
     """
 
     id: str = "generic"
     label: str = "Agente ACP"
     binary: str = ""
     acp_args: tuple[str, ...] = ("acp",)
-    #: Comando completo; quando vazio, é `[binary, *acp_args]`.
     acp_override: tuple[str, ...] = ()
     default_models: tuple[str, ...] = ()
-    #: Binários extras que o runtime precisa além do principal (ex.: `npx`).
     required_binaries: tuple[str, ...] = ()
     auth_env_var: str = ""
-    #: `methodId` do `authenticate` do ACP; None quando o agente não autentica por ali.
     auth_method_id: str | None = None
     auth_method_label: str = ""
     install_hint: str = ""
     login_command: tuple[str, ...] = ()
     login_label: str = ""
-    #: Ordem de preferência de modo na fase de análise e na de execução.
     interview_modes: tuple[str, ...] = ("agent", "plan", "default")
     execute_modes: tuple[str, ...] = ("agent", "default", "acceptEdits")
-
-    # ------------------------------------------------------------------ ambiente
 
     @property
     def acp_command(self) -> list[str]:
@@ -87,14 +81,14 @@ class AgentRuntime:
     def run_cli(
         self, command: list[str], *, timeout: float = 15.0
     ) -> subprocess.CompletedProcess[str] | None:
-        """Ponto único de execução de CLI do runtime (sobrescrevível e testável)."""
+        """Single CLI execution point for the runtime (overridable and testable)."""
         return run_cli(command, timeout=timeout)
 
     def is_available(self) -> bool:
-        """Binário principal e dependências presentes no PATH.
+        """Main binary and dependencies are present on PATH.
 
-        Checagem barata (só PATH, sem subprocesso): serve para decidir fallback
-        de runtime na resolução de config, que roda a cada workflow.
+        Cheap check (PATH only, no subprocess), used for runtime fallback during
+        config resolution, which runs on every workflow.
         """
         if self.find_binary() is None:
             return False
@@ -196,13 +190,11 @@ class AgentRuntime:
         except OSError:
             return 1
 
-    # -------------------------------------------------------------------- sessão
-
     def auth_method(self, advertised: Sequence[str]) -> str | None:
-        """`methodId` para o `authenticate`, ou None para pular a chamada.
+        """`methodId` for `authenticate`, or None to skip the call.
 
-        Agentes que já vêm autenticados do próprio CLI anunciam `authMethods: []`;
-        mandar `authenticate` neles só gera erro.
+        Agents already authenticated via their own CLI advertise `authMethods: []`;
+        calling `authenticate` on them only yields an error.
         """
         if not advertised:
             return None
@@ -220,11 +212,10 @@ class AgentRuntime:
         return [str(item.get("id")) for item in available if isinstance(item, dict) and item.get("id")]
 
     def resolve_mode(self, session: dict[str, Any], *, execute: bool) -> str | None:
-        """Primeiro modo preferido que o agente realmente suporta."""
+        """First preferred mode the agent actually supports."""
         preferences = self.execute_modes if execute else self.interview_modes
         ids = self.available_modes(session)
         if not ids:
-            # Agente não anuncia modos: mantém o comportamento histórico.
             return preferences[0] if preferences else None
         for preference in preferences:
             if preference in ids:

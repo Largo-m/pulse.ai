@@ -33,12 +33,10 @@ _HOME_BRAND = _home_brand()
 
 
 def _session_workflows() -> list:
-    """Os loops que "Nova sessão" oferece — os pipelines, em ordem alfabética.
+    """Workflows offered by "Nova sessão": the pipelines, sorted by label.
 
-    O loop genérico (`is_default`) fica de fora: quem abre este menu quer um
-    pipeline, e "Executar" cru só oferecia repassar o prompt ao agente, que é o
-    que a pessoa já faria no terminal. Ele continua no banco e na API, para quem
-    chama o daemon direto — some da lista, não do produto.
+    The generic loop (`is_default`) is hidden from this menu only; it remains
+    available in the database and the daemon API.
     """
     return sorted(
         (item for item in list_workflows() if not item.is_default),
@@ -46,26 +44,20 @@ def _session_workflows() -> list:
     )
 
 
-#: Menu raiz e submenus. São telas do mesmo `OptionList` porque a lista de loops
-#: vem do banco e cresce com ele — empilhar tudo na raiz deixaria
-#: "Configurações" e "Sair" abaixo de N workflows.
 ROOT = "root"
 SESSION = "session"
-#: As sessões que pararam esperando resposta, para entrar direto numa delas.
 ALERTS = "alerts"
 
-#: De quanto em quanto tempo a Home pergunta ao daemon o que está esperando.
-#: Três segundos é curto o bastante para a pessoa que acabou de sair do cockpit
-#: ver o aviso aparecer, e longo o bastante para não martelar o daemon.
 ALERT_POLL_SECONDS = 3.0
+
+ROOT_HINT = "↑↓ navega · Enter seleciona · Q sai"
+TASK_PLACEHOLDER = "Descreva a tarefa e tecle Enter · Esc cancela"
 
 
 def _alert_panel(runs: list[dict[str, Any]]) -> Text:
-    """O painel de avisos: quantas sessões esperam e quais são.
+    """Alert panel listing how many sessions are waiting and which ones.
 
-    Uma linha por sessão, e não só a contagem: com duas runs vivas, "1 sessão
-    precisa de você" não diz qual — e descobrir qual era justamente o que
-    obrigava a entrar no histórico e abrir uma por uma.
+    One line per session, not just a count, so the user can tell which run needs them.
     """
     tone = status_color("awaiting_input")
     count = len(runs)
@@ -79,27 +71,24 @@ def _alert_panel(runs: list[dict[str, Any]]) -> Text:
 
 class HomeScreen(Screen[None]):
     BINDINGS = [
-        ("q", "quit_app", "Quit"),
+        ("q", "quit_app", "Sair"),
         ("escape", "back", "Voltar"),
     ]
 
-    #: Sessões paradas esperando resposta, como o daemon as reportou. Default de
-    #: classe para a tela nunca depender de já ter sido montada para saber que
-    #: não há aviso nenhum.
     _alerts: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="home-content"):
             yield Static(_HOME_BRAND, classes="home-brand")
             yield Static(
-                f"Orquestrador de workflows · v{__version__}",
+                f"Orquestrador de agentes de IA · v{__version__}",
                 classes="home-sub",
             )
             yield Static("", id="home-alerts")
             yield OptionList(id="home-options")
-            yield Static("Enter seleciona · Q sai", classes="home-hint")
+            yield Static(ROOT_HINT, classes="home-hint")
             yield Input(
-                placeholder="Descreva a tarefa…",
+                placeholder=TASK_PLACEHOLDER,
                 id="workflow-prompt",
                 classes="-hidden",
             )
@@ -109,7 +98,6 @@ class HomeScreen(Screen[None]):
         self._pending_workflow: str | None = None
         self._view = ROOT
         self._descriptions: dict[str, str] = {}
-        #: Loops que já sabem qual é a tarefa — entram direto, sem pedir texto.
         self._default_prompts: dict[str, str] = {}
         self._alerts = []
         self._refresh_options()
@@ -119,26 +107,21 @@ class HomeScreen(Screen[None]):
         self.set_interval(ALERT_POLL_SECONDS, self._poll_alerts)
 
     def _poll_alerts(self) -> None:
-        """Pergunta ao daemon o que está esperando — fora do laço de eventos.
+        """Ask the daemon which runs are waiting, off the event loop.
 
-        `awaiting_runs` é HTTP com timeout de dois segundos: rodá-lo aqui
-        travaria a tela toda vez que o daemon demorasse. `exclusive` cancela o
-        poll anterior, mas thread não para por cancelamento: quem chega atrasado
-        confere `is_cancelled` em `_fetch_alerts` e descarta o que trouxe.
+        `awaiting_runs` is HTTP with a 2s timeout. `exclusive` cancels the prior
+        poll, but threads ignore cancellation, so `_fetch_alerts` checks
+        `is_cancelled` and drops late results.
         """
         self.run_worker(self._fetch_alerts, exclusive=True, thread=True)
 
     def _fetch_alerts(self) -> None:
         runs = awaiting_runs()
-        # Um poll cancelado que voltasse depois do mais novo pintaria a Home com
-        # a resposta velha.
         if get_current_worker().is_cancelled:
             return
         try:
             self.app.call_from_thread(self._apply_alerts, runs)
         except Exception:
-            # A tela saiu de cena enquanto o daemon respondia: não há nada para
-            # atualizar, e a thread do worker não pode morrer gritando por isso.
             pass
 
     def _apply_alerts(self, runs: list[dict[str, Any]]) -> None:
@@ -152,28 +135,24 @@ class HomeScreen(Screen[None]):
         panel.display = bool(runs)
         if runs:
             panel.update(_alert_panel(runs))
-        # A lista de avisos some do menu junto com o último aviso: deixar a
-        # vista aberta mostrando nada seria um beco sem saída.
         if not runs and self._view == ALERTS:
             self._view = ROOT
             self._refresh_options()
             return
-        # Só remonta o menu nas vistas que o aviso muda. Remontar a lista de
-        # loops enquanto a pessoa a percorre devolveria o cursor ao topo a cada
-        # três segundos.
         if changed and self._view in {ROOT, ALERTS}:
             self._refresh_options()
 
     def _update_hint(self, workflow_id: str | None = None) -> None:
-        """A dica do submenu: o que o loop faz, e as teclas embaixo.
+        """Submenu hint: the workflow description plus the key help.
 
-        Duas linhas sempre, mesmo sem descrição (o "← Voltar"): alternar entre
-        uma e duas faria a lista pular a cada item destacado.
+        Always two lines, even without a description, so the list does not jump.
         """
         description = self._descriptions.get(workflow_id or "", "")
-        # Loop com tarefa própria não abre campo nenhum: "Enter inicia" avisa que
-        # o Enter já começa a run, em vez de prometer um passo que não vem.
-        keys = "Enter inicia" if self._default_prompts.get(workflow_id or "") else "Enter seleciona"
+        keys = (
+            "Enter inicia agora"
+            if self._default_prompts.get(workflow_id or "")
+            else "Enter para descrever a tarefa"
+        )
         self.query_one(".home-hint", Static).update(f"{description}\n{keys} · Esc volta")
 
     @on(OptionList.OptionHighlighted, "#home-options")
@@ -193,7 +172,7 @@ class HomeScreen(Screen[None]):
             self._view = ROOT
             options.add_option(Option("Configurar Pulse", id="init"))
             options.add_option(Option("Sair", id="exit"))
-            hint.update("Enter seleciona · Q sai")
+            hint.update(ROOT_HINT)
             return
         if self._view == ALERTS:
             for run in self._alerts:
@@ -201,14 +180,10 @@ class HomeScreen(Screen[None]):
                     Option(run_line(run, tail=held_tail(run)), id=f"attach:{run.get('id')}")
                 )
             options.add_option(Option("← Voltar", id="back"))
-            hint.update("Enter abre a sessão · Esc volta")
+            hint.update("Enter abre a sessão para responder · Esc volta")
             return
         if self._view == SESSION:
             workflows = _session_workflows()
-            # No item, a descrição curta; na dica, a cadeia de steps. O texto
-            # longo em linha dobrava a largura do item e deixava a coluna
-            # ilegível — e a cadeia já está em `workflow_steps`, não precisa
-            # caber na descrição.
             self._descriptions = {
                 item.id: " → ".join(step.label for step in item.steps) for item in workflows
             }
@@ -224,19 +199,21 @@ class HomeScreen(Screen[None]):
             self._update_hint(workflows[0].id if workflows else None)
             return
         if is_pulse_ready():
-            # Primeiro item quando existe: é trabalho parado esperando a pessoa,
-            # e tudo que vem abaixo começa trabalho novo.
             if self._alerts:
                 count = len(self._alerts)
-                noun = "sessão aguardando" if count == 1 else "sessões aguardando"
-                options.add_option(Option(f"{count} {noun} você", id="alerts"))
+                label = (
+                    "Responder 1 sessão pendente"
+                    if count == 1
+                    else f"Responder {count} sessões pendentes"
+                )
+                options.add_option(Option(label, id="alerts"))
             options.add_option(Option("Nova sessão", id="session"))
             options.add_option(Option("Histórico", id="history"))
         else:
             options.add_option(Option("Configurar Pulse", id="init"))
         options.add_option(Option("Configurações", id="settings"))
         options.add_option(Option("Sair", id="exit"))
-        hint.update("Enter seleciona · Q sai")
+        hint.update(ROOT_HINT)
 
     @on(OptionList.OptionSelected, "#home-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -274,8 +251,6 @@ class HomeScreen(Screen[None]):
             return
         if action.startswith("workflow:"):
             workflow_id = action.split(":", 1)[1]
-            # "Analisar codebase" e "Setup do projeto" olham o repositório, não
-            # um pedido: pedir texto era uma pergunta sem resposta possível.
             default_prompt = self._default_prompts.get(workflow_id, "")
             if default_prompt:
                 self.app.open_cockpit(workflow_id, default_prompt)
@@ -284,17 +259,13 @@ class HomeScreen(Screen[None]):
             prompt_input = self.query_one("#workflow-prompt", Input)
             prompt_input.display = True
             prompt_input.focus()
-            prompt_input.placeholder = "Descreva a tarefa…"
+            prompt_input.placeholder = TASK_PLACEHOLDER
 
     def _open_waiting_run(self, run_id: str) -> None:
-        """Abre a sessão que está esperando, ao vivo — a pergunta continua lá.
+        """Attach live to a waiting session; its pending prompt reopens after replay.
 
-        O nome não é `_attach`: esse é um método interno do `Screen` do Textual,
-        e sobrescrevê-lo quebra a montagem da tela inteira.
-
-        É a mesma porta que o Histórico usa para run viva: o cockpit anexa pelo
-        `run_id`, o replay do daemon devolve a tela como ela estava, e a
-        pergunta pendente reabre no fim do replay.
+        Not named `_attach`: that is an internal Textual `Screen` method and
+        overriding it breaks screen mounting.
         """
         run = next((item for item in self._alerts if str(item.get("id")) == run_id), None)
         if run is None:
@@ -308,7 +279,7 @@ class HomeScreen(Screen[None]):
         )
 
     def action_back(self) -> None:
-        """Esc: fecha o prompt aberto, senão volta ao menu raiz."""
+        """Esc: close the open prompt, otherwise go back to the root menu."""
         prompt_input = self.query_one("#workflow-prompt", Input)
         if prompt_input.display:
             prompt_input.value = ""
@@ -334,20 +305,19 @@ class HomeScreen(Screen[None]):
         self.app.open_cockpit(workflow_id, text)
 
     def action_quit_app(self) -> None:
-        """Sair do CLI não encerra o que está rodando: o motor é outro processo.
+        """Quit the CLI without stopping runs, which live in the engine process.
 
-        Aqui a pergunta é por **toda** run ativa, e não só pelas que esperam
-        alguém como no painel de avisos: quem sai precisa saber de tudo que
-        continua rodando em background.
+        Reports every active run, not only those awaiting input, so the user
+        knows what keeps running in the background.
         """
         running = active_runs()
         if running:
             count = len(running)
-            noun = "run continua rodando" if count == 1 else "runs continuam rodando"
+            noun = "sessão continua" if count == 1 else "sessões continuam"
             self.app.exit(
                 message=(
-                    f"[pulse] {count} {noun} em background — "
-                    "`pulse` → Histórico (ou os avisos da Home) para voltar."
+                    f"[pulse] {count} {noun} rodando em segundo plano. "
+                    "Rode `pulse` e abra Histórico para acompanhar."
                 )
             )
             return
@@ -355,6 +325,4 @@ class HomeScreen(Screen[None]):
 
     def on_screen_resume(self) -> None:
         self._refresh_options()
-        # Voltar do cockpit é justamente quando a pergunta pode ter ficado para
-        # trás: não vale esperar o próximo tique para dizer isso.
         self._poll_alerts()

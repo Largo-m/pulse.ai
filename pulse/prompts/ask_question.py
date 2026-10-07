@@ -6,37 +6,21 @@ from typing import Any
 OTHER_OPTION_ID = "__other__"
 DEFAULT_QUESTIONNAIRE_TITLE = "Preciso de algumas informações antes de continuar."
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-#: Verbos que pedem ao usuário para escrever algo. Radical, não palavra inteira:
-#: o agente conjuga ("descreva", "descrever", "descrição") e às vezes escreve em
-#: inglês, porque os playbooks de fábrica são em inglês.
 _FREE_TEXT_VERB = re.compile(
     r"descrev|descri[çc][ãa]|especifi|detalh|expliqu|explicar|informe|informar"
     r"|describe|specify|explain|elaborate",
     re.IGNORECASE,
 )
-#: Uma instrução ao usuário **abre** a anotação: logo depois de parêntese,
-#: colchete, travessão ou dois-pontos — "(descreva…)", "— especifique…". Bastar o
-#: verbo em qualquer ponto da anotação marcava como campo a explicação de uma
-#: opção comum: "Sim: busca no título e na descrição".
 _TEXT_REQUEST = re.compile(
     rf"(?:[(\[—–:]|--)\s*(?:{_FREE_TEXT_VERB.pattern})",
     re.IGNORECASE,
 )
-#: Perguntas em que o Pulse decide o rumo da run pela resposta. É o portão de
-#: aprovação de step — não o "Como deseja prosseguir?", que é escolha fechada.
 _APPROVAL_PROMPT = re.compile(r"\baprovar\b|\bapprove\b", re.IGNORECASE)
 
-#: O vocabulário do portão de aprovação, nos dois idiomas em que ele aparece: os
-#: playbooks de fábrica são em inglês e mandam escrever o bloco em português, e o
-#: agente nem sempre obedece. Radicais, porque ele conjuga e pluraliza.
-#: Moram aqui, e não em [pulse.prompts.approval], porque `approval` importa este
-#: módulo — o contrário fecharia o ciclo.
 APPROVE_WORDS = ("aprov", "approv")
 CANCEL_WORDS = ("cancelar", "cancel")
 SKIP_WORDS = ("pular", "skip")
 ADJUST_WORDS = ("ajust", "adjust", "change")
-#: Marcas de que a resposta **não** é um sim. Um rótulo que traga qualquer uma
-#: delas não aprova o step, mesmo que também diga "aprovar".
 NEGATIVE_WORDS = ("não", "nao", "no,", "not ", *ADJUST_WORDS, *CANCEL_WORDS, *SKIP_WORDS)
 _OTHER_LABEL = re.compile(
     r"^(?:[a-z0-9]+\)\s*)?(?:outro|other)(?:\s|\(|$)",
@@ -109,28 +93,22 @@ def is_other_option(option_id: str, label: str = "") -> bool:
 
 
 def option_requires_description(label: str) -> bool:
-    r"""O rótulo pede que o usuário escreva algo?
+    """Whether the label asks the user to type something.
 
-    Antes isto era `\(descreva` e mais três variantes fixas: bastava o agente
-    escrever `[descreva]`, `— describe` ou `Descreva:` para o campo não abrir e a
-    escolha voltar ao agente sem dizer o que mudar.
+    Matches free-text verbs after `(`, `[`, `—`, `:` and similar, or a label
+    ending in `:` that contains one.
     """
     text = label.strip()
     if _TEXT_REQUEST.search(text):
         return True
-    # "Descreva:" no fim não deixa cauda nenhuma — os dois-pontos são o convite.
     return text.endswith(":") and bool(_FREE_TEXT_VERB.search(text))
 
 
 def is_approval_prompt(prompt: str) -> bool:
-    """Pergunta que decide se a run avança — onde "não" precisa vir com o motivo."""
+    """A question that decides whether the run advances, where "no" needs a reason."""
     return bool(_APPROVAL_PROMPT.search(prompt))
 
 
-#: Prefixo da resposta digitada à mão em "Outro". O que vem depois é frase do
-#: usuário, não rótulo de opção — sem essa marca os classificadores de fase
-#: fazem match de substring no texto livre e uma orientação que só menciona
-#: "aprovação" é lida como aprovação da fase.
 FREE_TEXT_ANSWER_PREFIX = "Outro — "
 
 
@@ -150,8 +128,6 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
         return False
 
     closed_prompt_markers = (
-        # Aprovação de step é decisão fechada: seguir, ajustar ou cancelar. Um
-        # "Outro" aqui vira texto livre onde o motor espera uma das três.
         "e avançar?",
         "como deseja prosseguir",
         "funciona como esperado",
@@ -165,11 +141,10 @@ def build_question_choices(
     *,
     prompt: str = "",
 ) -> list[tuple[str, str]]:
-    """As opções como o dock as mostra: `(id, "A) rótulo")`, na ordem.
+    """Options as the dock shows them: `(id, "A) label")`, in order.
 
-    Mora aqui, e não na TUI, porque o log gravado precisa nomear a resposta
-    exatamente como a tela a nomeou — uma numeração que divergisse faria o
-    histórico mostrar "Produto" onde a pessoa escolheu "A) Produto".
+    Lives here, not in the TUI, so the history log names the answer exactly as
+    the live screen did.
     """
     choices: list[tuple[str, str]] = []
     has_other = False
@@ -203,17 +178,16 @@ def build_question_choices(
 
 
 def multi_select_prompt(prompt: str) -> str:
-    """O texto da pergunta de múltipla escolha como o dock o mostra."""
+    """The multi-select question text as the dock shows it."""
     return f"{prompt}\n(escolha uma ou mais)"
 
 
 PLAN_APPROVAL_TITLE = "Aprovar plano?"
-#: Teto do plano no dock de aprovação — o resto não cabe na tela.
 PLAN_PREVIEW_CHARS = 1200
 
 
 def plan_prompt_text(params: dict[str, Any]) -> str:
-    """O corpo do dock de aprovação de plano (`cursor/create_plan`)."""
+    """Body of the plan approval dock (`cursor/create_plan`)."""
     name = str(params.get("name") or "Plano").strip()
     overview = str(params.get("overview") or "").strip()
     plan = str(params.get("plan") or "").strip()

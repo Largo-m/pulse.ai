@@ -31,7 +31,7 @@ class AskQuestionHttpServer:
     @property
     def url(self) -> str:
         if self._httpd is None:
-            raise RuntimeError("Servidor MCP HTTP não iniciado")
+            raise RuntimeError("MCP HTTP server not started")
         host, port = self._httpd.server_address[:2]
         return f"http://{host}:{port}{ENDPOINT_PATH}"
 

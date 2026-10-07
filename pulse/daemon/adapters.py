@@ -38,14 +38,10 @@ class ApiStreamSink:
         self._bus.publish({"type": "stream.finish_question"})
 
     def begin_user_wait(self) -> None:
-        """A run parou de trabalhar: há pergunta aberta esperando alguém.
+        """The run stopped working: an open question is waiting for someone.
 
-        Vai pelo barramento como qualquer evento, então o replay entrega o par
-        `true`/`false` a quem anexa depois — e, numa espera em curso, entrega o
-        `true` sozinho, que é exatamente o estado da run.
-
-        `since` é a hora de parede em que a espera começou: quem anexa no meio
-        dela congela o relógio ali, e não no instante em que chegou à tela.
+        Published on the bus, so late attachers get it on replay. `since` is the
+        wall-clock start of the wait, so the clock freezes there, not at attach time.
         """
         self._bus.publish({"type": "run.awaiting", "waiting": True, "since": time.time()})
 
@@ -65,11 +61,10 @@ class ApiStreamSink:
         self._bus.publish({"type": "session.id", "session_id": session_id})
 
     def set_context(self, *, cwd: str, branch: str) -> None:
-        """Onde a run trabalha e em que branch.
+        """Where the run works and on which branch.
 
-        Vai pelo barramento como qualquer outro evento, então quem anexa depois
-        recebe isto no replay — e o painel de artefatos reaponta para o
-        worktree sem rota nova e sem a tela precisar perguntar nada.
+        Published on the bus, so late attachers get it on replay and the
+        artifacts pane can point at the worktree.
         """
         self._bus.publish({"type": "run.context", "cwd": cwd, "branch": branch})
 
@@ -97,10 +92,6 @@ class ApiPromptPort:
         policy: str,
         allow_terminal: bool = False,
     ) -> dict[str, Any]:
-        # Quem decide primeiro é o runner, antes de abrir a espera
-        # ([pulse.acp.session_runner._WatchedPrompts]). Repetir aqui é a rede
-        # do daemon: publicar o que a política resolve faria a run esperar para
-        # sempre por uma resposta que, com o cockpit fechado, ninguém daria.
         decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
         if decided is not None:
             return decided

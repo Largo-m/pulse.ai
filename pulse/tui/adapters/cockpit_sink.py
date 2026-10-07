@@ -24,7 +24,6 @@ _MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
-#: Recebe o diretório onde a run trabalha — a tela repassa ao painel de artefatos.
 ContextFn = Callable[[str], None]
 
 
@@ -85,12 +84,11 @@ class CockpitSink:
         self._cwd = cwd
 
     def set_context(self, *, cwd: str, branch: str) -> None:
-        """A run disse onde trabalha: é daí que saem os caminhos dos artefatos.
+        """Record where the run works; artifact paths resolve from there.
 
-        A tela nasce apontando para a raiz do projeto; com worktree o agente
-        escreve em outro lugar, e sem reapontar aqui o painel procuraria cada
-        artefato numa pasta onde ele não está. `on_context` deixa o cockpit
-        repassar isso ao painel, que guarda o próprio cwd.
+        With a worktree the agent writes outside the project root, so the pane
+        must be repointed. `on_context` lets the cockpit forward the cwd to the
+        pane, which keeps its own copy.
         """
         if cwd:
             self._cwd = cwd
@@ -201,10 +199,10 @@ class CockpitSink:
         self._emit()
 
     def replay_finished(self) -> None:
-        """O passado da run acabou de ser reaplicado; daqui para frente é vivo.
+        """The run's past has been replayed; events from here on are live.
 
-        Quem anexa precisa deste corte para acertar o que o replay não tem como
-        reproduzir — a duração dos steps, que o `phase.begin` remarcou agora.
+        Attachers use this cut to fix what replay cannot reproduce, namely step
+        durations re-stamped by `phase.begin`.
         """
         self._finish_message_line()
         if self._on_replay_end is not None:
@@ -212,12 +210,10 @@ class CockpitSink:
         self._emit()
 
     def mark_awaiting(self, waiting: bool, *, since: float | None = None) -> None:
-        """Pergunta aberta/fechada: congela ou solta o relógio do step.
+        """Question opened/closed: freeze or release the step timer.
 
-        Quem manda é o motor, não o dock desta tela: duas janelas anexadas na
-        mesma run precisam parar o cronômetro juntas, mesmo a que não está
-        mostrando a pergunta. `since` (hora de parede) é quando a espera
-        começou de fato — no replay, bem antes de agora.
+        Driven by the engine, not this screen's dock, so every attached window
+        pauses together. `since` (wall-clock) is when the wait actually began.
         """
         if waiting:
             self._state.begin_waiting(since=since)

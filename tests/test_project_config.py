@@ -83,7 +83,7 @@ def test_no_project_config_returns_none(tmp_path: Path):
 
 
 def test_load_project_config_parses_workflows(tmp_path: Path):
-    """`project_workflows` é só override por id — não semeia workflow nenhum."""
+    """`project_workflows` is only a per-id override; it seeds no workflow."""
     init_project_config(tmp_path)
     update_project_defaults(tmp_path, agent="claude")
     update_project_workflow(tmp_path, "meu-fluxo", agent="claude", model="opus[1m]")
@@ -127,11 +127,9 @@ def test_init_project_config_scaffolds_default_template(tmp_path: Path):
     assert path == tmp_path.resolve()
     config = load_project_config(tmp_path)
     assert config is not None
-    # Nada fixo: projeto novo herda runtime, model e política da máquina.
     assert config.default_agent is None
     assert config.model is None
     assert config.permission_policy is None
-    # Nenhum workflow nasce aqui: quem define workflow é `workflow_defs`.
     assert config.workflows == {}
     assert not (tmp_path / ".pulse" / "config.yaml").exists()
 

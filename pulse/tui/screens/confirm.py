@@ -12,10 +12,9 @@ _CANCEL = "cancel"
 
 
 class ConfirmScreen(ModalScreen[bool]):
-    """Sim/não para uma ação que não dá para desfazer.
+    """Yes/no confirmation for an irreversible action.
 
-    Cancelar vem primeiro e já nasce marcado: um Enter distraído não pode ser o
-    que apaga alguma coisa.
+    Cancel comes first and is preselected so a stray Enter never deletes anything.
     """
 
     BINDINGS = [

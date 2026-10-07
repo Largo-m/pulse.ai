@@ -11,7 +11,6 @@ def _make_process(stdout_text: str) -> MagicMock:
     process.stdin = StringIO()
     process.stdout = StringIO(stdout_text)
     process.stderr = StringIO()
-    # `poll() is None` é como o `_request` sabe que o agente continua de pé.
     process.poll.return_value = None
     process.wait.return_value = 0
     process.terminate.return_value = None

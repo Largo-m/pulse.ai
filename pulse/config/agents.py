@@ -21,7 +21,7 @@ class WorkflowConfig:
 
 
 def default_acp_command(name: str, binary: str) -> list[str]:
-    """Comando ACP quando o config não traz `acp_command` explícito."""
+    """ACP command used when the config has no explicit `acp_command`."""
     from pulse.runtimes import find_runtime
 
     runtime = find_runtime(name) or find_runtime(binary)
@@ -71,7 +71,7 @@ def parse_workflows(raw: Any) -> dict[str, WorkflowConfig]:
 
 
 def default_global_agents() -> dict[str, AgentConfig]:
-    """Um AgentConfig por runtime registrado."""
+    """One AgentConfig per registered runtime."""
     from pulse.runtimes import all_runtimes
 
     return {
@@ -86,9 +86,9 @@ def default_global_agents() -> dict[str, AgentConfig]:
 
 
 def default_global_workflows() -> dict[str, WorkflowConfig]:
-    """Nenhum. Um workflow só existe se estiver em `workflow_defs`, no banco.
+    """None. A workflow only exists if it is in the `workflow_defs` DB table.
 
-    Esta tabela é override de agent/model por id de workflow; semear um id aqui
-    faria o Pulse afirmar conhecer um pipeline que ele não define.
+    This mapping overrides agent/model per workflow id; seeding an id here would
+    make Pulse claim to know a pipeline it does not define.
     """
     return {}

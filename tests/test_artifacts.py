@@ -15,7 +15,7 @@ def test_artifact_key_normalizes_scheme_and_separators():
 
 
 def test_artifact_paths_in_text_only_matches_known_artifacts():
-    """Sem convenção de pasta, adivinhar caminho por regex apontaria para código."""
+    """With no folder convention, guessing paths by regex would point at code."""
     known = ["docs/PLANO.md", "src/app.py"]
     text = "Aprovar `docs/PLANO.md` e seguir? (não mexa em outro/arquivo.md)"
     assert artifact_paths_in_text(text, known) == ["docs/PLANO.md"]
@@ -54,5 +54,5 @@ def test_read_artifact_markdown_truncates_and_missing(tmp_path):
 
 
 def test_read_artifact_is_not_limited_to_markdown():
-    """Artefato é o que o agente escreveu — não só `.md` numa pasta de specs."""
+    """An artifact is whatever the agent wrote, not just `.md` in a specs folder."""
     assert artifact_key("src/main.rs") == "src/main.rs"

@@ -117,5 +117,5 @@ def dispatch_message(
     if method == "tools/call":
         return _handle_tools_call(request_id, params, prompt_handler, on_question)
     if request_id is not None:
-        return _error(request_id, -32601, f"Método não suportado: {method}")
+        return _error(request_id, -32601, f"Method not supported: {method}")
     return None

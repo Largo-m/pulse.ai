@@ -1,4 +1,4 @@
-"""Fan-out: um step da definição que vira N na run, um por item enumerado."""
+"""Fan-out: one definition step that becomes N in the run, one per listed item."""
 
 from __future__ import annotations
 
@@ -27,9 +27,6 @@ def _block(*lines: str) -> str:
     return f"Resumo da fase.\n\n```pulse:items\n{body}\n```\n"
 
 
-# --------------------------------------------------------------- o parser
-
-
 def test_reads_the_items_from_the_fenced_block():
     items = parse_items(_block("T1 — Criar o endpoint", "T2 - Montar o CSV", "T3: Testar"))
 
@@ -41,20 +38,20 @@ def test_reads_the_items_from_the_fenced_block():
 
 
 def test_text_without_a_block_has_no_items():
-    """Sem bloco não há fan-out — e não há erro: o step roda uma vez."""
+    """No block means no fan-out and no error: the step runs once."""
     assert parse_items("Escrevi tasks.md com 3 tarefas.") == ()
     assert parse_items("") == ()
 
 
 def test_the_last_block_wins():
-    """Ajuste reapresentado: a lista que vale é a de baixo."""
+    """A re-presented adjustment: the bottom list is the one that counts."""
     text = _block("T1 — Antigo") + _block("T1 — Novo", "T2 — Extra")
 
     assert [item.label for item in parse_items(text)] == ["Novo", "Extra"]
 
 
 def test_a_repeated_id_is_dropped():
-    """Id repetido viraria `step_id` duplicado e sobrescreveria o primeiro."""
+    """A repeated id would become a duplicate `step_id` and overwrite the first."""
     items = parse_items(_block("T1 — Primeiro", "T1 — Repetido", "T2 — Segundo"))
 
     assert [item.id for item in items] == ["T1", "T2"]
@@ -64,9 +61,6 @@ def test_the_item_count_is_capped():
     items = parse_items(_block(*(f"T{index} — Task" for index in range(1, MAX_ITEMS + 10))))
 
     assert len(items) == MAX_ITEMS
-
-
-# --------------------------------------------------------------- o motor
 
 
 def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, tmp_path: Path):
@@ -95,19 +89,17 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
 
     assert code == 0
     record = run_store.list_runs(tmp_path)[0]
-    # O step `run` sumiu: no lugar dele, um por item.
     assert [(step.step_id, step.label, step.status) for step in record.steps] == [
         ("plan", "Planejar", "done"),
         ("run:T1", "Criar o endpoint", "done"),
         ("run:T2", "Montar o CSV", "done"),
     ]
-    # Uma sessão por item, cada uma sabendo só do seu.
     assert runner.prompts[1].endswith("| T1 1/2")
     assert runner.prompts[2].endswith("| T2 2/2")
 
 
 def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path: Path):
-    """O painel montou as fases pela definição; o fan-out muda isso no meio."""
+    """The panel built phases from the definition; fan-out changes that midway."""
     make_workflow(
         "demo",
         steps=[("plan", "Planejar"), ("run", "Implementar")],
@@ -130,7 +122,7 @@ def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path:
 
 
 def test_a_step_that_declares_nothing_still_runs_once(wired, monkeypatch, tmp_path: Path):
-    """Protocolo que o agente não seguiu não é motivo para a run parar."""
+    """A protocol the agent did not follow is no reason to stop the run."""
     make_workflow(
         "demo",
         steps=[("plan", "Planejar"), ("run", "Implementar")],
@@ -153,14 +145,13 @@ def test_a_step_that_declares_nothing_still_runs_once(wired, monkeypatch, tmp_pa
 
 
 def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, tmp_path: Path):
-    """Retomar refaz o item que ficou, não a lista inteira."""
+    """Resuming redoes the remaining item, not the whole list."""
     make_workflow(
         "demo",
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
     summary = _block("T1 — Um", "T2 — Dois")
-    # T2 falha: a run para com T1 fechado.
     failing = _Runner([_approved(summary), _approved(), {"approved": False, "outcome": "approve"}])
     _install(monkeypatch, failing)
     assert (
@@ -187,7 +178,6 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
     )
 
     assert code == 0
-    # Só T2 rodou de novo — `plan` e `run:T1` já estavam fechados.
     assert len(resumed.prompts) == 1
     record = run_store.load_run(run_id)
     assert record is not None
@@ -199,7 +189,7 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
 
 
 def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
-    """`run_steps` ordena por posição: T10 não pode cair entre T1 e T2."""
+    """`run_steps` sorts by position: T10 must not land between T1 and T2."""
     make_workflow(
         "demo",
         steps=[("plan", "Planejar"), ("run", "Implementar")],
@@ -227,10 +217,10 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
 def test_every_item_is_recorded_before_the_first_one_runs(
     wired, monkeypatch, tmp_path: Path
 ):
-    """Os N filhos vão para o banco na expansão, não quando cada um começa.
+    """The N children are persisted at expansion, not when each one starts.
 
-    Filho que só existia na memória sumia se a run caísse no meio do fan-out:
-    o histórico reabria com as tasks que já tinham rodado e mais nenhuma.
+    A child that only existed in memory vanished if the run crashed mid fan-out:
+    history reopened with only the tasks that had already run.
     """
     make_workflow(
         "demo",
@@ -238,7 +228,6 @@ def test_every_item_is_recorded_before_the_first_one_runs(
         fan_out=("run",),
     )
     ids = [f"T{index}" for index in range(1, 11)]
-    # O bloco enumera dez; a segunda task derruba a sessão e o usuário para.
     runner = _Runner(
         [
             _approved(_block(*(f"{item} — Task {item}" for item in ids))),
@@ -267,11 +256,11 @@ def test_every_item_is_recorded_before_the_first_one_runs(
 def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
     wired, monkeypatch, tmp_path: Path
 ):
-    """O pai não volta: ao retomar, o bloco de itens ainda é o do step anterior.
+    """The parent does not come back: on resume, the items block is still the previous step's.
 
-    A busca pelo resumo anterior parava no step pai — que o fan-out apagou. Sem
-    ele, a varredura ia até o fim e pegava o resumo da última task, que não tem
-    bloco `pulse:items`: o fan-out desmontava e `run` rodava como step único.
+    The previous-summary lookup used to stop at the parent step, which fan-out
+    removed. Without it, the scan picked the last task's summary, which has no
+    `pulse:items` block, so fan-out collapsed and `run` ran as a single step.
     """
     make_workflow(
         "demo",
@@ -318,10 +307,10 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
 
 
 def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tmp_path: Path):
-    """O caso que deu origem a tudo: T2 travou e T3 rodou assim mesmo.
+    """The original case: T2 got stuck and T3 ran anyway.
 
-    Cada task tem sessão isolada, então a de T3 nem saberia que T2 não
-    entregou. Quem tem de saber é o motor — e ele para na task bloqueada.
+    Each task has an isolated session, so T3 would not know T2 did not deliver.
+    The engine has to know, and it stops at the blocked task.
     """
     make_workflow(
         "demo",
@@ -355,8 +344,7 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         ("run:T2", "blocked"),
         ("run:T3", "pending"),
     ]
-    assert len(runner.prompts) == 3, "T3 nem chegou a abrir sessão"
-    # O painel mostra a task travada como bloqueada, não como falha.
+    assert len(runner.prompts) == 3, "T3 never opened a session"
     assert runner._stream.statuses[-1]["blocked_ids"] == ["run:T2"]
 
 

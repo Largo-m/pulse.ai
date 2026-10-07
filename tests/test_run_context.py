@@ -1,8 +1,7 @@
-"""`run.context`: onde a run trabalha e em que branch, do motor até a tela.
+"""`run.context`: where the run works and on which branch, from engine to screen.
 
-É um evento como qualquer outro do barramento — e é de propósito: assim o
-replay o entrega a quem anexa depois, e a tela reabre apontando para o
-worktree certo sem rota nova.
+It is a regular bus event on purpose: replay delivers it to late attachers, and
+the screen reopens pointing at the right worktree without a new route.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from pulse.tui.state import CockpitState
 
 
 class _ReplayClient:
-    """Entrega uma lista fixa de eventos, como o replay de uma run."""
+    """Delivers a fixed list of events, like a run replay."""
 
     def __init__(self, events: list[dict]) -> None:
         self._events = events
@@ -39,7 +38,7 @@ class _ReplayClient:
 
 
 def _replayed(bus: EventBus) -> list[dict]:
-    """O passado que o barramento reentrega a quem anexa agora."""
+    """The past the bus redelivers to whoever attaches now."""
     events: list[dict] = []
     for event in bus.subscribe(after=0):
         if event.get("type") == REPLAY_END:
@@ -48,26 +47,26 @@ def _replayed(bus: EventBus) -> list[dict]:
     return events
 
 
-def test_sink_do_daemon_publica_o_contexto():
+def test_daemon_sink_publishes_the_context():
     bus = EventBus()
     ApiStreamSink(bus).set_context(cwd="/tmp/wt", branch="pulse/demo-abc")
     assert {"type": "run.context", "cwd": "/tmp/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
 
 
-def test_motor_anuncia_antes_de_qualquer_step(tmp_path: Path):
-    """O painel de artefatos depende disto para saber onde procurar arquivo."""
+def test_engine_announces_before_any_step(tmp_path: Path):
+    """The artifacts panel depends on this to know where to look for files."""
     stream = MagicMock()
     _announce_context(stream, tmp_path / "wt", "pulse/demo-abc")
     stream.set_context.assert_called_once_with(cwd=str(tmp_path / "wt"), branch="pulse/demo-abc")
 
 
-def test_stream_sem_set_context_nao_quebra():
-    """CLI e testes passam sinks que não sabem de branch nenhuma."""
+def test_stream_without_set_context_does_not_break():
+    """CLI and tests pass sinks that know nothing about branches."""
     _announce_context(NullStreamSink(), Path("/tmp"), "main")
     _announce_context(None, Path("/tmp"), "main")
 
 
-def test_cliente_repassa_o_contexto_ao_sink():
+def test_client_forwards_the_context_to_the_sink():
     state = CockpitState()
     make_workflow("demo")
     state.configure_workflow("demo")
@@ -85,11 +84,10 @@ def test_cliente_repassa_o_contexto_ao_sink():
     session.attach("run-1")
 
     assert state.branch_label == "pulse/demo-abc"
-    # O sink passou a procurar artefato onde o agente escreveu.
     assert sink._cwd == "/projeto/.wt"
 
 
-def test_contexto_avisa_a_tela_para_reapontar_o_painel():
+def test_context_tells_the_screen_to_repoint_the_panel():
     state = CockpitState()
     make_workflow("demo")
     state.configure_workflow("demo")
@@ -101,8 +99,8 @@ def test_contexto_avisa_a_tela_para_reapontar_o_painel():
     assert seen == ["/projeto/.wt"]
 
 
-def test_contexto_sem_worktree_so_marca_a_branch():
-    """Run na raiz do projeto: a branch aparece, o cwd não muda."""
+def test_context_without_worktree_only_sets_the_branch():
+    """Run at the project root: the branch shows up, the cwd does not change."""
     state = CockpitState()
     make_workflow("demo")
     state.configure_workflow("demo")

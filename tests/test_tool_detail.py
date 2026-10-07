@@ -18,20 +18,20 @@ def test_shorten_path_relative_to_cwd(tmp_path):
     assert shorten_path(str(target), cwd=str(tmp_path)) == "src/app.py"
 
 
-def test_o_mesmo_arquivo_nas_duas_grafias_vira_a_mesma_chave(tmp_path):
-    """O runtime reporta absoluto em `locations` e relativo em `rawInput`.
+def test_same_file_in_both_spellings_maps_to_same_key(tmp_path):
+    """The runtime reports absolute paths in `locations` and relative ones in `rawInput`.
 
-    Duas chaves para o mesmo arquivo eram duas abas iguais no painel de
-    artefatos — e a segunda, cortada em 4 segmentos, não abria nada.
+    Two keys for one file produced duplicate artifact tabs, and the second one
+    (truncated to 4 segments) opened nothing.
     """
     target = tmp_path / ".pulse" / "specs" / "features" / "barra" / "PRD.md"
     target.parent.mkdir(parents=True)
     target.write_text("x")
-    relativo = ".pulse/specs/features/barra/PRD.md"
+    relative = ".pulse/specs/features/barra/PRD.md"
 
-    assert shorten_path(str(target), cwd=str(tmp_path)) == relativo
-    assert shorten_path(relativo, cwd=str(tmp_path)) == relativo
-    assert shorten_path("./" + relativo, cwd=str(tmp_path)) == relativo
+    assert shorten_path(str(target), cwd=str(tmp_path)) == relative
+    assert shorten_path(relative, cwd=str(tmp_path)) == relative
+    assert shorten_path("./" + relative, cwd=str(tmp_path)) == relative
 
 
 def test_summarize_content_heading_and_path():

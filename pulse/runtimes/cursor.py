@@ -13,7 +13,7 @@ def _parse_logged_in(output: str) -> bool:
 
 
 class CursorRuntime(AgentRuntime):
-    """Cursor Agent — fala ACP nativamente via `agent acp`."""
+    """Cursor Agent, speaking ACP natively via `agent acp`."""
 
     id = "cursor"
     label = "Cursor"
@@ -26,7 +26,6 @@ class CursorRuntime(AgentRuntime):
     install_hint = "Instale o Cursor CLI: https://cursor.com/docs/cli"
     login_command = ("agent", "login")
     login_label = "Executar `agent login`"
-    # O Cursor expõe um único modo (`agent`) para as duas fases.
     interview_modes = ("agent", "plan", "default")
     execute_modes = ("agent", "default", "acceptEdits")
 

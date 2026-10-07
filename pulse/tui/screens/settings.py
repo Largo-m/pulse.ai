@@ -33,7 +33,6 @@ class SettingsScreen(Screen[None]):
         self._mode = "root"
         self._scope: str | None = None
         self._workflow_id: str | None = None
-        #: "agent" mexe num agent só; "global" escreve em todos de uma vez.
         self._target = "agent"
 
     def compose(self) -> ComposeResult:
@@ -92,8 +91,6 @@ class SettingsScreen(Screen[None]):
             ("global", "Global — runtime, modelo e permissões de todos os agents"),
             ("agents", "Agents — runtime, modelo e permissões"),
         ]
-        # Só aparece em repositório git: oferecer worktree onde não há git é
-        # oferecer uma chave que não liga nada.
         if vcs.is_repo(self._cwd):
             state = "ligado" if self._worktree_enabled() else "desligado"
             options.append(("worktree", f"Worktree — isolar cada run em branch própria · {state}"))
@@ -213,7 +210,7 @@ class SettingsScreen(Screen[None]):
         )
 
     def _show_global_fields(self) -> None:
-        """Valores que valem para todos os agents."""
+        """Settings that apply to every agent."""
         ensure_project_workflows(self._cwd)
         init_project_config(self._cwd)
         self._target = "global"
@@ -277,7 +274,7 @@ class SettingsScreen(Screen[None]):
         return agent.label if agent is not None else (self._workflow_id or "Agent")
 
     def _current_fields(self) -> tuple[str, str, str]:
-        """Runtime, modelo e política do alvo em edição."""
+        """Runtime, model and policy of the target being edited."""
         if self._target == "global":
             return self._effective_global_fields()
         if self._workflow_id:
@@ -288,7 +285,7 @@ class SettingsScreen(Screen[None]):
         return f"{title} (global)" if self._target == "global" else title
 
     def _effective_global_fields(self) -> tuple[str, str, str]:
-        """O que vale hoje: projeto, senão máquina, senão o padrão do Pulse."""
+        """Effective values: project, else machine, else Pulse defaults."""
         from pulse.config import load_global_config
 
         project = load_project_config(self._cwd)
@@ -323,11 +320,10 @@ class SettingsScreen(Screen[None]):
         self._show_global_fields()
 
     def _effective_agent_fields(self) -> tuple[str, str, str]:
-        """O que está guardado para este agente: settings do projeto → definição.
+        """Stored values for this agent: project settings, then its definition.
 
-        Aqui não vale a resolução completa: ela troca um runtime indisponível
-        pelo que a máquina tem, e a tela mostraria de volta um valor diferente
-        do que o usuário acabou de escolher.
+        Full resolution is avoided because it swaps an unavailable runtime for
+        one the machine has, showing a value other than what the user picked.
         """
         from pulse.store.agent_settings import load_agent_settings
         from pulse.store.workflow_defs import get_agent

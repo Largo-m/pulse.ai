@@ -1,15 +1,14 @@
-"""O histórico tem que mostrar o mesmo que a sessão viva mostrou.
+"""History must show the same thing the live session showed.
 
-O log gravado passa pelos mesmos rótulos do cockpit
-([pulse.history.tool_detail.build_tool_labels]), e a releitura devolve cada linha ao
-tipo dela. Enquanto o banco guardava `kind="Tool"` com o `title` cru do ACP, uma
-run reaberta virava uma fileira de "v Tool" sem dizer o que o agente leu,
-rodou ou escreveu.
+The recorded log goes through the same labels as the cockpit
+([pulse.history.tool_detail.build_tool_labels]), and reloading maps each line back
+to its kind. Storing `kind="Tool"` with the raw ACP `title` turned a reopened run
+into a row of "v Tool" entries that hid what the agent read, ran or wrote.
 
-O diálogo segue a mesma regra: toda pergunta feita à pessoa passa pelo proxy do
-prompt port e vira os balões `Pergunta`/`Você`
-([pulse.history.prompt_detail.build_prompt_qa]). Sem isso, o questionário que
-decidiu o rumo da run sumia ao reabri-la — ele só existia na tela.
+Dialogue follows the same rule: every question asked to the user goes through the
+prompt port proxy and becomes `Pergunta`/`Você` bubbles
+([pulse.history.prompt_detail.build_prompt_qa]); otherwise the questionnaire that
+steered the run vanished on reopen.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ from pulse.prompts.text_questionnaire import (
     parse_text_questionnaire,
 )
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
 
 
@@ -75,12 +74,12 @@ def _hydrated(workspace: Path, run_id: str = "run-1"):
         prompt="fazer algo",
         status=HistoryStatus.DONE,
         updated_at="2026-09-30T10:00:00+00:00",
-        steps=[HistoryStep(id="plan", label="Planejar", status="done")],
+        steps=[HistoryStep(id="plan", label="Planejar", status=StepStatus.DONE)],
     )
     return hydrate_history_item(item, workspace)
 
 
-def test_cada_tool_guarda_o_tipo_que_a_tela_mostrou(tmp_path: Path):
+def test_each_tool_stores_the_kind_the_screen_showed(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
@@ -106,7 +105,7 @@ def test_cada_tool_guarda_o_tipo_que_a_tela_mostrou(tmp_path: Path):
     ]
 
 
-def test_o_historico_reabre_com_os_tipos_em_vez_de_tool_generico(tmp_path: Path):
+def test_history_reopens_with_kinds_instead_of_generic_tool(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
     runner._record_run_event(
@@ -120,21 +119,21 @@ def test_o_historico_reabre_com_os_tipos_em_vez_de_tool_generico(tmp_path: Path)
     ]
 
 
-def test_a_fala_do_agente_volta_inteira_no_balao(tmp_path: Path):
+def test_agent_speech_comes_back_whole_in_the_bubble(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
-    fala = "linha um. " * 400  # bem além do antigo teto de 2000 caracteres
+    speech = "linha um. " * 400
 
-    runner._text_buffer.append(fala)
+    runner._text_buffer.append(speech)
     runner._flush_text()
 
     state = _hydrated(tmp_path, run_id)
     entry = state.entries[0]
     assert entry.kind == LogKind.ASSISTANT
-    assert entry.body == fala.strip()
+    assert entry.body == speech.strip()
 
 
-def test_o_cabecalho_do_passo_fica_no_log(tmp_path: Path):
+def test_the_step_header_stays_in_the_log(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
@@ -146,8 +145,8 @@ def test_o_cabecalho_do_passo_fica_no_log(tmp_path: Path):
     ]
 
 
-def test_um_update_tardio_nao_apaga_o_rotulo_do_tool(tmp_path: Path):
-    """O `rawOutput` chega noutro evento; a linha já tinha o arquivo."""
+def test_a_late_update_does_not_erase_the_tool_label(tmp_path: Path):
+    """`rawOutput` arrives in another event; the line already had the file."""
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
@@ -168,13 +167,8 @@ def test_um_update_tardio_nao_apaga_o_rotulo_do_tool(tmp_path: Path):
     assert [(event["kind"], event["title"]) for event in events] == [("Write", "PRD.md")]
 
 
-# --------------------------------------------------------------------------- #
-# O diálogo
-# --------------------------------------------------------------------------- #
-
-
 def _dialogue(run_id: str) -> list[tuple[str, str]]:
-    """As linhas de pergunta/resposta do log, na ordem."""
+    """The log's question/answer lines, in order."""
     return [
         (event["kind"], event["detail"])
         for event in run_store.list_events(run_id)
@@ -182,9 +176,11 @@ def _dialogue(run_id: str) -> list[tuple[str, str]]:
     ]
 
 
-def test_a_pergunta_do_agente_e_a_resposta_ficam_no_log(tmp_path: Path):
-    """O `AskQuestion` é onde a pessoa decide o rumo da run — some do histórico
-    e o que sobra é a fala do agente sem o porquê dela."""
+def test_the_agent_question_and_the_answer_stay_in_the_log(tmp_path: Path):
+    """`AskQuestion` is where the user steers the run.
+
+    If it vanished from history, only the agent's speech would remain, without its reason.
+    """
     run_id = _run(tmp_path)
 
     class _Port:
@@ -211,12 +207,11 @@ def test_a_pergunta_do_agente_e_a_resposta_ficam_no_log(tmp_path: Path):
 
     assert _dialogue(run_id) == [
         ("Question", "1. O que você está construindo?"),
-        # O mesmo rótulo numerado que o dock mostrou, não o id cru.
         ("Answer", "B) API / serviço backend"),
     ]
 
 
-def test_o_que_a_pessoa_escreveu_em_outro_entra_na_resposta(tmp_path: Path):
+def test_free_text_written_in_other_goes_into_the_answer(tmp_path: Path):
     run_id = _run(tmp_path)
 
     class _Port:
@@ -247,7 +242,7 @@ def test_o_que_a_pessoa_escreveu_em_outro_entra_na_resposta(tmp_path: Path):
     )
 
 
-def test_o_questionario_em_texto_vira_um_par_por_pergunta(tmp_path: Path):
+def test_text_questionnaire_becomes_one_pair_per_question(tmp_path: Path):
     run_id = _run(tmp_path)
     questionnaire = parse_text_questionnaire(
         "Preciso de algumas informações antes de continuar.\n"
@@ -291,8 +286,8 @@ def _permission_params(kind: str = "edit") -> dict:
     }
 
 
-def test_a_permissao_que_a_politica_resolve_nao_vira_linha(tmp_path: Path):
-    """Regra não é pergunta: ninguém viu essa decisão, então ela não é diálogo."""
+def test_a_permission_resolved_by_policy_does_not_become_a_line(tmp_path: Path):
+    """A rule is not a question: nobody saw that decision, so it is not dialogue."""
     run_id = _run(tmp_path)
 
     class _Port:
@@ -307,7 +302,7 @@ def test_a_permissao_que_a_politica_resolve_nao_vira_linha(tmp_path: Path):
     assert _dialogue(run_id) == []
 
 
-def test_a_permissao_que_a_pessoa_decidiu_fica_no_log(tmp_path: Path):
+def test_a_permission_decided_by_the_user_stays_in_the_log(tmp_path: Path):
     run_id = _run(tmp_path)
 
     class _Port:
@@ -323,8 +318,8 @@ def test_a_permissao_que_a_pessoa_decidiu_fica_no_log(tmp_path: Path):
     ]
 
 
-def test_o_menu_de_retry_e_a_orientacao_ficam_no_log(tmp_path: Path):
-    """O que o motor pergunta quando um step cai também é decisão da pessoa."""
+def test_the_retry_menu_and_guidance_stay_in_the_log(tmp_path: Path):
+    """What the engine asks when a step fails is also the user's decision."""
     run_id = _run(tmp_path)
 
     class _Port:
@@ -350,8 +345,8 @@ def test_o_menu_de_retry_e_a_orientacao_ficam_no_log(tmp_path: Path):
     ]
 
 
-def test_o_bloco_do_questionario_nao_volta_como_fala_do_agente(tmp_path: Path):
-    """Ao vivo o bloco vira dock; gravá-lo cru mostraria as perguntas duas vezes."""
+def test_the_questionnaire_block_does_not_come_back_as_agent_speech(tmp_path: Path):
+    """Live, the block becomes a dock; storing it raw would show the questions twice."""
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
@@ -371,8 +366,8 @@ def test_o_bloco_do_questionario_nao_volta_como_fala_do_agente(tmp_path: Path):
     ]
 
 
-def test_cerca_de_codigo_antes_do_questionario_fica_na_fala(tmp_path: Path):
-    """O log corta onde a tela viva corta: uma cerca qualquer não é questionário."""
+def test_code_fence_before_the_questionnaire_stays_in_the_speech(tmp_path: Path):
+    """The log cuts where the live screen cuts: an arbitrary fence is not a questionnaire."""
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
     tree = "Estrutura atual:\n```\npulse/\n  store/\n```"
@@ -392,8 +387,8 @@ def test_cerca_de_codigo_antes_do_questionario_fica_na_fala(tmp_path: Path):
     assert events[1][1] == QUESTIONNAIRE_NOTICE
 
 
-def test_dialogo_que_nao_deu_para_montar_deixa_rastro(tmp_path: Path, monkeypatch):
-    """A resposta segue para o agente, e o histórico diz que faltou o diálogo."""
+def test_dialogue_that_could_not_be_built_leaves_a_trace(tmp_path: Path, monkeypatch):
+    """The answer still reaches the agent, and history says the dialogue is missing."""
     run_id = _run(tmp_path)
 
     def _broken(*_args):
@@ -412,7 +407,7 @@ def test_dialogo_que_nao_deu_para_montar_deixa_rastro(tmp_path: Path, monkeypatc
     assert events == [("Info", "ask_text: ValueError: payload estranho")]
 
 
-def test_o_historico_reabre_com_os_baloes_de_pergunta_e_resposta(tmp_path: Path):
+def test_history_reopens_with_question_and_answer_bubbles(tmp_path: Path):
     run_id = _run(tmp_path)
 
     class _Port:
@@ -429,11 +424,11 @@ def test_o_historico_reabre_com_os_baloes_de_pergunta_e_resposta(tmp_path: Path)
     ]
 
 
-def test_artefato_sai_do_tool_mesmo_sem_kind_do_acp(tmp_path: Path):
-    """Runtime que só manda o nome do tool também rende artefato.
+def test_artifact_comes_from_the_tool_even_without_acp_kind(tmp_path: Path):
+    """A runtime that only sends the tool name also yields an artifact.
 
-    A aba de artefatos do histórico vinha vazia porque o registro dependia do
-    campo `kind` do ACP, que nem todo runtime preenche.
+    The history artifacts tab used to be empty because recording depended on the
+    ACP `kind` field, which not every runtime fills in.
     """
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
@@ -447,4 +442,4 @@ def test_artefato_sai_do_tool_mesmo_sem_kind_do_acp(tmp_path: Path):
 
     state = _hydrated(tmp_path, run_id)
     assert [(item.path, item.has_content) for item in state.artifacts] == [("PRD.md", True)]
-    assert state.phase_has_artifacts(), "a aba precisa abrir para o artefato da run"
+    assert state.phase_has_artifacts(), "the tab must open for the run artifact"

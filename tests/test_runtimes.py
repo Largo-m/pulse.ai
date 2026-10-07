@@ -42,9 +42,6 @@ CLAUDE_SESSION = {
 }
 
 
-# ------------------------------------------------------------------- registry
-
-
 def test_registry_exposes_both_runtimes():
     assert {runtime.id for runtime in all_runtimes()} == {"cursor", "claude"}
 
@@ -76,9 +73,6 @@ def test_default_acp_command_knows_claude():
     assert default_acp_command("outro", "outro") == ["outro", "acp"]
 
 
-# ---------------------------------------------------------------------- modos
-
-
 def test_cursor_keeps_agent_mode_in_both_phases():
     cursor = get_runtime("cursor")
     assert cursor.resolve_mode(CURSOR_SESSION, execute=False) == "agent"
@@ -92,12 +86,11 @@ def test_claude_uses_its_own_mode_ids():
 
 
 def test_claude_never_uses_plan_mode():
-    """Um step que "só planeja" costuma ser justamente o que escreve o artefato.
+    """A step that "only plans" is usually the one that writes the artifact.
 
-    No modo `plan` o Claude não escreve o arquivo pedido: grava um plano em
-    ~/.claude/plans e espera aprovação. O artefato nunca chega na sessão e a
-    opção de exibir o arquivo não aparece. Quem limita escrita é a
-    permission_policy, não o modo.
+    In `plan` mode Claude writes a plan to ~/.claude/plans instead of the
+    requested file, so the artifact never reaches the session. Writes are
+    limited by permission_policy, not by the mode.
     """
     claude = get_runtime("claude")
     assert "plan" not in claude.interview_modes[:1]
@@ -113,9 +106,6 @@ def test_session_without_modes_keeps_historic_behavior():
 def test_unknown_modes_fall_back_to_current_mode():
     session = {"modes": {"currentModeId": "custom", "availableModes": [{"id": "custom"}]}}
     assert get_runtime("cursor").resolve_mode(session, execute=True) == "custom"
-
-
-# -------------------------------------------------------------------- modelos
 
 
 def test_cursor_sets_model_with_set_model():
@@ -153,15 +143,11 @@ def test_model_labels_read_config_options_too():
     assert extract_model_labels(CURSOR_SESSION) == ["Auto", "gpt-5.5"]
 
 
-# --------------------------------------------------------------- autenticação
-
-
 def test_cursor_authenticates_with_its_method_id():
     assert get_runtime("cursor").auth_method(["cursor_login"]) == "cursor_login"
 
 
 def test_claude_skips_authenticate_when_nothing_is_advertised():
-    # O adapter do Claude já vem autenticado do CLI e anuncia `authMethods: []`.
     assert get_runtime("claude").auth_method([]) is None
     assert get_runtime("cursor").auth_method([]) is None
 
@@ -170,11 +156,8 @@ def test_unknown_method_falls_back_to_the_first_advertised():
     assert get_runtime("claude").auth_method(["oauth"]) == "oauth"
 
 
-# ------------------------------------------------------- composição do doctor
-
-
 def test_doctor_only_fails_on_the_active_runtime(monkeypatch):
-    """Máquina só com Claude não deve reprovar o doctor por não ter o Cursor."""
+    """A Claude-only machine must not fail doctor for lacking Cursor."""
     from pulse.doctor import checks as checks_module
 
     def fake_checks(runtime_id):
@@ -201,9 +184,6 @@ def test_doctor_fails_when_the_active_runtime_is_broken(monkeypatch):
     assert any(check.status == "fail" for check in results)
 
 
-# ---------------------------------------------- fallback de runtime ausente
-
-
 def _only_available(monkeypatch, available_id):
     monkeypatch.setattr(
         "pulse.runtimes.base.AgentRuntime.is_available",
@@ -212,7 +192,7 @@ def _only_available(monkeypatch, available_id):
 
 
 def test_agent_runtime_falls_back_when_declared_runtime_is_missing(monkeypatch):
-    """Agente que declara `cursor` roda no Claude se o Cursor não existe aqui."""
+    """An agent declaring `cursor` runs on Claude when Cursor is not installed."""
     from pulse.config import resolved as resolved_module
 
     _only_available(monkeypatch, "claude")
@@ -232,7 +212,6 @@ def test_fallback_prefers_the_machine_default(monkeypatch):
     from pulse.config import resolved as resolved_module
 
     monkeypatch.setattr("pulse.runtimes.base.AgentRuntime.is_available", lambda self: True)
-    # Disponível, então não troca.
     assert resolved_module._available_runtime_fallback("cursor", None, None) is None
 
     _only_available(monkeypatch, "claude")
@@ -248,11 +227,11 @@ def test_no_fallback_when_nothing_is_available(monkeypatch):
 
 
 def test_runtime_for_command_ignores_the_pinned_version():
-    """Config gravada antes do pin continua sendo do Claude."""
+    """Config saved before the version pin still maps to Claude."""
     assert runtime_for_command(["npx", "-y", "@agentclientprotocol/claude-agent-acp"]).id == "claude"
 
 
 def test_runtime_for_command_matches_the_executable_not_a_substring():
-    """`agent` (Cursor) está dentro de `claude-agent-acp`: substring errava o runtime."""
+    """`agent` (Cursor) is inside `claude-agent-acp`: substring matching picked the wrong runtime."""
     assert runtime_for_command(["/usr/local/bin/agent", "acp"]).id == "cursor"
     assert runtime_for_command(["/usr/local/bin/claude"]).id == "claude"

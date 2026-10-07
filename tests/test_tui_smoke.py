@@ -190,14 +190,14 @@ def _highlighted(option_id: str):
 
 
 def _selected(option_id: str):
-    """`on_option_selected` só lê `option_id`; montar o evento real pede o widget."""
+    """`on_option_selected` only reads `option_id`; building the real event needs the widget."""
     from types import SimpleNamespace
 
     return SimpleNamespace(option_id=option_id)
 
 
-def test_home_hides_the_loops_behind_nova_sessao(monkeypatch):
-    """A raiz não cresce com o banco: os loops moram um nível abaixo."""
+def test_home_hides_the_loops_behind_new_session(monkeypatch):
+    """The root menu does not grow with the database: loops live one level below."""
     import pulse.tui.screens.home as home_module
 
     monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
@@ -232,7 +232,6 @@ def test_home_hides_the_loops_behind_nova_sessao(monkeypatch):
             assert "workflow:new-issue" in loops
             assert "workflow:quick-fix" in loops
             assert loops[-1] == "back"
-            # O genérico não entra: "Nova sessão" é lista de pipeline.
             assert "workflow:default" not in loops
 
             screen.action_back()
@@ -285,7 +284,7 @@ def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
 
 
 def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
-    """Esc é um passo de cada vez: fecha o input, depois volta à raiz."""
+    """Esc goes one step at a time: closes the input, then returns to the root."""
     import pulse.tui.screens.home as home_module
 
     monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
@@ -323,7 +322,7 @@ def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
 
 
 def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatch):
-    """Descrição curta no item; a cadeia de steps, que é longa, na dica."""
+    """Short description on the item; the long step chain goes in the hint."""
     import pulse.tui.screens.home as home_module
 
     monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
@@ -352,8 +351,7 @@ def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatc
                 str(options.get_option_at_index(index).prompt)
                 for index in range(options.option_count)
             ]
-            assert "Nova spec · pipeline completo" in labels
-            # A cadeia de steps é o que não cabe no item: ela vive na dica.
+            assert "Nova spec · da ideia ao código revisado" in labels
             assert not any("→" in label for label in labels)
 
             hint = screen.query_one(".home-hint", Static)
@@ -361,8 +359,6 @@ def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatc
             await pilot.pause()
             assert "PRD → Techspec → Tasks → Implementar" in str(hint.render())
 
-            # "← Voltar" não tem descrição, mas a dica continua com duas linhas:
-            # alternar a altura faria a lista pular a cada item destacado.
             screen.on_option_highlighted(_highlighted("back"))
             await pilot.pause()
             assert str(hint.render()).count("\n") == 1
@@ -371,7 +367,7 @@ def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatc
 
 
 def test_the_sidebar_nests_the_fan_out_items_under_the_step_name():
-    """O nome do step de fan-out fica; as tasks vêm indentadas embaixo."""
+    """The fan-out step name stays; its tasks are indented below it."""
     from pulse.tui.state import CockpitState
 
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
@@ -392,9 +388,7 @@ def test_the_sidebar_nests_the_fan_out_items_under_the_step_name():
     assert any(line.strip().endswith("Implementar") for line in lines)
     assert any("T1 · Criar o endpoint" in line for line in lines)
     assert any("T2 · Montar o CSV" in line for line in lines)
-    # O cabeçalho conta o progresso do grupo em vez de cronômetro.
     assert any("1/2" in line for line in lines)
-    # As tasks recuam em relação ao step que as gerou.
     header = next(line for line in lines if line.endswith("Implementar"))
     task = next(line for line in lines if "Criar o endpoint" in line)
     assert _indent(task) > _indent(header)
@@ -405,26 +399,26 @@ def _indent(line: str) -> int:
 
 
 def test_new_session_lists_pipelines_and_hides_the_generic_loop():
-    """`is_default` marca o loop genérico — e é o que o menu deixa de fora."""
+    """`is_default` marks the generic loop, which the menu leaves out."""
     from pulse.store.workflow_defs import list_workflows
     from pulse.tui.screens.home import _session_workflows
 
     listed = [item.id for item in _session_workflows()]
     everything = {item.id for item in list_workflows()}
 
-    assert "default" in everything, "o loop genérico continua no banco"
+    assert "default" in everything, "the generic loop is still in the database"
     assert "default" not in listed
     assert {"new-issue", "quick-fix", "review"} <= set(listed)
 
     labels = [item.label for item in _session_workflows()]
-    assert labels == sorted(labels), "o menu é alfabético"
+    assert labels == sorted(labels), "the menu is alphabetical"
 
 
-def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
-    """"Analisar codebase" e "Setup do projeto" olham o repositório, não um pedido.
+def test_loop_with_builtin_task_starts_without_asking_for_text(monkeypatch):
+    """Codebase analysis and project setup inspect the repository, not a request.
 
-    Pedir "descreva a tarefa" nesses dois era uma pergunta sem resposta possível:
-    o loop já sabe o que vai fazer. Enter começa a run na hora.
+    Asking for a task description there had no meaningful answer, so Enter
+    starts the run immediately.
     """
     import pulse.tui.screens.home as home_module
 
@@ -474,7 +468,7 @@ def test_loop_com_tarefa_propria_entra_direto_sem_pedir_texto(monkeypatch):
     asyncio.run(run())
 
 
-def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
+def test_hint_says_enter_starts_these_loops(monkeypatch):
     import pulse.tui.screens.home as home_module
 
     monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
@@ -501,12 +495,12 @@ def test_a_dica_avisa_que_o_enter_ja_inicia_esses_loops(monkeypatch):
             screen.on_option_highlighted(_highlighted("workflow:analyze-codebase"))
             await pilot.pause()
             hint = str(screen.query_one(".home-hint", Static).render())
-            assert "Enter inicia" in hint
+            assert "Enter inicia agora" in hint
 
             screen.on_option_highlighted(_highlighted("workflow:new-issue"))
             await pilot.pause()
             hint = str(screen.query_one(".home-hint", Static).render())
-            assert "Enter seleciona" in hint
+            assert "Enter para descrever a tarefa" in hint
 
     asyncio.run(run())
 
@@ -530,8 +524,7 @@ def _waiting_run(run_id: str = "run-7", *, held: float = 180.0) -> dict:
 
 
 def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
-    """O aviso é o que a Home não tinha: quem saiu do cockpit com uma pergunta
-    aberta não tinha como descobrir que a run estava parada esperando."""
+    """Leaving the cockpit with an open question must not hide that the run is waiting."""
     import pulse.tui.screens.home as home_module
 
     monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
@@ -553,7 +546,6 @@ def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
             app.push_screen(screen)
             await pilot.pause()
 
-            # Sem daemon (ou sem nada esperando) o painel nem aparece.
             panel = screen.query_one("#home-alerts", Static)
             assert panel.display is False
             assert _home_option_ids(screen) == ["session", "history", "settings", "exit"]
@@ -566,14 +558,12 @@ def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
             assert "Nova spec" in text
             assert "Especificar" in text
             assert "há 3min" in text
-            # O aviso entra acima de tudo que começa trabalho novo.
             assert _home_option_ids(screen)[0] == "alerts"
 
             screen.on_option_selected(_selected("alerts"))
             await pilot.pause()
             assert _home_option_ids(screen) == ["attach:run-7", "back"]
 
-            # Respondida em outra janela: o aviso some e a vista volta à raiz.
             screen._apply_alerts([])
             await pilot.pause()
             assert panel.display is False
@@ -583,7 +573,7 @@ def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
 
 
 def test_home_opens_the_waiting_session_live(monkeypatch):
-    """Entrar pelo aviso é anexar à run — a pergunta continua de pé lá."""
+    """Entering through the alert attaches to the run, where the question is still open."""
     from pathlib import Path as _Path
 
     class _App:
@@ -614,7 +604,7 @@ def test_home_opens_the_waiting_session_live(monkeypatch):
 
 
 def test_leaving_the_cockpit_does_not_cancel_the_run():
-    """`q` solta o stream e larga as perguntas; ninguém manda parar."""
+    """`q` detaches the stream and abandons the prompts; nothing stops the run."""
     make_workflow("demo", steps=[("a", "A")])
 
     class _Session:
@@ -637,7 +627,7 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
             self.popped += 1
 
     class _Screen(CockpitScreen):
-        """Sem montar a tela: `action_back_to_menu` não depende de widget."""
+        """Unmounted screen: `action_back_to_menu` does not depend on widgets."""
 
         fake_app = _App()
 
@@ -649,9 +639,6 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
     session = _Session()
     screen._session = session
     screen.state.running = True
-    # A ponte tem que ser **largada**, não fechada: fechar responde "cancelado"
-    # à pergunta aberta, e a run continua no daemon esperando a pessoa voltar.
-    # (O efeito sobre quem está bloqueado está em `test_run_attach.py`.)
     used: list[str] = []
     screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
     screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
@@ -659,17 +646,17 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
     screen.action_back_to_menu()
 
     assert session.detached is True
-    assert session.stopped is False, "sair não é parar"
+    assert session.stopped is False, "leaving is not stopping"
     assert screen.fake_app.popped == 1
     assert used == ["abandon"]
 
 
 def test_leaving_before_the_first_step_still_detaches():
-    """Run que ainda não abriu step também está viva: sair larga, não fecha.
+    """A run that has not opened a step yet is alive too: leaving detaches, not closes.
 
-    Antes do primeiro `phase.begin` (`state.running` ainda falso) sair fechava
-    a ponte sem desanexar, e a sessão órfã respondia "cancelado" sozinha às
-    perguntas da run — inclusive às que a tela reanexada estava mostrando.
+    Before the first `phase.begin` (`state.running` still false), leaving closed
+    the bridge without detaching, and the orphan session auto-cancelled the run's
+    prompts, including those shown by a reattached screen.
     """
     make_workflow("demo", steps=[("a", "A")])
 
@@ -705,7 +692,7 @@ def test_leaving_before_the_first_step_still_detaches():
 
 
 def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
-    """Run `executando` que o daemon ainda tem abre ao vivo, não como página."""
+    """An in-progress run the daemon still holds reopens live, not as a page."""
     import pulse.tui.screens.history as history_module
     from pulse.history.models import HistoryItem, HistoryStatus
 

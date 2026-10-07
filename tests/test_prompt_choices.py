@@ -71,7 +71,7 @@ def test_classify_outcome_reads_the_approval_questionnaire():
 
 
 def test_free_text_guidance_never_approves():
-    """"Revise o fluxo de aprovação" é orientação, não um "sim"."""
+    """Guidance like "Revise o fluxo de aprovação" is not a "yes"."""
     answers = "1. Aprovar?\n→ Outro — revise o fluxo de aprovação do checkout\n"
     assert classify_outcome(answers) != "approve"
 
@@ -170,8 +170,8 @@ def test_build_choices_adds_other_for_open_questions():
     assert any(choice[0] == "__other__" for choice in choices)
 
 
-def test_o_campo_abre_para_qualquer_jeito_de_pedir_texto():
-    """O agente parafraseia e traduz: reconhecer `(descreva)` literal não bastava."""
+def test_the_field_opens_for_any_way_of_asking_for_text():
+    """The agent paraphrases and translates: matching a literal `(descreva)` was not enough."""
     for label in (
         "B) Não, preciso de ajustes (descreva)",
         "B) Não, preciso de ajustes (descreva abaixo)",
@@ -185,14 +185,13 @@ def test_o_campo_abre_para_qualquer_jeito_de_pedir_texto():
         assert option_requires_description(label), label
 
 
-def test_o_campo_nao_abre_em_rotulo_que_so_menciona_o_verbo():
-    """Pedido ao usuário vem em parênteses, colchete ou cauda — não solto no meio."""
+def test_the_field_does_not_open_for_a_label_that_only_mentions_the_verb():
+    """A request to the user comes in parentheses, brackets or a tail, not loose mid-sentence."""
     for label in (
         "A) Sim, aprovar e continuar",
         "C) Cancelar workflow",
         "B) A documentação que descreve o fluxo está correta",
         "B) Quick fix: reutilizar TokenResponseAdapter",
-        # A explicação depois dos dois-pontos fala de descrição; não pede uma.
         "A) Sim: busca no título e na descrição; o trecho fica em negrito nos dois",
         "A) Sim: a tarefa aparece se cada palavra estiver no título OU na descrição",
         "B) Não (só o título, a descrição fica de fora)",
@@ -200,11 +199,11 @@ def test_o_campo_nao_abre_em_rotulo_que_so_menciona_o_verbo():
         assert not option_requires_description(label), label
 
 
-def test_num_portao_de_aprovacao_todo_nao_abre_o_campo():
-    """A garantia que não depende da redação do agente.
+def test_in_an_approval_gate_every_no_opens_the_field():
+    """The guarantee that does not depend on the agent's wording.
 
-    Aprovar, pular e cancelar dizem sozinhos o que fazer. Todo o resto volta ao
-    agente como "o usuário quer mudanças" — sem texto, ele refaz o step no escuro.
+    Approve, skip and cancel are self-explanatory. Everything else goes back to the
+    agent as "the user wants changes"; without text, it redoes the step blindly.
     """
     prompt = "1. Aprovar Techspec e avançar?"
     for label in ("B) Não, preciso de ajustes", "B) Não", "B) No, I need changes"):
@@ -213,18 +212,18 @@ def test_num_portao_de_aprovacao_todo_nao_abre_o_campo():
         assert not answer_needs_description(prompt=prompt, label=label), label
 
 
-def test_fora_do_portao_de_aprovacao_um_nao_continua_sendo_so_um_nao():
-    """Senão toda pergunta de sim/não da entrevista abriria um campo de texto."""
+def test_outside_an_approval_gate_a_no_is_just_a_no():
+    """Otherwise every yes/no interview question would open a text field."""
     prompt = "2. Quer rodar os testes agora?"
     assert not answer_needs_description(prompt=prompt, label="B) Não")
     assert not answer_needs_description(prompt=prompt, label="A) Sim")
 
 
-def test_o_portao_em_ingles_e_lido_como_o_em_portugues():
-    """Os playbooks são em inglês; o agente nem sempre traduz o bloco.
+def test_an_english_gate_is_read_like_a_portuguese_one():
+    """Playbooks are in English; the agent does not always translate the block.
 
-    Sem isto `approve` não aprovava: o step caía em `continue`, o motor devolvia a
-    conversa ao agente e o portão nunca fechava.
+    Without this, `approve` did not approve: the step fell into `continue`, the
+    engine handed the conversation back to the agent and the gate never closed.
     """
     def answers(label: str) -> str:
         return f"1. Approve the Techspec and continue?\n→ {label}"
@@ -235,16 +234,16 @@ def test_o_portao_em_ingles_e_lido_como_o_em_portugues():
     assert classify_outcome(answers("D) Skip this step")) == "skip"
 
 
-def test_bloco_de_aprovacao_em_ingles_nao_ganha_um_outro():
-    """"Outro" num portão vira texto livre onde o motor espera uma das três."""
+def test_english_approval_block_does_not_get_an_other_option():
+    """"Outro" in a gate becomes free text where the engine expects one of three choices."""
     assert not should_add_other_option(
         prompt="1. Approve the Techspec and continue?",
         option_labels=["Yes, approve and continue", "No, I need changes", "Cancel workflow"],
     )
 
 
-def test_a_escolha_com_texto_chega_ao_agente_como_ajuste_e_com_o_motivo(monkeypatch):
-    """Ponta a ponta: o que o motor lê depois tem o desfecho e a orientação."""
+def test_a_choice_with_text_reaches_the_agent_as_adjust_with_the_reason(monkeypatch):
+    """End to end: what the engine reads afterwards has the outcome and the guidance."""
     from pulse.prompts.text_questionnaire import parse_text_questionnaire
 
     block = (
@@ -272,16 +271,16 @@ def test_a_escolha_com_texto_chega_ao_agente_como_ajuste_e_com_o_motivo(monkeypa
     bridge = _Bridge()
     answers = TextualPromptHandler(bridge).run_parsed_questionnaire(questionnaire)
 
-    assert bridge.asked_text, "o campo tem de abrir mesmo sem `(descreva)` no rótulo"
+    assert bridge.asked_text, "the field must open even without `(descreva)` in the label"
     assert "trocar a seção de cache" in answers
     assert classify_outcome(answers) == "adjust"
 
 
-def test_o_pedido_de_texto_chega_a_fila_do_dock_como_um_prompt_proprio():
-    """O campo é um segundo pedido na fila — é assim que o dock o desenha.
+def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
+    """The field is a second request in the queue; that is how the dock draws it.
 
-    Testa com o `PromptBridge` de verdade: é o pulo do `select` para o `text` que
-    o usuário não estava vendo acontecer.
+    Uses the real `PromptBridge`: the jump from `select` to `text` is what the
+    user was not seeing happen.
     """
     import threading
 
@@ -320,7 +319,7 @@ def test_o_pedido_de_texto_chega_a_fila_do_dock_como_um_prompt_proprio():
 
     worker.join(timeout=5)
 
-    assert kinds == [PromptKind.SELECT, PromptKind.TEXT], "escolher B abre o campo"
+    assert kinds == [PromptKind.SELECT, PromptKind.TEXT], "picking B opens the field"
     assert "trocar a seção de cache" in (answers[0] or "")
 
 

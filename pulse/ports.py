@@ -45,6 +45,15 @@ class PromptPort(Protocol):
     def ask_text(self, prompt: str, *, title: str = "") -> str | None: ...
 
 
+@runtime_checkable
+class UserWaitListener(Protocol):
+    """Told when a question to the user opens and closes, so the run can pause its clock."""
+
+    def user_wait_began(self) -> None: ...
+
+    def user_wait_ended(self, step_id: str, seconds: float) -> None: ...
+
+
 class NullStreamSink:
     def __init__(self) -> None:
         self._agent_text = ""
@@ -94,6 +103,14 @@ class NullStreamSink:
         return None
 
     def set_context(self, *, cwd: str, branch: str) -> None:
+        return None
+
+
+class NullUserWaitListener:
+    def user_wait_began(self) -> None:
+        return None
+
+    def user_wait_ended(self, step_id: str, seconds: float) -> None:
         return None
 
 

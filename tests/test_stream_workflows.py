@@ -14,8 +14,6 @@ from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 
-#: Formas de workflow que a UI precisa aguentar: de um step só até vários.
-#: Não há catálogo a percorrer — o Pulse não define workflow nenhum.
 SHAPES: dict[str, list[tuple[str, str]]] = {
     "single": [("only", "Único")],
     "pair": [("plan", "Planejar"), ("build", "Construir")],
@@ -467,12 +465,11 @@ def test_log_stream_renders_only_selected_step():
     assert "Aguardando atividade do agente…" in empty_plain
 
 
-def test_o_laco_mostra_uma_linha_com_contador_e_nao_uma_por_volta():
-    """Três voltas de review são uma linha `Review ×3`, não `Review (2ª rodada)`.
+def test_loop_shows_one_line_with_counter_not_one_per_round():
+    """Three review rounds are one `Review ×3` line, not `Review (2ª rodada)`.
 
-    O contador fica em quem abre a faixa do laço: é esse step que tem um
-    artefato por volta para a pessoa abrir. Quem fecha roda tanto quanto, e não
-    conta nada — o número ali seria ruído.
+    The counter sits on the step that opens the loop, since it has one artifact
+    per round to open; the closing step shows no counter, which would be noise.
     """
 
     async def run() -> None:
@@ -508,9 +505,7 @@ def test_o_laco_mostra_uma_linha_com_contador_e_nao_uma_por_volta():
 
             assert "Review ×3" in phases
             assert "Fix review" in phases
-            # Quem fecha o laço não ganha contador.
             assert "Fix review ×" not in phases
-            # E nenhuma linha por volta.
             assert "rodada" not in phases
             assert "review#2" not in phases
 

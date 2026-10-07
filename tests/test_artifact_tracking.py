@@ -1,7 +1,7 @@
-"""Artefato é o que o agente escreveu — descoberto pelos tool-calls do ACP.
+"""An artifact is whatever the agent wrote, discovered via ACP tool calls.
 
-Não há convenção de pasta nem de extensão: o Pulse guarda só o caminho que o
-runtime reportou, e é isso que o painel e o histórico mostram.
+There is no folder or extension convention: Pulse stores only the path the
+runtime reported, and that is what the pane and history show.
 """
 
 from __future__ import annotations
@@ -46,15 +46,13 @@ def test_a_write_tool_call_records_the_artifact(tmp_path):
 
     runner._record_run_event(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))
 
-    # Relativo ao workspace: o caminho gravado é o mesmo que a aba de
-    # artefatos usa para abrir o arquivo em outra máquina.
     assert run_store.list_artifacts("run-1") == [
         {"path": "docs/PLANO.md", "step_id": "one"}
     ]
 
 
 def test_the_path_can_come_from_raw_input(tmp_path):
-    """Cada runtime reporta o arquivo de um jeito; os dois caminhos valem."""
+    """Each runtime reports the file differently; both paths are accepted."""
     _run(tmp_path)
     runner = _runner()
 
@@ -105,7 +103,7 @@ def test_reads_and_searches_are_not_artifacts(tmp_path):
 
 
 def test_an_unbound_runner_records_nothing(tmp_path):
-    """Sem `bind_run`, não há run a que atribuir o artefato — e nada quebra."""
+    """Without `bind_run` there is no run to attribute the artifact to, and nothing breaks."""
     runner = AcpSessionRunner(["agent", "acp"], cwd="/repo", enable_mcp_ask=False)
 
     runner._record_run_event(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))
@@ -121,5 +119,4 @@ def test_tool_calls_also_land_in_the_run_log(tmp_path):
 
     events = run_store.list_events("run-1")
     assert [(event["kind"], event["step_id"]) for event in events] == [("Write", "one")]
-    # O detalhe gravado é o rótulo da tela viva, não o `title` cru do ACP.
     assert events[0]["title"] == "docs/PLANO.md"

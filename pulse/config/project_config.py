@@ -11,9 +11,6 @@ from pulse.config.paths import safe_cwd
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
 
-#: `project_workflows` só guarda override de agent/model por workflow. Não há
-#: default aqui de propósito: o Pulse não conhece nenhum workflow por código —
-#: eles vêm de `workflow_defs`, no banco.
 DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {}
 
 
@@ -25,9 +22,6 @@ class ProjectConfig:
     permission_policy: str | None = None
     workspace: Path | None = None
     default_agent: str | None = None
-    #: Cada run abre o próprio `git worktree` em vez de escrever na árvore de
-    #: trabalho do projeto. Só por projeto: isolar é decisão de um repositório,
-    #: não da máquina.
     use_worktree: bool = False
     agents: dict[str, AgentConfig] = field(default_factory=dict)
     workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
@@ -161,8 +155,6 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
               use_worktree
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
-            # Vazio = herda da máquina. O onboarding grava a escolha do usuário
-            # lá e chama isto logo depois: um valor concreto aqui ganharia dela.
             (project_id, None, None, None, None, 0),
         )
         for workflow_id, defaults in DEFAULT_PROJECT_WORKFLOWS.items():
@@ -173,8 +165,6 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
                 """,
                 (project_id, workflow_id, defaults.agent, defaults.model),
             )
-        # Fora do laço: com `DEFAULT_PROJECT_WORKFLOWS` vazio, um commit lá dentro
-        # nunca roda e o projeto inteiro é descartado no `close()`.
         connection.commit()
     finally:
         connection.close()
@@ -216,7 +206,7 @@ def update_project_defaults(
         updates["model"] = model
     if permission_policy is not None:
         if permission_policy not in PERMISSION_POLICIES:
-            raise ValueError(f"Política inválida: {permission_policy}")
+            raise ValueError(f"Invalid permission policy: {permission_policy}")
         updates["permission_policy"] = permission_policy
     if agent is not None:
         updates["default_agent"] = agent

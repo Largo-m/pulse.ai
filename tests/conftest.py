@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from pulse.store import runs as run_store
+from pulse.store.runs import RunStatus, StepRecord
 from pulse.store.workflow_defs import AgentDef, StepDef, WorkflowDef, save_agent, save_workflow
 
 
@@ -21,13 +23,11 @@ def make_workflow(
     requires_outcome: bool = True,
     repeat: tuple[str, str, int] | None = None,
 ) -> WorkflowDef:
-    """Grava um workflow de teste no banco e devolve a definição.
+    """Persist a test workflow in the database and return its definition.
 
-    Os testes precisam de um workflow com forma conhecida; como o Pulse não
-    traz nenhum além do `default` de um step, cada teste semeia o seu.
-
-    `repeat=(step_id, volta_para, teto)` marca um laço: aquele step pode mandar
-    a run voltar e repetir o trecho.
+    Pulse ships only the single-step `default` workflow, so each test seeds its own.
+    `repeat=(step_id, back_to, max)` marks a loop: that step may send the run back
+    to repeat the span.
     """
     entries = steps or [("one", "Um"), ("two", "Dois")]
     save_agent(AgentDef(id="tester", label="Tester"))
@@ -58,3 +58,19 @@ def make_workflow(
 @pytest.fixture
 def demo_workflow() -> WorkflowDef:
     return make_workflow()
+
+
+def store_step(run_id: str, step: StepRecord) -> None:
+    """Fixture shortcut: write one step of a stored run as a past execution left it."""
+    record = run_store.load_run(run_id)
+    assert record is not None, run_id
+    record.steps = [step if item.step_id == step.step_id else item for item in record.steps]
+    run_store.save(record)
+
+
+def store_run_status(run_id: str, status: str) -> None:
+    """Fixture shortcut: leave a stored run in `status`, as the daemon would."""
+    record = run_store.load_run(run_id)
+    assert record is not None, run_id
+    record.status = RunStatus(status)
+    run_store.save(record)

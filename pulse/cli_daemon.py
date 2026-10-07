@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pulse.client.active_runs import active_runs, describe
 from pulse.client.engine_client import EngineClient
+from pulse.daemon.paths import read_daemon_meta
 from pulse.daemon.server import is_daemon_alive, stop_daemon
 
 
@@ -63,8 +64,6 @@ def _start() -> int:
 
 
 def _stop() -> int:
-    # Parar o engine leva junto o que ele está rodando. Enquanto a run era
-    # atrelada ao cockpit isso era óbvio; agora que ela sobrevive à TUI, não é.
     _warn_about_live_runs()
     if not stop_daemon():
         print("[pulse] pulse-engine não saiu depois do SIGTERM; continua rodando")

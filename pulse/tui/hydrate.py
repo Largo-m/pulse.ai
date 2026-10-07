@@ -1,13 +1,9 @@
-"""Reconstrói o cockpit a partir de uma run já gravada.
+"""Rebuild the cockpit from a persisted run.
 
-Tudo que a tela precisa está no banco: `run_steps` dá a sidebar, `run_events` dá
-o stream e `run_artifacts` dá o painel. Não há leitura do store do runtime nem
-varredura de pasta — uma run feita em qualquer agente reabre igual.
-
-Duas portas, o mesmo material: [hydrate_history_item] monta a tela parada do
-histórico, e [restore_run] devolve o passado a um cockpit que vai continuar
-rodando. Retomar sem isto abria a run mostrando só "concluído" nos steps
-anteriores — sem log, sem tool, sem duração.
+Everything comes from the database: `run_steps` feeds the sidebar, `run_events`
+the stream and `run_artifacts` the pane, so a run from any agent reopens the same.
+[hydrate_history_item] builds the static history view; [restore_run] restores
+the past into a cockpit that will keep running.
 """
 
 from __future__ import annotations
@@ -19,17 +15,18 @@ from pathlib import Path
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
+from pulse.store.runs import StepStatus
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
 
 _NO_LOGS = "Nenhum log persistido para esta run."
 _STEP_TO_PHASE = {
-    "pending": PhaseStatus.PENDING,
-    "running": PhaseStatus.RUNNING,
-    "done": PhaseStatus.DONE,
-    "skipped": PhaseStatus.SKIPPED,
-    "failed": PhaseStatus.FAILED,
-    "blocked": PhaseStatus.BLOCKED,
+    StepStatus.PENDING: PhaseStatus.PENDING,
+    StepStatus.RUNNING: PhaseStatus.RUNNING,
+    StepStatus.DONE: PhaseStatus.DONE,
+    StepStatus.SKIPPED: PhaseStatus.SKIPPED,
+    StepStatus.FAILED: PhaseStatus.FAILED,
+    StepStatus.BLOCKED: PhaseStatus.BLOCKED,
 }
 
 
@@ -73,18 +70,11 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
 
 
 def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
-    """Põe no cockpit o que a run já tinha, antes de ela voltar a rodar.
+    """Load the run's existing history into the cockpit before it resumes.
 
-    Retomar continua a **mesma** run: o `run_id` é o mesmo, e `run_events` guarda
-    tudo que já aconteceu nela. Começar a tela zerada jogava isso fora — os steps
-    que já tinham fechado reapareciam como "concluído" e nada mais.
-
-    `sync_phases` preserva fase por id, então o que é posto aqui sobrevive ao
-    `phases.sync` que o motor manda em seguida.
-
-    Devolve o diretório onde a run trabalha (o worktree dela, quando há um),
-    para a tela já nascer apontando para lá em vez de esperar o `run.context`
-    do motor — nessa janela o painel leria os artefatos da raiz errada.
+    `sync_phases` preserves phases by id, so this survives the engine's later
+    `phases.sync`. Returns the run's working directory (its worktree, if any) so
+    the pane reads artifacts from the right root before `run.context` arrives.
     """
     record = run_store.load_run(run_id)
     if record is None:
@@ -95,44 +85,30 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
     for phase in state.phases:
         phase.status = _STEP_TO_PHASE.get(status.get(phase.id, ""), PhaseStatus.PENDING)
         if phase.status == PhaseStatus.RUNNING:
-            # Nada está rodando numa run que acabou de reabrir. Gravado como
-            # `running` é step que a queda pegou no meio — ele vai ser refeito, e
-            # deixá-lo assim daria ao `begin_phase` seguinte uma fase "em curso"
-            # para fechar, com duração do tamanho do mundo.
             phase.status = PhaseStatus.PENDING
     _stamp_elapsed(state, run_id)
 
     state.entries = _load_entries(run_id, state.phases, placeholder=False)
-    # Os artefatos estão onde a run trabalhou — o worktree dela, quando houve
-    # um. Procurá-los na raiz do projeto acharia versão antiga ou nada.
     state.artifacts = _load_artifacts(run_id, Path(record.exec_root or workspace))
     state.branch_label = record.branch
-    # Os ids continuam de onde pararam: entrada nova com id repetido faria o
-    # stream reescrever uma linha antiga em vez de acrescentar a dela.
     state._next_entry_id = max((entry.entry_id for entry in state.entries), default=0) + 1
     state.notify()
     return record.exec_root
 
 
 def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> None:
-    """Depois do replay de uma run anexada, traz do banco o que ele não traz.
+    """After replaying an attached run, load from the DB what the replay lacks.
 
-    Retomar mantém o `run_id` mas abre um barramento novo no daemon: o replay só
-    tem o que aconteceu desde a retomada. Os steps que fecharam antes dela
-    chegavam ao cockpit anexado sem log, sem tool e sem artefato. Só entra fase
-    fechada que o replay deixou sem nenhuma linha, então uma run que nunca foi
-    retomada não muda.
+    A resume keeps the `run_id` but opens a new daemon bus, so the replay only
+    covers events since the resume. Only settled phases with no replayed entries
+    are filled in, so a never-resumed run is unchanged.
     """
     record = run_store.load_run(run_id)
     if record is None:
         return
-    settled = {
-        step.step_id
-        for step in record.steps
-        if step.status in {"done", "skipped", "failed", "blocked"}
-    }
+    ended = {step.step_id for step in record.steps if step.has_ended}
     logged = {entry.phase_id for entry in state.entries if entry.phase_id}
-    missing = settled - logged
+    missing = ended - logged
     if not missing:
         return
     restored = [
@@ -143,7 +119,6 @@ def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> 
     for entry in restored:
         entry.entry_id = state._next_entry_id
         state._next_entry_id += 1
-    # Aconteceram antes de tudo que o replay trouxe: vão na frente.
     state.entries = restored + state.entries
     known = {artifact.path for artifact in state.artifacts}
     state.artifacts = [
@@ -155,13 +130,11 @@ def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> 
 
 
 def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
-    """Acerta o relógio depois de reconstruir uma run **que ainda roda**.
+    """Fix timers after rebuilding a run that is **still running**.
 
-    O replay reaplica `phase.begin` em milissegundos, então toda duração nasceria
-    contando do instante em que a pessoa voltou à tela, e não de quando o step
-    começou. Os steps fechados vêm de `run_steps` como no histórico; o step em
-    curso tem o `started_at` empurrado para trás pelo tempo que ele já gastou,
-    para o cronômetro continuar de onde estava em vez de reiniciar.
+    Replay re-applies `phase.begin` instantly, so durations would count from
+    reattach time. Settled steps use `run_steps`; the running step has its
+    `started_at` shifted back by the time already spent so the timer continues.
     """
     record = run_store.load_run(run_id)
     if record is None:
@@ -175,94 +148,45 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
     for phase in state.phases:
         if phase.status != PhaseStatus.RUNNING:
             continue
-        begin = _parse_stamp(started.get(phase.id, ""))
+        begin = started.get(phase.id)
         if begin is None:
             continue
-        if begin.tzinfo is None:
-            begin = begin.replace(tzinfo=UTC)
         spent = (now_wall - begin).total_seconds()
         if spent < 0:
             continue
-        # As voltas anteriores do laço entram no começo: o cronômetro da volta
-        # em curso continua de onde a anterior parou.
         phase.started_at = now_mono - spent - max(0.0, carried.get(phase.id, 0.0))
         phase.ended_at = None
-        # A espera já fechada vem do banco; a que ainda está aberta o replay
-        # já marcou em `awaiting_since` na hora em que ela começou (o `since`
-        # de `run.awaiting`), e ela se fecha sozinha quando a pessoa responder.
         phase.waiting_total = max(0.0, waiting.get(phase.id, 0.0))
     state.notify()
 
 
 def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
-    """Duração de cada step, do que ficou gravado em `run_steps`.
+    """Set each step's duration from what was persisted in `run_steps`.
 
-    A tela conta tempo em `time.monotonic()`, que não existe mais depois do
-    processo terminar. Para uma run relida, o par (0, duração) é o que mostra a
-    duração correta sem o relógio voltar a andar.
+    The screen measures time with `time.monotonic()`, which does not survive the
+    process; the (0, duration) pair shows the right duration without ticking.
     """
     record = run_store.load_run(run_id)
     if record is None:
         return
-    durations = {step.step_id: _step_seconds(step) for step in record.steps}
+    durations = {step.step_id: step.elapsed_seconds() for step in record.steps}
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
             phase.started_at = 0.0
             phase.ended_at = seconds
-            # O desconto já está em `ended_at`; zerar evita descontá-lo de novo
-            # em `elapsed_label`.
             phase.waiting_total = 0.0
 
 
-def _step_seconds(step: run_store.StepRecord) -> float | None:
-    """Duração do step somando as voltas do laço.
-
-    A volta em curso (ou ainda não começada) não tem fim gravado; o que as
-    anteriores gastaram continua valendo, senão o step reaparecia zerado no
-    meio de uma rodada.
-    """
-    current = _seconds(step.started_at, step.ended_at, step.waiting_seconds)
-    carried = max(0.0, step.carried_seconds)
-    if current is None:
-        return carried or None
-    return carried + current
-
-
-def _seconds(started_at: str, ended_at: str, waiting_seconds: float = 0.0) -> float | None:
-    """Duração líquida do step: tempo de parede menos o que ficou esperando o
-    usuário responder. É o mesmo desconto que a sessão viva mostra — o histórico
-    não pode contar uma história diferente da que a tela contou na hora."""
-    start = _parse_stamp(started_at)
-    end = _parse_stamp(ended_at)
-    if start is None or end is None:
-        return None
-    delta = (end - start).total_seconds() - max(0.0, waiting_seconds)
-    return delta if delta >= 0 else None
-
-
-def _parse_stamp(value: str) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        return None
-
-
-#: O stream desenha estes a partir de `body`; o resto, de `title`/`detail`.
 _BODY_KINDS = frozenset({LogKind.ASSISTANT, LogKind.QUESTION, LogKind.ANSWER})
 _KIND_BY_NAME = {kind.value.lower(): kind for kind in LogKind}
 
 
 def _entry_kind(raw: str) -> LogKind:
-    """Tipo gravado de volta ao tipo da tela.
+    """Map a persisted kind label back to the screen's `LogKind`.
 
-    O banco guarda o rótulo que a sessão viva mostrou — `Read`, `Shell`,
-    `Write`, `Info`. Traduzir tudo para `Tool`, como antes, era o que fazia o
-    histórico virar uma coluna de "v Tool" sem dizer o que o agente fez.
-    Rótulo desconhecido (ou de uma run antiga) cai em `Tool`, que é o genérico.
+    The DB stores the label the live session showed (`Read`, `Shell`, `Write`,
+    `Info`); unknown labels (or from old runs) fall back to the generic `Tool`.
     """
     return _KIND_BY_NAME.get(str(raw or "").strip().lower(), LogKind.TOOL)
 
