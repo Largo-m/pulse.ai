@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
+from pulse.store.runs import StepRecord, fan_out_child_id
 from pulse.store.workflow_defs import StepDef
 
 BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
@@ -73,7 +73,7 @@ def expand(
     units: list[tuple[StepDef, Item | None]] = []
     children: list[StepRecord] = []
     for index, item in enumerate(items, start=1):
-        step_id = f"{step.step_id}:{item.id}"
+        step_id = fan_out_child_id(step.step_id, item.id)
         label = item.label or item.id
         position = base_position + index
         units.append(

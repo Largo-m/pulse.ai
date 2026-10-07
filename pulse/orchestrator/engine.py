@@ -50,7 +50,6 @@ from pulse.store.runs import (
     BLOCKED,
     DONE,
     FAILED,
-    SETTLED,
     SKIPPED,
     StepRecord,
 )
@@ -300,7 +299,8 @@ def _execute(
             definition_step = definition.steps[index]
             at = index
             index += 1
-            units = expand(run, definition_step, _previous_summary(run, definition_step.step_id))
+            previous = run.previous_delivery(definition_step.step_id)
+            units = expand(run, definition_step, previous.summary if previous else "")
             run_store.save(run)
             _sync_steps(runner, run)
 
@@ -314,7 +314,7 @@ def _execute(
                     )
                 )
 
-                if record.status in SETTLED:
+                if record.settled:
                     continue
 
                 if not _control(runner).checkpoint():
@@ -365,29 +365,6 @@ def _execute(
         return 0
     finally:
         runner.close()
-
-
-def _previous_settled(run: run_store.RunRecord, step_id: str) -> StepRecord | None:
-    """The last step before this one that settled (`done`/`skipped`) with a summary.
-
-    Failed or blocked steps are excluded so their text is not passed on as a
-    delivery. The scan also stops at the first fan-out child (`run:T1` for `run`)
-    so a resumed fan-out still sees the `pulse:items` block. The whole record is
-    returned because the next step also needs its status.
-    """
-    child = f"{step_id}:"
-    previous: StepRecord | None = None
-    for record in run.steps:
-        if record.step_id == step_id or record.step_id.startswith(child):
-            break
-        if record.summary and record.status in SETTLED:
-            previous = record
-    return previous
-
-
-def _previous_summary(run: run_store.RunRecord, step_id: str) -> str:
-    record = _previous_settled(run, step_id)
-    return record.summary if record is not None else ""
 
 
 def _run_step(
@@ -638,11 +615,8 @@ def _context(
     drops out and the earlier one is reported.
     """
     artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
-    prefix = f"{step.step_id.rsplit(':', 1)[0]}:" if item is not None else ""
-    siblings = (
-        [record for record in run.steps if record.step_id.startswith(prefix)] if prefix else []
-    )
-    previous = _previous_settled(run, step.step_id)
+    siblings = run.fan_out_siblings(step.step_id) if item is not None else []
+    previous = run.previous_delivery(step.step_id)
     return {
         "user_prompt": run.user_prompt.strip(),
         "workspace": str(exec_dir),

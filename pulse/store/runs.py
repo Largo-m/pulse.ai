@@ -21,6 +21,7 @@ from pulse.domain.run import (
     RunStatus,
     StepRecord,
     StepStatus,
+    fan_out_child_id,
     utc_now,
 )
 from pulse.store.db import connect, default_db_path
@@ -39,6 +40,7 @@ __all__ = [
     "RunStatus",
     "StepRecord",
     "StepStatus",
+    "fan_out_child_id",
     "utc_now",
 ]
 

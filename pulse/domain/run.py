@@ -72,6 +72,14 @@ ENDED = SETTLED | {StepStatus.FAILED, StepStatus.BLOCKED}
 _INTERRUPTED = frozenset({StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOCKED})
 
 
+FAN_OUT_SEPARATOR = ":"
+
+
+def fan_out_child_id(base_step_id: str, item_id: str) -> str:
+    """Id of the step a fan-out runs for one item: `review:T1` for `review`."""
+    return f"{base_step_id}{FAN_OUT_SEPARATOR}{item_id}"
+
+
 class InvalidTransition(RuntimeError):
     """A status change the run or step does not allow from its current state."""
 
@@ -247,6 +255,30 @@ class RunRecord:
             if item.step_id == step_id:
                 return item
         return None
+
+    def previous_delivery(self, step_id: str) -> StepRecord | None:
+        """The last step before this one that settled with a summary.
+
+        Failed or blocked steps are excluded so their text is not passed on as a
+        delivery. The scan stops at the step or its first fan-out child, so a
+        resumed fan-out still sees the step that listed the items.
+        """
+        children = f"{step_id}{FAN_OUT_SEPARATOR}"
+        previous: StepRecord | None = None
+        for item in self.steps:
+            if item.step_id == step_id or item.step_id.startswith(children):
+                break
+            if item.summary and item.settled:
+                previous = item
+        return previous
+
+    def fan_out_siblings(self, child_id: str) -> list[StepRecord]:
+        """Every step the same fan-out produced, in run order, `child_id` included."""
+        base, separator, _item = child_id.rpartition(FAN_OUT_SEPARATOR)
+        if not separator:
+            return []
+        prefix = f"{base}{FAN_OUT_SEPARATOR}"
+        return [item for item in self.steps if item.step_id.startswith(prefix)]
 
     def next_pending(self) -> StepRecord | None:
         for item in self.steps:

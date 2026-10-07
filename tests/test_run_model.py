@@ -9,6 +9,7 @@ from pulse.domain.run import (
     RunStatus,
     StepRecord,
     StepStatus,
+    fan_out_child_id,
 )
 from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
 
@@ -337,3 +338,58 @@ def test_dropping_the_worktree_keeps_the_branch():
     run.drop_worktree()
     assert (run.worktree_path, run.branch) == ("", "pulse/demo-run-1")
     assert run.exec_root == "/tmp"
+
+
+def _settled(step_id: str, summary: str, *, skip: bool = False) -> StepRecord:
+    step = _running(step_id)
+    step.record_reply(session_id="", summary=summary)
+    if skip:
+        step.skip()
+    else:
+        step.deliver()
+    return step
+
+
+def test_the_previous_delivery_is_the_last_settled_step_with_a_summary():
+    blocked = _running("check")
+    blocked.record_reply(session_id="", summary="não consegui")
+    blocked.block()
+    run = _run(
+        _settled("plan", "plano"),
+        _settled("spec", "", skip=True),
+        blocked,
+        StepRecord(step_id="build"),
+    )
+
+    previous = run.previous_delivery("build")
+
+    assert previous is not None
+    assert previous.step_id == "plan", "a blocked text is not a delivery, an empty skip says nothing"
+
+
+def test_a_resumed_fan_out_still_sees_the_step_that_listed_the_items():
+    """The scan stops at the first child, not at a base step the run no longer has."""
+    run = _run(
+        _settled("plan", "```pulse:items\nT1: um\n```"),
+        _settled(fan_out_child_id("build", "T1"), "feito T1"),
+        StepRecord(step_id=fan_out_child_id("build", "T2")),
+    )
+
+    previous = run.previous_delivery("build")
+
+    assert previous is not None
+    assert previous.step_id == "plan"
+
+
+def test_fan_out_siblings_are_the_children_of_the_same_step():
+    run = _run(
+        StepRecord(step_id="plan"),
+        StepRecord(step_id=fan_out_child_id("build", "T1")),
+        StepRecord(step_id=fan_out_child_id("build", "T2")),
+        StepRecord(step_id=fan_out_child_id("buildx", "T1")),
+    )
+
+    siblings = run.fan_out_siblings(fan_out_child_id("build", "T2"))
+
+    assert [step.step_id for step in siblings] == ["build:T1", "build:T2"]
+    assert run.fan_out_siblings("plan") == []
