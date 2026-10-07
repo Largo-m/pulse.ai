@@ -165,10 +165,10 @@ class AcpSessionRunner(RunEventRecorder):
         self._notify_stream("end_user_wait")
 
     def _tell_waits(self, notify: Callable[[], None]) -> None:
-        """Called inside the prompt handler: the user's answer must reach the agent
-        even when the run cannot record the wait, so the failure goes to the log."""
+        """Called inside the prompt handler, so a failure goes to the run log, not up."""
         try:
             notify()
+        # The user's answer must reach the agent even if the wait is not recorded.
         except Exception as error:  # noqa: BLE001
             self._save_event(
                 kind="Info",

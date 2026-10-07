@@ -409,12 +409,17 @@ def test_a_wait_the_run_cannot_record_still_answers_the_agent():
         def user_wait_ended(self, step_id: str, seconds: float) -> None:
             raise OSError("disk full")
 
+    run = _run_with_step()
     sink = _Sink()
     runner = _runner(sink, _Port())
-    runner.bind_run("", _Broken())
+    runner.bind_run(run.id, _Broken())
 
     assert runner._prompt_handler.ask_text("e agora?") == "ok"
     assert sink.events == ["begin", "end"]
+    unrecorded = [
+        event for event in run_store.list_events(run.id) if event["title"] == "Espera não registrada"
+    ]
+    assert [event["detail"] for event in unrecorded] == ["OSError: disk full"] * 2
 
 
 def test_the_wait_travels_from_the_runner_to_the_screen():
