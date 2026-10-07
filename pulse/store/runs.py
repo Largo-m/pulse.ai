@@ -286,6 +286,23 @@ def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
     )
 
 
+def clear_worktree(run_id: str, *, db_path: Path | None = None) -> None:
+    """Forget the run's worktree directory; the branch stays, it still holds the work.
+
+    History does not own the run aggregate, so it touches this one column instead
+    of saving a snapshot over steps the daemon may have moved on since.
+    """
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "UPDATE runs SET worktree_path = '', updated_at = ? WHERE id = ?",
+            (_now_text(), run_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def delete_run(run_id: str, *, db_path: Path | None = None) -> bool:
     """Delete the run and everything attached to it. `False` = it did not exist.
 

@@ -213,6 +213,118 @@ def test_detail_offers_removal_only_with_worktree(tmp_path: Path):
     asyncio.run(run())
 
 
+def test_removing_the_worktree_never_rewrites_the_steps_of_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """History does not own the run: the daemon may save it while the screen is open.
+
+    The daemon's save is injected right after any read the history does, the
+    interleaving that made a delivered step go back to `pending`.
+    """
+    make_workflow("demo", steps=[("plan", "Planejar")])
+    live = run_store.create_run(
+        run_id="run-live",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="Adicionar login",
+        steps=[StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester")],
+    )
+    live.work_in(worktree_path=str(tmp_path / "gone"), branch="pulse/demo-run-live")
+    run_store.save(live)
+    item = HistoryCatalog(tmp_path).get(live.id)
+    assert item is not None
+
+    def daemon_delivers() -> None:
+        if live.step("plan").settled:
+            return
+        live.start_step("plan")
+        live.step("plan").deliver()
+        run_store.save(live)
+
+    real_load = run_store.load_run
+
+    def load_then_daemon_delivers(run_id: str, **kwargs):
+        loaded = real_load(run_id, **kwargs)
+        daemon_delivers()
+        return loaded
+
+    with monkeypatch.context() as patched:
+        patched.setattr(run_store, "load_run", load_then_daemon_delivers)
+        HistoryCatalog(tmp_path).remove_worktree(item)
+
+    cleared = run_store.load_run(live.id)
+    assert cleared is not None
+    assert cleared.worktree_path == ""
+    assert cleared.branch == "pulse/demo-run-live", "the branch still holds the work"
+
+    daemon_delivers()
+    stored = run_store.load_run(live.id)
+    assert stored is not None
+    assert stored.step("plan").status == DONE
+
+
+@git_only
+@pytest.mark.parametrize(
+    ("daemon_runs_it", "confirmation_offered"),
+    [(True, False), (False, True)],
+    ids=["daemon-runs-it", "stuck-after-a-crash"],
+)
+def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    daemon_runs_it: bool,
+    confirmation_offered: bool,
+):
+    """The agent works in that directory and the daemon would write its path back.
+
+    A run left `running` by a dead process must stay removable, so the daemon
+    decides, not the stored status.
+    """
+    from pulse.tui.screens import history_detail
+
+    repo = make_repo(tmp_path / "repo")
+    make_workflow("demo", steps=[("plan", "Planejar")])
+    live = run_store.create_run(
+        run_id="run-live",
+        workflow_id="demo",
+        workspace=repo,
+        user_prompt="Adicionar login",
+        steps=[StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester")],
+    )
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    live.work_in(worktree_path=str(worktree), branch="pulse/demo-run-live")
+    live.start_step("plan")
+    run_store.save(live)
+    item = HistoryCatalog(repo).get(live.id)
+    assert item is not None
+    active = {live.id} if daemon_runs_it else set()
+    monkeypatch.setattr(history_detail, "active_run_ids", lambda: active)
+
+    async def run() -> None:
+        from textual.app import App
+
+        from pulse.tui.screens.confirm import ConfirmScreen
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryDetailScreen(item, workspace=repo))
+
+        app = Harness()
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            detail = next(s for s in app.screen_stack if isinstance(s, HistoryDetailScreen))
+            detail.action_remove_worktree()
+            await pilot.pause()
+            offered = any(isinstance(s, ConfirmScreen) for s in app.screen_stack)
+            assert offered is confirmation_offered
+
+    asyncio.run(run())
+    assert worktree.exists()
+
+
 @git_only
 def test_detail_reads_artifact_from_inside_worktree(tmp_path: Path):
     """The pane looks for the file where the agent wrote it, not at the root."""

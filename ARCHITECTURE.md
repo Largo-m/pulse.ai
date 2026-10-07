@@ -355,7 +355,10 @@ artefatos reaponta sozinho para o diretório certo.
 branch onde foi escrito. Sai pelo detalhe do histórico (`w`), ou junto quando a
 run é apagada, e em nenhum dos dois com `--force`: worktree com mudança não
 commitada é mantido, porque quem apaga uma linha do histórico não está pedindo
-para jogar trabalho fora. A branch sempre fica.
+para jogar trabalho fora. A branch sempre fica. Enquanto o daemon executa a
+run, o `w` não remove: o agente trabalha ali, e é o daemon quem salva o
+agregado. O histórico só limpa a coluna do caminho (`run_store.clear_worktree`),
+nunca grava a run inteira por cima do que o daemon acabou de salvar.
 
 O git falado aqui é o CLI por `subprocess`, em [`pulse/vcs/`](pulse/vcs/).
 Leitura nunca levanta (sem git no PATH, a sessão só fica sem branch); só
