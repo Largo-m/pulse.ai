@@ -65,7 +65,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="new-issue",
         label="Nova spec",
-        description="pipeline completo",
+        description="da ideia ao código revisado",
         steps=(
             FactoryStep("prd", "PRD", True),
             FactoryStep("techspec", "Techspec", True),
@@ -84,7 +84,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="quick-fix",
         label="Correção rápida",
-        description="até 3 arquivos",
+        description="mudança pequena, até 3 arquivos",
         steps=(
             FactoryStep("quick-plan", "Plano", True),
             FactoryStep("quick-implement", "Implementar", False),
@@ -93,7 +93,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="review",
         label="Review",
-        description="branch atual vs main",
+        description="branch atual contra a main",
         steps=(
             FactoryStep("review", "Review", True, phase="STANDALONE"),
             FactoryStep(
@@ -110,7 +110,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="setup-project",
         label="Setup do projeto",
-        description="artefatos do projeto",
+        description="gera os artefatos base",
         steps=(
             FactoryStep("setup-interview", "Entrevista", False),
             FactoryStep("setup-artifacts", "Artefatos", False),
@@ -120,7 +120,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="analyze-codebase",
         label="Analisar codebase",
-        description="docs do repositório",
+        description="documenta o repositório",
         steps=(
             FactoryStep("codebase-explore", "Exploração", False),
             FactoryStep("codebase-docs", "Documentação", False),
@@ -130,7 +130,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
     FactoryWorkflow(
         id="default",
         label="Executar",
-        description="sem pipeline",
+        description="tarefa livre, sem etapas",
         steps=(FactoryStep("default", "Executar", True, step_id="run"),),
         is_default=True,
     ),

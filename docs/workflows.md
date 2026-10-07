@@ -390,7 +390,7 @@ banco — na raiz, "Configurações" e "Sair" acabariam abaixo de N workflows. O
 volta um passo de cada vez (fecha o campo de tarefa, depois sai do submenu).
 
 No item vai só `label · description`, e a `description` de fábrica é curta de
-propósito ("pipeline completo", "até 3 arquivos"). A cadeia de steps — o que é
+propósito ("da ideia ao código revisado", "mudança pequena, até 3 arquivos"). A cadeia de steps — o que é
 longo — vai para a dica, montada a partir de `workflow_steps` e trocada conforme
 o item destacado. A dica tem sempre duas linhas, mesmo sem descrição: alternar a
 altura faria a lista pular a cada tecla.

@@ -351,7 +351,7 @@ def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatc
                 str(options.get_option_at_index(index).prompt)
                 for index in range(options.option_count)
             ]
-            assert "Nova spec · pipeline completo" in labels
+            assert "Nova spec · da ideia ao código revisado" in labels
             assert not any("→" in label for label in labels)
 
             hint = screen.query_one(".home-hint", Static)
@@ -495,12 +495,12 @@ def test_hint_says_enter_starts_these_loops(monkeypatch):
             screen.on_option_highlighted(_highlighted("workflow:analyze-codebase"))
             await pilot.pause()
             hint = str(screen.query_one(".home-hint", Static).render())
-            assert "Enter inicia" in hint
+            assert "Enter inicia agora" in hint
 
             screen.on_option_highlighted(_highlighted("workflow:new-issue"))
             await pilot.pause()
             hint = str(screen.query_one(".home-hint", Static).render())
-            assert "Enter seleciona" in hint
+            assert "Enter para descrever a tarefa" in hint
 
     asyncio.run(run())
 
