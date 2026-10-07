@@ -95,7 +95,7 @@ run_workflow(workflow_id, user_prompt, …)
        runner.use_agent(…)
        render(step.prompt_template)   valores da run
        run_isolated_phase | run_isolated_prompt
-       save_step(status, summary)     desfecho no banco
+       record.deliver()/block()…      desfecho no agregado → save(run)
 ```
 
 A sessão ACP é **isolada por step**. O agente do step seguinte não herda o

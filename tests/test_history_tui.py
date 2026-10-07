@@ -7,11 +7,11 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, store_run_status, store_step
 
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, StepRecord
+from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus
@@ -33,9 +33,9 @@ def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
         ],
     )
     for step in record.steps:
-        step.status = DONE
-        run_store.save_step(record.id, step)
-    run_store.update_run(record.id, status="completed")
+        step.status = StepStatus.DONE
+        store_step(record.id, step)
+    store_run_status(record.id, "completed")
     return record.id
 
 
@@ -220,7 +220,7 @@ def test_a_run_waiting_for_the_user_is_listed_as_live(tmp_path: Path):
 
     _finished_run(tmp_path, "run-velha", "Já acabou")
     _finished_run(tmp_path, "run-espera", "Esperando resposta")
-    run_store.update_run("run-espera", status="awaiting_input")
+    store_run_status("run-espera", "awaiting_input")
 
     items = HistoryCatalog(tmp_path).list_items()
 
@@ -238,7 +238,7 @@ def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):
     from pulse.tui.screens.history import _delete_warning
 
     _finished_run(tmp_path, "run-viva", "Rodando agora")
-    run_store.update_run("run-viva", status="running")
+    store_run_status("run-viva", "running")
     item = HistoryCatalog(tmp_path).get("run-viva")
     assert item is not None
 
@@ -269,9 +269,9 @@ def test_a_failed_run_still_offers_to_resume(tmp_path: Path):
         ],
     )
     plan = record.steps[0]
-    plan.status = DONE
-    run_store.save_step(record.id, plan)
-    run_store.update_run(record.id, status="failed")
+    plan.status = StepStatus.DONE
+    store_step(record.id, plan)
+    store_run_status(record.id, "failed")
 
     item = HistoryCatalog(tmp_path).get(record.id)
     assert item is not None
@@ -287,7 +287,7 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
     monkeypatch.setattr(history_module, "REFRESH_SECONDS", 0.05)
     _finished_run(tmp_path, "run-old", "Primeira")
     _finished_run(tmp_path, "run-live", "Segunda")
-    run_store.update_run("run-live", status="running")
+    store_run_status("run-live", "running")
 
     async def run() -> None:
         from textual.app import App
@@ -309,7 +309,7 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
             options.highlighted = ids.index("run-old")
             before = screen._items["run-live"].status
 
-            run_store.update_run("run-live", status="completed")
+            store_run_status("run-live", "completed")
             for _ in range(40):
                 await pilot.pause(0.05)
                 if screen._items["run-live"].status != before:

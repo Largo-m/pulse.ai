@@ -52,7 +52,7 @@ def test_cockpit_bypasses_interactive_gate(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(engine, "resolve_config", lambda **_kwargs: _resolved(tmp_path))
 
     class _Runner:
-        def bind_run(self, run_id: str) -> None:
+        def bind_run(self, run_id: str, waits: object = None) -> None:
             pass
 
     monkeypatch.setattr(engine, "AcpSessionRunner", lambda *_a, **_k: _Runner())

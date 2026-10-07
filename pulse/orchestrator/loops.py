@@ -9,11 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pulse.store import runs as run_store
-from pulse.store.runs import DONE, PENDING, SETTLED, SKIPPED
 from pulse.store.workflow_defs import WorkflowDef
-
-REPEAT = "repeat"
-CLOSE = "close"
 
 
 @dataclass(frozen=True)
@@ -79,23 +75,13 @@ def reopen_loop(
 
     Rounds reuse the same `step_id`s so the panel keeps one row per step. On the
     `last` round only the opener is reopened, so the closer never gets the final
-    word on its own fix. Elapsed time accumulates via [pulse.store.runs.carry_round].
+    word on its own fix. Elapsed time accumulates in each step's `carried_seconds`.
     """
     steps = definition.steps[loop.start : loop.start + 1 if last else loop.end + 1]
-    for step in steps:
-        record = run.step(step.step_id)
-        if record is None:
-            continue
-        if step.step_id == definition.steps[loop.start].step_id:
-            record.rounds += 1
-        record.carried_seconds = run_store.carry_round(run.id, step.step_id)
-        record.waiting_seconds = 0.0
-        record.status = PENDING
-        record.summary = ""
-        record.started_at = ""
-        record.ended_at = ""
-        record.acp_session_id = ""
-        run_store.save_step(run.id, record)
+    run.reopen_loop(
+        [step.step_id for step in steps], opener_id=definition.steps[loop.start].step_id
+    )
+    run_store.save(run)
 
 
 def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) -> int:
@@ -103,14 +89,9 @@ def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) ->
 
     Steps that ran in an earlier round become `done`; steps that never ran become `skipped`.
     """
-    opener = run.step(definition.steps[loop.start].step_id)
-    ran_before = opener is not None and opener.rounds > 1
-    for step in definition.steps[loop.start + 1 : loop.end + 1]:
-        record = run.step(step.step_id)
-        if record is None or record.status in SETTLED:
-            continue
-        record.status = DONE if ran_before else SKIPPED
-        record.summary = ""
-        record.ended_at = record.ended_at or run_store.utc_now()
-        run_store.save_step(run.id, record)
+    run.close_loop(
+        [step.step_id for step in definition.steps[loop.start + 1 : loop.end + 1]],
+        opener_id=definition.steps[loop.start].step_id,
+    )
+    run_store.save(run)
     return loop.end + 1

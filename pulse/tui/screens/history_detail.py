@@ -8,6 +8,7 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 
 from pulse import vcs
+from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
 from pulse.tui.hydrate import hydrate_history_item
@@ -88,10 +89,14 @@ class HistoryDetailScreen(Screen[None]):
         """Remove this run's worktree after confirmation.
 
         Removal is manual because the worktree is the deliverable: the reviewer
-        decides when they are done with it.
+        decides when they are done with it. A run the daemon still executes keeps
+        it: the agent works there and the daemon would write the path back.
         """
         path = self.item.worktree_path
         if not path or not Path(path).exists():
+            return
+        if self.item.run_id in active_run_ids():
+            self.notify("Worktree mantido — a run está em andamento")
             return
         dirty = vcs.has_changes(path)
         detail = [path, f"Branch: {self.item.branch or '—'}"]
@@ -251,9 +256,6 @@ def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
     """
     if not item.is_incomplete:
         return None
-    done = sum(1 for step in item.steps if step.status in {"done", "skipped"})
-    current = next(
-        (step.label for step in item.steps if step.status not in {"done", "skipped"}),
-        "—",
-    )
+    done = sum(1 for step in item.steps if step.settled)
+    current = next((step.label for step in item.steps if not step.settled), "—")
     return item.run_id, f"{current} · steps {done}/{len(item.steps)}"
