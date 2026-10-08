@@ -114,20 +114,33 @@ Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md
 
 ## 6. Follow-ups (fora do escopo desta fase)
 
-Em ordem de prioridade:
+Os itens 2–5 e 8 da lista anterior, mais "migrações sem versão" (seção D) e o
+texto de tela em `domain/ui_text.py`, foram fechados na fase 10 (§7). Em ordem
+de prioridade, o que segue aberto:
 
 1. **F1: autenticação no TCP** (token por daemon ou TCP opt-in). Bump de `ENGINE_PROTOCOL`.
-2. **"Daemon = verdade única"**: Settings e onboarding escrevem SQLite direto
-   (`tui/screens/settings.py`, `onboarding.py`). Rotas `/api/agents` e
-   `/api/models`; cada import removido baixa o teto do contrato da TUI (hoje 18).
-3. **Desligamento gracioso**: no SIGTERM, cancelar as runs via `RunControl` e
-   encerrar os processos ACP; hoje ficam órfãos e a run fica `running`.
-4. **Portas no adapter ACP**: `acp/run_events.py` e `session_runner.py` gravam
-   no store direto; mover para `daemon/adapters.py` (teto de adapters, hoje 12).
-5. **Ciclo `acp` ↔ `runtimes`**: parsing de model-id para dentro de `AgentRuntime`.
-6. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
+2. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
    coleções imutáveis; config do agente parseada na borda do store.
-7. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
+3. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
    permissão em três lugares, com fallbacks `or "ask"`.
-8. **Observabilidade**: logger do daemon com `run_id` para início/fim/falha de run.
-9. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
+4. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
+
+## 7. Fase 10 — dívidas apontadas por este scorecard, fechadas
+
+Branch `refactor/close-audit-gaps`. Cada item tem o teste que o prende.
+
+| Dívida | Antes | Depois | Prova |
+|---|---|---|---|
+| TUI não é cliente fino | 18 imports tolerados no contrato da TUI + 3 no do cliente; cadeias indiretas não checadas | Telas falam só com `/api/*` (`tui/engine.py`); contrato da TUI checa cadeias indiretas e proíbe também `vcs`, `mcp`, `api`; única entrada é o layout de `~/.pulse` (regra, não dívida); cliente sem entrada | `test_import_contracts.py` (tetos 0 e 1), `tests/api/test_settings_routes.py`, `tests/tui/test_engine_gateway.py`, `tests/tui/test_screens_without_daemon.py` |
+| Adapters importam uns aos outros | 12 imports tolerados | 0, com cadeias indiretas; `acp/` recebe `RuntimeDialect`, `QuestionChannel` e `SessionLog` do daemon | `test_import_contracts.py`, `tests/domain/test_ports.py`, `tests/api/test_run_engine.py` |
+| SIGTERM não cancela runs nem encerra ACP | Runs ficavam `running`, agentes órfãos | `GracefulServer` para as runs (caminho do cancelamento), recusa runs novas (`503`) e loga a que não parou no prazo | `tests/api/test_daemon_shutdown.py`; fumaça manual: daemon ocioso sai com 0 e limpa meta/socket |
+| Observabilidade quase nula | Um `logging` no pacote | Log operacional com `run_id`: início, fim, falha, stop, fases, status de step, espera do usuário; sem prompt nem env | `tests/api/test_daemon_logs.py`, `docs/logs.md` |
+| Migrações sem versão | `ALTER` idempotente a cada abertura | `PRAGMA user_version` + `MIGRATIONS` em ordem, cada uma numa transação; banco mais novo é recusado | `tests/infra/test_schema_migrations.py` |
+| Texto de UI no domínio | `domain/ui_text.py` importado por todas as camadas | Texto com o dono que o compõe; modelo e turno de fase viajam como dado (`ENGINE_PROTOCOL` 7) | ADR 0004, três contratos `protected`, `test_the_domain_holds_no_screen_copy_module` |
+
+Qualidade ao fim da fase: 8 → 11 contratos do import-linter, 0 exceções de
+dívida; cobertura por branch 93,5 % (domínio 97,5 %); mutação dos parsers
+97,5 %; `sast-lite` e `secret-scanner` limpos. Um bug real apareceu nos testes
+novos e foi corrigido: preferência de modelo só com espaços escolhia o primeiro
+modelo da lista em vez de "auto".
+

@@ -120,8 +120,8 @@ def resolve_interview_model_id(
     if not available:
         return None
 
-    preferred = (preferred_model or "auto").strip()
-    preferred_lower = preferred.lower()
+    # A blank preference is "auto": stripped to "", it would match every model.
+    preferred_lower = ((preferred_model or "").strip() or "auto").lower()
 
     if preferred_lower in {"auto", "default"}:
         return _find_auto_model_id(available)
