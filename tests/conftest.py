@@ -1,11 +1,18 @@
 from pathlib import Path
 
 import pytest
+from hypothesis import settings
 
 from pulse.domain.run import RunStatus, StepRecord
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
 from pulse.store.workflow_defs import save_agent, save_workflow
+
+# Property tests replay the same examples on every run and every machine
+# (AGENTS.md §5.1): a failure seen locally is the one CI sees, and no example
+# database is left on disk.
+settings.register_profile("pulse", derandomize=True, database=None)
+settings.load_profile("pulse")
 
 
 @pytest.fixture(autouse=True)
