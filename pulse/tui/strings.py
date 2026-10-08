@@ -218,8 +218,6 @@ SETTINGS_WORKTREE_DISABLED = (
     "As runs voltam a rodar na árvore de trabalho do projeto. "
     "Os worktrees já criados continuam onde estão."
 )
-SETTINGS_SCOPE_GLOBAL = "Global — SQLite da máquina"
-SETTINGS_SCOPE_PROJECT = "Projeto — SQLite por project_id"
 SETTINGS_LOADING_MODELS = "Carregando modelos…"
 SETTINGS_PICK_MODEL = "Escolha o modelo"
 SETTINGS_PICK_POLICY = "Escolha a política de permissões"

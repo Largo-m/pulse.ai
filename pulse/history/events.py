@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class PhaseStatus(str, Enum):
+class PhaseStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     DONE = "done"
@@ -14,7 +14,7 @@ class PhaseStatus(str, Enum):
     BLOCKED = "blocked"
 
 
-class LogKind(str, Enum):
+class LogKind(StrEnum):
     SEARCH = "Search"
     LIST = "List"
     READ = "Read"

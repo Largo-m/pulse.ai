@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -14,6 +15,11 @@ from textual.widgets import Markdown, Static
 from pulse.tui import strings
 from pulse.tui.artifacts import read_artifact_markdown
 from pulse.tui.state import ArtifactItem, CockpitState
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 
 class ArtifactTabSelected(Message):
@@ -33,7 +39,9 @@ class ArtifactPaneOpened(Message):
 class ArtifactPane(Widget):
     can_focus = True
 
-    def __init__(self, state: CockpitState, *, cwd: str | None = None, **kwargs) -> None:
+    def __init__(
+        self, state: CockpitState, *, cwd: str | None = None, **kwargs: Unpack[WidgetOptions]
+    ) -> None:
         super().__init__(**kwargs)
         self._state = state
         self._cwd = cwd

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -21,6 +23,8 @@ from pulse.config.model_catalog import collect_available_models
 from pulse.doctor.checks import run_environment_checks
 from pulse.tui import strings
 
+_GlobalField = Literal["runtime", "model", "permission_policy"]
+
 
 class SettingsScreen(Screen[None]):
     BINDINGS = [
@@ -33,7 +37,6 @@ class SettingsScreen(Screen[None]):
         super().__init__()
         self._cwd = (cwd or Path.cwd()).resolve()
         self._mode = "root"
-        self._scope: str | None = None
         self._workflow_id: str | None = None
         self._target = "agent"
 
@@ -87,7 +90,6 @@ class SettingsScreen(Screen[None]):
 
     def _show_root(self) -> None:
         self._mode = "root"
-        self._scope = None
         self._workflow_id = None
         self._set_report("")
         self._set_status(strings.SETTINGS_ROOT_STATUS)
@@ -120,73 +122,47 @@ class SettingsScreen(Screen[None]):
             strings.SETTINGS_WORKTREE_ENABLED if enabled else strings.SETTINGS_WORKTREE_DISABLED
         )
 
-    def _show_scope(self, next_mode: str, title: str) -> None:
-        self._mode = next_mode
-        self._set_status(title)
-        self._set_options(
-            [
-                ("scope:global", strings.SETTINGS_SCOPE_GLOBAL),
-                ("scope:project", strings.SETTINGS_SCOPE_PROJECT),
-                ("back", strings.BACK),
-            ]
-        )
-
     @on(OptionList.OptionSelected, "#settings-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = str(event.option_id or "")
         if option_id == "back":
             self.action_go_back()
             return
-        if self._mode == "root":
-            if option_id == "global":
-                self._show_global_fields()
-            elif option_id == "agents":
-                self._show_pulse_agents()
-            elif option_id == "worktree":
-                self._toggle_worktree()
-            elif option_id == "doctor":
-                self._run_doctor()
-            return
-        if self._mode == "global_fields":
-            if option_id == "g_model":
-                self._load_models()
-            elif option_id == "g_agent":
-                self._show_agents()
-            elif option_id == "g_permission":
-                self._show_permissions()
-            return
-        if option_id.startswith("scope:"):
-            self._scope = option_id.split(":", 1)[1]
-            if self._mode == "scope_model":
-                self._load_models()
-            elif self._mode == "scope_permissions":
-                self._show_permissions()
-            elif self._mode == "scope_workflows":
-                self._show_workflows()
-            return
-        if self._mode == "pick_model" and option_id.startswith("model:"):
-            self._save_model(option_id.split(":", 1)[1])
-            return
-        if self._mode == "pick_permission" and option_id.startswith("policy:"):
-            self._save_permission(option_id.split(":", 1)[1])
-            return
-        if self._mode == "pick_workflow" and option_id.startswith("workflow:"):
-            self._workflow_id = option_id.split(":", 1)[1]
-            self._show_workflow_fields()
-            return
-        if self._mode == "workflow_fields":
-            if option_id == "wf_model":
-                self._load_models(for_workflow=True)
-            elif option_id == "wf_agent":
-                self._show_agents()
-            elif option_id == "wf_permission":
-                self._show_permissions()
-            return
-        if self._mode == "pick_agent" and option_id.startswith("agent:"):
-            self._save_workflow_agent(option_id.split(":", 1)[1])
+        action, separator, value = option_id.partition(":")
+        route = self._option_routes().get((self._mode, action + separator))
+        if route is not None:
+            route(value)
+
+    def _option_routes(self) -> dict[tuple[str, str], Callable[[str], object]]:
+        """What each option does, keyed by the menu showing it and its id.
+
+        Pick options carry their value after the `:` (`model:<name>`); the
+        route receives that value, the other routes ignore it.
+        """
+        open_fields: dict[str, Callable[[str], object]] = {
+            "agent": lambda _: self._show_agents(),
+            "model": lambda _: self._load_models(),
+            "permission": lambda _: self._show_permissions(),
+        }
+        return {
+            ("root", "global"): lambda _: self._show_global_fields(),
+            ("root", "agents"): lambda _: self._show_pulse_agents(),
+            ("root", "worktree"): lambda _: self._toggle_worktree(),
+            ("root", "doctor"): lambda _: self._run_doctor(),
+            **{("global_fields", f"g_{field}"): route for field, route in open_fields.items()},
+            **{("workflow_fields", f"wf_{field}"): route for field, route in open_fields.items()},
+            ("pick_model", "model:"): self._save_model,
+            ("pick_permission", "policy:"): self._save_permission,
+            ("pick_workflow", "workflow:"): self._show_agent_fields,
+            ("pick_agent", "agent:"): self._save_workflow_agent,
+        }
+
+    def _show_agent_fields(self, agent_id: str) -> None:
+        self._workflow_id = agent_id
+        self._show_workflow_fields()
 
     @work(thread=True)
-    def _load_models(self, *, for_workflow: bool = False) -> None:
+    def _load_models(self) -> None:
         self.app.call_from_thread(self._set_status, strings.SETTINGS_LOADING_MODELS)
         runtime = self._current_fields()[0]
         models = collect_available_models(self._cwd, agent_name=runtime or None)
@@ -290,17 +266,17 @@ class SettingsScreen(Screen[None]):
             or "ask",
         )
 
-    def _save_global(self, *, field: str, value: str) -> None:
+    def _save_global(self, *, field: _GlobalField, value: str) -> None:
         from pulse.config.project_config import update_project_defaults
         from pulse.store.agent_settings import apply_setting_to_all_agents
         from pulse.store.workflow_defs import list_agents
 
-        kwargs = {
-            "runtime": {"agent": value},
-            "model": {"model": value},
-            "permission_policy": {"permission_policy": value},
-        }[field]
-        update_project_defaults(self._cwd, **kwargs)
+        if field == "runtime":
+            update_project_defaults(self._cwd, agent=value)
+        elif field == "model":
+            update_project_defaults(self._cwd, model=value)
+        else:
+            update_project_defaults(self._cwd, permission_policy=value)
         project_id = self._project_id()
         if project_id:
             apply_setting_to_all_agents(

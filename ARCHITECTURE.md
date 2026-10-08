@@ -446,7 +446,8 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas. `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
-| [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
+| [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, handler de erro e os routers abaixo |
+| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, workflows/runs/prompts, histórico; `deps.py` entrega o `RunManager` |
 
 O daemon **não** usa o diretório de quem o iniciou. Ele sobe destacado e ficaria
 meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa
@@ -506,7 +507,7 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
 | [`pulse/domain/ui_text.py`](pulse/domain/ui_text.py) | O texto em português que o Pulse compõe fora da TUI para a tela (avisos do motor, menu de step bloqueado, rótulos de diálogo e de status); erros, exceções e logs ficam em inglês no código |
 | [`pulse/domain/ports.py`](pulse/domain/ports.py) | As portas do motor — `StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace` — e as implementações Null |
-| [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário |
+| [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário; [`acp_payloads.py`](pulse/replies/acp_payloads.py) converte o JSON do agente em value objects tipados na fronteira (`mypy --strict`, sem `Any`) |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada, sobre `EnginePorts` |
 | [`pulse/orchestrator/worktree.py`](pulse/orchestrator/worktree.py) | Onde a run trabalha: raiz ou worktree próprio |
 | [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |

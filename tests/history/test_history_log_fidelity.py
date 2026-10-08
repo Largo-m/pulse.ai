@@ -20,6 +20,7 @@ from pulse.domain.run import StepRecord, StepStatus
 from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
 from pulse.history.events import LogKind
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
+from pulse.replies.acp_payloads import QuestionAnswer
 from pulse.replies.ask_question import build_ask_question_answers
 from pulse.replies.permission import permission_selected
 from pulse.replies.text_questionnaire import (
@@ -180,7 +181,7 @@ def test_the_agent_question_and_the_answer_stay_in_the_log(tmp_path: Path):
 
     class _Port:
         def respond_to_ask_question(self, params):
-            return build_ask_question_answers([{"questionId": "q1", "selectedOptionIds": ["B"]}])
+            return build_ask_question_answers([QuestionAnswer("q1", ("B",))])
 
     runner = _runner(tmp_path, run_id, port=_Port())
     runner._prompt_handler.respond_to_ask_question(
@@ -210,7 +211,7 @@ def test_free_text_written_in_other_goes_into_the_answer(tmp_path: Path):
     class _Port:
         def respond_to_ask_question(self, params):
             return build_ask_question_answers(
-                [{"questionId": "q1", "selectedOptionIds": ["B::Falta o acesso ao banco"]}]
+                [QuestionAnswer("q1", ("B::Falta o acesso ao banco",))]
             )
 
     runner = _runner(tmp_path, run_id, port=_Port())

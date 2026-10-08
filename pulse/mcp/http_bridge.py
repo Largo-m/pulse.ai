@@ -7,7 +7,7 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from pulse.domain.ports import NullPromptPort
+from pulse.domain.ports import JsonObject, NullPromptPort, PromptPort
 from pulse.mcp.ask_protocol import dispatch_message
 
 ENDPOINT_PATH = "/mcp"
@@ -17,7 +17,7 @@ class AskQuestionHttpServer:
     def __init__(
         self,
         *,
-        prompt_handler=None,
+        prompt_handler: PromptPort | None = None,
         on_question: Callable[[], None] | None = None,
         host: str = "127.0.0.1",
     ) -> None:
@@ -32,7 +32,7 @@ class AskQuestionHttpServer:
     def url(self) -> str:
         if self._httpd is None:
             raise RuntimeError("MCP HTTP server not started")
-        host, port = self._httpd.server_address[:2]
+        host, port = self._httpd.socket.getsockname()[:2]
         return f"http://{host}:{port}{ENDPOINT_PATH}"
 
     def start(self) -> None:
@@ -57,7 +57,7 @@ class AskQuestionHttpServer:
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
 
-            def log_message(self, *args: Any) -> None:
+            def log_message(self, format: str, *args: object) -> None:
                 pass
 
             def do_POST(self) -> None:
@@ -127,7 +127,7 @@ class AskQuestionHttpServer:
         self,
         handler: BaseHTTPRequestHandler,
         status: int,
-        payload: Any,
+        payload: JsonObject | list[JsonObject],
         *,
         extra_headers: dict[str, str] | None = None,
     ) -> None:

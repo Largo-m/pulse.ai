@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pulse.history.tool_detail import (
     build_tool_labels,
+    extract_paths,
     extract_tool_target,
     format_search_labels,
     merge_tool_update,
@@ -281,3 +282,126 @@ def test_shorten_path_through_a_symlink_loop_still_yields_a_path(tmp_path):
     shown = shorten_path(str(tmp_path / "a" / "x.md"), cwd=str(tmp_path))
 
     assert shown.endswith("x.md")
+
+
+def test_extract_paths_lists_each_file_once_most_explicit_field_first(tmp_path):
+    """The artifacts tab keys on these strings: one file must never yield two entries."""
+    update = {
+        "path": str(tmp_path / "a.md"),
+        "locations": ["b.md", {"path": str(tmp_path / "a.md")}, 7],
+        "content": ["c.md", {"type": "diff", "path": "d.md"}],
+        "rawInput": {"file_path": "./b.md", "filename": "e.md"},
+        "title": "Edit f/g.md",
+    }
+
+    assert extract_paths(update, cwd=str(tmp_path)) == ["a.md", "b.md", "d.md", "e.md", "f/g.md"]
+
+
+def test_extract_paths_ignores_labels_that_are_not_paths():
+    update = {"path": "phases:", "title": "Read File", "locations": ["plain", 3]}
+
+    assert extract_paths(update) == []
+
+
+def test_format_search_labels_without_query_or_scope_titles_the_count():
+    assert format_search_labels({"rawOutput": {"totalFiles": 1}}) == ("1 file", "1 file")
+    assert format_search_labels({}) == ("…", "")
+
+
+def test_format_search_labels_wildcard_query_is_shown_unquoted_with_its_scope():
+    title, detail = format_search_labels(
+        {"rawInput": {"pattern": "*.py", "path": "src"}, "rawOutput": {"count": "3"}}
+    )
+
+    assert title == "*.py"
+    assert detail == "in src  ·  3 files"
+
+
+def test_summarize_content_prefers_the_output_marker_over_other_paths():
+    text = "See `lib/other.dart`\n**Output:** `out/report.md`"
+
+    assert summarize_content(text) == "out/report.md"
+
+
+def test_summarize_content_names_frontmatter_else_the_first_meaningful_line():
+    assert summarize_content("---\nname: 'reviewer'\n---") == "reviewer"
+    assert summarize_content("phases:\n\nThe useful line") == "The useful line"
+    long_line = "word " * 30
+
+    assert summarize_content(long_line) == long_line.strip()[:77] + "…"
+    assert summarize_content("   ") == ""
+    assert summarize_content("key: value\n…") == ""
+
+
+def test_extract_tool_target_falls_back_through_input_output_and_title():
+    assert extract_tool_target({"rawInput": {"args": ["git", "status"]}}) == "git status"
+    assert extract_tool_target({"rawInput": {"command": "  ", "query": "needle"}}) == "needle"
+    assert extract_tool_target({"rawOutput": {"error": "boom"}}) == "boom"
+    assert extract_tool_target({"rawOutput": {"totalFiles": 1}}) == "1 file"
+    assert extract_tool_target({"rawOutput": "# Notes\nbody"}) == "Notes"
+    assert extract_tool_target({"toolName": "Deploy"}) == "Deploy"
+    assert extract_tool_target({"title": "Read File"}) == ""
+
+
+def test_build_tool_labels_uses_the_error_then_the_command():
+    _, from_error, _ = build_tool_labels(
+        {"kind": "execute", "rawOutput": {"error": "no such file: /repo/x/y.md"}}, cwd="/repo"
+    )
+    _, from_command, _ = build_tool_labels(
+        {"kind": "execute", "rawInput": {"command": " npm test "}}
+    )
+
+    assert from_error == "x/y.md"
+    assert from_command == "npm test"
+
+
+def test_build_tool_labels_reads_text_from_raw_output_lists():
+    _, title, _ = build_tool_labels(
+        {"kind": "read", "rawOutput": {"content": [" ", {"text": "# Spec"}, {"content": "x"}]}}
+    )
+
+    assert title == "Spec"
+
+
+def test_build_tool_labels_strips_the_verb_from_a_free_text_title():
+    _, title, _ = build_tool_labels({"kind": "execute", "title": "Editing : release notes"})
+    _, yaml_like, _ = build_tool_labels({"kind": "execute", "title": "phases:"})
+
+    assert title == "release notes"
+    assert yaml_like == "…"
+
+
+def test_merge_tool_update_accumulates_lists_and_replaces_scalars():
+    """Streamed updates add locations and content; a missing field never erases one."""
+    merged = merge_tool_update(
+        {"locations": ["a.md"], "content": [{"text": "1"}], "title": "old", "kind": "read"},
+        {
+            "locations": ["b.md"],
+            "content": [],
+            "title": "new",
+            "kind": None,
+            "rawOutput": "plain output",
+        },
+    )
+
+    assert merged == {
+        "locations": ["a.md", "b.md"],
+        "content": [{"text": "1"}],
+        "title": "new",
+        "kind": "read",
+        "rawOutput": {"content": "plain output"},
+    }
+
+
+def test_merge_tool_update_replaces_a_list_field_sent_as_another_shape():
+    merged = merge_tool_update({"locations": ["a.md"]}, {"locations": "b.md", "content": ["x"]})
+
+    assert merged == {"locations": "b.md", "content": ["x"]}
+
+
+def test_merge_tool_update_merges_raw_output_key_by_key():
+    merged = merge_tool_update(
+        {"rawOutput": {"totalFiles": 2}}, {"rawOutput": '{"content": "done"}'}
+    )
+
+    assert merged["rawOutput"] == {"totalFiles": 2, "content": "done"}

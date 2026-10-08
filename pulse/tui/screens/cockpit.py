@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -17,6 +18,7 @@ from pulse.tui.adapters.prompt_bridge import (
     PromptBridge,
     TextualPromptHandler,
 )
+from pulse.tui.screens.navigation import pulse_app
 from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
@@ -29,6 +31,10 @@ from pulse.tui.widgets.artifact_pane import (
 )
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
+
+if TYPE_CHECKING:
+    from pulse.client.run_session import EngineRunSession
+    from pulse.domain.run import RunRecord
 
 _PROMPT_BLOCKED = {
     "stop_run",
@@ -86,10 +92,9 @@ class CockpitScreen(Screen[None]):
             on_context=self._on_context,
         )
         self.prompt_handler = TextualPromptHandler(self.bridge)
-        self._worker = None
         self._dirty = False
         self._prompt_open = False
-        self._session = None
+        self._session: EngineRunSession | None = None
         self._detached = False
         self._run_over = False
 
@@ -107,7 +112,7 @@ class CockpitScreen(Screen[None]):
         self._apply_focus()
         self.set_interval(0.08, self._flush_ui)
         self.set_interval(0.1, self._poll_prompts)
-        self._worker = self.run_worker(self._run_workflow, exclusive=True, thread=True)
+        self.run_worker(self._run_workflow, exclusive=True, thread=True)
 
     def on_unmount(self) -> None:
         """Detach from a still-alive run instead of cancelling its pending prompts.
@@ -201,7 +206,7 @@ class CockpitScreen(Screen[None]):
         pane.sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if self._prompt_open and action in _PROMPT_BLOCKED:
             return False
         if self._prompt_open and action in {"nav_up", "nav_down"}:
@@ -328,7 +333,7 @@ class CockpitScreen(Screen[None]):
             if mode != RESUME:
                 return
             self.app.pop_screen()
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 self.workflow_id,
                 self.user_prompt,
                 resume_run_id=run_id,
@@ -462,7 +467,7 @@ class CockpitScreen(Screen[None]):
         self.app.pop_screen()
 
 
-def _run_summary(record) -> str:
+def _run_summary(record: RunRecord) -> str:
     """Where the run stopped, for the resume choice screen."""
     done = sum(1 for step in record.steps if step.settled)
     current = record.current_step or (record.steps[0].step_id if record.steps else "—")

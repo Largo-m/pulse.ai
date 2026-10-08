@@ -23,6 +23,7 @@ from pulse.domain import ui_text
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.domain.ports import (
+    AgentProfile,
     AgentProfiles,
     AgentSession,
     JsonObject,
@@ -270,38 +271,50 @@ def _run_step(
             _release_step(wiring, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
 
-        blocked = record.status == StepStatus.BLOCKED
-        if blocked:
-            choice, guidance = _offer_blocked(
-                wiring, ui_text.step_blocked_title(record.label), reason
-            )
-        else:
-            choice, guidance = _offer_retry(wiring, ui_text.step_failed_title(record.label), reason)
+        choice, guidance = _offer_next(wiring, record, reason)
         if wiring.control.interrupted:
             _release_step(wiring, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
 
-        if blocked:
-            if choice == MenuChoice.SKIP:
-                record.skip_blocked()
-                wiring.runs.save(run)
-                _sync_steps(wiring, run)
-                _notify(wiring, ui_text.step_skipped_by_user(record.label))
-                return 0, None
-            if choice != MenuChoice.RETRY:
-                record.close_after_wait()
-                wiring.runs.save(run)
-                _notify(wiring, ui_text.run_blocked_at(record.label, reason))
-                return RUN_BLOCKED, None
-        elif choice != MenuChoice.RETRY:
-            record.close_after_wait()
-            wiring.runs.save(run)
-            return 1, None
+        exit_code = _end_without_retry(wiring, run, record, choice, reason)
+        if exit_code is not None:
+            return exit_code, None
         _revive_session(wiring)
-        if guidance:
-            _notify(wiring, ui_text.retrying_step_with_guidance(record.label))
-        else:
-            _notify(wiring, ui_text.retrying_step(record.label))
+        _notify(
+            wiring,
+            ui_text.retrying_step_with_guidance(record.label)
+            if guidance
+            else ui_text.retrying_step(record.label),
+        )
+
+
+def _offer_next(wiring: _Wiring, record: StepRecord, reason: str) -> tuple[MenuChoice, str]:
+    """A blocked step may be skipped; a failed one may only be retried or abandoned."""
+    if record.status == StepStatus.BLOCKED:
+        return _offer_blocked(wiring, ui_text.step_blocked_title(record.label), reason)
+    return _offer_retry(wiring, ui_text.step_failed_title(record.label), reason)
+
+
+def _end_without_retry(
+    wiring: _Wiring, run: RunRecord, record: StepRecord, choice: MenuChoice, reason: str
+) -> int | None:
+    """The run's exit code when the person chose not to retry; `None` means retry."""
+    if choice == MenuChoice.RETRY:
+        return None
+    if record.status != StepStatus.BLOCKED:
+        record.close_after_wait()
+        wiring.runs.save(run)
+        return 1
+    if choice == MenuChoice.SKIP:
+        record.skip_blocked()
+        wiring.runs.save(run)
+        _sync_steps(wiring, run)
+        _notify(wiring, ui_text.step_skipped_by_user(record.label))
+        return 0
+    record.close_after_wait()
+    wiring.runs.save(run)
+    _notify(wiring, ui_text.run_blocked_at(record.label, reason))
+    return RUN_BLOCKED
 
 
 def _attempt_step(
@@ -322,37 +335,13 @@ def _attempt_step(
     profile = wiring.ports.agents.profile(step.agent_id)
     wiring.session.use_agent(profile)
     try:
-        prompt_text = render(step.prompt_template, _template_values(wiring, run, step, item))
+        prompt_text = _step_prompt(wiring, run, step, profile, item=item, guidance=guidance)
     except TemplateError as error:
         _fail(wiring, run, record)
         return None, str(error)
-    # Inlined, not passed as a system prompt, so instructions work with any runtime.
-    if profile.instructions:
-        prompt_text = f"{profile.instructions}\n\n---\n\n{prompt_text}"
-    prompt_text += guidance_block(guidance)
-
-    if step.declares_outcome:
-        prompt_text += outcome_protocol()
 
     try:
-        if step.requires_approval:
-            raw = wiring.session.run_isolated_phase(
-                workflow=run.workflow_id,
-                phase_label=record.label or step.step_id,
-                initial_prompt=prompt_text,
-                preferred_model=profile.model,
-                build_continuation=_approval_continuation(step),
-                phase_id=step.step_id,
-            )
-        else:
-            raw = wiring.session.run_isolated_prompt(
-                workflow=run.workflow_id,
-                phase_label=record.label or step.step_id,
-                prompt_text=prompt_text,
-                preferred_model=profile.model,
-                phase_id=step.step_id,
-                build_continuation=_unblock_continuation(step) if step.declares_outcome else None,
-            )
+        raw = _converse(wiring, run, step, record, profile, prompt_text)
     # The session is the boundary to the agent: any failure fails the attempt, not the run.
     except Exception as error:  # noqa: BLE001
         _fail(wiring, run, record)
@@ -362,7 +351,67 @@ def _attempt_step(
     record.record_reply(
         session_id=wiring.session.last_session_id, summary=format_summary(turn.summary)
     )
+    return _judge_turn(wiring, run, step, record, turn, may_close=may_close)
 
+
+def _step_prompt(
+    wiring: _Wiring,
+    run: RunRecord,
+    step: StepDef,
+    profile: AgentProfile,
+    *,
+    item: Item | None,
+    guidance: str,
+) -> str:
+    """The step's template rendered, wrapped in the agent's instructions and Pulse's protocol."""
+    prompt_text = render(step.prompt_template, _template_values(wiring, run, step, item))
+    # Inlined, not passed as a system prompt, so instructions work with any runtime.
+    if profile.instructions:
+        prompt_text = f"{profile.instructions}\n\n---\n\n{prompt_text}"
+    prompt_text += guidance_block(guidance)
+    if step.declares_outcome:
+        prompt_text += outcome_protocol()
+    return prompt_text
+
+
+def _converse(
+    wiring: _Wiring,
+    run: RunRecord,
+    step: StepDef,
+    record: StepRecord,
+    profile: AgentProfile,
+    prompt_text: str,
+) -> JsonObject:
+    """One ACP session for the step: an approval loop, or a single prompt and its follow-ups."""
+    if step.requires_approval:
+        return wiring.session.run_isolated_phase(
+            workflow=run.workflow_id,
+            phase_label=record.label or step.step_id,
+            initial_prompt=prompt_text,
+            preferred_model=profile.model,
+            build_continuation=_approval_continuation(step),
+            phase_id=step.step_id,
+        )
+    return wiring.session.run_isolated_prompt(
+        workflow=run.workflow_id,
+        phase_label=record.label or step.step_id,
+        prompt_text=prompt_text,
+        preferred_model=profile.model,
+        phase_id=step.step_id,
+        build_continuation=_unblock_continuation(step) if step.declares_outcome else None,
+    )
+
+
+def _judge_turn(
+    wiring: _Wiring,
+    run: RunRecord,
+    step: StepDef,
+    record: StepRecord,
+    turn: TurnResult,
+    *,
+    may_close: bool,
+) -> tuple[LoopSignal | None, str]:
+    """Settle, skip, fail or block the step from the agent's last turn."""
     if turn.cancelled:
         _fail(wiring, run, record)
         return None, ui_text.STEP_CANCELLED
@@ -375,27 +424,43 @@ def _attempt_step(
     if may_close and not turn.approved and parse_outcome(turn.summary).closes:
         return _settle(wiring, run, record, LoopSignal.CLOSE)
 
+    unfinished = _unfinished_reason(step, turn)
+    if unfinished is not None:
+        _fail(wiring, run, record)
+        return None, unfinished
+
+    if not step.declares_outcome:
+        return _settle(wiring, run, record, None)
+    return _judge_outcome(wiring, run, step, record, parse_outcome(turn.summary), may_close)
+
+
+def _unfinished_reason(step: StepDef, turn: TurnResult) -> str | None:
+    """Why the turn does not count as finished: not approved, or not ended cleanly."""
     if step.requires_approval and not turn.approved:
-        _fail(wiring, run, record)
         if not turn.has_approval_answers:
-            return None, ui_text.NO_APPROVAL_NOR_OUTCOME
-        return None, ui_text.STEP_NOT_APPROVED
-
+            return ui_text.NO_APPROVAL_NOR_OUTCOME
+        return ui_text.STEP_NOT_APPROVED
     if not step.requires_approval and not turn.ended_cleanly:
-        _fail(wiring, run, record)
-        return None, turn.stop_reason or ui_text.AGENT_DID_NOT_COMPLETE
+        return turn.stop_reason or ui_text.AGENT_DID_NOT_COMPLETE
+    return None
 
-    repeats = False
-    if step.declares_outcome:
-        declared = parse_outcome(turn.summary)
-        if not declared.delivered:
-            record.block()
-            wiring.runs.save(run)
-            return None, _blocked_reason(declared)
-        repeats = step.repeat is not None and declared.repeats
-        if may_close and declared.closes:
-            return _settle(wiring, run, record, LoopSignal.CLOSE)
 
+def _judge_outcome(
+    wiring: _Wiring,
+    run: RunRecord,
+    step: StepDef,
+    record: StepRecord,
+    declared: Outcome,
+    may_close: bool,
+) -> tuple[LoopSignal | None, str]:
+    """A step that declares its outcome is delivered only if the block says so."""
+    if not declared.delivered:
+        record.block()
+        wiring.runs.save(run)
+        return None, _blocked_reason(declared)
+    if may_close and declared.closes:
+        return _settle(wiring, run, record, LoopSignal.CLOSE)
+    repeats = step.repeat is not None and declared.repeats
     return _settle(wiring, run, record, LoopSignal.REPEAT if repeats else None)
 
 

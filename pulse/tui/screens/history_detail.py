@@ -14,6 +14,7 @@ from pulse.history.models import HistoryItem
 from pulse.tui import strings
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.confirm import ConfirmScreen
+from pulse.tui.screens.navigation import pulse_app
 from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -75,7 +76,7 @@ class HistoryDetailScreen(Screen[None]):
         def _chosen(mode: str | None) -> None:
             if mode != RESUME:
                 return
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 self.item.workflow_id,
                 self.item.prompt,
                 resume_run_id=run_id,
@@ -137,7 +138,7 @@ class HistoryDetailScreen(Screen[None]):
         self.query_one(ArtifactPane).sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "resume_workflow":
             return self._pending is not None
         if action == "remove_worktree":

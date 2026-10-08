@@ -57,3 +57,27 @@ class EngineHarness:
             control=control or session.control,
             run_id=run_id,
         )
+
+
+def approved_turn(summary: str = "") -> dict[str, object]:
+    return {"approved": True, "outcome": "approve", "phaseSummary": summary}
+
+
+def delivered_turn(summary: str = "feito") -> dict[str, object]:
+    """Turn of a non-approval step that declared delivery."""
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\n```",
+    }
+
+
+def blocked_turn(reason: str, *, needs: str = "") -> dict[str, object]:
+    """Turn in which the agent declares it could not deliver."""
+    lines = ["status: blocked", f"reason: {reason}"]
+    if needs:
+        lines.append(f"needs: {needs}")
+    body = "\n".join(lines)
+    return {
+        "stopReason": "end_turn",
+        "phaseSummary": f"tentei e não deu\n\n```pulse:outcome\n{body}\n```",
+    }

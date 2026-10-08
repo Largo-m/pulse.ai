@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterator
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
 
+from pulse.domain.ports import JsonObject
 from pulse.history.events import LogKind
 from pulse.history.tool_classify import classify_tool
 
@@ -55,6 +56,17 @@ _GENERIC_TITLES = frozenset(
 )
 _MAX_SEARCH_HITS = 3
 _GENERIC_GLOBS = frozenset({"*", "**", "**/*", "./**/*", "**/**"})
+_PATH_FIELDS = ("path", "filePath", "uri")
+_TARGET_INPUT_KEYS = ("glob", "pattern", "query", "command", "args")
+_COMMAND_INPUT_KEYS = ("command", "args")
+_VERB_PREFIXES = ("Reading ", "Read ", "Editing ", "Edit ", "Writing ", "Write ")
+# (pattern, prefix it searches, group): an explicit output marker beats a quoted
+# path, which beats any path-looking token.
+_TEXT_PATH_PATTERNS: tuple[tuple[re.Pattern[str], int | None, int], ...] = (
+    (_OUTPUT_PATH_RE, 800, 1),
+    (_BACKTICK_PATH_RE, None, 1),
+    (_PATH_RE, 800, 0),
+)
 
 
 def shorten_path(path: str, *, cwd: str | None = None) -> str:
@@ -89,7 +101,7 @@ def is_generic_title(title: str) -> bool:
     return title.strip().lower() in _GENERIC_TITLES
 
 
-def _as_dict(value: object) -> dict[str, Any]:
+def _as_dict(value: object) -> JsonObject:
     if isinstance(value, dict):
         return value
     if isinstance(value, str) and value.strip().startswith("{"):
@@ -102,11 +114,11 @@ def _as_dict(value: object) -> dict[str, Any]:
     return {}
 
 
-def _raw_input(update: dict[str, Any]) -> dict[str, Any]:
+def _raw_input(update: JsonObject) -> JsonObject:
     return _as_dict(update.get("rawInput"))
 
 
-def _raw_output(update: dict[str, Any]) -> dict[str, Any]:
+def _raw_output(update: JsonObject) -> JsonObject:
     raw = update.get("rawOutput")
     as_dict = _as_dict(raw)
     if as_dict:
@@ -140,62 +152,68 @@ def _is_low_quality_label(value: str) -> bool:
     return False
 
 
-def extract_paths(update: dict[str, Any], *, cwd: str | None = None) -> list[str]:
-    found: list[str] = []
-    seen: set[str] = set()
+def _list_items(value: object) -> list[object]:
+    return value if isinstance(value, list) else []
 
-    def add(value: object) -> None:
-        if not isinstance(value, str) or not value.strip():
-            return
-        if not _looks_like_path(value) and "://" not in value:
-            return
-        short = shorten_path(value, cwd=cwd)
-        if not short or short in seen or _is_low_quality_label(short):
-            return
-        seen.add(short)
-        found.append(short)
 
-    for key in ("path", "filePath", "uri"):
-        add(update.get(key))
+def _nested_paths(item: JsonObject) -> Iterator[object]:
+    return (item.get(key) for key in _PATH_FIELDS)
 
-    locations = update.get("locations")
-    if isinstance(locations, list):
-        for item in locations:
-            if isinstance(item, str):
-                add(item)
-            elif isinstance(item, dict):
-                for nested in ("path", "filePath", "uri"):
-                    add(item.get(nested))
 
-    content = update.get("content")
-    if isinstance(content, list):
-        for item in content:
-            if not isinstance(item, dict):
-                continue
-            for nested in ("path", "filePath", "uri"):
-                add(item.get(nested))
+def _location_candidates(locations: object) -> Iterator[object]:
+    """A location is either the path itself or an object holding it."""
+    for item in _list_items(locations):
+        if isinstance(item, dict):
+            yield from _nested_paths(item)
+        else:
+            yield item
 
-    raw_input = _raw_input(update)
-    for key in _INPUT_PATH_KEYS:
-        add(raw_input.get(key))
 
+def _content_candidates(content: object) -> Iterator[object]:
+    for item in _list_items(content):
+        if isinstance(item, dict):
+            yield from _nested_paths(item)
+
+
+def _title_path(update: JsonObject) -> str:
     title = str(update.get("title") or "").strip()
-    if title:
-        match = _TITLE_PATH_RE.search(title)
-        if match:
-            add(match.group(1))
-        elif _looks_like_path(title):
-            add(title)
-
-    return found
+    match = _TITLE_PATH_RE.search(title)
+    if match:
+        return match.group(1)
+    return title if _looks_like_path(title) else ""
 
 
-def extract_tool_path(update: dict[str, Any], *, cwd: str | None = None) -> str:
+def _path_candidates(update: JsonObject) -> Iterator[object]:
+    """Every field a runtime may put a path in, most explicit first."""
+    yield from _nested_paths(update)
+    yield from _location_candidates(update.get("locations"))
+    yield from _content_candidates(update.get("content"))
+    raw_input = _raw_input(update)
+    yield from (raw_input.get(key) for key in _INPUT_PATH_KEYS)
+    yield _title_path(update)
+
+
+def _path_label(value: object, *, cwd: str | None) -> str:
+    """The path as shown, or empty when the value is not a usable path."""
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    if not _looks_like_path(value) and "://" not in value:
+        return ""
+    short = shorten_path(value, cwd=cwd)
+    return "" if _is_low_quality_label(short) else short
+
+
+def extract_paths(update: JsonObject, *, cwd: str | None = None) -> list[str]:
+    labels = (_path_label(value, cwd=cwd) for value in _path_candidates(update))
+    return list(dict.fromkeys(label for label in labels if label))
+
+
+def extract_tool_path(update: JsonObject, *, cwd: str | None = None) -> str:
     paths = extract_paths(update, cwd=cwd)
     return paths[0] if paths else ""
 
 
-def extract_search_query(update: dict[str, Any]) -> str:
+def extract_search_query(update: JsonObject) -> str:
     raw_input = _raw_input(update)
     for key in ("pattern", "query", "regex", "text", "search", "needle", "glob", "glob_pattern"):
         value = raw_input.get(key)
@@ -225,7 +243,7 @@ def extract_search_query(update: dict[str, Any]) -> str:
     return ""
 
 
-def extract_search_scope(update: dict[str, Any], *, cwd: str | None = None) -> str:
+def extract_search_scope(update: JsonObject, *, cwd: str | None = None) -> str:
     raw_input = _raw_input(update)
     for key in ("path", "filePath", "target", "target_directory", "cwd", "directory", "root"):
         value = raw_input.get(key)
@@ -239,7 +257,7 @@ def extract_search_scope(update: dict[str, Any], *, cwd: str | None = None) -> s
     return ""
 
 
-def extract_search_count(update: dict[str, Any]) -> int | None:
+def extract_search_count(update: JsonObject) -> int | None:
     raw_output = _raw_output(update)
     for key in ("totalFiles", "totalMatches", "count", "matches"):
         value = raw_output.get(key)
@@ -253,106 +271,84 @@ def extract_search_count(update: dict[str, Any]) -> int | None:
     return None
 
 
-def format_search_labels(update: dict[str, Any], *, cwd: str | None = None) -> tuple[str, str]:
+def _file_count(count: object) -> str:
+    return f"{count} file{'s' if count != 1 else ''}"
+
+
+def _search_headline(query: str, scope: str, count: int | None) -> tuple[str, list[str]]:
+    """The search title and the facts it leaves for the detail line."""
+    if query and query in _GENERIC_GLOBS and scope:
+        return scope, [query]
+    if query:
+        title = query if query.startswith(("*", "?")) else f"“{query}”"
+        return title, [f"in {scope}"] if scope else []
+    if scope:
+        return scope, []
+    if count is not None:
+        return _file_count(count), []
+    return "…", []
+
+
+def format_search_labels(update: JsonObject, *, cwd: str | None = None) -> tuple[str, str]:
     query = extract_search_query(update)
     scope = extract_search_scope(update, cwd=cwd)
     count = extract_search_count(update)
-    hits = extract_paths(update, cwd=cwd)
-    if scope:
-        hits = [path for path in hits if path != scope]
+    hits = [path for path in extract_paths(update, cwd=cwd) if path != scope]
 
-    detail_lines: list[str] = []
-    meta_parts: list[str] = []
-
-    if query and query in _GENERIC_GLOBS and scope:
-        title = scope
-        meta_parts.append(query)
-    elif query:
-        title = f"“{query}”" if not query.startswith(("*", "?")) else query
-        if scope:
-            meta_parts.append(f"in {scope}")
-    elif scope:
-        title = scope
-    elif count is not None:
-        title = f"{count} file{'s' if count != 1 else ''}"
-    else:
-        title = "…"
-
+    title, meta_parts = _search_headline(query, scope, count)
     if count is not None:
-        meta_parts.append(f"{count} file{'s' if count != 1 else ''}")
-    if meta_parts:
-        detail_lines.append("  ·  ".join(meta_parts) if len(meta_parts) > 1 else meta_parts[0])
-
-    for path in hits[:_MAX_SEARCH_HITS]:
-        detail_lines.append(path)
+        meta_parts.append(_file_count(count))
+    detail_lines = ["  ·  ".join(meta_parts)] if meta_parts else []
+    detail_lines.extend(hits[:_MAX_SEARCH_HITS])
     remaining = len(hits) - _MAX_SEARCH_HITS
     if remaining > 0:
         detail_lines.append(f"(+{remaining})")
-
     return title, "\n".join(detail_lines)
 
 
-def _content_texts(update: dict[str, Any]) -> list[str]:
-    texts: list[str] = []
-    raw_output = _raw_output(update)
-    content_text = raw_output.get("content")
-    if isinstance(content_text, str) and content_text.strip():
-        texts.append(content_text)
-    elif isinstance(content_text, list):
-        for item in content_text:
-            if isinstance(item, str) and item.strip():
-                texts.append(item)
-            elif isinstance(item, dict):
-                nested = item.get("text") or item.get("content")
-                if isinstance(nested, str) and nested.strip():
-                    texts.append(nested)
+def _nonblank(value: object) -> list[str]:
+    return [value] if isinstance(value, str) and value.strip() else []
 
-    content = update.get("content")
-    if isinstance(content, list):
-        for item in content:
-            if not isinstance(item, dict):
-                continue
-            if item.get("type") == "content":
-                nested = item.get("content")
-                if isinstance(nested, dict):
-                    text = nested.get("text")
-                    if isinstance(text, str) and text.strip():
-                        texts.append(text)
-                elif isinstance(nested, str) and nested.strip():
-                    texts.append(nested)
-            text = item.get("text")
-            if isinstance(text, str) and text.strip():
-                texts.append(text)
+
+def _raw_output_texts(update: JsonObject) -> list[str]:
+    content = _raw_output(update).get("content")
+    if not isinstance(content, list):
+        return _nonblank(content)
+    texts: list[str] = []
+    for item in content:
+        nested = (item.get("text") or item.get("content")) if isinstance(item, dict) else item
+        texts.extend(_nonblank(nested))
     return texts
 
 
-def summarize_content(content: str, *, cwd: str | None = None) -> str:
-    text = content.strip()
-    if not text:
-        return ""
+def _block_texts(block: JsonObject) -> list[str]:
+    """Text of an ACP content block: a `content` wrapper and/or a plain `text` field."""
+    texts: list[str] = []
+    if block.get("type") == "content":
+        nested = block.get("content")
+        texts.extend(_nonblank(nested.get("text") if isinstance(nested, dict) else nested))
+    texts.extend(_nonblank(block.get("text")))
+    return texts
 
-    output_path = _OUTPUT_PATH_RE.search(text[:800])
-    if output_path:
-        return shorten_path(output_path.group(1), cwd=cwd)
 
-    backtick = _BACKTICK_PATH_RE.search(text)
-    if backtick:
-        return shorten_path(backtick.group(1), cwd=cwd)
+def _content_texts(update: JsonObject) -> list[str]:
+    texts = _raw_output_texts(update)
+    for block in _list_items(update.get("content")):
+        if isinstance(block, dict):
+            texts.extend(_block_texts(block))
+    return texts
 
-    path_match = _PATH_RE.search(text[:800])
-    if path_match:
-        return shorten_path(path_match.group(0), cwd=cwd)
 
-    frontmatter = _FRONTMATTER_NAME_RE.search(text[:400])
-    if frontmatter:
-        return frontmatter.group(1).strip()
+def _path_in_text(text: str, *, cwd: str | None) -> str | None:
+    """The first path the text names, by pattern priority; `None` when it names none."""
+    for pattern, window, group in _TEXT_PATH_PATTERNS:
+        match = pattern.search(text[:window])
+        if match:
+            return shorten_path(match.group(group), cwd=cwd)
+    return None
 
-    heading = _HEADING_RE.search(text[:400])
-    if heading:
-        value = heading.group(1).strip()
-        if not _is_low_quality_label(value):
-            return value
 
+def _first_meaningful_line(text: str) -> str:
     for line in text.splitlines()[:12]:
         candidate = line.strip()
         if not candidate or _is_low_quality_label(candidate):
@@ -363,136 +359,179 @@ def summarize_content(content: str, *, cwd: str | None = None) -> str:
     return ""
 
 
-def extract_tool_target(update: dict[str, Any], *, cwd: str | None = None) -> str:
-    path = extract_tool_path(update, cwd=cwd)
-    if path:
-        return path
+def _label_in_text(text: str) -> str:
+    frontmatter = _FRONTMATTER_NAME_RE.search(text[:400])
+    if frontmatter:
+        return frontmatter.group(1).strip()
+    heading = _HEADING_RE.search(text[:400])
+    if heading:
+        value = heading.group(1).strip()
+        if not _is_low_quality_label(value):
+            return value
+    return _first_meaningful_line(text)
 
-    raw_input = _raw_input(update)
-    for key in ("glob", "pattern", "query", "command", "args"):
+
+def summarize_content(content: str, *, cwd: str | None = None) -> str:
+    text = content.strip()
+    if not text:
+        return ""
+    path = _path_in_text(text, cwd=cwd)
+    if path is not None:
+        return path
+    return _label_in_text(text)
+
+
+def _input_value(raw_input: JsonObject, keys: tuple[str, ...]) -> str | None:
+    """The first of `keys` the tool was called with; `None` when none was given."""
+    for key in keys:
         value = raw_input.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
         if isinstance(value, list) and value:
             return " ".join(str(part) for part in value)
+    return None
 
-    raw_output = _raw_output(update)
-    if raw_output.get("error"):
-        error = str(raw_output["error"])
-        match = _PATH_RE.search(error)
-        if match:
-            return shorten_path(match.group(0), cwd=cwd)
-        return error[:120]
-    if "totalFiles" in raw_output:
-        total = raw_output.get("totalFiles")
-        return f"{total} file{'s' if total != 1 else ''}"
 
+def _error_label(raw_output: JsonObject, *, cwd: str | None) -> str | None:
+    """The path an error names, else the error itself; `None` when the tool did not fail."""
+    error = raw_output.get("error")
+    if not error:
+        return None
+    text = str(error)
+    match = _PATH_RE.search(text)
+    if match:
+        return shorten_path(match.group(0), cwd=cwd)
+    return text[:120]
+
+
+def _content_summary(update: JsonObject, *, cwd: str | None) -> str:
     for text in _content_texts(update):
         summary = summarize_content(text, cwd=cwd)
         if summary and not _is_low_quality_label(summary):
             return summary
-
-    title = str(update.get("title") or update.get("toolName") or "").strip()
-    if title and not is_generic_title(title):
-        return title
     return ""
 
 
-def merge_tool_update(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
+def extract_tool_target(update: JsonObject, *, cwd: str | None = None) -> str:
+    path = extract_tool_path(update, cwd=cwd)
+    if path:
+        return path
+    target = _input_value(_raw_input(update), _TARGET_INPUT_KEYS)
+    if target is not None:
+        return target
+    raw_output = _raw_output(update)
+    error = _error_label(raw_output, cwd=cwd)
+    if error is not None:
+        return error
+    if "totalFiles" in raw_output:
+        return _file_count(raw_output.get("totalFiles"))
+    summary = _content_summary(update, cwd=cwd)
+    if summary:
+        return summary
+    title = str(update.get("title") or update.get("toolName") or "").strip()
+    return "" if is_generic_title(title) else title
+
+
+Merger = Callable[[object, object], object | None]
+"""Combines a field already known with its streamed update; `None` keeps the known value."""
+
+
+def _merge_objects(current: object, incoming: object) -> object | None:
+    """Merge key by key: a truncated or partial update must not erase what was known."""
+    update = _as_dict(incoming)
+    if not update:
+        return None
+    existing = _as_dict(current)
+    return {**existing, **update} if existing else update
+
+
+def _merge_raw_output(current: object, incoming: object) -> object | None:
+    merged = _merge_objects(current, incoming)
+    if merged is None and isinstance(incoming, str):
+        return {"content": incoming}
+    return merged
+
+
+def _append_items(current: object, incoming: object) -> object | None:
+    """Lists accumulate across updates; anything else simply replaces the field."""
+    if not isinstance(incoming, list):
+        return incoming
+    if not incoming:
+        return None
+    return [*current, *incoming] if isinstance(current, list) else list(incoming)
+
+
+def _replace(_current: object, incoming: object) -> object | None:
+    return incoming
+
+
+_MERGERS: dict[str, Merger] = {
+    "rawInput": _merge_objects,
+    "rawOutput": _merge_raw_output,
+    "locations": _append_items,
+    "content": _append_items,
+}
+
+
+def merge_tool_update(base: JsonObject, update: JsonObject) -> JsonObject:
     merged = dict(base)
     for key, value in update.items():
         if value is None:
             continue
-        if key == "rawInput":
-            incoming = _as_dict(value)
-            if incoming:
-                existing = _as_dict(merged.get("rawInput"))
-                merged["rawInput"] = {**existing, **incoming} if existing else incoming
-            continue
-        if key == "rawOutput":
-            incoming = _as_dict(value)
-            if incoming:
-                existing = _as_dict(merged.get("rawOutput"))
-                merged["rawOutput"] = {**existing, **incoming} if existing else incoming
-            elif isinstance(value, str):
-                merged["rawOutput"] = {"content": value}
-            continue
-        if key == "locations" and isinstance(value, list):
-            if not value:
-                continue
-            existing = merged.get("locations")
-            if isinstance(existing, list):
-                merged["locations"] = [*existing, *value]
-            else:
-                merged["locations"] = list(value)
-            continue
-        if key == "content" and isinstance(value, list):
-            if not value:
-                continue
-            existing = merged.get("content")
-            if isinstance(existing, list):
-                merged["content"] = [*existing, *value]
-            else:
-                merged["content"] = list(value)
-            continue
-        merged[key] = value
+        combined = _MERGERS.get(key, _replace)(merged.get(key), value)
+        if combined is not None:
+            merged[key] = combined
     return merged
 
 
+def _strip_verb(title: str) -> str:
+    for prefix in _VERB_PREFIXES:
+        if title.startswith(prefix):
+            return title[len(prefix) :].strip(" :")
+    return title
+
+
+def _title_label(title: str, *, cwd: str | None) -> str:
+    """The tool title without its verb, the last resort before the placeholder."""
+    if not title or is_generic_title(title):
+        return "…"
+    cleaned = _strip_verb(title)
+    if cleaned and _looks_like_path(cleaned):
+        return shorten_path(cleaned, cwd=cwd)
+    if cleaned and not _is_low_quality_label(cleaned):
+        return cleaned
+    if not _is_low_quality_label(title):
+        return title
+    return "…"
+
+
+def _tool_label(update: JsonObject, title: str, *, cwd: str | None) -> str:
+    """Most specific first: the file, the error, the command, the output, the title."""
+    path = extract_tool_path(update, cwd=cwd)
+    if path:
+        return path
+    error = _error_label(_raw_output(update), cwd=cwd)
+    if error is not None:
+        return error
+    command = _input_value(_raw_input(update), _COMMAND_INPUT_KEYS)
+    if command is not None:
+        return command
+    return _content_summary(update, cwd=cwd) or _title_label(title, cwd=cwd)
+
+
 def build_tool_labels(
-    update: dict[str, Any],
+    update: JsonObject,
     *,
     cwd: str | None = None,
     fallback_kind: LogKind | None = None,
 ) -> tuple[LogKind, str, str]:
     title = str(update.get("title") or update.get("toolName") or "").strip()
-    tool_kind = str(update.get("kind") or "")
     log_kind = fallback_kind or classify_tool(
         title,
-        kind=tool_kind,
+        kind=str(update.get("kind") or ""),
         tool_name=str(update.get("toolName") or ""),
     )
-
     if log_kind == LogKind.SEARCH:
         search_title, search_detail = format_search_labels(update, cwd=cwd)
         return log_kind, search_title, search_detail
-
-    path = extract_tool_path(update, cwd=cwd)
-    if path:
-        return log_kind, path, ""
-
-    raw_output = _raw_output(update)
-    if raw_output.get("error"):
-        error = str(raw_output["error"])
-        match = _PATH_RE.search(error)
-        if match:
-            return log_kind, shorten_path(match.group(0), cwd=cwd), ""
-        return log_kind, error[:120], ""
-
-    raw_input = _raw_input(update)
-    for key in ("command", "args"):
-        value = raw_input.get(key)
-        if isinstance(value, str) and value.strip():
-            return log_kind, value.strip(), ""
-        if isinstance(value, list) and value:
-            return log_kind, " ".join(str(part) for part in value), ""
-
-    for text in _content_texts(update):
-        summary = summarize_content(text, cwd=cwd)
-        if summary and not _is_low_quality_label(summary):
-            return log_kind, summary, ""
-
-    if title and not is_generic_title(title):
-        cleaned = title
-        for prefix in ("Reading ", "Read ", "Editing ", "Edit ", "Writing ", "Write "):
-            if cleaned.startswith(prefix):
-                cleaned = cleaned[len(prefix) :].strip(" :")
-                break
-        if cleaned and _looks_like_path(cleaned):
-            return log_kind, shorten_path(cleaned, cwd=cwd), ""
-        if cleaned and not _is_low_quality_label(cleaned):
-            return log_kind, cleaned, ""
-        if not _is_low_quality_label(title):
-            return log_kind, title, ""
-
-    return log_kind, "…", ""
+    return log_kind, _tool_label(update, title, cwd=cwd), ""

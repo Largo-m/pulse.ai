@@ -50,7 +50,7 @@ target-version = "py311"
 extend-exclude = [".claude", ".agents", ".cursor"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
+select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT", "C90"]
 
 [tool.ruff.lint.per-file-ignores]
 # Policy: asserts are how pytest tests, and test functions are not public API.
@@ -62,48 +62,6 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/doctor/report.py" = ["T201"]
 "pulse/cli/console_sink.py" = ["T201"]
 
-# Baseline: findings that predate the quality gates, one entry per file.
-# Phase 7 zeroes this list; never add to it — fix the code or add a justified noqa.
-"pulse/acp/run_events.py" = ["ANN401"]
-"pulse/acp/session_runner.py" = ["ANN001", "ANN401"]
-"pulse/api/app.py" = ["ANN202", "ANN401"]
-"pulse/client/engine_client.py" = ["ANN401"]
-"pulse/client/run_session.py" = ["ANN401"]
-"pulse/config/agents.py" = ["ANN401"]
-"pulse/daemon/adapters.py" = ["ANN401"]
-"pulse/daemon/events.py" = ["ANN401"]
-"pulse/daemon/runs.py" = ["ANN401", "S101"]
-"pulse/domain/ports.py" = ["ANN401"]
-"pulse/history/events.py" = ["UP042"]
-"pulse/history/models.py" = ["UP042"]
-"pulse/history/prompt_detail.py" = ["ANN401"]
-"pulse/mcp/ask_bridge.py" = ["ANN001", "S108"]
-"pulse/mcp/ask_protocol.py" = ["ANN001", "ANN401"]
-"pulse/mcp/http_bridge.py" = ["ANN001", "ANN401"]
-"pulse/replies/permission.py" = ["ANN401"]
-"pulse/store/agent_settings.py" = ["ANN001"]
-"pulse/store/factory/__init__.py" = ["ANN401"]
-"pulse/store/runs.py" = ["ANN401"]
-"pulse/store/workflow_defs.py" = ["ANN401"]
-"pulse/tui/__init__.py" = ["ANN202"]
-"pulse/tui/adapters/prompt_bridge.py" = ["ANN401", "UP042"]
-"pulse/tui/screens/cockpit.py" = ["ANN001"]
-"pulse/tui/widgets/app_footer.py" = ["ANN003"]
-"pulse/tui/widgets/artifact_pane.py" = ["ANN003"]
-"pulse/tui/widgets/log_stream.py" = ["ANN003"]
-"pulse/tui/widgets/phase_sidebar.py" = ["ANN003"]
-"pulse/tui/widgets/prompt_dock.py" = ["ANN003"]
-"tests/api/test_api_engine.py" = ["S108"]
-"tests/client/test_engine_run_session.py" = ["S108"]
-"tests/config/test_resolved_config.py" = ["S108"]
-"tests/domain/test_run_model.py" = ["S108"]
-"tests/infra/test_acp_client.py" = ["S108"]
-"tests/infra/test_ask_bridge.py" = ["S108"]
-"tests/infra/test_run_store.py" = ["S108"]
-"tests/infra/test_session_runner.py" = ["S108"]
-"tests/orchestrator/test_fanout.py" = ["F811"]
-"tests/orchestrator/test_run_context.py" = ["S108"]
-
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
@@ -112,11 +70,18 @@ python_version = "3.11"
 files = ["pulse"]
 warn_unused_ignores = true
 
-# Policy: the domain and the engine are `--strict` with no `Any` written or
+# Policy: the domain, the engine and the reply parsers are `--strict` with no `Any` written or
 # inferred in their code. `disallow_any_expr` stays off: typeshed types
 # `re.Match.group` as `str | Any`.
 [[tool.mypy.overrides]]
-module = ["pulse.domain", "pulse.domain.*", "pulse.orchestrator", "pulse.orchestrator.*"]
+module = [
+    "pulse.domain",
+    "pulse.domain.*",
+    "pulse.orchestrator",
+    "pulse.orchestrator.*",
+    "pulse.replies",
+    "pulse.replies.*",
+]
 disallow_any_generics = true
 disallow_subclassing_any = true
 disallow_untyped_calls = true
@@ -132,82 +97,12 @@ disallow_any_explicit = true
 disallow_any_unimported = true
 disallow_any_decorated = true
 
-# Baseline: mypy errors that predate the quality gates, grouped by error code.
-# Phase 7 zeroes this list; never add to it.
-[[tool.mypy.overrides]]
-module = [
-    "pulse.config.global_config",
-    "pulse.config.project_config",
-    "pulse.daemon.adapters",
-    "pulse.history.prompt_detail",
-    "pulse.mcp.ask_stdio",
-]
-disable_error_code = ["arg-type"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.acp.session_runner",
-]
-disable_error_code = ["arg-type", "assignment"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.tui.screens.settings",
-]
-disable_error_code = ["arg-type", "attr-defined"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.history.tool_detail",
-    "pulse.tui.widgets.prompt_dock",
-]
-disable_error_code = ["assignment"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.tui.screens.cockpit",
-]
-disable_error_code = ["assignment", "attr-defined"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.acp.run_events",
-    "pulse.tui.screens.history",
-    "pulse.tui.screens.history_detail",
-    "pulse.tui.screens.home",
-]
-disable_error_code = ["attr-defined"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.tui.hydrate",
-]
-disable_error_code = ["attr-defined", "call-overload"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.acp.client",
-]
-disable_error_code = ["misc"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.mcp.http_bridge",
-]
-disable_error_code = ["str-bytes-safe"]
-
-[[tool.mypy.overrides]]
-module = [
-    "pulse.tui.cursor_store",
-]
-disable_error_code = ["union-attr"]
-
 [tool.coverage.run]
 source = ["pulse"]
 
 [tool.coverage.report]
 # Measured when the gate landed; each phase raises it, never lowers it.
-fail_under = 77.7
+fail_under = 84.0
 precision = 2
 
 [tool.vulture]

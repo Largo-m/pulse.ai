@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Any
 
+from pulse.domain.ports import JsonObject
 from pulse.domain.ui_text import DEFAULT_QUESTIONNAIRE_TITLE
+from pulse.replies.acp_payloads import items_of, truthy_text
 
 _HEADER_PATTERN = re.compile(
     r"(?:^|\n)(Preciso de algumas informações[^\n]*|I need some information[^\n]*)",
@@ -102,78 +104,68 @@ def split_questionnaire_answers(
     return pairs
 
 
+@dataclass
+class _QuestionDraft:
+    """A numbered question while its lines are read: prompt lines, then options."""
+
+    number: str
+    prompt_lines: list[str]
+    options: list[tuple[str, str]] = field(default_factory=list)
+
+    def absorb(self, line: str) -> None:
+        option = _OPTION_LINE.match(line)
+        if option:
+            self.options.append((option.group(1), option.group(2).strip()))
+        elif not self.options:
+            self.prompt_lines.append(line)
+
+    def finish(self) -> TextQuestion | None:
+        prompt = " ".join(line.strip() for line in self.prompt_lines if line.strip())
+        if not prompt:
+            return None
+        return TextQuestion(
+            id=f"q{self.number}",
+            prompt=f"{self.number}. {prompt}",
+            options=tuple(self.options),
+        )
+
+
+def _question_lines(block: str) -> Iterator[str]:
+    """The block's meaningful lines, up to the `Resposta:` footer."""
+    for raw_line in block.splitlines():
+        line = raw_line.strip()
+        if not line or _HEADER_PATTERN.match(line):
+            continue
+        if line.lower().startswith("resposta:"):
+            return
+        yield line
+
+
+def _parse_questions(block: str) -> list[TextQuestion]:
+    drafts: list[_QuestionDraft] = []
+    for line in _question_lines(block):
+        numbered = _QUESTION_LINE.match(line)
+        if numbered:
+            drafts.append(_QuestionDraft(numbered.group(1), [numbered.group(2).strip()]))
+        elif drafts:
+            drafts[-1].absorb(line)
+    finished = (draft.finish() for draft in drafts)
+    return [question for question in finished if question is not None]
+
+
 def parse_text_questionnaire(text: str) -> TextQuestionnaire | None:
     block = extract_questionnaire_block(text)
     if not block:
         return None
-
-    title = DEFAULT_QUESTIONNAIRE_TITLE
-    title_match = _HEADER_PATTERN.search(block)
-    if title_match:
-        title = title_match.group(1).strip()
-
-    questions: list[TextQuestion] = []
-    current_number: str | None = None
-    current_prompt_lines: list[str] = []
-    current_options: list[tuple[str, str]] = []
-
-    def flush_question() -> None:
-        nonlocal current_number, current_prompt_lines, current_options
-        if current_number is None or not current_prompt_lines:
-            current_number = None
-            current_prompt_lines = []
-            current_options = []
-            return
-        prompt = " ".join(line.strip() for line in current_prompt_lines if line.strip())
-        if not prompt:
-            current_number = None
-            current_prompt_lines = []
-            current_options = []
-            return
-        question_id = f"q{current_number}"
-        questions.append(
-            TextQuestion(
-                id=question_id,
-                prompt=f"{current_number}. {prompt}",
-                options=tuple(current_options),
-            )
-        )
-        current_number = None
-        current_prompt_lines = []
-        current_options = []
-
-    for raw_line in block.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        if _HEADER_PATTERN.match(line):
-            continue
-        if line.lower().startswith("resposta:"):
-            break
-
-        question_match = _QUESTION_LINE.match(line)
-        if question_match:
-            flush_question()
-            current_number = question_match.group(1)
-            current_prompt_lines = [question_match.group(2).strip()]
-            continue
-
-        option_match = _OPTION_LINE.match(line)
-        if option_match and current_number is not None:
-            current_options.append((option_match.group(1), option_match.group(2).strip()))
-            continue
-
-        if current_number is not None and not current_options:
-            current_prompt_lines.append(line)
-
-    flush_question()
-
+    questions = _parse_questions(block)
     if not questions:
         return None
+    title_match = _HEADER_PATTERN.search(block)
+    title = title_match.group(1).strip() if title_match else DEFAULT_QUESTIONNAIRE_TITLE
     return TextQuestionnaire(title=title, questions=tuple(questions), raw=block)
 
 
-def serialize_questionnaire(questionnaire: TextQuestionnaire) -> dict[str, Any]:
+def serialize_questionnaire(questionnaire: TextQuestionnaire) -> JsonObject:
     return {
         "title": questionnaire.title,
         "raw": questionnaire.raw,
@@ -188,42 +180,49 @@ def serialize_questionnaire(questionnaire: TextQuestionnaire) -> dict[str, Any]:
     }
 
 
-def questionnaire_from_payload(payload: dict[str, Any]) -> TextQuestionnaire | None:
-    raw = str(payload.get("raw") or "")
-    if raw:
-        parsed = parse_text_questionnaire(raw)
-        if parsed is not None:
-            return parsed
-    items = payload.get("questions") or []
+def questionnaire_from_payload(payload: Mapping[str, object]) -> TextQuestionnaire | None:
+    """Undo [serialize_questionnaire]; the raw block wins when it still parses."""
+    raw = truthy_text(payload.get("raw"))
+    parsed = parse_text_questionnaire(raw) if raw else None
+    if parsed is not None:
+        return parsed
     questions: list[TextQuestion] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        options: list[tuple[str, str]] = []
-        for option in item.get("options") or []:
-            if isinstance(option, dict):
-                letter = str(option.get("id") or option.get("letter") or "").strip()
-                label = str(option.get("label") or "").strip()
-                if letter and label:
-                    options.append((letter, label))
-            elif isinstance(option, (list, tuple)) and len(option) >= 2:
-                options.append((str(option[0]), str(option[1])))
-        prompt = str(item.get("prompt") or "").strip()
-        if not prompt:
-            continue
-        questions.append(
-            TextQuestion(
-                id=str(item.get("id") or f"q{len(questions) + 1}"),
-                prompt=prompt,
-                options=tuple(options),
-            )
-        )
+    for item in items_of(payload.get("questions")):
+        question = _question_from_payload(item, fallback_id=f"q{len(questions) + 1}")
+        if question is not None:
+            questions.append(question)
     if not questions:
         return None
-    title = str(payload.get("title") or DEFAULT_QUESTIONNAIRE_TITLE).strip()
+    title = truthy_text(payload.get("title") or DEFAULT_QUESTIONNAIRE_TITLE).strip()
     return TextQuestionnaire(
         title=title or DEFAULT_QUESTIONNAIRE_TITLE, questions=tuple(questions), raw=raw
     )
+
+
+def _question_from_payload(item: object, *, fallback_id: str) -> TextQuestion | None:
+    if not isinstance(item, Mapping):
+        return None
+    prompt = truthy_text(item.get("prompt")).strip()
+    if not prompt:
+        return None
+    options = (_option_from_payload(option) for option in items_of(item.get("options")))
+    return TextQuestion(
+        id=truthy_text(item.get("id") or fallback_id),
+        prompt=prompt,
+        options=tuple(option for option in options if option is not None),
+    )
+
+
+def _option_from_payload(option: object) -> tuple[str, str] | None:
+    """An option as `{"id"|"letter", "label"}` or as a `[letter, label]` pair."""
+    if isinstance(option, Mapping):
+        letter = truthy_text(option.get("id") or option.get("letter")).strip()
+        label = truthy_text(option.get("label")).strip()
+        return (letter, label) if letter and label else None
+    pair = items_of(option)
+    if len(pair) >= 2:
+        return (str(pair[0]), str(pair[1]))
+    return None
 
 
 def format_questionnaire_answers(

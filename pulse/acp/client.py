@@ -109,8 +109,8 @@ class AcpClient:
 
         response = self._responses.pop(response_id, {})
         if "error" in response:
-            error = response["error"]
-            raise RuntimeError(error.get("message", "unknown ACP error"))
+            failure = response["error"]
+            raise RuntimeError(failure.get("message", "unknown ACP error"))
         return response.get("result", {})
 
     def initialize(self) -> dict[str, Any]:

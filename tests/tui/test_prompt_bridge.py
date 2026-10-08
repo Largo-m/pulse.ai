@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from pulse.replies.acp_payloads import PermissionRequest
 from pulse.tui.adapters.prompt_bridge import (
     PromptBridge,
     PromptKind,
@@ -41,11 +42,15 @@ def test_prompt_bridge_request_roundtrip():
 
 def test_build_permission_choices_uses_questionnaire_letters():
     choices = build_permission_choices(
-        [
-            {"optionId": "allow-once", "kind": "allow_once"},
-            {"optionId": "allow-always", "kind": "allow_always"},
-            {"optionId": "reject-once", "kind": "reject_once"},
-        ]
+        PermissionRequest.parse(
+            {
+                "options": [
+                    {"optionId": "allow-once", "kind": "allow_once"},
+                    {"optionId": "allow-always", "kind": "allow_always"},
+                    {"optionId": "reject-once", "kind": "reject_once"},
+                ]
+            }
+        ).options
     )
     assert choices == [
         ("allow-once", "A) Permitir esta vez"),

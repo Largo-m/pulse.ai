@@ -20,6 +20,7 @@ from pulse.history.status_labels import LABEL_WIDTH, status_color
 from pulse.tui import strings
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
+from pulse.tui.screens.navigation import pulse_app
 
 REFRESH_SECONDS = 2.0
 
@@ -130,7 +131,7 @@ class HistoryListScreen(Screen[None]):
         if item is None:
             return
         if item.status in LIVE_STATUSES and item.run_id in active_run_ids():
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 item.workflow_id,
                 item.prompt,
                 attach_run_id=item.run_id,
@@ -145,7 +146,7 @@ class HistoryListScreen(Screen[None]):
     def action_focus_search(self) -> None:
         self.query_one("#history-search", Input).focus()
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "delete_run":
             return self._highlighted() is not None
         return True

@@ -35,14 +35,41 @@ class RunState:
     workflow_id: str
     prompt: str
     workspace: str
+    bus: EventBus
+    correlator: PromptCorrelator
+    control: RunControl
     status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
-    bus: EventBus = field(default_factory=EventBus)
-    correlator: PromptCorrelator | None = None
-    control: RunControl | None = None
     resume_run_id: str | None = None
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+
+    @classmethod
+    def open(
+        cls,
+        *,
+        run_id: str,
+        workflow_id: str,
+        prompt: str,
+        workspace: str,
+        resume_run_id: str | None = None,
+    ) -> RunState:
+        """A new run with its own bus; questions and stop/pause go out on that bus."""
+        bus = EventBus()
+
+        def _publish_control(kind: str) -> None:
+            bus.publish({"type": f"run.{kind}", "run_id": run_id})
+
+        return cls(
+            id=run_id,
+            workflow_id=workflow_id,
+            prompt=prompt,
+            workspace=workspace,
+            bus=bus,
+            correlator=PromptCorrelator(bus),
+            control=RunControl(on_change=_publish_control),
+            resume_run_id=resume_run_id,
+        )
 
     def is_active(self) -> bool:
         return self.finished_at is None
@@ -152,20 +179,11 @@ class RunManager:
             raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
         self._prune()
-        bus = EventBus()
-        correlator = PromptCorrelator(bus)
-
-        def _publish_control(kind: str) -> None:
-            bus.publish({"type": f"run.{kind}", "run_id": run_id})
-
-        state = RunState(
-            id=run_id,
+        state = RunState.open(
+            run_id=run_id,
             workflow_id=workflow_id,
             prompt=prompt,
             workspace=workspace or str(safe_cwd()),
-            bus=bus,
-            correlator=correlator,
-            control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
         )
         with self._lock:
@@ -199,8 +217,8 @@ class RunManager:
         return items
 
     def _describe(self, state: RunState, labels: dict[str, str]) -> dict[str, Any]:
-        awaiting = bool(state.correlator is not None and state.correlator.pending())
-        since = state.correlator.pending_since() if state.correlator is not None else None
+        awaiting = bool(state.correlator.pending())
+        since = state.correlator.pending_since()
         return {
             "id": state.id,
             "workflow_id": state.workflow_id,
@@ -253,24 +271,20 @@ class RunManager:
         state = self.get(run_id)
         if state is None:
             return False
-        if state.correlator is not None:
-            state.correlator.cancel_all()
-        if state.control is not None:
-            state.control.stop()
+        state.correlator.cancel_all()
+        state.control.stop()
         state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
         return True
 
-    def answer_prompt(self, prompt_id: str, answer: Any) -> bool:
+    def answer_prompt(self, prompt_id: str, answer: object) -> bool:
         with self._lock:
             runs = list(self._runs.values())
         for state in runs:
-            if state.correlator is not None and state.correlator.answer(prompt_id, answer):
+            if state.correlator.answer(prompt_id, answer):
                 return True
         return False
 
     def _execute(self, state: RunState) -> None:
-        assert state.correlator is not None
-        assert state.control is not None
         stream = ApiStreamSink(state.bus)
         prompt_handler = ApiPromptPort(state.correlator)
         state.bus.publish(

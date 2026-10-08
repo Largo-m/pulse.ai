@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 from pulse.domain.run import SETTLED, StepStatus
 from pulse.history.status_labels import status_label
 
 
-class HistoryStatus(str, Enum):
+class HistoryStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     AWAITING_INPUT = "awaiting_input"

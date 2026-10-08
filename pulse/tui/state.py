@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -127,7 +127,7 @@ class CockpitState:
         self.running = True
         self.notify()
 
-    def sync_phases(self, steps: list[dict[str, str]] | tuple[dict[str, str], ...]) -> None:
+    def sync_phases(self, steps: Sequence[Mapping[str, object]]) -> None:
         """Rebuild the phase list from what the engine is actually running.
 
         The list changes mid-run (a fan-out step becomes N steps). Existing
@@ -144,7 +144,8 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps, strict=True):
             phase.label = str(step.get("label", "")) or phase.label
-            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
+            rounds = step.get("rounds", phase.rounds)
+            phase.rounds = max(1, rounds or 1) if isinstance(rounds, int) else phase.rounds
         if selected is not None:
             for index, phase in enumerate(self.phases):
                 if phase.id == selected.id:
@@ -158,11 +159,11 @@ class CockpitState:
     def apply_phase_statuses(
         self,
         *,
-        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
-        done_ids: list[str] | tuple[str, ...] = (),
-        skipped_ids: list[str] | tuple[str, ...] = (),
-        failed_ids: list[str] | tuple[str, ...] = (),
-        blocked_ids: list[str] | tuple[str, ...] = (),
+        steps: Sequence[Mapping[str, object]] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
     ) -> None:
         self.sync_phases(steps)
         done = set(done_ids)

@@ -14,42 +14,12 @@ from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator.engine import run_workflow
 from tests.conftest import make_workflow
 from tests.fakes import FakeAgentSession
-from tests.orchestrator.harness import EngineHarness
-
-
-@pytest.fixture
-def wired(tmp_path: Path) -> EngineHarness:
-    """Engine on in-memory ports: a scripted agent, storage, workspace and profiles."""
-    return EngineHarness(tmp_path)
-
-
-def _approved(summary: str = "") -> dict:
-    return {"approved": True, "outcome": "approve", "phaseSummary": summary}
-
-
-def _delivered(summary: str = "feito") -> dict:
-    """Turn of a non-approval step that declared delivery."""
-    return {
-        "stopReason": "end_turn",
-        "phaseSummary": f"{summary}\n\n```pulse:outcome\nstatus: done\n```",
-    }
-
-
-def _blocked(reason: str, *, needs: str = "") -> dict:
-    """Turn in which the agent declares it could not deliver."""
-    lines = ["status: blocked", f"reason: {reason}"]
-    if needs:
-        lines.append(f"needs: {needs}")
-    body = "\n".join(lines)
-    return {
-        "stopReason": "end_turn",
-        "phaseSummary": f"tentei e não deu\n\n```pulse:outcome\n{body}\n```",
-    }
+from tests.orchestrator.harness import approved_turn, blocked_turn, delivered_turn
 
 
 def test_steps_run_in_order_and_each_one_is_recorded(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
-    runner = FakeAgentSession([_approved(), _approved(), _approved()])
+    runner = FakeAgentSession([approved_turn(), approved_turn(), approved_turn()])
 
     code = wired.run(
         runner,
@@ -74,7 +44,7 @@ def test_the_prompt_template_is_rendered_with_run_values(wired, monkeypatch, tmp
         steps=[("one", "Um")],
         prompt_template="tarefa: {{user_prompt}} em {{workspace}} (step {{step_id}})",
     )
-    runner = FakeAgentSession([_approved()])
+    runner = FakeAgentSession([approved_turn()])
 
     wired.run(
         runner,
@@ -91,7 +61,7 @@ def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path
         steps=[("one", "Um"), ("two", "Dois")],
         prompt_template="{{#if previous_summary}}antes: {{previous_summary}}{{/if}}siga",
     )
-    runner = FakeAgentSession([_approved("escrevi o plano"), _approved()])
+    runner = FakeAgentSession([approved_turn("escrevi o plano"), approved_turn()])
 
     wired.run(
         runner,
@@ -123,7 +93,7 @@ def test_a_step_sees_how_the_previous_one_closed(
         steps=[("one", "Um"), ("two", "Dois")],
         prompt_template="anterior: {{previous_status}}",
     )
-    runner = FakeAgentSession([outcome, _approved()])
+    runner = FakeAgentSession([outcome, approved_turn()])
 
     wired.run(
         runner,
@@ -154,7 +124,7 @@ def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path:
 
 def test_retry_runs_the_same_step_again(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um")])
-    runner = FakeAgentSession([{"approved": False, "outcome": "continue"}, _approved()])
+    runner = FakeAgentSession([{"approved": False, "outcome": "continue"}, approved_turn()])
     runner.prompts.choice = "retry"
 
     code = wired.run(
@@ -174,8 +144,8 @@ def test_a_timeout_offers_retry_instead_of_killing_the_run(wired, monkeypatch, t
     runner = FakeAgentSession(
         [
             TimeoutError("the agent gave no sign of life for 600s in `session/prompt`"),
-            _approved(),
-            _approved(),
+            approved_turn(),
+            approved_turn(),
         ]
     )
     runner.prompts.choice = "retry"
@@ -216,7 +186,7 @@ def test_a_dead_session_that_the_user_gives_up_on_fails_the_step(
 
 def test_skip_settles_the_step_without_failing_the_run(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = FakeAgentSession([{"approved": False, "outcome": "skip"}, _approved()])
+    runner = FakeAgentSession([{"approved": False, "outcome": "skip"}, approved_turn()])
 
     code = wired.run(
         runner,
@@ -234,7 +204,7 @@ def test_a_step_without_approval_closes_when_the_agent_declares_the_outcome(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = FakeAgentSession([_delivered("pronto")])
+    runner = FakeAgentSession([delivered_turn("pronto")])
 
     code = wired.run(
         runner,
@@ -278,7 +248,7 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
 
 def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = FakeAgentSession([_blocked("falta a credencial do banco", needs="user")])
+    runner = FakeAgentSession([blocked_turn("falta a credencial do banco", needs="user")])
     runner.prompts.choice = "stop"
 
     code = wired.run(
@@ -305,7 +275,7 @@ def test_a_blocked_step_gets_one_shot_at_unblocking_itself(wired, monkeypatch, t
     """
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
     runner = FakeAgentSession(
-        [_blocked("o arquivo de config não existe"), _delivered("criei o config e segui")]
+        [blocked_turn("o arquivo de config não existe"), delivered_turn("criei o config e segui")]
     )
 
     code = wired.run(
@@ -326,7 +296,7 @@ def test_the_agent_gets_only_one_shot_before_the_person_is_called(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = FakeAgentSession([_blocked("falta X"), _blocked("continua faltando X")])
+    runner = FakeAgentSession([blocked_turn("falta X"), blocked_turn("continua faltando X")])
     runner.prompts.choice = "stop"
 
     code = wired.run(
@@ -350,7 +320,7 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
     """
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
     runner = FakeAgentSession(
-        [{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()]
+        [{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, delivered_turn()]
     )
 
     code = wired.run(
@@ -368,7 +338,7 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
 def test_skipping_a_blocked_step_records_it_as_skipped_not_done(wired, monkeypatch, tmp_path: Path):
     """The explicit skip is the difference: it used to happen disguised as `done`."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = FakeAgentSession([_blocked("falta acesso", needs="user"), _delivered()])
+    runner = FakeAgentSession([blocked_turn("falta acesso", needs="user"), delivered_turn()])
     runner.prompts.choice = "skip"
 
     code = wired.run(
@@ -396,9 +366,9 @@ def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(wired, monkeypat
     )
     runner = FakeAgentSession(
         [
-            _delivered("escrevi o plano"),
-            _blocked("não consegui migrar o schema", needs="user"),
-            _delivered(),
+            delivered_turn("escrevi o plano"),
+            blocked_turn("não consegui migrar o schema", needs="user"),
+            delivered_turn(),
         ]
     )
     runner.prompts.choice = "skip"
@@ -433,7 +403,7 @@ def test_requires_outcome_off_brings_the_old_behaviour_back(wired, monkeypatch, 
 def test_an_approval_step_keeps_the_person_as_the_only_gate(wired, monkeypatch, tmp_path: Path):
     """A step has a single gate: where there is approval, the user attests."""
     make_workflow("demo", steps=[("one", "Um")], requires_approval=True)
-    runner = FakeAgentSession([_approved("entreguei")])
+    runner = FakeAgentSession([approved_turn("entreguei")])
 
     code = wired.run(
         runner,
@@ -450,7 +420,7 @@ def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
 ):
     """The Null prompt port answers nothing: the safe default is to stop, saying why."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = FakeAgentSession([_blocked("falta acesso", needs="user")])
+    runner = FakeAgentSession([blocked_turn("falta acesso", needs="user")])
     runner.prompts = NullPromptPort()
 
     code = wired.run(
@@ -467,7 +437,7 @@ def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
 
 def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first = FakeAgentSession([approved_turn(), {"approved": False, "outcome": "continue"}])
     first.prompts.choice = "stop"
     wired.run(
         first,
@@ -476,7 +446,7 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
     )
     run_id = wired.runs.only().id
 
-    second = FakeAgentSession([_approved()])
+    second = FakeAgentSession([approved_turn()])
     code = wired.run(
         second,
         workflow_id="demo",
@@ -497,7 +467,7 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
     The engine never reaches it again, so it is skipped instead of holding the run open.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
-    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first = FakeAgentSession([approved_turn(), {"approved": False, "outcome": "continue"}])
     first.prompts.choice = "stop"
     wired.run(
         first,
@@ -507,7 +477,7 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
     run_id = wired.runs.only().id
     make_workflow("demo", steps=[("one", "Um"), ("three", "Três")])
 
-    second = FakeAgentSession([_approved()])
+    second = FakeAgentSession([approved_turn()])
     code = wired.run(
         second,
         workflow_id="demo",
@@ -532,7 +502,7 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
     can never start and the whole resume fails.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first = FakeAgentSession([approved_turn(), {"approved": False, "outcome": "continue"}])
     first.prompts.choice = "stop"
     wired.run(
         first,
@@ -545,7 +515,7 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
     wired.runs.save(crashed)
 
     make_workflow("demo", steps=[("one", "Um"), ("new", "Novo"), ("two", "Dois")])
-    second = FakeAgentSession([_approved(), _approved()])
+    second = FakeAgentSession([approved_turn(), approved_turn()])
     code = wired.run(
         second,
         workflow_id="demo",
@@ -574,7 +544,7 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
     assert "restart" not in inspect.signature(run_workflow).parameters
 
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = FakeAgentSession([_approved(), _approved()])
+    first = FakeAgentSession([approved_turn(), approved_turn()])
     wired.run(
         first,
         workflow_id="demo",
@@ -582,7 +552,7 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
     )
     run_id = wired.runs.only().id
 
-    second = FakeAgentSession([_approved(), _approved()])
+    second = FakeAgentSession([approved_turn(), approved_turn()])
     code = wired.run(
         second,
         workflow_id="demo",
@@ -597,7 +567,7 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
 def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     control = RunControl()
-    runner = FakeAgentSession([_approved()], control=control)
+    runner = FakeAgentSession([approved_turn()], control=control)
 
     original = runner.run_isolated_phase
 
@@ -649,7 +619,7 @@ def test_an_unexpected_error_also_offers_retry(wired, monkeypatch, tmp_path: Pat
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     runner = FakeAgentSession(
-        [ValueError("I/O operation on closed file"), _approved(), _approved()]
+        [ValueError("I/O operation on closed file"), approved_turn(), approved_turn()]
     )
     runner.prompts.choice = "retry"
 
@@ -696,7 +666,7 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
     control = RunControl()
-    runner = FakeAgentSession([_approved(), {"stopReason": "cancelled"}], control=control)
+    runner = FakeAgentSession([approved_turn(), {"stopReason": "cancelled"}], control=control)
 
     original = runner.run_isolated_phase
 
@@ -721,7 +691,7 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     assert record.status == "stopped"
     assert [step.status for step in record.steps] == ["done", "pending", "pending"]
 
-    second = FakeAgentSession([_approved(), _approved()])
+    second = FakeAgentSession([approved_turn(), approved_turn()])
 
     code = wired.run(
         second,
@@ -755,7 +725,14 @@ def test_a_step_can_send_the_run_back_to_repeat_the_stretch(wired, monkeypatch, 
         repeat=("fix", "review", 3),
     )
     runner = FakeAgentSession(
-        [_delivered(), _repeating(), _delivered(), _repeating(), _delivered(), _delivered()]
+        [
+            delivered_turn(),
+            _repeating(),
+            delivered_turn(),
+            _repeating(),
+            delivered_turn(),
+            delivered_turn(),
+        ]
     )
 
     code = wired.run(
@@ -780,7 +757,7 @@ def test_without_a_request_the_loop_runs_only_once(wired, monkeypatch, tmp_path)
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = FakeAgentSession([_delivered(), _delivered()])
+    runner = FakeAgentSession([delivered_turn(), delivered_turn()])
 
     wired.run(
         runner,
@@ -801,7 +778,7 @@ def test_the_round_cap_ends_the_loop(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 2),
     )
-    runner = FakeAgentSession([_delivered(), _repeating(), _delivered(), _repeating()])
+    runner = FakeAgentSession([delivered_turn(), _repeating(), delivered_turn(), _repeating()])
 
     code = wired.run(
         runner,
@@ -830,11 +807,11 @@ def test_the_loop_ends_on_its_opener_never_on_its_closer(wired, monkeypatch, tmp
     )
     runner = FakeAgentSession(
         [
-            _delivered("r1"),
+            delivered_turn("r1"),
             _repeating("f1"),
-            _delivered("r2"),
+            delivered_turn("r2"),
             _repeating("f2"),
-            _delivered("r3"),
+            delivered_turn("r3"),
             _repeating("f3 — não deveria rodar"),
         ]
     )
@@ -876,7 +853,7 @@ def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
         return {"stopReason": "cancelled"}
 
     first = FakeAgentSession(
-        [_delivered(), _repeating(), _delivered()],
+        [delivered_turn(), _repeating(), delivered_turn()],
         control=control,
         before_turn=stop_at_the_second_fix,
     )
@@ -884,7 +861,7 @@ def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
     run_id = wired.runs.only().id
     assert wired.runs.load(run_id).step("review").rounds == 2
 
-    second = FakeAgentSession([_repeating(), _delivered(), _repeating("não deveria rodar")])
+    second = FakeAgentSession([_repeating(), delivered_turn(), _repeating("não deveria rodar")])
     code = wired.run(
         second,
         workflow_id="demo",
@@ -906,7 +883,7 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = FakeAgentSession([_delivered(), _repeating(), _delivered(), _delivered()])
+    runner = FakeAgentSession([delivered_turn(), _repeating(), delivered_turn(), delivered_turn()])
 
     start = datetime(2026, 10, 6, tzinfo=UTC)
     seconds = iter(range(0, 10_000, 10))
@@ -949,7 +926,7 @@ def test_clean_review_ends_the_loop_without_asking_approval(wired, monkeypatch, 
         steps=[("review", "Review"), ("fix", "Fix"), ("after", "Depois")],
         repeat=("fix", "review", 3),
     )
-    runner = FakeAgentSession([_clean(approval=True), _approved("depois")])
+    runner = FakeAgentSession([_clean(approval=True), approved_turn("depois")])
 
     code = wired.run(
         runner,
@@ -973,7 +950,7 @@ def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, mon
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = FakeAgentSession([_delivered("r1"), _repeating("f1"), _clean("r2")])
+    runner = FakeAgentSession([delivered_turn("r1"), _repeating("f1"), _clean("r2")])
 
     code = wired.run(
         runner,
@@ -1035,7 +1012,7 @@ def test_steps_after_the_loop_do_not_count_rounds(wired, monkeypatch, tmp_path):
         repeat=("fix", "review", 3),
     )
     runner = FakeAgentSession(
-        [_delivered(), _repeating(), _delivered(), _delivered(), _delivered()]
+        [delivered_turn(), _repeating(), delivered_turn(), delivered_turn(), delivered_turn()]
     )
 
     wired.run(
@@ -1071,7 +1048,7 @@ def test_loop_rounds_stay_under_the_same_step(wired, monkeypatch, tmp_path):
             wired.runs.add_artifact(runner.run_id, f"reviews/round-00{len(rounds)}.md")
 
     runner = FakeAgentSession(
-        [_delivered(), _repeating(), _delivered(), _delivered()],
+        [delivered_turn(), _repeating(), delivered_turn(), delivered_turn()],
         before_turn=each_review_writes_its_round,
     )
 
@@ -1130,7 +1107,7 @@ def test_stopping_while_the_blocked_menu_is_open_stops_the_run(wired, monkeypatc
     pending for whoever resumes, instead of becoming `blocked`.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = FakeAgentSession([_blocked("falta a credencial do banco", needs="user")])
+    runner = FakeAgentSession([blocked_turn("falta a credencial do banco", needs="user")])
 
     def stop_while_waiting(prompt, choices, *, title=""):
         runner.control.stop()

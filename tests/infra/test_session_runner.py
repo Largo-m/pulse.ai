@@ -70,14 +70,14 @@ def test_session_runner_handles_ask_question_request():
     ):
         runner = AcpSessionRunner(
             ["agent", "acp"],
-            cwd="/tmp",
+            cwd="/workspace/repo",
             timeout_seconds=5,
             prompt_handler=FakePrompt(),
         )
         runner.start()
         time.sleep(0.05)
         runner.initialize()
-        runner.new_session("/tmp")
+        runner.new_session("/workspace/repo")
         result = runner.prompt("sess-1", "setup")
         sent = runner._process.stdin.getvalue()
         runner.close()
@@ -90,7 +90,7 @@ def test_session_runner_handles_ask_question_request():
 def test_the_runner_is_the_agent_session_adapter():
     from pulse.domain.ports import AgentSession
 
-    assert isinstance(AcpSessionRunner(["agent", "acp"], cwd="/tmp"), AgentSession)
+    assert isinstance(AcpSessionRunner(["agent", "acp"], cwd="/workspace/repo"), AgentSession)
 
 
 def test_open_starts_the_agent_where_the_run_works(tmp_path):

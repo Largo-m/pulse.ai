@@ -52,12 +52,8 @@ jobs:
         run: mypy
       - name: architecture invariants (AGENTS.md §2)
         run: pytest -q tests/architecture
-      # Advisory until the baseline is paid down; they report but never block.
-      - name: complexity C901 (advisory)
-        continue-on-error: true
-        run: ruff check --select C901 --output-format github pulse
-      - name: dead code (advisory)
-        continue-on-error: true
+      # Complexity (C901, max 10) is selected in ruff, so `ruff check` above blocks on it.
+      - name: dead code
         run: vulture
 
   security:

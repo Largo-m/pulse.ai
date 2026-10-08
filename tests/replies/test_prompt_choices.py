@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from pulse.replies.acp_payloads import QuestionAnswer, QuestionOption
 from pulse.replies.approval import (
     answer_needs_description,
     classify_outcome,
@@ -88,7 +89,7 @@ def test_handler_format_answer_with_follow_up_detail():
     )
     formatted = handler._format_answer(
         question,
-        {"selectedOptionIds": ["B::Incluir testes do interceptor"]},
+        QuestionAnswer("q1", ("B::Incluir testes do interceptor",)),
     )
     assert (
         formatted == "B) Não, preciso de ajustes (descreva abaixo) — Incluir testes do interceptor"
@@ -97,9 +98,9 @@ def test_handler_format_answer_with_follow_up_detail():
 
 def test_build_choices_suppresses_other_for_migration():
     options = [
-        {"id": "A", "label": "Reduzir o escopo"},
-        {"id": "B", "label": "Reutilizar o adapter"},
-        {"id": "C", "label": "Cancelar"},
+        QuestionOption("A", "Reduzir o escopo"),
+        QuestionOption("B", "Reutilizar o adapter"),
+        QuestionOption("C", "Cancelar"),
     ]
     choices = build_question_choices(
         options,
@@ -132,11 +133,11 @@ def test_should_not_add_other_when_label_already_exists():
 
 def test_build_choices_does_not_duplicate_existing_other():
     options = [
-        {"id": "A", "label": "Produto / plataforma com usuários"},
-        {"id": "B", "label": "API / serviço backend"},
-        {"id": "C", "label": "Biblioteca / pacote interno"},
-        {"id": "D", "label": "Automação / script / CLI"},
-        {"id": "E", "label": "Outro (descreva)"},
+        QuestionOption("A", "Produto / plataforma com usuários"),
+        QuestionOption("B", "API / serviço backend"),
+        QuestionOption("C", "Biblioteca / pacote interno"),
+        QuestionOption("D", "Automação / script / CLI"),
+        QuestionOption("E", "Outro (descreva)"),
     ]
     choices = build_question_choices(
         options,
@@ -149,8 +150,8 @@ def test_build_choices_does_not_duplicate_existing_other():
 
 def test_textual_build_choices_does_not_duplicate_existing_other():
     options = [
-        {"id": "A", "label": "Produto / plataforma com usuários"},
-        {"id": "E", "label": "Outro (descreva)"},
+        QuestionOption("A", "Produto / plataforma com usuários"),
+        QuestionOption("E", "Outro (descreva)"),
     ]
     choices = build_question_choices(
         options,
@@ -163,8 +164,8 @@ def test_textual_build_choices_does_not_duplicate_existing_other():
 
 def test_build_choices_adds_other_for_open_questions():
     options = [
-        {"id": "A", "label": "Paper trading"},
-        {"id": "B", "label": "Gestão de portfólio"},
+        QuestionOption("A", "Paper trading"),
+        QuestionOption("B", "Gestão de portfólio"),
     ]
     choices = build_question_choices(options, prompt="1. O que você está construindo?")
     assert any(choice[0] == "__other__" for choice in choices)

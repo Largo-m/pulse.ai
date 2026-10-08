@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
-from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.domain.ports import StepRow
-from pulse.replies.permission import decide_permission
-from pulse.replies.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
+from pulse.domain.ports import Choice, JsonObject, Questionnaire, StepRow
+from pulse.replies.acp_payloads import mapping_of
+from pulse.replies.permission import decide_permission, parse_policy
+from pulse.replies.text_questionnaire import (
+    TextQuestionnaire,
+    parse_text_questionnaire,
+    serialize_questionnaire,
+)
 
 
 class ApiStreamSink:
@@ -15,11 +19,11 @@ class ApiStreamSink:
         self._bus = bus
         self._agent_text = ""
 
-    def handle_update(self, params: dict[str, Any]) -> None:
-        update = params.get("update", {})
-        if isinstance(update, dict) and update.get("sessionUpdate") == "agent_message_chunk":
-            content = update.get("content", {})
-            if isinstance(content, dict) and content.get("type") == "text":
+    def handle_update(self, params: JsonObject) -> None:
+        update = mapping_of(params.get("update"))
+        if update.get("sessionUpdate") == "agent_message_chunk":
+            content = mapping_of(update.get("content"))
+            if content.get("type") == "text":
                 self._agent_text += str(content.get("text", ""))
         self._bus.publish({"type": "session.update", "params": params})
 
@@ -91,26 +95,24 @@ class ApiPromptPort:
     def __init__(self, correlator: PromptCorrelator) -> None:
         self._correlator = correlator
 
-    def respond_to_ask_question(self, params: dict[str, Any]) -> dict[str, Any]:
+    def respond_to_ask_question(self, params: JsonObject) -> JsonObject:
         answer = self._correlator.request("ask_question", params)
-        if answer is None:
-            return {"outcome": {"outcome": "cancelled"}}
-        return answer
+        return _acp_answer(answer)
 
-    def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
+    def respond_to_create_plan(self, params: JsonObject) -> JsonObject:
         answer = self._correlator.request("create_plan", params)
-        if answer is None:
-            return {"outcome": {"outcome": "cancelled"}}
-        return answer
+        return _acp_answer(answer)
 
     def respond_to_permission(
         self,
-        params: dict[str, Any],
+        params: JsonObject,
         *,
         policy: str,
         allow_terminal: bool = False,
-    ) -> dict[str, Any]:
-        decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
+    ) -> JsonObject:
+        decided = decide_permission(
+            params, policy=parse_policy(policy), allow_terminal=allow_terminal
+        )
         if decided is not None:
             return decided
 
@@ -122,18 +124,14 @@ class ApiPromptPort:
                 "allow_terminal": allow_terminal,
             },
         )
-        if answer is None:
-            return {"outcome": {"outcome": "cancelled"}}
-        return answer
+        return _acp_answer(answer)
 
-    def run_parsed_questionnaire(self, questionnaire: Any) -> str | None:
-        if hasattr(questionnaire, "questions"):
-            payload = serialize_questionnaire(questionnaire)
-        else:
-            payload = {
-                "title": getattr(questionnaire, "title", ""),
-                "raw": getattr(questionnaire, "raw", ""),
-            }
+    def run_parsed_questionnaire(self, questionnaire: Questionnaire) -> str | None:
+        payload: JsonObject = (
+            serialize_questionnaire(questionnaire)
+            if isinstance(questionnaire, TextQuestionnaire)
+            else {"title": questionnaire.title, "raw": questionnaire.raw}
+        )
         answer = self._correlator.request("questionnaire", payload)
         if answer is None:
             return None
@@ -155,23 +153,34 @@ class ApiPromptPort:
     def select_choice(
         self,
         prompt: str,
-        choices: list[tuple[str, Any]],
+        choices: list[tuple[str, Choice]],
         *,
         title: str = "",
-    ) -> Any | None:
-        serializable = []
-        for index, (label, value) in enumerate(choices):
-            serializable.append({"index": index, "label": label, "value_repr": repr(value)})
+    ) -> Choice | None:
+        serializable = [
+            {"index": index, "label": label, "value_repr": repr(value)}
+            for index, (label, value) in enumerate(choices)
+        ]
         answer = self._correlator.request(
             "choice",
             {"prompt": prompt, "title": title, "choices": serializable},
         )
-        if answer is None:
+        index = _choice_index(answer)
+        if index is None or not 0 <= index < len(choices):
             return None
-        if isinstance(answer, dict) and "index" in answer:
-            idx = int(answer["index"])
-            if 0 <= idx < len(choices):
-                return choices[idx][1]
-        if isinstance(answer, int) and 0 <= answer < len(choices):
-            return choices[answer][1]
+        return choices[index][1]
+
+
+def _acp_answer(answer: object) -> JsonObject:
+    """The client's ACP answer; no answer, or one that is not an object, cancels."""
+    if isinstance(answer, dict):
         return answer
+    return {"outcome": {"outcome": "cancelled"}}
+
+
+def _choice_index(answer: object) -> int | None:
+    """The picked position: the client answers `{"index": n}`; a bare `n` is accepted too."""
+    raw = answer.get("index") if isinstance(answer, dict) else answer
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return None
+    return raw

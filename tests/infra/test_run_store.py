@@ -159,7 +159,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
     record = _create(tmp_path)
     record.start_step("one").deliver()
     record.start_step("two")
-    record.work_in(worktree_path="/tmp/wt", branch="pulse/demo-1")
+    record.work_in(worktree_path="/workspace/wt", branch="pulse/demo-1")
 
     run_store.save(record)
 
@@ -167,7 +167,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
     assert loaded is not None
     assert (loaded.current_step, loaded.worktree_path, loaded.branch) == (
         "two",
-        "/tmp/wt",
+        "/workspace/wt",
         "pulse/demo-1",
     )
     assert [step.status for step in loaded.steps] == [StepStatus.DONE, StepStatus.RUNNING]

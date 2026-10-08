@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from pulse.history.status_labels import status_color, status_icon
 from pulse.store.workflow_defs import list_workflows
 from pulse.tui import strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.tui.screens.navigation import pulse_app
 
 
 def _home_brand() -> str:
@@ -215,49 +217,43 @@ class HomeScreen(Screen[None]):
 
     @on(OptionList.OptionSelected, "#home-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
-        option_id = event.option_id
-        if option_id is None:
+        if event.option_id is None:
             return
-        action = str(option_id)
-        if action == "exit":
-            self.action_quit_app()
+        action, _, argument = str(event.option_id).partition(":")
+        route = self._option_routes().get(action)
+        if route is not None:
+            route(argument)
+
+    def _option_routes(self) -> dict[str, Callable[[str], None]]:
+        """What each menu option does; `attach:` and `workflow:` carry an id."""
+        return {
+            "exit": lambda _: self.action_quit_app(),
+            "init": lambda _: pulse_app(self).open_onboarding(),
+            "settings": lambda _: pulse_app(self).open_settings(),
+            "history": lambda _: pulse_app(self).open_history(),
+            "session": lambda _: self._show_view(SESSION),
+            "alerts": lambda _: self._show_view(ALERTS),
+            "attach": self._open_waiting_run,
+            "back": lambda _: self.action_back(),
+            "workflow": self._choose_workflow,
+        }
+
+    def _show_view(self, view: str) -> None:
+        self._view = view
+        self._refresh_options()
+        self.query_one("#home-options", OptionList).focus()
+
+    def _choose_workflow(self, workflow_id: str) -> None:
+        """Start right away when the workflow has a default prompt; otherwise ask for one."""
+        default_prompt = self._default_prompts.get(workflow_id, "")
+        if default_prompt:
+            pulse_app(self).open_cockpit(workflow_id, default_prompt)
             return
-        if action == "init":
-            self.app.open_onboarding()
-            return
-        if action == "settings":
-            self.app.open_settings()
-            return
-        if action == "history":
-            self.app.open_history()
-            return
-        if action == "session":
-            self._view = SESSION
-            self._refresh_options()
-            self.query_one("#home-options", OptionList).focus()
-            return
-        if action == "alerts":
-            self._view = ALERTS
-            self._refresh_options()
-            self.query_one("#home-options", OptionList).focus()
-            return
-        if action.startswith("attach:"):
-            self._open_waiting_run(action.split(":", 1)[1])
-            return
-        if action == "back":
-            self.action_back()
-            return
-        if action.startswith("workflow:"):
-            workflow_id = action.split(":", 1)[1]
-            default_prompt = self._default_prompts.get(workflow_id, "")
-            if default_prompt:
-                self.app.open_cockpit(workflow_id, default_prompt)
-                return
-            self._pending_workflow = workflow_id
-            prompt_input = self.query_one("#workflow-prompt", Input)
-            prompt_input.display = True
-            prompt_input.focus()
-            prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
+        self._pending_workflow = workflow_id
+        prompt_input = self.query_one("#workflow-prompt", Input)
+        prompt_input.display = True
+        prompt_input.focus()
+        prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -269,7 +265,7 @@ class HomeScreen(Screen[None]):
         if run is None:
             return
         workspace = str(run.get("workspace") or "").strip()
-        self.app.open_cockpit(
+        pulse_app(self).open_cockpit(
             str(run.get("workflow_id") or ""),
             str(run.get("prompt") or ""),
             attach_run_id=run_id,
@@ -285,11 +281,8 @@ class HomeScreen(Screen[None]):
             self._pending_workflow = None
             self.query_one("#home-options", OptionList).focus()
             return
-        if self._view == ROOT:
-            return
-        self._view = ROOT
-        self._refresh_options()
-        self.query_one("#home-options", OptionList).focus()
+        if self._view != ROOT:
+            self._show_view(ROOT)
 
     @on(Input.Submitted, "#workflow-prompt")
     def on_prompt_submitted(self, event: Input.Submitted) -> None:
@@ -300,7 +293,7 @@ class HomeScreen(Screen[None]):
         self._pending_workflow = None
         if not workflow_id or not text:
             return
-        self.app.open_cockpit(workflow_id, text)
+        pulse_app(self).open_cockpit(workflow_id, text)
 
     def action_quit_app(self) -> None:
         """Quit the CLI without stopping runs, which live in the engine process.

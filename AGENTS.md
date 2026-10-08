@@ -270,20 +270,22 @@ pytest tests/<package>/      # nearest tests first while iterating
 pytest --cov                 # whole suite + coverage floor, must be green
 ruff check . && ruff format --check .
 mypy
+vulture                      # dead code
 lint-imports                 # import contracts with the offending chains (also run by pytest)
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
 plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
-must be green to merge. Complexity (`C901`) and `vulture` run as advisory
-steps: they report, never block.
+must be green to merge. Complexity (`C901`, at most 10 per function) is part of
+`ruff check`, and `vulture` blocks too: split a function or delete dead code
+instead of suppressing them.
 
 - **Coverage floor** is `fail_under` in `pyproject.toml`. Each phase raises
   it; never lower it.
-- **Baseline exceptions** (ruff `per-file-ignores` and mypy `overrides` marked
-  *Baseline* in `pyproject.toml`) are debt that predates the gates. Never add
-  to them; fix the code or add a justified `noqa` (§4.5). Remove an entry as
-  soon as its file is clean.
+- **No baseline exceptions.** ruff `per-file-ignores` hold only the policy
+  entries (tests, modules that write to the terminal) and mypy has no
+  `disable_error_code` overrides; `tests/architecture/test_lint_baseline.py`
+  keeps it that way. Fix the code or add a justified `noqa` (§4.5).
 
 Report: which tests changed, the commands run, the results, and remaining gaps.
 Never claim tests pass without running them.

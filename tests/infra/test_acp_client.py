@@ -54,7 +54,7 @@ def test_acp_client_initialize_and_session():
         client.start()
         time.sleep(0.05)
         client.initialize()
-        session = client.new_session("/tmp")
+        session = client.new_session("/workspace/repo")
         assert session["sessionId"] == "sess-1"
         client.prompt("sess-1", "Say hello")
         assert client.collect_message_text() == "Hello"
@@ -97,7 +97,9 @@ def test_probe_acp_connection_success():
     )
 
     with patch("pulse.acp.client.subprocess.Popen", return_value=_make_process(stdout_text)):
-        result = probe_acp_connection(command=["agent", "acp"], cwd="/tmp", timeout_seconds=5)
+        result = probe_acp_connection(
+            command=["agent", "acp"], cwd="/workspace/repo", timeout_seconds=5
+        )
 
     assert result.success is True
     assert "Olá" in result.response_text

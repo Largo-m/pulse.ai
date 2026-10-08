@@ -4,7 +4,11 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from pulse.client.protocol import PING
 from pulse.client.run_session import EngineRunSession
+
+# Only sent to the fake daemon as a string; nothing touches the disk.
+WORKSPACE = Path("/workspace/project")
 
 
 class _FakeClient:
@@ -58,7 +62,7 @@ def test_engine_run_session_maps_events():
     ]
     client = _FakeClient(events)
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
-    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="spec", user_prompt="x", workspace=WORKSPACE)
     assert code == 0
     stream.begin_phase.assert_called_with("Plan")
     stream.handle_update.assert_called()
@@ -90,7 +94,7 @@ def test_engine_run_session_runs_questionnaire_from_questions():
     ]
     client = _FakeClient(events)
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
-    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=WORKSPACE)
     assert code == 0
     prompt_handler.run_parsed_questionnaire.assert_called_once()
     questionnaire = prompt_handler.run_parsed_questionnaire.call_args[0][0]
@@ -120,7 +124,7 @@ def test_engine_run_session_recovers_questionnaire_from_agent_text():
             ]
         ),
     )
-    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=WORKSPACE)
     assert code == 0
     questionnaire = prompt_handler.run_parsed_questionnaire.call_args[0][0]
     assert questionnaire.questions[0].options[0] == ("A", "Python")
@@ -140,7 +144,7 @@ def test_engine_run_session_errors_when_questionnaire_missing():
             ]
         ),
     )
-    code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="demo", user_prompt="x", workspace=WORKSPACE)
     assert code == 1
     stream.error.assert_called_with(
         "Invalid questionnaire",
@@ -164,7 +168,7 @@ def test_engine_run_session_maps_phase_error():
             ]
         ),
     )
-    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="spec", user_prompt="x", workspace=WORKSPACE)
     assert code == 1
     stream.error.assert_called_with(
         "Classificação cancelada",
@@ -181,7 +185,7 @@ def test_engine_run_session_maps_run_finished_error():
             [{"type": "run.finished", "exit_code": 1, "error": "Falha na sessão ACP: timeout"}]
         ),
     )
-    code = session.run(workflow_id="spec", user_prompt="x", workspace=Path("/tmp"))
+    code = session.run(workflow_id="spec", user_prompt="x", workspace=WORKSPACE)
     assert code == 1
     stream.error.assert_called_with("Workflow falhou", "Falha na sessão ACP: timeout")
 
@@ -248,3 +252,150 @@ def test_a_fresh_run_never_defers_a_prompt():
     )
     assert session.run(workflow_id="demo", user_prompt="x") == 0
     assert [prompt_id for prompt_id, _ in client.answers] == ["p1"]
+
+
+def _replay(events: list[dict[str, Any]], *, prompt_handler: Any = None) -> tuple[Any, _FakeClient]:
+    stream = MagicMock()
+    client = _FakeClient(events)
+    session = EngineRunSession(
+        stream=stream, prompt_handler=prompt_handler or MagicMock(), client=client
+    )
+    session.run(workflow_id="demo", user_prompt="x")
+    return stream, client
+
+
+def test_run_context_and_session_id_reach_the_screen():
+    """The artifacts pane points at the worktree, so cwd and branch must arrive as sent."""
+    stream, _ = _replay(
+        [
+            {"type": "run.context", "cwd": "/repo/wt", "branch": "pulse/run-1"},
+            {"type": "session.id", "session_id": "s-9"},
+            {"type": "run.finished", "exit_code": 0},
+        ]
+    )
+    stream.set_context.assert_called_once_with(cwd="/repo/wt", branch="pulse/run-1")
+    stream.set_session_id.assert_called_once_with("s-9")
+
+
+def test_awaiting_keeps_a_numeric_since_and_drops_anything_else():
+    stream, _ = _replay(
+        [
+            {"type": "run.awaiting", "waiting": True, "since": 12.5},
+            {"type": "run.awaiting", "waiting": False, "since": "soon"},
+            {"type": "run.finished", "exit_code": 0},
+        ]
+    )
+    assert stream.mark_awaiting.call_args_list == [
+        ((True,), {"since": 12.5}),
+        ((False,), {"since": None}),
+    ]
+
+
+def test_stop_and_stream_markers_are_forwarded():
+    stream, _ = _replay(
+        [
+            {"type": "run.stopped"},
+            {"type": "stream.finish_question"},
+            {"type": "stream.finish"},
+            {"type": "phase.info", "title": "note"},
+            {"type": "something.unknown"},
+            {"type": "run.finished", "exit_code": 130},
+        ]
+    )
+    stream.mark_stopped.assert_called_once_with()
+    stream.finish_question_prompt.assert_called_once_with()
+    stream.info.assert_called_once_with("note")
+    assert stream.finish.call_count == 2
+
+
+def test_phase_sync_hands_the_step_list_and_statuses_to_the_screen():
+    """A fan-out changes the step list mid-run; the screen rebuilds from this event."""
+    steps = [{"id": "one", "label": "Um", "rounds": 1}, {"id": "two", "label": "Dois", "rounds": 2}]
+    stream, _ = _replay(
+        [
+            {
+                "type": "phases.sync",
+                "steps": steps,
+                "done_ids": ["one"],
+                "skipped_ids": [],
+                "failed_ids": ["two"],
+                "blocked_ids": [],
+            },
+            {"type": "run.finished", "exit_code": 0},
+        ]
+    )
+    stream.apply_phase_statuses.assert_called_once_with(
+        steps=steps,
+        done_ids=["one"],
+        skipped_ids=[],
+        failed_ids=["two"],
+        blocked_ids=[],
+    )
+
+
+def test_each_prompt_kind_is_answered_by_its_handler():
+    handler = MagicMock()
+    handler.respond_to_create_plan.return_value = {"outcome": {"outcome": "approved"}}
+    handler.respond_to_permission.return_value = {"outcome": {"outcome": "selected"}}
+    handler.select_choice.return_value = 1
+    _, client = _replay(
+        [
+            {"type": "prompt.request", "id": "plan", "kind": "create_plan", "payload": {"p": 1}},
+            {
+                "type": "prompt.request",
+                "id": "perm",
+                "kind": "permission",
+                "payload": {"params": {"tool": "x"}, "policy": "deny_writes", "allow_terminal": 1},
+            },
+            {
+                "type": "prompt.request",
+                "id": "pick",
+                "kind": "choice",
+                "payload": {
+                    "prompt": "which?",
+                    "title": "T",
+                    "choices": [{"label": "a", "index": 0}, {"label": "b", "index": 1}, "junk"],
+                },
+            },
+            {"type": "prompt.request", "id": "odd", "kind": "mystery", "payload": None},
+            {"type": "run.finished", "exit_code": 0},
+        ],
+        prompt_handler=handler,
+    )
+    handler.respond_to_create_plan.assert_called_once_with({"p": 1})
+    handler.respond_to_permission.assert_called_once_with(
+        {"tool": "x"}, policy="deny_writes", allow_terminal=True
+    )
+    handler.select_choice.assert_called_once_with("which?", [("a", 0), ("b", 1)], title="T")
+    assert client.answers == [
+        ("plan", {"outcome": {"outcome": "approved"}}),
+        ("perm", {"outcome": {"outcome": "selected"}}),
+        ("pick", {"index": 1}),
+        ("odd", {"outcome": {"outcome": "cancelled"}}),
+    ]
+
+
+def test_permission_without_a_policy_asks():
+    """Deny by default when unsure: a payload without a policy falls back to asking."""
+    handler = MagicMock()
+    handler.respond_to_permission.return_value = {}
+    _replay(
+        [
+            {"type": "prompt.request", "id": "perm", "kind": "permission", "payload": {}},
+            {"type": "run.finished", "exit_code": 0},
+        ],
+        prompt_handler=handler,
+    )
+    handler.respond_to_permission.assert_called_once_with({}, policy="ask", allow_terminal=False)
+
+
+def test_a_ping_during_replay_ends_the_replay():
+    """A run with no history yet sends a ping before anything else; the past is over."""
+    stream = MagicMock()
+    session = EngineRunSession(
+        stream=stream,
+        prompt_handler=MagicMock(),
+        client=_FakeClient([{"type": PING}, {"type": "run.finished", "exit_code": 0}]),
+    )
+    assert session.attach("run-1") == 0
+    stream.replay_finished.assert_called_once_with()

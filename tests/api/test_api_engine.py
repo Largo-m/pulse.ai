@@ -44,7 +44,7 @@ def test_doctor_endpoint():
     assert "checks" in response.json()
 
 
-def test_start_run_and_prompt_correlator(monkeypatch):
+def test_start_run_and_prompt_correlator(monkeypatch, tmp_path: Path):
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app, base_url="http://127.0.0.1")
@@ -81,7 +81,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
 
     created = client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp"},
+        json={"prompt": "x", "workspace": str(tmp_path)},
     )
     assert created.status_code == 200
     run_id = created.json()["id"]
@@ -112,7 +112,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         payload = client.get(f"/api/runs/{run_id}").json()
         if payload.get("exit_code") is not None:
             assert payload["exit_code"] == 0
-            assert captured["workspace"] == Path("/tmp")
+            assert captured["workspace"] == tmp_path
             return
         time.sleep(0.05)
     raise AssertionError("run did not finish")
@@ -126,7 +126,7 @@ def test_unknown_workflow_returns_404():
     assert response.json() == {"detail": "unknown workflow: nope"}
 
 
-def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
+def test_resume_carries_the_previous_run_into_the_flow(monkeypatch, tmp_path: Path):
     """Resuming is a new run over the same record; the flow receives the id."""
     manager = RunManager()
     app = create_app(manager)
@@ -143,7 +143,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
 
     client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp", "resume_run_id": "run-anterior"},
+        json={"prompt": "x", "workspace": str(tmp_path), "resume_run_id": "run-anterior"},
     )
     assert entered.wait(timeout=5)
 
@@ -151,7 +151,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
     assert "restart" not in seen, "there is no restart from scratch, only resume"
 
 
-def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
+def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch, tmp_path: Path):
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app, base_url="http://127.0.0.1")
@@ -169,7 +169,7 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
 
     run_id = client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp"},
+        json={"prompt": "x", "workspace": str(tmp_path)},
     ).json()["id"]
     assert entered.wait(timeout=5)
 

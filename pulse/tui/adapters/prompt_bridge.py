@@ -2,14 +2,22 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from queue import Empty, Queue
-from typing import Any
 
+from pulse.domain.ports import Choice, JsonObject
 from pulse.domain.ui_text import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
     PLAN_APPROVAL_TITLE,
+)
+from pulse.replies.acp_payloads import (
+    AskQuestionRequest,
+    PermissionRequest,
+    Question,
+    QuestionAnswer,
+    QuestionnaireMeta,
+    QuestionOption,
 )
 from pulse.replies.approval import answer_needs_description
 from pulse.replies.ask_question import (
@@ -18,15 +26,13 @@ from pulse.replies.ask_question import (
     build_ask_question_cancelled,
     build_question_choices,
     multi_select_prompt,
-    parse_ask_question_params,
-    parse_questionnaire_meta,
     plan_prompt_text,
     resolve_question_progress,
 )
 from pulse.replies.permission import (
-    PermissionPolicy,
     build_permission_choices,
     decide_permission,
+    parse_policy,
     permission_cancelled,
     permission_prompt_text,
     permission_selected,
@@ -40,7 +46,7 @@ from pulse.replies.text_questionnaire import (
 from pulse.tui import strings
 
 
-class PromptKind(str, Enum):
+class PromptKind(StrEnum):
     SELECT = "select"
     MULTI_SELECT = "multi_select"
     TEXT = "text"
@@ -54,7 +60,7 @@ class PromptRequest:
     prompt: str
     choices: list[tuple[str, str]]
     default: str | bool | None = None
-    future: Future[Any] | None = None
+    future: Future[object] | None = None
 
 
 def format_prompt_reply(request: PromptRequest, result: object | None) -> str:
@@ -82,7 +88,7 @@ class PromptBridge:
         self._queue: Queue[PromptRequest] = Queue()
         self._closed = False
         self._abandoned = False
-        self._live: list[Future[Any]] = []
+        self._live: list[Future[object]] = []
 
     def close(self) -> None:
         """Close the bridge, cancelling anything open. Used when the run has ended."""
@@ -103,7 +109,7 @@ class PromptBridge:
         for future in self._drain():
             future.set_exception(PromptAbandoned())
 
-    def _drain(self) -> list[Future[Any]]:
+    def _drain(self) -> list[Future[object]]:
         """Every pending future: the on-screen question and those still queued."""
         pending = [future for future in self._live if not future.done()]
         self._live.clear()
@@ -132,12 +138,12 @@ class PromptBridge:
         choices: list[tuple[str, str]] | None = None,
         default: str | bool | None = None,
         timeout: float | None = None,
-    ) -> Any:
+    ) -> object:
         if self._abandoned:
             raise PromptAbandoned()
         if self._closed:
             return None
-        future: Future[Any] = Future()
+        future: Future[object] = Future()
         request = PromptRequest(
             kind=kind,
             title=title,
@@ -161,12 +167,13 @@ class PromptBridge:
         *,
         title: str = "",
     ) -> str | None:
-        return self.request(
+        answer = self.request(
             PromptKind.SELECT,
             title=title,
             prompt=prompt,
             choices=choices,
         )
+        return None if answer is None else str(answer)
 
     def multi_select(
         self,
@@ -175,53 +182,64 @@ class PromptBridge:
         *,
         title: str = "",
     ) -> list[str] | None:
-        return self.request(
+        answer = self.request(
             PromptKind.MULTI_SELECT,
             title=title,
             prompt=prompt,
             choices=choices,
         )
+        return [str(item) for item in answer] if isinstance(answer, list) else None
 
     def text(self, prompt: str, *, title: str = "", default: str = "") -> str | None:
-        return self.request(
+        answer = self.request(
             PromptKind.TEXT,
             title=title,
             prompt=prompt,
             default=default,
         )
+        return None if answer is None else str(answer)
 
     def confirm(self, prompt: str, *, title: str = "", default: bool = True) -> bool | None:
-        return self.request(
+        answer = self.request(
             PromptKind.CONFIRM,
             title=title,
             prompt=prompt,
             default=default,
         )
+        return None if answer is None else bool(answer)
+
+
+def _as_question(question: TextQuestion) -> Question:
+    """A question of the text block, asked through the same dock as `AskQuestion`."""
+    options = tuple(QuestionOption(id=letter, label=label) for letter, label in question.options)
+    return Question(id=question.id, prompt=question.prompt, options=options or None)
+
+
+def _first_label(question: TextQuestion, letter: str) -> str | None:
+    return next((label for option, label in question.options if option == letter), None)
 
 
 class TextualPromptHandler:
     def __init__(self, bridge: PromptBridge) -> None:
         self._bridge = bridge
 
-    def respond_to_ask_question(self, params: dict[str, Any]) -> dict[str, Any]:
-        questions = parse_ask_question_params(params)
-        if not questions:
+    def respond_to_ask_question(self, params: JsonObject) -> JsonObject:
+        request = AskQuestionRequest.parse(params)
+        if not request.questions:
             return build_ask_question_cancelled()
 
-        meta = parse_questionnaire_meta(params)
-        answers: list[dict[str, Any]] = []
-        batch_size = len(questions)
-
-        for position, question in enumerate(questions, start=1):
-            result = self._ask_single_question(
+        answers: list[QuestionAnswer] = []
+        batch_size = len(request.questions)
+        for position, question in enumerate(request.questions, start=1):
+            answer = self._ask_single_question(
                 question,
-                meta=meta,
+                meta=request.meta,
                 position=position,
                 batch_size=batch_size,
             )
-            if result is None:
+            if answer is None:
                 return build_ask_question_cancelled()
-            answers.append(result)
+            answers.append(answer)
 
         return build_ask_question_answers(answers)
 
@@ -232,46 +250,37 @@ class TextualPromptHandler:
         return self.run_parsed_questionnaire(questionnaire)
 
     def run_parsed_questionnaire(self, questionnaire: TextQuestionnaire) -> str | None:
-        meta = {"title": questionnaire.title}
+        meta = QuestionnaireMeta(title=questionnaire.title.strip())
         total = len(questionnaire.questions)
         collected: list[tuple[TextQuestion, str]] = []
 
         for position, question in enumerate(questionnaire.questions, start=1):
-            question_payload = {
-                "id": question.id,
-                "prompt": question.prompt,
-                "options": [{"id": letter, "label": label} for letter, label in question.options],
-            }
-            result = self._ask_single_question(
-                question_payload,
+            answer = self._ask_single_question(
+                _as_question(question),
                 meta=meta,
                 position=position,
                 batch_size=total,
             )
-            if result is None:
+            if answer is None:
                 return None
-            answer = self._format_answer(question, result)
-            collected.append((question, answer))
+            collected.append((question, self._format_answer(question, answer)))
 
         return format_questionnaire_answers(questionnaire, collected)
 
-    def _format_answer(self, question: TextQuestion, result: dict[str, Any]) -> str:
-        selected = result.get("selectedOptionIds", [])
-        if not selected:
+    @staticmethod
+    def _format_answer(question: TextQuestion, answer: QuestionAnswer) -> str:
+        if not answer.selected_option_ids:
             return ""
-        value = str(selected[0])
-        if "::" in value:
-            letter, detail = value.split("::", 1)
-            for option_letter, label in question.options:
-                if letter == option_letter:
-                    return f"{letter}) {label} — {detail}"
-            return f"{value.replace('::', ' — ')}"
-        for letter, label in question.options:
-            if value == letter:
-                return f"{letter}) {label}"
+        value = answer.selected_option_ids[0]
+        letter, separator, detail = value.partition("::")
+        label = _first_label(question, letter)
+        if separator:
+            return value.replace("::", " — ") if label is None else f"{letter}) {label} — {detail}"
+        if label is not None:
+            return f"{letter}) {label}"
         return f"{FREE_TEXT_ANSWER_PREFIX}{value}"
 
-    def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
+    def respond_to_create_plan(self, params: JsonObject) -> JsonObject:
         approved = self._bridge.confirm(
             plan_prompt_text(params),
             title=PLAN_APPROVAL_TITLE,
@@ -285,50 +294,41 @@ class TextualPromptHandler:
 
     def respond_to_permission(
         self,
-        params: dict[str, Any],
+        params: JsonObject,
         *,
-        policy: PermissionPolicy,
+        policy: str,
         allow_terminal: bool = False,
-    ) -> dict[str, Any]:
-        permission = params.get("permission", {})
-        if not isinstance(permission, dict):
-            permission = {}
-        options = params.get("options", [])
-        if not isinstance(options, list):
-            options = []
-
-        decided = decide_permission(params, policy=policy, allow_terminal=allow_terminal)
+    ) -> JsonObject:
+        decided = decide_permission(
+            params, policy=parse_policy(policy), allow_terminal=allow_terminal
+        )
         if decided is not None:
             return decided
 
-        tool_call = params.get("toolCall", {})
-        if not isinstance(tool_call, dict):
-            tool_call = {}
-
-        choices = build_permission_choices(options)
+        request = PermissionRequest.parse(params)
         selected = self._bridge.select(
-            permission_prompt_text(permission, tool_call),
-            choices,
+            permission_prompt_text(request),
+            build_permission_choices(request.options),
             title=strings.PERMISSION_TITLE,
         )
         if selected is None:
             return permission_cancelled()
-        return permission_selected(str(selected))
+        return permission_selected(selected)
 
     def ask_text(self, prompt: str, *, title: str = "") -> str | None:
         answer = self._bridge.text(prompt, title=title)
         if answer is None:
             return None
-        text = str(answer).strip()
+        text = answer.strip()
         return text or None
 
     def select_choice(
         self,
         prompt: str,
-        choices: list[tuple[str, Any]],
+        choices: list[tuple[str, Choice]],
         *,
         title: str = "",
-    ) -> Any | None:
+    ) -> Choice | None:
         mapped = [(str(i), label) for i, (label, _) in enumerate(choices)]
         values = [value for _, value in choices]
         selected = self._bridge.select(prompt, mapped, title=title)
@@ -344,83 +344,65 @@ class TextualPromptHandler:
 
     def _ask_single_question(
         self,
-        question: dict[str, Any],
+        question: Question,
         *,
-        meta: dict[str, Any],
+        meta: QuestionnaireMeta,
         position: int,
         batch_size: int,
-    ) -> dict[str, Any] | None:
-        question_id = str(question.get("id", ""))
-        prompt = str(question.get("prompt", strings.QUESTION)).strip()
-        options = question.get("options", [])
-        allow_multiple = bool(question.get("allow_multiple", question.get("allowMultiple", False)))
+    ) -> QuestionAnswer | None:
+        prompt = question.prompt or strings.QUESTION
         index, total = resolve_question_progress(
-            question=question,
-            position=position,
-            batch_size=batch_size,
-            meta=meta,
+            question=question, position=position, batch_size=batch_size, meta=meta
         )
-        title = str(meta.get("title") or "").strip() or DEFAULT_QUESTIONNAIRE_TITLE
+        title = meta.title or DEFAULT_QUESTIONNAIRE_TITLE
         if index is not None and total is not None:
             title = f"{title} · {index}/{total}"
 
-        if not isinstance(options, list) or not options:
+        if question.options is None:
             free_text = self._bridge.text(prompt, title=title)
             if free_text is None:
                 return None
-            return {
-                "questionId": question_id,
-                "selectedOptionIds": [free_text.strip()],
-            }
+            return QuestionAnswer(question.id, (free_text.strip(),))
 
-        choices = build_question_choices(options, prompt=prompt)
+        choices = build_question_choices(question.options, prompt=prompt)
         if not choices:
             return None
+        ask = self._ask_many if question.allow_multiple else self._ask_one
+        selected = ask(prompt, choices, title=title)
+        return None if selected is None else QuestionAnswer(question.id, selected)
 
-        select_prompt = prompt
-        if allow_multiple:
-            select_prompt = multi_select_prompt(prompt)
-            selected_ids = self._bridge.multi_select(select_prompt, choices, title=title)
-            if selected_ids is None:
+    def _ask_many(
+        self, prompt: str, choices: list[tuple[str, str]], *, title: str
+    ) -> tuple[str, ...] | None:
+        """Picked ids, the "Other" pick replaced by what was typed; asks again on an empty pick."""
+        while True:
+            selected = self._bridge.multi_select(multi_select_prompt(prompt), choices, title=title)
+            if selected is None:
                 return None
-            if OTHER_OPTION_ID in selected_ids:
+            if OTHER_OPTION_ID in selected:
                 custom = self._prompt_other_text(prompt, title=title)
                 if custom is None:
                     return None
-                selected_ids = [
-                    custom if item == OTHER_OPTION_ID else item for item in selected_ids
-                ]
-            if not selected_ids:
-                return self._ask_single_question(
-                    question,
-                    meta=meta,
-                    position=position,
-                    batch_size=batch_size,
-                )
-            return {"questionId": question_id, "selectedOptionIds": selected_ids}
+                selected = [custom if item == OTHER_OPTION_ID else item for item in selected]
+            if selected:
+                return tuple(selected)
 
-        selected = self._bridge.select(select_prompt, choices, title=title)
+    def _ask_one(
+        self, prompt: str, choices: list[tuple[str, str]], *, title: str
+    ) -> tuple[str, ...] | None:
+        """The picked id, `id::text` when the choice wants a description, or the typed "Other"."""
+        selected = self._bridge.select(prompt, choices, title=title)
         if selected is None:
             return None
-
-        if str(selected) == OTHER_OPTION_ID:
+        if selected == OTHER_OPTION_ID:
             custom = self._prompt_other_text(prompt, title=title)
-            if custom is None:
-                return None
-            return {"questionId": question_id, "selectedOptionIds": [custom]}
+            return None if custom is None else (custom,)
 
-        selected_id = str(selected)
-        selected_label = self._choice_label(choices, selected_id)
-        if selected_label and answer_needs_description(prompt=prompt, label=selected_label):
-            custom = self._prompt_follow_up_text(prompt, selected_label, title=title)
-            if custom is None:
-                return None
-            return {
-                "questionId": question_id,
-                "selectedOptionIds": [f"{selected_id}::{custom}"],
-            }
-
-        return {"questionId": question_id, "selectedOptionIds": [selected_id]}
+        label = self._choice_label(choices, selected)
+        if label and answer_needs_description(prompt=prompt, label=label):
+            detail = self._prompt_follow_up_text(prompt, label, title=title)
+            return None if detail is None else (f"{selected}::{detail}",)
+        return (selected,)
 
     @staticmethod
     def _choice_label(choices: list[tuple[str, str]], selected_id: str) -> str | None:

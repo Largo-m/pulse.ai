@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.widget import Widget
@@ -8,9 +10,16 @@ from textual.widgets import Static
 from pulse.tui import strings
 from pulse.tui.state import CockpitState
 
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
+
 
 class AppFooter(Widget):
-    def __init__(self, back_label: str = strings.FOOTER_MENU, **kwargs) -> None:
+    def __init__(
+        self, back_label: str = strings.FOOTER_MENU, **kwargs: Unpack[WidgetOptions]
+    ) -> None:
         super().__init__(**kwargs)
         self._back_label = back_label
 

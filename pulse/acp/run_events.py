@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import suppress
-from typing import Any
 
 from pulse.domain import ui_text
+from pulse.domain.ports import JsonObject, StreamSink
 from pulse.history.events import LogKind
 from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
@@ -25,10 +25,20 @@ class RunEventRecorder:
     `_tool_labeled`) is also initialized by the runner.
     """
 
+    _bound_run_id: str
+    _phase_id: str
+    _session_id: str | None
+    _cwd: str
+    _stream: StreamSink
+    _text_buffer: list[str]
+    _tool_payloads: dict[str, JsonObject]
+    _tool_kinds: dict[str, str]
+    _tool_labeled: set[str]
+
     _PATH_KEYS = ("path", "file_path", "target_file", "filePath", "abs_path")
     _WRITE_KINDS = frozenset({"edit", "write", "create"})
 
-    def _record_run_event(self, params: dict[str, Any]) -> None:
+    def _record_run_event(self, params: JsonObject) -> None:
         """Persist to the Pulse database what the cockpit is showing.
 
         The runtime's own log is not usable: only Cursor has one, and Pulse is
@@ -63,14 +73,14 @@ class RunEventRecorder:
         self._save_event(kind=log_kind, title=title, detail=detail, tool_id=tool_id)
         self._record_artifacts(merged, log_kind)
 
-    def _merge_tool_payload(self, tool_id: str, update: dict[str, Any]) -> dict[str, Any]:
+    def _merge_tool_payload(self, tool_id: str, update: JsonObject) -> JsonObject:
         if not tool_id:
             return update
         merged = merge_tool_update(self._tool_payloads.get(tool_id, {}), update)
         self._tool_payloads[tool_id] = merged
         return merged
 
-    def _tool_labels(self, tool_id: str, update: dict[str, Any]) -> tuple[str, str, str]:
+    def _tool_labels(self, tool_id: str, update: JsonObject) -> tuple[str, str, str]:
         """(kind, title, detail) of a tool call, as the live screen builds them.
 
         Labeling is incidental: any failure falls back to the raw ACP `title`
@@ -96,10 +106,10 @@ class RunEventRecorder:
             return "Tool", self._fallback_title(update), self._fallback_detail(update)
 
     @staticmethod
-    def _fallback_title(update: dict[str, Any]) -> str:
+    def _fallback_title(update: JsonObject) -> str:
         return str(update.get("title") or update.get("kind") or "tool").strip()
 
-    def _fallback_detail(self, update: dict[str, Any]) -> str:
+    def _fallback_detail(self, update: JsonObject) -> str:
         raw = update.get("rawInput")
         if isinstance(raw, dict):
             for key in (*self._PATH_KEYS, "command", "pattern", "query"):
@@ -108,7 +118,7 @@ class RunEventRecorder:
                     return value.strip()
         return ""
 
-    def _record_artifacts(self, update: dict[str, Any], log_kind: str = "") -> None:
+    def _record_artifacts(self, update: JsonObject, log_kind: str = "") -> None:
         """Record the files the tool call wrote.
 
         The ACP `kind` is not always sent, so the `build_tool_labels`
@@ -129,7 +139,7 @@ class RunEventRecorder:
                     detail=f"{path}: {type(error).__name__}: {error}",
                 )
 
-    def _artifact_paths(self, update: dict[str, Any]) -> list[str]:
+    def _artifact_paths(self, update: JsonObject) -> list[str]:
         """Paths touched by the tool call, relative to the workspace.
 
         Same extraction as the live screen, so recorded artifacts open from the
@@ -167,9 +177,9 @@ class RunEventRecorder:
     def _record_prompt_qa(
         self,
         name: str,
-        args: tuple[Any, ...],
-        kwargs: dict[str, Any],
-        result: Any,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+        result: object,
     ) -> None:
         """Record in the run log the question asked and the answer given.
 

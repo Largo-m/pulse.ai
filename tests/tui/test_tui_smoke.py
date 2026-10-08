@@ -34,7 +34,12 @@ def test_cockpit_screen_initial_state():
     assert screen.state.entries == []
 
 
-def test_home_opens_settings_screen(monkeypatch):
+def test_home_root_options_open_their_screens(monkeypatch):
+    """Each root option asks the app for its screen; `exit` quits without stopping runs."""
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "active_runs", lambda: [])
+
     async def run() -> None:
         from textual.app import App, ComposeResult
         from textual.widgets import Static
@@ -46,14 +51,24 @@ def test_home_opens_settings_screen(monkeypatch):
             def open_settings(self) -> None:
                 called.append("settings")
 
+            def open_history(self) -> None:
+                called.append("history")
+
+            def open_onboarding(self) -> None:
+                called.append("init")
+
         called: list[str] = []
         app = Harness()
         async with app.run_test(size=(80, 24)) as pilot:
             screen = HomeScreen()
             app.push_screen(screen)
             await pilot.pause()
-            screen.app.open_settings()
-            assert called == ["settings"]
+            for option_id in ("settings", "history", "init", "unknown"):
+                screen.on_option_selected(_selected(option_id))
+            assert called == ["settings", "history", "init"]
+            screen.on_option_selected(_selected("exit"))
+            await pilot.pause()
+        assert app.return_code == 0
 
     asyncio.run(run())
 

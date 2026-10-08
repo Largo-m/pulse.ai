@@ -67,7 +67,6 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
             selected = index
             break
     state.selected_phase_index = selected
-    state.selected_nav_kind = "phase"
     state._follow_live = False
     state._next_entry_id = max((entry.entry_id for entry in state.entries), default=0) + 1
     return state
@@ -85,9 +84,9 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
         return ""
 
     state.sync_phases([{"id": step.step_id, "label": step.label} for step in record.steps])
-    status = {step.step_id: step.status for step in record.steps}
+    status = {step.step_id: _STEP_TO_PHASE[step.status] for step in record.steps}
     for phase in state.phases:
-        phase.status = _STEP_TO_PHASE.get(status.get(phase.id, ""), PhaseStatus.PENDING)
+        phase.status = status.get(phase.id, PhaseStatus.PENDING)
         if phase.status == PhaseStatus.RUNNING:
             phase.status = PhaseStatus.PENDING
     _stamp_elapsed(state, run_id)

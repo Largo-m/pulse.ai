@@ -106,7 +106,7 @@ class EngineClient:
                             except json.JSONDecodeError:
                                 continue
 
-    def answer_prompt(self, prompt_id: str, answer: Any) -> dict[str, Any]:
+    def answer_prompt(self, prompt_id: str, answer: object) -> dict[str, Any]:
         """Answer a prompt. A 404 is not an error: another attached window answered first."""
         try:
             return self.post(f"/api/prompts/{prompt_id}/answer", {"answer": answer})

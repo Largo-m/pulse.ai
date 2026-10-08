@@ -6,14 +6,14 @@ There is no catalog in code; factory definitions are seeded by
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
-from typing import Any
 
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store.db import connect, default_db_path
 
 
-def _agent(row: Any) -> AgentDef:
+def _agent(row: sqlite3.Row) -> AgentDef:
     return AgentDef(
         id=str(row["id"]),
         label=str(row["label"]),
@@ -24,7 +24,7 @@ def _agent(row: Any) -> AgentDef:
     )
 
 
-def _step(row: Any) -> StepDef:
+def _step(row: sqlite3.Row) -> StepDef:
     return StepDef(
         workflow_id=str(row["workflow_id"]),
         step_id=str(row["step_id"]),
@@ -39,7 +39,7 @@ def _step(row: Any) -> StepDef:
     )
 
 
-def _workflow(row: Any, steps: tuple[StepDef, ...]) -> WorkflowDef:
+def _workflow(row: sqlite3.Row, steps: tuple[StepDef, ...]) -> WorkflowDef:
     return WorkflowDef(
         id=str(row["id"]),
         label=str(row["label"]),
@@ -74,7 +74,7 @@ def get_workflow(workflow_id: str, *, db_path: Path | None = None) -> WorkflowDe
         connection.close()
 
 
-def _steps_for(connection: Any, workflow_id: str) -> tuple[StepDef, ...]:
+def _steps_for(connection: sqlite3.Connection, workflow_id: str) -> tuple[StepDef, ...]:
     rows = connection.execute(
         "SELECT * FROM workflow_steps WHERE workflow_id = ? ORDER BY position, step_id",
         (workflow_id,),

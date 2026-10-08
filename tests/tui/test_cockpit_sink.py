@@ -869,3 +869,112 @@ def test_cockpit_sink_collects_acp_sessions_per_phase():
         {"session_id": "sess-one", "phase_id": "one"},
         {"session_id": "sess-two", "phase_id": "two"},
     ]
+
+
+def _chunk(text: str) -> dict:
+    return {
+        "update": {
+            "sessionUpdate": "agent_message_chunk",
+            "content": {"type": "text", "text": text},
+        }
+    }
+
+
+def _sink_with_counter() -> tuple[CockpitState, CockpitSink, dict[str, int]]:
+    state = CockpitState()
+    make_workflow("demo", steps=FOUR)
+    state.configure_workflow("demo")
+    dirty = {"n": 0}
+    sink = CockpitSink(state, on_change=lambda: dirty.__setitem__("n", dirty["n"] + 1))
+    sink.begin_phase("Um")
+    return state, sink, dirty
+
+
+def test_setup_marker_alone_is_captured_but_not_shown():
+    """The marker is a signal for the engine; an empty speech line is noise."""
+    state, sink, dirty = _sink_with_counter()
+    before_entries, before_emits = len(state.entries), dirty["n"]
+
+    sink.handle_update(_chunk("SETUP_READY "))
+
+    assert sink.agent_text() == "SETUP_READY "
+    assert len(state.entries) == before_entries
+    assert dirty["n"] == before_emits
+
+
+def test_non_text_chunks_thoughts_and_unknown_updates_change_nothing():
+    """Only text speech and tool calls reach the log; the rest must not repaint."""
+    state, sink, dirty = _sink_with_counter()
+    before_entries, before_emits = len(state.entries), dirty["n"]
+
+    sink.handle_update(
+        {"update": {"sessionUpdate": "agent_message_chunk", "content": {"type": "image"}}}
+    )
+    sink.handle_update({"update": {"sessionUpdate": "agent_thought_chunk"}})
+    sink.handle_update({"update": {"sessionUpdate": "plan"}})
+    sink.handle_update({"update": "not an object"})
+    sink.handle_update({"update": {"sessionUpdate": "session_info_update", "title": ""}})
+
+    assert sink.agent_text() == ""
+    assert len(state.entries) == before_entries
+    assert dirty["n"] == before_emits
+
+
+def test_repeated_tool_call_does_not_duplicate_the_entry():
+    """Runtimes may re-announce a call; the log keeps one line per tool id."""
+    state, sink, _ = _sink_with_counter()
+    call = {
+        "update": {
+            "sessionUpdate": "tool_call",
+            "toolCallId": "read-1",
+            "title": "Read File",
+            "kind": "read",
+            "rawInput": {"path": "/repo/a.md"},
+        }
+    }
+
+    sink.handle_update(call)
+    sink.handle_update(call)
+
+    assert [entry.tool_id for entry in state.entries].count("read-1") == 1
+
+
+def test_update_for_unseen_tool_without_args_waits_for_them():
+    """An update with nothing to show yet must not add a blank pending line."""
+    state, sink, _ = _sink_with_counter()
+    before = len(state.entries)
+
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "late-1",
+                "status": "in_progress",
+            }
+        }
+    )
+
+    assert len(state.entries) == before
+
+
+def test_tool_result_for_unseen_tool_is_shown_as_finished():
+    """`tool_result` closes the call even without a status field."""
+    state, sink, _ = _sink_with_counter()
+
+    sink.handle_update(
+        {
+            "update": {
+                "sessionUpdate": "tool_result",
+                "toolCallId": "res-1",
+                "title": "Read File",
+                "kind": "read",
+                "rawInput": {"path": "/repo/docs/NOTES.md"},
+            }
+        }
+    )
+
+    entry = state.entries[-1]
+    assert entry.tool_id == "res-1"
+    assert entry.kind == LogKind.READ
+    assert entry.title.endswith("NOTES.md")
+    assert entry.pending is False
