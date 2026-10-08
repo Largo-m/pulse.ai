@@ -18,6 +18,7 @@ REQUIRED_CONTRACTS = {
     "TUI and client are thin: they never import the engine",
     "Domain stays free of UI and web frameworks",
     "Domain values and reply parsing need nothing else from Pulse",
+    "The engine reaches infrastructure only through ports",
     "Only the CLI opens the TUI",
     "Only store/db.py loads the factory seed",
 }

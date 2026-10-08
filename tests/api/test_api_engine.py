@@ -77,7 +77,7 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         assert answer["outcome"]["outcome"] == "selected"
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     created = client.post(
         "/api/workflows/default/runs",
@@ -138,7 +138,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
         entered.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     client.post(
         "/api/workflows/default/runs",
@@ -164,7 +164,7 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
                 return RUN_STOPPED
             time.sleep(0.01)
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     run_id = client.post(
         "/api/workflows/default/runs",
@@ -222,7 +222,7 @@ def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
         entered.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert entered.wait(timeout=5)
     assert seen["run_id"] == run_id
@@ -240,7 +240,7 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
         kwargs["prompt_handler"].ask_text("e agora?")
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asking.wait(timeout=5)
 
@@ -302,7 +302,7 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
         done.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
 
     assert done.wait(timeout=5), "the run hung on a permission the policy resolves"
@@ -332,7 +332,7 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
         answer.append(kwargs["prompt_handler"].ask_text("e agora?"))
         return RUN_STOPPED
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asked.wait(timeout=5)
 
@@ -365,7 +365,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
         release.wait(timeout=5)
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert entered.wait(timeout=5)
 
@@ -392,7 +392,7 @@ def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
         release.wait(timeout=5)
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert streamed.wait(timeout=5)
 
@@ -420,7 +420,7 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
 
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", lambda **kwargs: 0)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **kwargs: 0)
 
     first = client.post("/api/workflows/default/runs", json={"prompt": "a"}).json()["id"]
     deadline = time.monotonic() + 5

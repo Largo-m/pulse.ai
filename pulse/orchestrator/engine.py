@@ -1,9 +1,13 @@
 """The orchestrator: which agent runs now, and when.
 
 The only state machine in Pulse, agnostic of what agents do. A workflow is an
-ordered list of steps from the DB ([pulse.store.workflow_defs]); for each step the
-engine resolves the agent, renders `prompt_template`, opens an isolated ACP session
-and records the outcome in `run_steps`.
+ordered list of steps ([pulse.domain.workflow.WorkflowDef]); for each step the
+engine resolves the agent, renders `prompt_template`, opens an isolated session
+and records the outcome on the run.
+
+Everything the engine does to the world goes through the ports in
+[pulse.domain.ports], handed in as `EnginePorts`; only the daemon knows which
+adapters stand behind them.
 
 Sessions are isolated per step on purpose: the next step only receives the summary
 Pulse forwards, which allows switching runtimes between steps and redoing one step.
@@ -12,17 +16,22 @@ Pulse forwards, which allows switching runtimes between steps and redoing one st
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from pulse import vcs
-from pulse.acp.session_runner import AcpSessionRunner
-from pulse.config import ResolvedConfig, resolve_config
-from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
-from pulse.domain.ports import AgentProfile, NullPromptPort, NullStreamSink, PromptPort, StreamSink
+from pulse.domain.ports import (
+    AgentProfiles,
+    AgentSession,
+    JsonObject,
+    PhaseContinuation,
+    PromptContinuation,
+    RunRepository,
+    StreamSink,
+    Workspace,
+    WorkspaceError,
+)
 from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator.agent_text import (
@@ -37,111 +46,112 @@ from pulse.orchestrator.loops import close_loop, repeat_loop
 from pulse.orchestrator.render import TemplateError, render
 from pulse.orchestrator.turn import MenuChoice, TurnResult
 from pulse.orchestrator.waits import RunWaits
+from pulse.orchestrator.worktree import prepare_workspace
 from pulse.replies.approval import format_summary
-from pulse.runtimes import get_runtime
-from pulse.store import runs as run_store
-from pulse.store.paths import worktrees_dir
-from pulse.store.workflow_defs import get_agent, get_workflow
 
 
-class UnknownWorkflow(ValueError):
-    """Id that does not exist in `workflow_defs`."""
+class EmptyWorkflow(ValueError):
+    """A definition with no step: there is nothing to run."""
+
+
+@dataclass(frozen=True)
+class EnginePorts:
+    """Everything the engine does to the world, wired by the daemon."""
+
+    session: AgentSession
+    stream: StreamSink
+    runs: RunRepository
+    workspace: Workspace
+    agents: AgentProfiles
+
+
+@dataclass(frozen=True)
+class _Wiring:
+    """What every step of one run shares: the ports, the stop switch and where it works."""
+
+    ports: EnginePorts
+    control: RunControl
+    exec_dir: Path
+
+    @property
+    def session(self) -> AgentSession:
+        return self.ports.session
+
+    @property
+    def runs(self) -> RunRepository:
+        return self.ports.runs
 
 
 def run_workflow(
     *,
-    workflow_id: str,
+    definition: WorkflowDef,
     user_prompt: str,
-    workspace: Path | None = None,
-    stream: StreamSink | None = None,
-    prompt_handler: PromptPort | None = None,
+    ports: EnginePorts,
+    use_worktree: bool = False,
     resume_run_id: str | None = None,
     control: RunControl | None = None,
     run_id: str | None = None,
 ) -> int:
-    stream = stream or NullStreamSink()
-    definition = get_workflow(workflow_id)
-    if definition is None:
-        raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
+    """Run the workflow to its end and return the run's exit code.
+
+    A refusal before the first step (no step, no worktree) raises for the caller;
+    a crash mid-run is recorded on the run, then raised.
+    """
     if not definition.steps:
-        raise UnknownWorkflow(f"workflow `{workflow_id}` não tem step nenhum")
+        raise EmptyWorkflow(f"workflow `{definition.id}` não tem step nenhum")
 
-    resolved = resolve_config(workspace=workspace, workflow=workflow_id)
-    runtime = get_runtime(resolved.agent_name)
-    blocking = check_runtime_ready(runtime.id)
-    if blocking is not None:
-        raise RuntimeError(
-            f"Runtime `{runtime.id}` indisponível: {blocking.message}. "
-            f"{blocking.detail or ''}".strip()
-        )
-
-    workspace_root = resolved.workspace_dir
     run = _resolve_run(
         definition,
-        workspace_root,
+        ports,
         user_prompt,
         resume_run_id=resume_run_id,
         run_id=run_id,
     )
 
     try:
-        exec_dir, branch = _prepare_workspace(run, workspace_root, resolved)
-    except vcs.GitError as error:
+        exec_dir, branch = prepare_workspace(
+            run, ports.workspace, ports.runs, use_worktree=use_worktree
+        )
+    except WorkspaceError as error:
         raise RuntimeError(f"Não consegui abrir o worktree desta run: {error}") from error
 
     # Must precede the first `phase.begin`: the artifact pane uses it to know
     # which folder to watch.
-    stream.set_context(cwd=str(exec_dir), branch=branch)
-
-    runner = AcpSessionRunner(
-        resolved.acp_command,
-        cwd=str(exec_dir),
-        permission_policy=resolved.permission_policy,
-        stream=stream,
-        prompt_handler=prompt_handler or NullPromptPort(),
-        runtime=runtime,
-        control=control,
-    )
-    runner.bind_run(run.id, RunWaits(run))
+    ports.stream.set_context(cwd=str(exec_dir), branch=branch)
+    ports.session.bind_run(run.id, RunWaits(run, ports.runs))
+    wiring = _Wiring(ports=ports, control=control or RunControl(), exec_dir=exec_dir)
 
     try:
-        return _execute(
-            runner=runner,
-            definition=definition,
-            run=run,
-            workspace=workspace_root,
-            exec_dir=exec_dir,
-            fallback_model=resolved.model,
-        )
+        return _execute(wiring, definition=definition, run=run)
     # The run is the boundary: record the crash on it, then let the caller report it.
     except Exception:  # noqa: BLE001
         run.crash()
-        run_store.save(run)
+        ports.runs.save(run)
         raise
 
 
 def _resolve_run(
     definition: WorkflowDef,
-    workspace: Path,
+    ports: EnginePorts,
     user_prompt: str,
     *,
     resume_run_id: str | None,
     run_id: str | None = None,
 ) -> RunRecord:
-    """The run in the DB. `run_id` lets the caller name it.
+    """The stored run. `run_id` lets the caller name it.
 
-    The daemon passes its own id so the API and SQLite share one run id.
+    The daemon passes its own id so the API and storage share one run id.
     """
     if resume_run_id:
-        existing = run_store.load_run(resume_run_id)
+        existing = ports.runs.load(resume_run_id)
         if existing is not None:
             # A killed daemon leaves its step `running`; one step runs at a time.
             existing.fail_running_steps()
             return existing
-    return run_store.create_run(
+    return ports.runs.create(
         run_id=run_id or str(uuid.uuid4()),
         workflow_id=definition.id,
-        workspace=workspace,
+        workspace=ports.workspace.root,
         user_prompt=user_prompt,
         steps=[
             StepRecord(
@@ -155,63 +165,10 @@ def _resolve_run(
     )
 
 
-def _prepare_workspace(
-    run: RunRecord,
-    workspace_root: Path,
-    resolved: ResolvedConfig,
-) -> tuple[Path, str]:
-    """Where this run works, and on which branch.
-
-    Four cases, in order:
-    1. Resumed run with an existing worktree: reuse it.
-    2. Resumed run that lost its worktree but still has its branch: reattach a
-       worktree on that branch, regardless of the setting.
-    3. No isolation (setting off, or not a git repo): run at the root on the
-       project's current branch.
-    4. Isolation on: `git worktree add` under `~/.pulse/worktrees/<run>` on a new
-       branch from HEAD.
-
-    `workspace_root` stays the run's identity (history looks it up by it); only
-    where the agent writes changes.
-    """
-    if run.worktree_path and Path(run.worktree_path).exists():
-        return Path(run.worktree_path), run.branch
-
-    repo = vcs.repo_root(workspace_root)
-    if repo is not None and run.owns_branch and vcs.branch_exists(repo, run.branch):
-        target = worktrees_dir() / run.id
-        vcs.attach_worktree(repo, target, run.branch)
-        run.work_in(worktree_path=str(target), branch=run.branch)
-        run_store.save(run)
-        return target, run.branch
-
-    if repo is None or not resolved.use_worktree:
-        branch = vcs.current_branch(workspace_root)
-        run.work_in(worktree_path="", branch=branch)
-        run_store.save(run)
-        return workspace_root, branch
-
-    target = worktrees_dir() / run.id
-    branch = vcs.add_worktree(repo, target, run.own_branch)
-    run.work_in(worktree_path=str(target), branch=branch)
-    run_store.save(run)
-    return target, branch
-
-
-def _execute(
-    *,
-    runner: AcpSessionRunner,
-    definition: WorkflowDef,
-    run: RunRecord,
-    workspace: Path,
-    exec_dir: Path,
-    fallback_model: str | None,
-) -> int:
-    runner.start()
+def _execute(wiring: _Wiring, *, definition: WorkflowDef, run: RunRecord) -> int:
     try:
-        runner.initialize()
-        runner.authenticate()
-        _sync_steps(runner, run)
+        wiring.session.open(wiring.exec_dir)
+        _sync_steps(wiring, run)
 
         loops = definition.loops()
         index = 0
@@ -221,8 +178,8 @@ def _execute(
             index += 1
             previous = run.previous_delivery(definition_step.step_id)
             units = expand(run, definition_step, previous.summary if previous else "")
-            run_store.save(run)
-            _sync_steps(runner, run)
+            wiring.runs.save(run)
+            _sync_steps(wiring, run)
 
             for step, item in units:
                 record = run.add_step(
@@ -237,63 +194,59 @@ def _execute(
                 if record.settled:
                     continue
 
-                if not _control(runner).checkpoint():
-                    _notify(runner, "Run parada pelo usuário")
+                if not wiring.control.checkpoint():
+                    _notify(wiring, "Run parada pelo usuário")
                     run.end(RUN_STOPPED)
-                    run_store.save(run)
+                    wiring.runs.save(run)
                     return RUN_STOPPED
 
                 loop = loops.get(at)
                 opens_loop = loop is not None and loop.opens(at)
                 exit_code, signal = _run_step(
-                    runner=runner,
+                    wiring,
                     run=run,
                     step=step,
                     record=record,
-                    workspace=workspace,
-                    exec_dir=exec_dir,
-                    fallback_model=fallback_model,
                     item=item,
                     may_close=opens_loop,
                 )
-                _sync_steps(runner, run)
+                _sync_steps(wiring, run)
                 if exit_code != 0:
                     run.end(exit_code)
-                    run_store.save(run)
+                    wiring.runs.save(run)
                     return exit_code
 
                 if signal == LoopSignal.CLOSE and loop is not None and opens_loop:
                     index = close_loop(run, definition, loop)
-                    _sync_steps(runner, run)
-                    _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
+                    wiring.runs.save(run)
+                    _sync_steps(wiring, run)
+                    _notify(wiring, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
                 if signal == LoopSignal.REPEAT and loop is not None and loop.closes(at):
                     target, message = repeat_loop(run, definition, loop, record.label)
-                    _notify(runner, message)
+                    wiring.runs.save(run)
+                    _notify(wiring, message)
                     if target is not None:
                         index = target
-                        _sync_steps(runner, run)
+                        _sync_steps(wiring, run)
                         break
 
         run.retire_steps_outside({step.step_id for step in definition.steps})
         run.complete()
-        run_store.save(run)
-        _sync_steps(runner, run)
+        wiring.runs.save(run)
+        _sync_steps(wiring, run)
         return 0
     finally:
-        runner.close()
+        wiring.session.close()
 
 
 def _run_step(
+    wiring: _Wiring,
     *,
-    runner: AcpSessionRunner,
     run: RunRecord,
     step: StepDef,
     record: StepRecord,
-    workspace: Path,
-    exec_dir: Path,
-    fallback_model: str | None,
     item: Item | None = None,
     may_close: bool = False,
 ) -> tuple[int, LoopSignal | None]:
@@ -301,13 +254,10 @@ def _run_step(
     guidance = ""
     while True:
         signal, reason = _attempt_step(
-            runner=runner,
+            wiring,
             run=run,
             step=step,
             record=record,
-            workspace=workspace,
-            exec_dir=exec_dir,
-            fallback_model=fallback_model,
             guidance=guidance,
             item=item,
             may_close=may_close,
@@ -315,49 +265,48 @@ def _run_step(
         if record.settled:
             return 0, signal
 
-        if _control(runner).interrupted:
-            _release_step(runner, run=run, record=record, label=record.label)
+        if wiring.control.interrupted:
+            _release_step(wiring, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
 
         blocked = record.status == StepStatus.BLOCKED
         if blocked:
-            choice, guidance = _offer_blocked(runner, f"{record.label} está bloqueado", reason)
+            choice, guidance = _offer_blocked(wiring, f"{record.label} está bloqueado", reason)
         else:
-            choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
-        if _control(runner).interrupted:
-            _release_step(runner, run=run, record=record, label=record.label)
+            choice, guidance = _offer_retry(wiring, f"Step {record.label} falhou", reason)
+        if wiring.control.interrupted:
+            _release_step(wiring, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
 
         if blocked:
             if choice == MenuChoice.SKIP:
                 record.skip_blocked()
-                run_store.save(run)
-                _sync_steps(runner, run)
-                _notify(runner, f"{record.label} pulado pelo usuário")
+                wiring.runs.save(run)
+                _sync_steps(wiring, run)
+                _notify(wiring, f"{record.label} pulado pelo usuário")
                 return 0, None
             if choice != MenuChoice.RETRY:
-                _close_after_menu(run, record)
-                _notify(runner, f"Run bloqueada em {record.label}: {reason}")
+                record.close_after_wait()
+                wiring.runs.save(run)
+                _notify(wiring, f"Run bloqueada em {record.label}: {reason}")
                 return RUN_BLOCKED, None
         elif choice != MenuChoice.RETRY:
-            _close_after_menu(run, record)
+            record.close_after_wait()
+            wiring.runs.save(run)
             return 1, None
-        _revive_session(runner)
+        _revive_session(wiring)
         if guidance:
-            _notify(runner, f"Refazendo {record.label} com orientação do usuário")
+            _notify(wiring, f"Refazendo {record.label} com orientação do usuário")
         else:
-            _notify(runner, f"Refazendo {record.label}")
+            _notify(wiring, f"Refazendo {record.label}")
 
 
 def _attempt_step(
+    wiring: _Wiring,
     *,
-    runner: AcpSessionRunner,
     run: RunRecord,
     step: StepDef,
     record: StepRecord,
-    workspace: Path,
-    exec_dir: Path,
-    fallback_model: str | None,
     guidance: str,
     item: Item | None = None,
     may_close: bool = False,
@@ -365,16 +314,18 @@ def _attempt_step(
     """`(loop signal, reason)`. How the attempt ended is the step's status;
     `reason` explains a failure or a block to the person deciding what next."""
     run.start_step(record.step_id)
-    run_store.save(run)
+    wiring.runs.save(run)
 
-    model, instructions = _activate_agent(runner, workspace, step, fallback_model)
+    profile = wiring.ports.agents.profile(step.agent_id)
+    wiring.session.use_agent(profile)
     try:
-        prompt_text = render(step.prompt_template, _context(run, step, exec_dir, item))
+        prompt_text = render(step.prompt_template, _template_values(wiring, run, step, item))
     except TemplateError as error:
-        _fail(run, record)
+        _fail(wiring, run, record)
         return None, str(error)
-    if instructions:
-        prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
+    # Inlined, not passed as a system prompt, so instructions work with any runtime.
+    if profile.instructions:
+        prompt_text = f"{profile.instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
 
     if step.declares_outcome:
@@ -382,83 +333,93 @@ def _attempt_step(
 
     try:
         if step.requires_approval:
-            raw = runner.run_isolated_phase(
+            raw = wiring.session.run_isolated_phase(
                 workflow=run.workflow_id,
                 phase_label=record.label or step.step_id,
                 initial_prompt=prompt_text,
-                preferred_model=model,
-                build_continuation=lambda *, phase_summary, questionnaire_answers, outcome, **_: (
-                    build_continuation_prompt(
-                        step_id=step.step_id,
-                        summary=phase_summary,
-                        answers=questionnaire_answers,
-                        outcome=outcome,
-                    )
-                ),
+                preferred_model=profile.model,
+                build_continuation=_approval_continuation(step),
                 phase_id=step.step_id,
             )
         else:
-            raw = runner.run_isolated_prompt(
+            raw = wiring.session.run_isolated_prompt(
                 workflow=run.workflow_id,
                 phase_label=record.label or step.step_id,
                 prompt_text=prompt_text,
-                preferred_model=model,
+                preferred_model=profile.model,
                 phase_id=step.step_id,
                 build_continuation=_unblock_continuation(step) if step.declares_outcome else None,
             )
+    # The session is the boundary to the agent: any failure fails the attempt, not the run.
     except Exception as error:  # noqa: BLE001
-        _fail(run, record)
+        _fail(wiring, run, record)
         return None, _session_error(error)
 
     turn = TurnResult.parse(raw)
     record.record_reply(
-        session_id=runner.last_session_id or "", summary=format_summary(turn.summary)
+        session_id=wiring.session.last_session_id, summary=format_summary(turn.summary)
     )
 
     if turn.cancelled:
-        _fail(run, record)
+        _fail(wiring, run, record)
         return None, "step cancelado"
 
     if turn.skipped:
         record.skip()
-        run_store.save(run)
+        wiring.runs.save(run)
         return None, ""
 
     if may_close and not turn.approved and parse_outcome(turn.summary).closes:
-        return _settle(run, record, LoopSignal.CLOSE)
+        return _settle(wiring, run, record, LoopSignal.CLOSE)
 
     if step.requires_approval and not turn.approved:
-        _fail(run, record)
+        _fail(wiring, run, record)
         if not turn.has_approval_answers:
             return None, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
         return None, "step não aprovado"
 
     if not step.requires_approval and not turn.ended_cleanly:
-        _fail(run, record)
+        _fail(wiring, run, record)
         return None, turn.stop_reason or "o agente não concluiu o step"
 
     repeats = False
     if step.declares_outcome:
         declared = parse_outcome(turn.summary)
         if not declared.delivered:
-            return _block(run, record, _blocked_reason(declared))
+            record.block()
+            wiring.runs.save(run)
+            return None, _blocked_reason(declared)
         repeats = step.repeat is not None and declared.repeats
         if may_close and declared.closes:
-            return _settle(run, record, LoopSignal.CLOSE)
+            return _settle(wiring, run, record, LoopSignal.CLOSE)
 
-    return _settle(run, record, LoopSignal.REPEAT if repeats else None)
+    return _settle(wiring, run, record, LoopSignal.REPEAT if repeats else None)
 
 
 def _settle(
-    run: RunRecord, record: StepRecord, signal: LoopSignal | None
+    wiring: _Wiring, run: RunRecord, record: StepRecord, signal: LoopSignal | None
 ) -> tuple[LoopSignal | None, str]:
     """Record the step as delivered and pass the agent's loop signal on."""
     record.deliver()
-    run_store.save(run)
+    wiring.runs.save(run)
     return signal, ""
 
 
-def _unblock_continuation(step: StepDef) -> Callable[..., str]:
+def _approval_continuation(step: StepDef) -> PhaseContinuation:
+    """What to send after an approval answer that asked for more."""
+
+    def build(*, phase_summary: str, questionnaire_answers: str, outcome: str) -> str:
+        return build_continuation_prompt(
+            step_id=step.step_id,
+            summary=phase_summary,
+            answers=questionnaire_answers,
+            outcome=outcome,
+        )
+
+    return build
+
+
+def _unblock_continuation(step: StepDef) -> PromptContinuation:
     """Give the agent one chance to unblock itself before involving the user.
 
     Runs in the same session (see `run_isolated_prompt`), once per attempt. Also
@@ -466,7 +427,7 @@ def _unblock_continuation(step: StepDef) -> Callable[..., str]:
     """
     spent = False
 
-    def build(*, result: dict[str, Any], turn: int = 0, **_kwargs: Any) -> str:
+    def build(*, result: JsonObject, turn: int) -> str:
         nonlocal spent
         if spent:
             return ""
@@ -492,27 +453,15 @@ def _blocked_reason(declared: Outcome) -> str:
     return declared.reason or "o agente declarou bloqueio sem dizer o motivo"
 
 
-def _block(run: RunRecord, record: StepRecord, reason: str) -> tuple[LoopSignal | None, str]:
-    """Record the step as blocked: it ran, did not crash, did not deliver."""
-    record.block()
-    run_store.save(run)
-    return None, reason
-
-
-def _close_after_menu(run: RunRecord, record: StepRecord) -> None:
-    record.close_after_wait()
-    run_store.save(run)
-
-
-def _fail(run: RunRecord, record: StepRecord) -> None:
+def _fail(wiring: _Wiring, run: RunRecord, record: StepRecord) -> None:
     record.fail()
-    run_store.save(run)
+    wiring.runs.save(run)
 
 
-def _context(
+def _template_values(
+    wiring: _Wiring,
     run: RunRecord,
     step: StepDef,
-    exec_dir: Path,
     item: Item | None = None,
 ) -> dict[str, str]:
     """Values `prompt_template` may reference.
@@ -524,12 +473,12 @@ def _context(
     empty when none. A skip from the blocked menu clears `summary`, so that step
     drops out and the earlier one is reported.
     """
-    artifacts = [entry["path"] for entry in run_store.list_artifacts(run.id)]
+    artifacts = wiring.runs.artifacts(run.id)
     siblings = run.fan_out_siblings(step.step_id) if item is not None else []
     previous = run.previous_delivery(step.step_id)
     return {
         "user_prompt": run.user_prompt.strip(),
-        "workspace": str(exec_dir),
+        "workspace": str(wiring.exec_dir),
         "workflow_id": run.workflow_id,
         "run_id": run.id,
         "step_id": step.step_id,
@@ -551,32 +500,8 @@ def _index_of(records: list[StepRecord], step_id: str) -> int:
     return 1
 
 
-def _activate_agent(
-    runner: AcpSessionRunner,
-    workspace: Path,
-    step: StepDef,
-    fallback_model: str | None,
-) -> tuple[str | None, str]:
-    """Apply the step agent's runtime/model/policy; return the model and instructions.
-
-    Agent `instructions` are inlined into the prompt so they work with any runtime.
-    """
-    resolved = resolve_config(workspace=workspace, pulse_agent=step.agent_id)
-    definition = get_agent(step.agent_id)
-    instructions = definition.instructions.strip() if definition is not None else ""
-    runner.use_agent(
-        AgentProfile(
-            agent_id=step.agent_id,
-            model=resolved.model or fallback_model,
-            permission_policy=resolved.permission_policy,
-            instructions=instructions,
-        )
-    )
-    return resolved.model or fallback_model, instructions
-
-
 def _release_step(
-    runner: AcpSessionRunner,
+    wiring: _Wiring,
     *,
     run: RunRecord,
     record: StepRecord,
@@ -588,15 +513,15 @@ def _release_step(
     not redone.
     """
     if record.release():
-        run_store.save(run)
-        _sync_steps(runner, run)
-    _notify(runner, f"Run parada em {label}" if label else "Run parada pelo usuário")
+        wiring.runs.save(run)
+        _sync_steps(wiring, run)
+    _notify(wiring, f"Run parada em {label}" if label else "Run parada pelo usuário")
 
 
-def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[MenuChoice, str]:
+def _offer_retry(wiring: _Wiring, title: str, reason: str) -> tuple[MenuChoice, str]:
     """Decide what to do with a failed step."""
     return _choose(
-        runner,
+        wiring,
         title,
         reason,
         [
@@ -607,13 +532,13 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[Men
     )
 
 
-def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[MenuChoice, str]:
+def _offer_blocked(wiring: _Wiring, title: str, reason: str) -> tuple[MenuChoice, str]:
     """Decide what to do with a step the agent could not complete.
 
     Adds a skip option, recorded as `skipped` rather than hidden as `done`.
     """
     return _choose(
-        runner,
+        wiring,
         title,
         reason,
         [
@@ -626,7 +551,7 @@ def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[M
 
 
 def _choose(
-    runner: AcpSessionRunner,
+    wiring: _Wiring,
     title: str,
     reason: str,
     choices: list[tuple[str, MenuChoice]],
@@ -637,18 +562,18 @@ def _choose(
     the answer is stop, and the reason is left on the stream for whoever reads it.
     """
     prompt = reason.strip() or "O step não foi concluído."
-    choice = runner.prompts.select_choice(prompt, choices, title=title)
+    choice = wiring.session.prompts.select_choice(prompt, choices, title=title)
     if choice is None:
-        if not _control(runner).interrupted:
-            _notify(runner, f"{title}: {prompt}")
+        if not wiring.control.interrupted:
+            _notify(wiring, f"{title}: {prompt}")
         return MenuChoice.STOP, ""
     if choice == MenuChoice.GUIDANCE:
-        guidance = _ask_guidance(runner, title)
+        guidance = _ask_guidance(wiring, title)
         if guidance:
             return MenuChoice.RETRY, guidance
-        if _control(runner).interrupted:
+        if wiring.control.interrupted:
             return MenuChoice.STOP, ""
-        return _choose(runner, title, reason, choices)
+        return _choose(wiring, title, reason, choices)
     if choice in {value for _label, value in choices}:
         return MenuChoice(choice), ""
     return MenuChoice.STOP, ""
@@ -662,38 +587,36 @@ def _session_error(error: BaseException) -> str:
     return f"o step quebrou — {type(error).__name__}: {error}"
 
 
-def _revive_session(runner: AcpSessionRunner) -> None:
+def _revive_session(wiring: _Wiring) -> None:
     """Restart the agent process before retrying the step.
 
     Retrying on a dead session would just fail again.
     """
     try:
-        if runner.revive():
-            _notify(runner, "Sessão do agente reiniciada")
+        if wiring.session.revive():
+            _notify(wiring, "Sessão do agente reiniciada")
     except (RuntimeError, TimeoutError, OSError) as error:
-        _notify(runner, f"Não consegui reiniciar a sessão do agente: {error}")
+        _notify(wiring, f"Não consegui reiniciar a sessão do agente: {error}")
 
 
-def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:
-    answer = runner.prompts.ask_text("O que o agente deve fazer nesta nova tentativa?", title=title)
-    return str(answer or "").strip()
+def _ask_guidance(wiring: _Wiring, title: str) -> str:
+    answer = wiring.session.prompts.ask_text(
+        "O que o agente deve fazer nesta nova tentativa?", title=title
+    )
+    return (answer or "").strip()
 
 
-def _control(runner: AcpSessionRunner) -> RunControl:
-    return runner.control
+def _notify(wiring: _Wiring, message: str) -> None:
+    wiring.ports.stream.info(message)
 
 
-def _notify(runner: AcpSessionRunner, message: str) -> None:
-    runner.stream.info(message)
-
-
-def _sync_steps(runner: AcpSessionRunner, run: RunRecord) -> None:
+def _sync_steps(wiring: _Wiring, run: RunRecord) -> None:
     """Mirror `run_steps` to the panel, including the full step list.
 
     The list is sent because fan-out changes it mid-run.
     """
     grouped = run.step_ids_by_status()
-    runner.stream.apply_phase_statuses(
+    wiring.ports.stream.apply_phase_statuses(
         steps=[
             {"id": item.step_id, "label": item.label, "rounds": item.rounds} for item in run.steps
         ],

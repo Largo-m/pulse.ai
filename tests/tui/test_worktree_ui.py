@@ -13,7 +13,6 @@ from pulse import vcs
 from pulse.config.project_config import update_project_defaults
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
-from pulse.orchestrator.engine import _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
 from pulse.tui.hydrate import hydrate_history_item
@@ -23,7 +22,7 @@ from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from tests.conftest import make_workflow
-from tests.infra.test_worktree import make_repo
+from tests.infra.test_worktree import make_repo, prepare
 
 git_only = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
@@ -138,7 +137,7 @@ def test_remove_worktree_through_catalog(tmp_path: Path):
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
     assert record is not None
-    exec_dir, _branch = _prepare_workspace(record, repo, type("R", (), {"use_worktree": True})())
+    exec_dir, _branch = prepare(record, repo, use_worktree=True)
     assert _branch
 
     item = HistoryCatalog(repo).get(run_id)
@@ -160,7 +159,7 @@ def test_dirty_worktree_is_not_silently_deleted(tmp_path: Path):
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
     assert record is not None
-    exec_dir, _ = _prepare_workspace(record, repo, type("R", (), {"use_worktree": True})())
+    exec_dir, _ = prepare(record, repo, use_worktree=True)
     (exec_dir / "rascunho.md").write_text("não commitado\n", encoding="utf-8")
 
     item = HistoryCatalog(repo).get(run_id)
@@ -179,7 +178,7 @@ def test_deleting_run_removes_clean_worktree(tmp_path: Path):
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
     assert record is not None
-    exec_dir, _ = _prepare_workspace(record, repo, type("R", (), {"use_worktree": True})())
+    exec_dir, _ = prepare(record, repo, use_worktree=True)
 
     assert HistoryCatalog(repo).delete(run_id) is True
     assert not exec_dir.exists()
@@ -331,7 +330,7 @@ def test_detail_reads_artifact_from_inside_worktree(tmp_path: Path):
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
     assert record is not None
-    exec_dir, _ = _prepare_workspace(record, repo, type("R", (), {"use_worktree": True})())
+    exec_dir, _ = prepare(record, repo, use_worktree=True)
     (exec_dir / "PLANO.md").write_text("# plano\n\nconteúdo do worktree\n", encoding="utf-8")
     run_store.record_artifact(run_id, "PLANO.md", step_id="plan")
 
@@ -411,7 +410,7 @@ def test_enabled_toggle_moves_run_to_worktree(tmp_path: Path):
     run_id = _run_in(repo)
     record = run_store.load_run(run_id)
     assert record is not None
-    exec_dir, branch = _prepare_workspace(record, repo, resolve_config(repo))
+    exec_dir, branch = prepare(record, repo, use_worktree=resolve_config(repo).use_worktree)
 
     assert exec_dir == worktrees_dir() / run_id
     assert branch.startswith("pulse/demo-")

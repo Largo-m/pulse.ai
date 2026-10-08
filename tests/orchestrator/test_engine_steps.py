@@ -9,146 +9,18 @@ import pytest
 
 from pulse.domain import run as run_model
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
-from pulse.domain.ports import NullPromptPort, NullStreamSink
+from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import RunStatus, StepStatus
-from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
-from pulse.store import runs as run_store
-from tests.conftest import make_workflow, store_step
-
-
-class _Stream(NullStreamSink):
-    def __init__(self) -> None:
-        super().__init__()
-        self.phases: list[str] = []
-        self.messages: list[str] = []
-        self.statuses: list[dict] = []
-
-    def begin_phase(self, title: str) -> None:
-        self.phases.append(title)
-
-    def info(self, title: str) -> None:
-        self.messages.append(title)
-
-    def error(self, title: str, reason: str = "") -> None:
-        self.messages.append(title)
-
-    def apply_phase_statuses(self, **kwargs) -> None:
-        self.statuses.append(kwargs)
-
-
-class _Prompt:
-    """Answers the retry menu with the same choice every time."""
-
-    def __init__(self, choice: str = "stop") -> None:
-        self.choice = choice
-        self.asked: list[str] = []
-        self.prompts: list[str] = []
-
-    def select_choice(self, prompt, choices, *, title=""):
-        self.asked.append(title)
-        self.prompts.append(prompt)
-        return self.choice
-
-    def ask_text(self, prompt, *, title=""):
-        return ""
-
-
-class _Runner:
-    """A fake `AcpSessionRunner`: only what the engine calls."""
-
-    def __init__(self, results: list[dict], *, control: RunControl | None = None) -> None:
-        self._results = list(results)
-        self.sent: list[str] = []
-        self.agents: list[str] = []
-        self.control = control or RunControl()
-        self.last_session_id = "sess-1"
-        self._stream = _Stream()
-        self._prompt_handler = _Prompt()
-        self.closed = False
-        self.revivals = 0
-
-    @property
-    def stream(self) -> _Stream:
-        return self._stream
-
-    @property
-    def prompts(self) -> _Prompt:
-        return self._prompt_handler
-
-    def bind_run(self, run_id: str, waits: object = None) -> None:
-        self.run_id = run_id
-
-    def start(self) -> None:
-        pass
-
-    def initialize(self) -> None:
-        pass
-
-    def authenticate(self) -> None:
-        pass
-
-    def close(self) -> None:
-        self.closed = True
-
-    def use_agent(self, profile) -> None:
-        self.agents.append(profile.agent_id)
-
-    def run_isolated_phase(self, *, initial_prompt: str, **_kwargs) -> dict:
-        self.sent.append(initial_prompt)
-        return self._next({"approved": True})
-
-    def run_isolated_prompt(self, *, prompt_text: str, build_continuation=None, **_kwargs) -> dict:
-        """Mimic the real runner's turn loop, including the continuation.
-
-        Without this, the agent's chance to unblock itself would not be exercised
-        by any test: the engine only offers it through this callback.
-        """
-        self.sent.append(prompt_text)
-        result = self._next({"stopReason": "end_turn"})
-        parts = [str(result.get("phaseSummary", ""))]
-        turn = 0
-        while build_continuation is not None:
-            follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
-            if not follow_up:
-                break
-            self.sent.append(follow_up)
-            result = self._next({"stopReason": "end_turn"})
-            parts.append(str(result.get("phaseSummary", "")))
-            result["phaseSummary"] = "\n\n".join(part for part in parts if part)
-            turn += 1
-        return result
-
-    def _next(self, default: dict) -> dict:
-        """Next queued result, or the exception the session would raise."""
-        result = self._results.pop(0) if self._results else default
-        if isinstance(result, BaseException):
-            raise result
-        return result
-
-    def revive(self) -> bool:
-        self.revivals += 1
-        return True
+from tests.conftest import make_workflow
+from tests.fakes import FakeAgentSession
+from tests.orchestrator.harness import EngineHarness
 
 
 @pytest.fixture
-def wired(monkeypatch, tmp_path: Path):
-    """Engine with resolved config and no terminal: just the step loop."""
-
-    class Resolved:
-        workspace_dir = tmp_path
-        permission_policy = "ask"
-        acp_command = ["agent", "acp"]
-        model = "auto"
-        agent_name = "cursor"
-
-    monkeypatch.setattr(engine, "check_runtime_ready", lambda _runtime: None)
-    monkeypatch.setattr(engine, "resolve_config", lambda **_kwargs: Resolved())
-    return Resolved
-
-
-def _install(monkeypatch, runner: _Runner) -> None:
-    monkeypatch.setattr(engine, "AcpSessionRunner", lambda *_a, **_k: runner)
+def wired(tmp_path: Path) -> EngineHarness:
+    """Engine on in-memory ports: a scripted agent, storage, workspace and profiles."""
+    return EngineHarness(tmp_path)
 
 
 def _approved(summary: str = "") -> dict:
@@ -177,19 +49,17 @@ def _blocked(reason: str, *, needs: str = "") -> dict:
 
 def test_steps_run_in_order_and_each_one_is_recorded(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
-    runner = _Runner([_approved(), _approved(), _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved(), _approved(), _approved()])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="fazer algo",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert runner.agents == ["tester", "tester", "tester"]
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("one", "done"),
         ("two", "done"),
@@ -204,14 +74,12 @@ def test_the_prompt_template_is_rendered_with_run_values(wired, monkeypatch, tmp
         steps=[("one", "Um")],
         prompt_template="tarefa: {{user_prompt}} em {{workspace}} (step {{step_id}})",
     )
-    runner = _Runner([_approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="corrigir login",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert runner.sent == [f"tarefa: corrigir login em {tmp_path} (step one)"]
@@ -223,14 +91,12 @@ def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path
         steps=[("one", "Um"), ("two", "Dois")],
         prompt_template="{{#if previous_summary}}antes: {{previous_summary}}{{/if}}siga",
     )
-    runner = _Runner([_approved("escrevi o plano"), _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved("escrevi o plano"), _approved()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert runner.sent[0] == "siga"
@@ -257,14 +123,12 @@ def test_a_step_sees_how_the_previous_one_closed(
         steps=[("one", "Um"), ("two", "Dois")],
         prompt_template="anterior: {{previous_status}}",
     )
-    runner = _Runner([outcome, _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([outcome, _approved()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert runner.sent[0] == "anterior: "
@@ -273,65 +137,59 @@ def test_a_step_sees_how_the_previous_one_closed(
 
 def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner([{"approved": False, "outcome": "continue"}])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([{"approved": False, "outcome": "continue"}])
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 1
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("one").status == "failed"
     assert record.step("two").status == "pending", "the next step never ran"
 
 
 def test_retry_runs_the_same_step_again(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um")])
-    runner = _Runner([{"approved": False, "outcome": "continue"}, _approved()])
-    runner._prompt_handler.choice = "retry"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([{"approved": False, "outcome": "continue"}, _approved()])
+    runner.prompts.choice = "retry"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert len(runner.sent) == 2
-    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+    assert wired.runs.only().step("one").status == "done"
 
 
 def test_a_timeout_offers_retry_instead_of_killing_the_run(wired, monkeypatch, tmp_path: Path):
     """A timed-out session is a failed attempt, not the end of the run."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             TimeoutError("o agente ficou 600s sem dar sinal em `session/prompt`"),
             _approved(),
             _approved(),
         ]
     )
-    runner._prompt_handler.choice = "retry"
-    _install(monkeypatch, runner)
+    runner.prompts.choice = "retry"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    assert runner._prompt_handler.asked == ["Step Um falhou"]
+    assert runner.prompts.asked == ["Step Um falhou"]
     assert runner.revivals == 1
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["done", "done"]
 
 
@@ -340,38 +198,34 @@ def test_a_dead_session_that_the_user_gives_up_on_fails_the_step(
 ):
     """`Parar` closes the run the normal way: failed step, no exception."""
     make_workflow("demo", steps=[("one", "Um")])
-    runner = _Runner([RuntimeError("o processo do agente encerrou")])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([RuntimeError("o processo do agente encerrou")])
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 1
     assert runner.revivals == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("one").status == "failed"
     assert record.status == "failed"
 
 
 def test_skip_settles_the_step_without_failing_the_run(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner([{"approved": False, "outcome": "skip"}, _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([{"approved": False, "outcome": "skip"}, _approved()])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("one").status == "skipped"
     assert record.step("two").status == "done"
 
@@ -380,18 +234,16 @@ def test_a_step_without_approval_closes_when_the_agent_declares_the_outcome(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner([_delivered("pronto")])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_delivered("pronto")])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+    assert wired.runs.only().step("one").status == "done"
 
 
 def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
@@ -403,24 +255,22 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
     became `done` and the next one ran on top of nothing.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             {"stopReason": "end_turn", "phaseSummary": "não consigo: falta a credencial"},
             {"stopReason": "end_turn", "phaseSummary": "continuo sem conseguir"},
         ]
     )
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_BLOCKED
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("one").status == "blocked"
     assert record.step("two").status == "pending", "the cascade stops at the blocked step"
     assert record.status == "blocked", "a block is not a failure"
@@ -428,24 +278,22 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
 
 def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = _Runner([_blocked("falta a credencial do banco", needs="user")])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_blocked("falta a credencial do banco", needs="user")])
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_BLOCKED
-    assert runner._prompt_handler.asked == ["Um está bloqueado"]
-    assert runner._prompt_handler.prompts == ["falta a credencial do banco"], (
+    assert runner.prompts.asked == ["Um está bloqueado"]
+    assert runner.prompts.prompts == ["falta a credencial do banco"], (
         "the reason the agent declared is what the user reads"
     )
     assert len(runner.sent) == 1, "`needs: user` does not spend a self-resolution turn"
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["blocked", "pending"]
 
 
@@ -456,44 +304,40 @@ def test_a_blocked_step_gets_one_shot_at_unblocking_itself(wired, monkeypatch, t
     same session so it does not start from scratch, before escalating.
     """
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner(
+    runner = FakeAgentSession(
         [_blocked("o arquivo de config não existe"), _delivered("criei o config e segui")]
     )
-    _install(monkeypatch, runner)
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    assert runner._prompt_handler.asked == [], "nobody was interrupted"
+    assert runner.prompts.asked == [], "nobody was interrupted"
     assert len(runner.sent) == 2
     assert "Bloqueio declarado" in runner.sent[1]
     assert "o arquivo de config não existe" in runner.sent[1]
-    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+    assert wired.runs.only().step("one").status == "done"
 
 
 def test_the_agent_gets_only_one_shot_before_the_person_is_called(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner([_blocked("falta X"), _blocked("continua faltando X")])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_blocked("falta X"), _blocked("continua faltando X")])
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_BLOCKED
     assert len(runner.sent) == 2, "two attempts, not a ping-pong"
-    assert runner._prompt_handler.prompts == ["continua faltando X"]
+    assert runner.prompts.prompts == ["continua faltando X"]
 
 
 def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
@@ -505,38 +349,36 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
     exact friction that would make the protocol not worth it.
     """
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession(
+        [{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()]
+    )
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    assert runner._prompt_handler.asked == []
+    assert runner.prompts.asked == []
     assert "Desfecho do step" in runner.sent[1]
-    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+    assert wired.runs.only().step("one").status == "done"
 
 
 def test_skipping_a_blocked_step_records_it_as_skipped_not_done(wired, monkeypatch, tmp_path: Path):
     """The explicit skip is the difference: it used to happen disguised as `done`."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = _Runner([_blocked("falta acesso", needs="user"), _delivered()])
-    runner._prompt_handler.choice = "skip"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_blocked("falta acesso", needs="user"), _delivered()])
+    runner.prompts.choice = "skip"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["skipped", "done"]
 
 
@@ -552,21 +394,19 @@ def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(wired, monkeypat
         requires_approval=False,
         prompt_template="{{#if previous_summary}}antes: {{previous_summary}}{{/if}}siga",
     )
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             _delivered("escrevi o plano"),
             _blocked("não consegui migrar o schema", needs="user"),
             _delivered(),
         ]
     )
-    runner._prompt_handler.choice = "skip"
-    _install(monkeypatch, runner)
+    runner.prompts.choice = "skip"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
@@ -577,32 +417,28 @@ def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(wired, monkeypat
 def test_requires_outcome_off_brings_the_old_behaviour_back(wired, monkeypatch, tmp_path: Path):
     """The escape hatch, for workflows that have not adopted the protocol yet."""
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False, requires_outcome=False)
-    runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "pronto"}])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([{"stopReason": "end_turn", "phaseSummary": "pronto"}])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert runner.sent == ["x"], "without the protocol, the prompt stays as the author wrote it"
-    assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
+    assert wired.runs.only().step("one").status == "done"
 
 
 def test_an_approval_step_keeps_the_person_as_the_only_gate(wired, monkeypatch, tmp_path: Path):
     """A step has a single gate: where there is approval, the user attests."""
     make_workflow("demo", steps=[("one", "Um")], requires_approval=True)
-    runner = _Runner([_approved("entreguei")])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved("entreguei")])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
@@ -614,49 +450,43 @@ def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
 ):
     """The Null prompt port answers nothing: the safe default is to stop, saying why."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = _Runner([_blocked("falta acesso", needs="user")])
-    runner._prompt_handler = NullPromptPort()
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_blocked("falta acesso", needs="user")])
+    runner.prompts = NullPromptPort()
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_BLOCKED
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["blocked", "pending"]
-    assert "Um está bloqueado: falta acesso" in runner._stream.messages
+    assert "Um está bloqueado: falta acesso" in runner.stream.messages
 
 
 def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = _Runner([_approved(), {"approved": False, "outcome": "continue"}])
-    first._prompt_handler.choice = "stop"
-    _install(monkeypatch, first)
-    run_workflow(
+    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first.prompts.choice = "stop"
+    wired.run(
+        first,
         workflow_id="demo",
         user_prompt="x",
-        stream=first._stream,
-        prompt_handler=first._prompt_handler,
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
+    run_id = wired.runs.only().id
 
-    second = _Runner([_approved()])
-    _install(monkeypatch, second)
-    code = run_workflow(
+    second = FakeAgentSession([_approved()])
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=run_id,
     )
 
     assert code == 0
     assert len(second.sent) == 1, "the already-finished step does not run again"
-    assert len(run_store.list_runs(tmp_path)) == 1, "resuming does not create another run"
+    assert wired.runs.ids() == [run_id], "resuming does not create another run"
 
 
 def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
@@ -667,37 +497,32 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
     The engine never reaches it again, so it is skipped instead of holding the run open.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
-    first = _Runner([_approved(), {"approved": False, "outcome": "continue"}])
-    first._prompt_handler.choice = "stop"
-    _install(monkeypatch, first)
-    run_workflow(
+    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first.prompts.choice = "stop"
+    wired.run(
+        first,
         workflow_id="demo",
         user_prompt="x",
-        stream=first._stream,
-        prompt_handler=first._prompt_handler,
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
+    run_id = wired.runs.only().id
     make_workflow("demo", steps=[("one", "Um"), ("three", "Três")])
 
-    second = _Runner([_approved()])
-    _install(monkeypatch, second)
-    code = run_workflow(
+    second = FakeAgentSession([_approved()])
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    record = run_store.load_run(run_id)
+    record = wired.runs.load(run_id)
     assert record.status == RunStatus.COMPLETED
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("one", StepStatus.DONE),
         ("two", StepStatus.SKIPPED),
         ("three", StepStatus.DONE),
     ]
-    assert run_store.find_resumable(tmp_path) == []
 
 
 def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypatch, tmp_path: Path):
@@ -707,33 +532,29 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
     can never start and the whole resume fails.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = _Runner([_approved(), {"approved": False, "outcome": "continue"}])
-    first._prompt_handler.choice = "stop"
-    _install(monkeypatch, first)
-    run_workflow(
+    first = FakeAgentSession([_approved(), {"approved": False, "outcome": "continue"}])
+    first.prompts.choice = "stop"
+    wired.run(
+        first,
         workflow_id="demo",
         user_prompt="x",
-        stream=first._stream,
-        prompt_handler=first._prompt_handler,
     )
-    crashed = run_store.list_runs(tmp_path)[0]
+    crashed = wired.runs.only()
     two = crashed.step("two")
     two.status = run_model.StepStatus.RUNNING
-    store_step(crashed.id, two)
+    wired.runs.save(crashed)
 
     make_workflow("demo", steps=[("one", "Um"), ("new", "Novo"), ("two", "Dois")])
-    second = _Runner([_approved(), _approved()])
-    _install(monkeypatch, second)
-    code = run_workflow(
+    second = FakeAgentSession([_approved(), _approved()])
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=crashed.id,
     )
 
     assert code == 0
-    resumed = run_store.load_run(crashed.id)
+    resumed = wired.runs.load(crashed.id)
     assert {step.step_id: step.status for step in resumed.steps} == {
         "one": "done",
         "new": "done",
@@ -753,23 +574,19 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
     assert "restart" not in inspect.signature(run_workflow).parameters
 
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    first = _Runner([_approved(), _approved()])
-    _install(monkeypatch, first)
-    run_workflow(
+    first = FakeAgentSession([_approved(), _approved()])
+    wired.run(
+        first,
         workflow_id="demo",
         user_prompt="x",
-        stream=first._stream,
-        prompt_handler=first._prompt_handler,
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
+    run_id = wired.runs.only().id
 
-    second = _Runner([_approved(), _approved()])
-    _install(monkeypatch, second)
-    code = run_workflow(
+    second = FakeAgentSession([_approved(), _approved()])
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=run_id,
     )
 
@@ -780,8 +597,7 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
 def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     control = RunControl()
-    runner = _Runner([_approved()], control=control)
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved()], control=control)
 
     original = runner.run_isolated_phase
 
@@ -792,16 +608,15 @@ def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_
 
     runner.run_isolated_phase = stop_after_first
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
         control=control,
     )
 
     assert code == RUN_STOPPED
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.status == "stopped"
     assert record.step("one").status == "done", "what already closed stays closed"
     assert record.step("two").status == "pending"
@@ -812,15 +627,13 @@ def test_a_broken_template_fails_the_step_instead_of_prompting_a_hole(
 ):
     """A placeholder without a value is an error: a truncated instruction would go out silently."""
     make_workflow("demo", steps=[("one", "Um")], prompt_template="{{nao_existe}}")
-    runner = _Runner([])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([])
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 1
@@ -835,20 +648,20 @@ def test_an_unexpected_error_also_offers_retry(wired, monkeypatch, tmp_path: Pat
     recorded as running.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner([ValueError("I/O operation on closed file"), _approved(), _approved()])
-    runner._prompt_handler.choice = "retry"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession(
+        [ValueError("I/O operation on closed file"), _approved(), _approved()]
+    )
+    runner.prompts.choice = "retry"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    assert runner._prompt_handler.asked == ["Step Um falhou"]
-    record = run_store.list_runs(tmp_path)[0]
+    assert runner.prompts.asked == ["Step Um falhou"]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["done", "done"]
 
 
@@ -859,18 +672,16 @@ def test_a_step_that_failed_is_never_left_as_running(wired, monkeypatch, tmp_pat
     restart: no step was pending, just one stuck midway.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner([RuntimeError("o processo do agente encerrou")])
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([RuntimeError("o processo do agente encerrou")])
+    runner.prompts.choice = "stop"
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.status for step in record.steps] == ["failed", "pending"]
     assert record.step("one").ended_at, "failure also stops the step clock"
 
@@ -885,8 +696,7 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois"), ("three", "Três")])
     control = RunControl()
-    runner = _Runner([_approved(), {"stopReason": "cancelled"}], control=control)
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved(), {"stopReason": "cancelled"}], control=control)
 
     original = runner.run_isolated_phase
 
@@ -897,29 +707,26 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
 
     runner.run_isolated_phase = stop_during_second
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
         control=control,
     )
 
     assert code == RUN_STOPPED
-    assert runner._prompt_handler.asked == [], "stopping does not go through the retry menu"
-    record = run_store.list_runs(tmp_path)[0]
+    assert runner.prompts.asked == [], "stopping does not go through the retry menu"
+    record = wired.runs.only()
     run_id = record.id
     assert record.status == "stopped"
     assert [step.status for step in record.steps] == ["done", "pending", "pending"]
 
-    second = _Runner([_approved(), _approved()])
-    _install(monkeypatch, second)
+    second = FakeAgentSession([_approved(), _approved()])
 
-    code = run_workflow(
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=run_id,
     )
 
@@ -927,7 +734,7 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     assert len(second.sent) == 2, (
         "only the two pending steps run; the closed one does not come back"
     )
-    record = run_store.load_run(run_id)
+    record = wired.runs.load(run_id)
     assert [step.status for step in record.steps] == ["done", "done", "done"]
 
 
@@ -947,20 +754,18 @@ def test_a_step_can_send_the_run_back_to_repeat_the_stretch(wired, monkeypatch, 
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner(
+    runner = FakeAgentSession(
         [_delivered(), _repeating(), _delivered(), _repeating(), _delivered(), _delivered()]
     )
-    _install(monkeypatch, runner)
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert all(step.status == "done" for step in record.steps)
     assert record.step("review").rounds == 3
@@ -975,17 +780,15 @@ def test_without_a_request_the_loop_runs_only_once(wired, monkeypatch, tmp_path)
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_delivered(), _delivered()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_delivered(), _delivered()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert record.step("review").rounds == 1
 
@@ -998,18 +801,16 @@ def test_the_round_cap_ends_the_loop(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 2),
     )
-    runner = _Runner([_delivered(), _repeating(), _delivered(), _repeating()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_delivered(), _repeating(), _delivered(), _repeating()])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert record.step("review").rounds == 2, "stopped at the second, as the cap dictates"
     assert record.status == "completed"
@@ -1027,7 +828,7 @@ def test_the_loop_ends_on_its_opener_never_on_its_closer(wired, monkeypatch, tmp
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             _delivered("r1"),
             _repeating("f1"),
@@ -1037,22 +838,20 @@ def test_the_loop_ends_on_its_opener_never_on_its_closer(wired, monkeypatch, tmp
             _repeating("f3 — não deveria rodar"),
         ]
     )
-    _install(monkeypatch, runner)
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert len(runner.sent) == 5
     assert len(runner._results) == 1
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("review").rounds == 3
     assert all(step.status == "done" for step in record.steps)
-    assert any("a última" in message for message in runner._stream.messages)
+    assert any("a última" in message for message in runner.stream.messages)
 
 
 def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
@@ -1064,43 +863,39 @@ def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
         repeat=("fix", "review", 3),
     )
     control = RunControl()
-    first = _Runner([_delivered(), _repeating(), _delivered()], control=control)
-    original = engine._run_step
+    fixes = 0
 
-    def stop_before_second_fix(**kwargs):
-        if kwargs["step"].step_id == "fix" and kwargs["run"].step("review").rounds == 2:
-            control.stop()
-            return RUN_STOPPED, False
-        return original(**kwargs)
+    def stop_at_the_second_fix(step_id: str) -> dict | None:
+        nonlocal fixes
+        if step_id != "fix":
+            return None
+        fixes += 1
+        if fixes < 2:
+            return None
+        control.stop()
+        return {"stopReason": "cancelled"}
 
-    monkeypatch.setattr(engine, "_run_step", stop_before_second_fix)
-    _install(monkeypatch, first)
-    assert (
-        run_workflow(
-            workflow_id="demo",
-            user_prompt="x",
-            stream=first._stream,
-            prompt_handler=first._prompt_handler,
-        )
-        == RUN_STOPPED
+    first = FakeAgentSession(
+        [_delivered(), _repeating(), _delivered()],
+        control=control,
+        before_turn=stop_at_the_second_fix,
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
-    monkeypatch.setattr(engine, "_run_step", original)
+    assert wired.run(first, workflow_id="demo", user_prompt="x") == RUN_STOPPED
+    run_id = wired.runs.only().id
+    assert wired.runs.load(run_id).step("review").rounds == 2
 
-    second = _Runner([_repeating(), _delivered(), _repeating("não deveria rodar")])
-    _install(monkeypatch, second)
-    code = run_workflow(
+    second = FakeAgentSession([_repeating(), _delivered(), _repeating("não deveria rodar")])
+    code = wired.run(
+        second,
         workflow_id="demo",
         user_prompt="x",
-        stream=second._stream,
-        prompt_handler=second._prompt_handler,
         resume_run_id=run_id,
     )
 
     assert code == 0
     assert len(second.sent) == 2
     assert len(second._results) == 1
-    assert run_store.load_run(run_id).step("review").rounds == 3
+    assert wired.runs.load(run_id).step("review").rounds == 3
 
 
 def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
@@ -1111,8 +906,7 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_delivered(), _repeating(), _delivered(), _delivered()])
 
     start = datetime(2026, 10, 6, tzinfo=UTC)
     seconds = iter(range(0, 10_000, 10))
@@ -1122,14 +916,13 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
         lambda: start + timedelta(seconds=next(seconds)),
     )
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     review = record.step("review")
     assert review.rounds == 2
     assert review.carried_seconds > 0
@@ -1156,22 +949,20 @@ def test_clean_review_ends_the_loop_without_asking_approval(wired, monkeypatch, 
         steps=[("review", "Review"), ("fix", "Fix"), ("after", "Depois")],
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_clean(approval=True), _approved("depois")])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_clean(approval=True), _approved("depois")])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert len(runner.sent) == 2, "review and the step after the loop; fix does not run"
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.status == "completed"
     assert [step.status for step in record.steps] == ["done", "skipped", "done"]
-    assert any("laço encerrado" in message for message in runner._stream.messages)
+    assert any("laço encerrado" in message for message in runner.stream.messages)
 
 
 def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, monkeypatch, tmp_path):
@@ -1182,19 +973,17 @@ def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, mon
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_delivered("r1"), _repeating("f1"), _clean("r2")])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_delivered("r1"), _repeating("f1"), _clean("r2")])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
     assert len(runner.sent) == 3
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("review").rounds == 2
     assert [step.status for step in record.steps] == ["done", "done"]
 
@@ -1202,20 +991,18 @@ def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, mon
 def test_only_the_loop_opener_can_waive_approval(wired, monkeypatch, tmp_path):
     """Outside a loop opener, `next: close` does not count as approval."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
-    runner = _Runner([_clean(approval=True)])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_clean(approval=True)])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.step("one").status == "failed"
     assert record.step("two").status == "pending"
-    assert any("sem o bloco de aprovação" in prompt for prompt in runner._prompt_handler.prompts)
+    assert any("sem o bloco de aprovação" in prompt for prompt in runner.prompts.prompts)
 
 
 def test_repeat_request_is_ignored_where_the_workflow_declared_no_loop(
@@ -1227,17 +1014,15 @@ def test_repeat_request_is_ignored_where_the_workflow_declared_no_loop(
         steps=[("one", "Um"), ("two", "Dois")],
         requires_approval=False,
     )
-    runner = _Runner([_repeating(), _repeating()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_repeating(), _repeating()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["one", "two"]
 
 
@@ -1249,17 +1034,17 @@ def test_steps_after_the_loop_do_not_count_rounds(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered(), _delivered()])
-    _install(monkeypatch, runner)
-
-    run_workflow(
-        workflow_id="demo",
-        user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
+    runner = FakeAgentSession(
+        [_delivered(), _repeating(), _delivered(), _delivered(), _delivered()]
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    wired.run(
+        runner,
+        workflow_id="demo",
+        user_prompt="x",
+    )
+
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["review", "fix", "ship"]
     assert record.step("review").rounds == 2
     assert record.step("ship").rounds == 1
@@ -1278,40 +1063,29 @@ def test_loop_rounds_stay_under_the_same_step(wired, monkeypatch, tmp_path):
         requires_approval=False,
         repeat=("fix", "review", 3),
     )
-    runner = _Runner([_delivered(), _repeating(), _delivered(), _delivered()])
-    _install(monkeypatch, runner)
-
     rounds: list[int] = []
-    original = engine._run_step
 
-    def spy(**kwargs):
-        if kwargs["step"].step_id == "review":
+    def each_review_writes_its_round(step_id: str) -> None:
+        if step_id == "review":
             rounds.append(len(rounds) + 1)
-            run_store.record_artifact(
-                kwargs["run"].id,
-                f"reviews/round-00{len(rounds)}.md",
-                step_id="review",
-            )
-        return original(**kwargs)
+            wired.runs.add_artifact(runner.run_id, f"reviews/round-00{len(rounds)}.md")
 
-    monkeypatch.setattr(engine, "_run_step", spy)
-
-    run_workflow(
-        workflow_id="demo",
-        user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
+    runner = FakeAgentSession(
+        [_delivered(), _repeating(), _delivered(), _delivered()],
+        before_turn=each_review_writes_its_round,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    wired.run(
+        runner,
+        workflow_id="demo",
+        user_prompt="x",
+    )
+
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["review", "fix"]
     assert record.step("review").rounds == 2
 
-    artifacts = run_store.list_artifacts(record.id)
-    assert artifacts == [
-        {"path": "reviews/round-001.md", "step_id": "review"},
-        {"path": "reviews/round-002.md", "step_id": "review"},
-    ]
+    assert wired.runs.artifacts(record.id) == ["reviews/round-001.md", "reviews/round-002.md"]
 
 
 def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
@@ -1326,26 +1100,24 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     clock = [datetime(2026, 1, 1, tzinfo=UTC)]
     monkeypatch.setattr(run_model, "utc_now", lambda: clock[0])
 
-    runner = _Runner([RuntimeError("o processo do agente encerrou")])
+    runner = FakeAgentSession([RuntimeError("o processo do agente encerrou")])
     stamped_before_menu: list[datetime] = []
 
     def stop_after_ten_minutes(prompt, choices, *, title=""):
-        stamped_before_menu.append(run_store.list_runs(tmp_path)[0].step("one").ended_at)
+        stamped_before_menu.append(wired.runs.only().step("one").ended_at)
         clock[0] += timedelta(minutes=10)
         return "stop"
 
-    runner._prompt_handler.select_choice = stop_after_ten_minutes
-    _install(monkeypatch, runner)
+    runner.prompts.select_choice = stop_after_ten_minutes
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 1
-    step = run_store.list_runs(tmp_path)[0].step("one")
+    step = wired.runs.only().step("one")
     assert stamped_before_menu
     assert stamped_before_menu[0]
     assert step.ended_at - stamped_before_menu[0] == timedelta(minutes=10)
@@ -1358,24 +1130,22 @@ def test_stopping_while_the_blocked_menu_is_open_stops_the_run(wired, monkeypatc
     pending for whoever resumes, instead of becoming `blocked`.
     """
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
-    runner = _Runner([_blocked("falta a credencial do banco", needs="user")])
+    runner = FakeAgentSession([_blocked("falta a credencial do banco", needs="user")])
 
     def stop_while_waiting(prompt, choices, *, title=""):
         runner.control.stop()
         return None
 
-    runner._prompt_handler.select_choice = stop_while_waiting
-    _install(monkeypatch, runner)
+    runner.prompts.select_choice = stop_while_waiting
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_STOPPED
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert record.status == "stopped"
     assert record.step("one").status == "pending"
 
@@ -1384,22 +1154,20 @@ def test_stopping_while_typing_guidance_does_not_reopen_the_menu(
     wired, monkeypatch, tmp_path: Path
 ):
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner([RuntimeError("o processo do agente encerrou")])
-    runner._prompt_handler.choice = "guidance"
+    runner = FakeAgentSession([RuntimeError("o processo do agente encerrou")])
+    runner.prompts.choice = "guidance"
 
     def stop_while_typing(prompt, *, title=""):
         runner.control.stop()
         return None
 
-    runner._prompt_handler.ask_text = stop_while_typing
-    _install(monkeypatch, runner)
+    runner.prompts.ask_text = stop_while_typing
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_STOPPED
-    assert len(runner._prompt_handler.asked) == 1, "the menu does not come back after stopping"
+    assert len(runner.prompts.asked) == 1, "the menu does not come back after stopping"

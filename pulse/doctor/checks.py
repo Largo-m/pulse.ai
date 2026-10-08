@@ -51,7 +51,7 @@ def active_runtime_id() -> str:
     """Runtime Pulse would use now, according to the resolved config."""
     from pulse.config.resolved import resolve_config
 
-    return get_runtime(resolve_config().agent_name).id
+    return resolve_config().runtime.id
 
 
 def other_runtimes_summary(active: str) -> list[CheckResult]:

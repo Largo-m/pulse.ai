@@ -7,24 +7,18 @@ the screen reopens pointing at the right worktree without a new route.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
-
-import pytest
 
 from pulse.client.protocol import REPLAY_END
 from pulse.client.run_session import EngineRunSession
 from pulse.daemon.adapters import ApiStreamSink
 from pulse.daemon.events import EventBus
-from pulse.orchestrator.engine import run_workflow
+from pulse.domain.ports import NullPromptPort
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
 from tests.conftest import make_workflow
-from tests.orchestrator.test_engine_steps import (  # noqa: F401
-    _approved,
-    _install,
-    _Runner,
-    wired,
-)
+from tests.fakes import FakeAgentSession
+from tests.orchestrator.harness import EngineHarness
+from tests.orchestrator.test_engine_steps import _approved
 
 
 class _ReplayClient:
@@ -59,23 +53,25 @@ def test_daemon_sink_publishes_the_context():
     assert {"type": "run.context", "cwd": "/tmp/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
 
 
-@pytest.mark.usefixtures("wired")
-def test_engine_announces_the_context_before_any_step(monkeypatch, tmp_path: Path):
+def test_engine_announces_the_context_before_any_step(tmp_path: Path):
     """The artifacts panel depends on this to know where to look for files."""
     make_workflow("demo", steps=[("one", "Um")])
-    runner = _Runner([_approved()])
+    runner = FakeAgentSession([_approved()])
     calls: list[str] = []
-    runner._stream.set_context = lambda *, cwd, branch: calls.append(f"context:{cwd}")
-    runner._stream.begin_phase = lambda title: calls.append(f"phase:{title}")
+    runner.stream.set_context = lambda *, cwd, branch: calls.append(f"context:{cwd}")
+    runner.stream.begin_phase = lambda title: calls.append(f"phase:{title}")
     runner.run_isolated_phase = _beginning_a_phase(runner)
-    _install(monkeypatch, runner)
 
-    run_workflow(workflow_id="demo", user_prompt="x", stream=runner.stream)
+    EngineHarness(tmp_path).run(
+        runner,
+        workflow_id="demo",
+        user_prompt="x",
+    )
 
     assert calls == [f"context:{tmp_path}", "phase:Um"]
 
 
-def _beginning_a_phase(runner: _Runner):
+def _beginning_a_phase(runner: FakeAgentSession):
     """The real runner opens a phase on the stream before the agent's first turn."""
     original = runner.run_isolated_phase
 
@@ -93,7 +89,7 @@ def test_client_forwards_the_context_to_the_sink():
     sink = CockpitSink(state, cwd="/projeto")
     session = EngineRunSession(
         stream=sink,
-        prompt_handler=MagicMock(),
+        prompt_handler=NullPromptPort(),
         client=_ReplayClient(
             [
                 {"type": "run.context", "cwd": "/projeto/.wt", "branch": "pulse/demo-abc"},

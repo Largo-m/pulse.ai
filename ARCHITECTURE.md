@@ -56,8 +56,10 @@ Você digita `pulse`
 5. **Um contrato, dois transportes** — mesmas rotas `/api/*` em **UDS**
    (`~/.pulse/daemon.sock`, CLI local) e **TCP** (`127.0.0.1:8787`, tooling e
    clientes futuros).
-6. **Ports & Adapters** — o domínio depende de interfaces (`StreamSink`,
-   `PromptPort`), não de Textual.
+6. **Ports & Adapters** — o domínio e o motor dependem de interfaces
+   (`StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `Workspace`,
+   `AgentProfiles`), não de Textual, SQLite, git ou ACP. Só o daemon sabe qual
+   adapter está atrás de cada porta ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)).
 
 Contrato OpenAPI: [`contracts/openapi.yaml`](contracts/openapi.yaml).
 
@@ -125,26 +127,35 @@ Detalhe completo do modelo: [`docs/workflows.md`](docs/workflows.md).
 ## 2. O motor
 
 [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) — uma função
-pública, `run_workflow`, e nenhum `if workflow_id == ...`:
+pública, `run_workflow`, e nenhum `if workflow_id == ...`. Tudo o que o motor
+faz no mundo passa pelas portas de `EnginePorts`, que o daemon monta em
+[`run_engine`](pulse/daemon/runs.py):
 
 ```
-run_workflow(workflow_id, user_prompt, …)
-  │
-  ├─ get_workflow(id)                  definição + steps, do banco
-  ├─ resolve_config(workflow=id)       runtime, model, policy, cwd
-  ├─ check_runtime_ready(runtime)      binário e auth antes de gastar sessão
-  ├─ create_run | load_run             `runs` + N em `run_steps`
-  └─ para cada step ainda pendente:
+run_engine(workflow_id, …)                daemon/runs.py — o único que conhece os adapters
+  ├─ get_workflow(id)                     None → UnknownWorkflow (API: 404)
+  ├─ resolve_config(workflow=id)          runtime, model, policy, cwd
+  ├─ check_runtime_ready(runtime)         binário e auth antes de gastar sessão
+  └─ run_workflow(definition, ports=EnginePorts(session, stream, runs, workspace, agents))
        │
-       ├─ control.checkpoint()         ◄── ponto de corte do parar
-       ├─ resolve_config(pulse_agent=step.agent_id)
-       ├─ runner.use_agent(…)          o agente DESTE step
-       ├─ render(step.prompt_template) com os valores da run
-       ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
-       ├─ classify_outcome(…)          approve | adjust | skip | cancel
-       ├─ parse_outcome(…)             done | blocked  (step sem aprovação)
-       └─ record.deliver()/block()…   desfecho no agregado → save(run)
+       ├─ runs.create | runs.load         `runs` + N em `run_steps`
+       ├─ prepare_workspace(…)            raiz ou worktree, pela porta Workspace
+       ├─ session.open(cwd)               o agente sobe onde a run trabalha
+       └─ para cada step ainda pendente:
+            │
+            ├─ control.checkpoint()       ◄── ponto de corte do parar
+            ├─ agents.profile(agent_id)   model, política e instruções DESTE step
+            ├─ session.use_agent(profile)
+            ├─ render(step.prompt_template) com os valores da run
+            ├─ requires_approval ? run_isolated_phase : run_isolated_prompt
+            ├─ classify_outcome(…)        approve | adjust | skip | cancel
+            ├─ parse_outcome(…)           done | blocked  (step sem aprovação)
+            └─ record.deliver()/block()…  desfecho no agregado → runs.save(run)
 ```
+
+Recusa antes do primeiro step (workflow sem step, worktree que não abre,
+runtime indisponível) é exceção para quem chamou; o motor não imprime nada e
+não sabe se há um terminal ou uma tela do outro lado.
 
 ### Sessão ACP isolada por step
 
@@ -334,7 +345,8 @@ raiz porque `load_project_config` procura o root registrado em `projects` — um
 worktree não está lá, e resolver por ele faria as settings por agente sumirem
 sem erro nenhum.
 
-Quem decide é [`_prepare_workspace`](pulse/orchestrator/engine.py), em três
+Quem decide é [`prepare_workspace`](pulse/orchestrator/worktree.py), pela porta
+`Workspace` (o adapter de produção é [`GitWorkspace`](pulse/vcs/workspace.py)), em três
 casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
 fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
 isolamento, `git worktree add`. Falhar ao abrir o worktree **para a run** —
@@ -389,6 +401,7 @@ não tem nenhum para oferecer.
 |---------|--------|
 | [`pulse/cli/main.py`](pulse/cli/main.py) | Lê o comando (`init`, `doctor`, `config`, `daemon`) ou abre a TUI |
 | [`pulse/cli/daemon_command.py`](pulse/cli/daemon_command.py) | `pulse daemon start \| stop \| status` |
+| [`pulse/cli/console_sink.py`](pulse/cli/console_sink.py) | `ConsoleStreamSink`: o progresso de uma run num terminal sem TUI |
 | [`pulse/__main__.py`](pulse/__main__.py) | Permite `python -m pulse` |
 
 Entry points: `pulse` → CLI, `pulse-engine` → daemon em foreground,
@@ -429,7 +442,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS; ancora o cwd em `~/.pulse` |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas. `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Rotas FastAPI |
@@ -478,8 +491,10 @@ regras e parsers sem I/O. `orchestrator/` usa os dois para executar a run. A
 TUI lê valores do domínio, mas **não** chama o orquestrador para executar.
 Quem usa um tipo do domínio importa de `pulse.domain`, nunca de um módulo que
 o reexporta (`tests/architecture/test_domain_imports.py`), e o `mypy` checa
-`domain/` como `--strict`, sem nenhum `Any` no código
-(`tests/architecture/test_domain_typing.py`). O porquê dessa divisão está na
+`domain/` e `orchestrator/` como `--strict`, sem nenhum `Any` no código
+(`tests/architecture/test_domain_typing.py`). O motor não importa `acp/`,
+`store/`, `vcs/` nem `doctor/`, nem por tabela: o que ele faz no mundo passa
+pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê dessa divisão está na
 [ADR 0001](docs/adr/0001-camada-de-dominio.md).
 
 | Arquivo | Função |
@@ -488,9 +503,10 @@ o reexporta (`tests/architecture/test_domain_imports.py`), e o `mypy` checa
 | [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object, com os laços (`loops()`, `RepeatRule`, `Loop.next_round`), o protocolo de desfecho e os filhos de fan-out |
 | [`pulse/domain/outcome.py`](pulse/domain/outcome.py) | O bloco `pulse:outcome` e o seu parser estrito |
 | [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
-| [`pulse/domain/ports.py`](pulse/domain/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
+| [`pulse/domain/ports.py`](pulse/domain/ports.py) | As portas do motor — `StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace` — e as implementações Null |
 | [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário |
-| [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada |
+| [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada, sobre `EnginePorts` |
+| [`pulse/orchestrator/worktree.py`](pulse/orchestrator/worktree.py) | Onde a run trabalha: raiz ou worktree próprio |
 | [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |
 | [`pulse/orchestrator/agent_text.py`](pulse/orchestrator/agent_text.py) | Os dois textos que o próprio Pulse escreve |
 | [`pulse/orchestrator/render.py`](pulse/orchestrator/render.py) | Engine `{{placeholder}}` |
@@ -499,7 +515,7 @@ o reexporta (`tests/architecture/test_domain_imports.py`), e o `mypy` checa
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Processo do agente, sessões, prompts, updates, artefatos |
+| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Adapter de `AgentSession`: processo do agente, sessões, prompts, updates, artefatos |
 | [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
 | [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude` |
 
@@ -512,16 +528,16 @@ enxergá-lo sem mudanças.
 | Pasta | Função |
 |-------|--------|
 | [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Persistência das definições de workflow, step e agente |
-| [`pulse/store/runs.py`](pulse/store/runs.py) | Persistência da run, log e artefatos |
+| [`pulse/store/runs.py`](pulse/store/runs.py) | Persistência da run, log e artefatos; `SqliteRunRepository` é o adapter de `RunRepository` |
 | [`pulse/store/paths.py`](pulse/store/paths.py) | O layout de `~/.pulse`, definido num lugar só |
 | [`pulse/store/db.py`](pulse/store/db.py) | Schema + disparo da semente |
 | [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
-| [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |
+| [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models; `ConfiguredAgentProfiles` é o adapter de `AgentProfiles` |
 | [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
 | [`pulse/history/status_labels.py`](pulse/history/status_labels.py) | Rótulo, cor e ícone de cada status: os mesmos na tela e na busca do histórico |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
-| [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run |
+| [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run; `GitWorkspace` é o adapter de `Workspace` |
 
 ---
 
@@ -625,7 +641,8 @@ mesmas perguntas apareceriam duas vezes.
 | Pode | Não deve |
 |------|----------|
 | TUI chamar `pulse/client/` | TUI ou `client/` importar `orchestrator/`, `acp/` ou `daemon/` |
-| Engine chamar `orchestrator/`, `acp/`, `config/` | Domínio importar Textual / widgets |
+| Daemon montar `acp/`, `store/`, `vcs/`, `config/` como portas do motor | Motor (`orchestrator/`) importar `acp/`, `store/`, `vcs/` ou `doctor/` |
+| Motor falar com o mundo pelas portas de `domain/ports.py` | Domínio importar Textual / widgets |
 | Motor sequenciar steps | Motor interpretar o que o agente produziu |
 | Motor ler o desfecho da aprovação | Motor esperar artefato com nome conhecido |
 | Definição vir do banco | Definição vir de arquivo do pacote |
@@ -648,7 +665,7 @@ pastas de `pulse/`, então um pacote novo já nasce coberto.
 | Pattern | Onde | Para quê |
 |---------|------|----------|
 | Composition Root | `daemon/` | Só o daemon monta o grafo de serviços |
-| Ports & Adapters | `domain/ports.py` + adapters TUI/API | Domínio independente da UI |
+| Ports & Adapters | `domain/ports.py` + adapters TUI/API/ACP/SQLite/git | Domínio e motor independentes da UI e da infraestrutura |
 | Facade | `orchestrator/engine.py` | Uma entrada estável: `run_workflow` |
 | Data-driven pipeline | `workflow_defs`/`workflow_steps` | Trocar o pipeline é `INSERT`, não release |
 | Transport parity | UDS + TCP | Mesmo contrato para CLI e clients futuros |
@@ -717,7 +734,7 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
   `pulse.store.workflow_defs.save_workflow()`. É a lacuna mais visível do desenho.
 - **Troca de runtime entre steps** — `resolve_config(pulse_agent=…)` já devolve um
   runtime por agente, mas o `acp_command` é fixado na construção do
-  `AcpSessionRunner`, no pré-voo. Uma run inteira roda no mesmo backend; o que
+  `AcpSessionRunner`, em `run_engine`. Uma run inteira roda no mesmo backend; o que
   varia por step é modelo, política e instruções.
 - **Gates de shell** — o Pulse não roda comando de verificação entre steps.
 - **Replay sobrevive só enquanto o daemon vive** — o histórico de eventos de uma

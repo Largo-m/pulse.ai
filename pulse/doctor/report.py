@@ -34,7 +34,7 @@ def print_doctor_report(
 
 def run_doctor(*, test_acp: bool = False) -> int:
     resolved = resolve_config()
-    active = get_runtime(resolved.agent_name).id
+    active = resolved.runtime.id
     checks = run_doctor_checks(active)
     acp_message: str | None = None
 

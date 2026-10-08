@@ -43,7 +43,7 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 | Client | `client/` | HTTP contract only (`client/protocol.py`) | domain internals |
 | Composition root | `daemon/`, `api/` | everything | — |
 | Domain | `domain/` (run, workflow, outcome, control, ports), `replies/` | nothing else in `pulse/` | any other package, Textual, FastAPI |
-| Orchestration | `orchestrator/` | `domain/`, `replies/`, `store/`, `config/`, `acp/` via ports | Textual, FastAPI, widgets |
+| Orchestration | `orchestrator/` | `domain/`, `replies/`; everything else through the ports in `domain/ports.py` | `acp/`, `store/`, `vcs/`, `doctor/` (even indirectly), Textual, FastAPI |
 | Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, stdlib, third-party libs | `tui/` |
 
 The package root holds only `__init__.py` and `__main__.py`; every other module
@@ -58,9 +58,13 @@ lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-domin
   contracts in `pyproject.toml` enforce this; their `ignore_imports` baseline
   only shrinks. Only `cli/` imports `tui/`: what a screen and a non-UI package
   both need (status labels) lives with the non-UI owner.
-- **Ports & Adapters**: the domain depends on `StreamSink` / `PromptPort`
-  ([`pulse/domain/ports.py`](pulse/domain/ports.py)), not on Textual or HTTP.
-  New I/O needs a port first, then adapters (TUI, API, `Null*`).
+- **Ports & Adapters**: the domain and the engine depend on the ports in
+  [`pulse/domain/ports.py`](pulse/domain/ports.py) (`StreamSink`, `PromptPort`,
+  `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace`), not on
+  Textual, HTTP, SQLite, git or ACP. `run_workflow` receives them as
+  `EnginePorts`; only `daemon/runs.py` picks the adapters. New I/O needs a port
+  first, then adapters (production, `Null*`, and a fake in `tests/fakes.py`
+  checked by a contract test). Why: [ADR 0002](docs/adr/0002-engine-depends-on-ports.md).
 - **One contract, two transports**: the same `/api/*` routes over UDS and TCP.
   Any route change updates [`contracts/openapi.yaml`](contracts/openapi.yaml)
   (enforced by `tests/architecture/test_openapi_contract.py`). Breaking changes to the

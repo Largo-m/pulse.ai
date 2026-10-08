@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
+from pulse.domain.ports import JsonObject
 from pulse.replies.approval import CANCEL, SKIP
 
 CANCELLED = "cancelled"
@@ -27,7 +27,7 @@ class TurnResult:
     approval_answers: str = ""
 
     @classmethod
-    def parse(cls, raw: dict[str, Any]) -> TurnResult:
+    def parse(cls, raw: JsonObject) -> TurnResult:
         return cls(
             summary=str(raw.get("phaseSummary") or ""),
             outcome=str(raw.get("outcome") or ""),

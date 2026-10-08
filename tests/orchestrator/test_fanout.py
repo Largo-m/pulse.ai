@@ -5,16 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.domain.control import RUN_BLOCKED
-from pulse.orchestrator.engine import run_workflow
 from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
+from tests.fakes import FakeAgentSession
 from tests.orchestrator.test_engine_steps import (  # noqa: F401
     _approved,
     _blocked,
     _delivered,
-    _install,
-    _Runner,
     wired,
 )
 
@@ -69,24 +67,22 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
             "{{user_prompt}}{{#if item_id}} | {{item_id}} {{item_index}}/{{item_total}}{{/if}}"
         ),
     )
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             _approved(_block("T1 — Criar o endpoint", "T2 — Montar o CSV")),
             _approved(),
             _approved(),
         ]
     )
-    _install(monkeypatch, runner)
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="exportar csv",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [(step.step_id, step.label, step.status) for step in record.steps] == [
         ("plan", "Planejar", "done"),
         ("run:T1", "Criar o endpoint", "done"),
@@ -103,17 +99,15 @@ def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path:
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
-    runner = _Runner([_approved(_block("T1 — Um", "T2 — Dois")), _approved(), _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved(_block("T1 — Um", "T2 — Dois")), _approved(), _approved()])
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    last = runner._stream.statuses[-1]
+    last = runner.stream.statuses[-1]
     assert [step["id"] for step in last["steps"]] == ["plan", "run:T1", "run:T2"]
     assert [step["label"] for step in last["steps"]] == ["Planejar", "Um", "Dois"]
 
@@ -125,18 +119,16 @@ def test_a_step_that_declares_nothing_still_runs_once(wired, monkeypatch, tmp_pa
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
-    runner = _Runner([_approved("Escrevi o plano, sem bloco."), _approved()])
-    _install(monkeypatch, runner)
+    runner = FakeAgentSession([_approved("Escrevi o plano, sem bloco."), _approved()])
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 0
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["plan", "run"]
 
 
@@ -148,32 +140,30 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
         fan_out=("run",),
     )
     summary = _block("T1 — Um", "T2 — Dois")
-    failing = _Runner([_approved(summary), _approved(), {"approved": False, "outcome": "approve"}])
-    _install(monkeypatch, failing)
+    failing = FakeAgentSession(
+        [_approved(summary), _approved(), {"approved": False, "outcome": "approve"}]
+    )
     assert (
-        run_workflow(
+        wired.run(
+            failing,
             workflow_id="demo",
             user_prompt="x",
-            stream=failing._stream,
-            prompt_handler=failing._prompt_handler,
         )
         != 0
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
+    run_id = wired.runs.only().id
 
-    resumed = _Runner([_approved()])
-    _install(monkeypatch, resumed)
-    code = run_workflow(
+    resumed = FakeAgentSession([_approved()])
+    code = wired.run(
+        resumed,
         workflow_id="demo",
         user_prompt="x",
-        stream=resumed._stream,
-        prompt_handler=resumed._prompt_handler,
         resume_run_id=run_id,
     )
 
     assert code == 0
     assert len(resumed.sent) == 1
-    record = run_store.load_run(run_id)
+    record = wired.runs.load(run_id)
     assert record is not None
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("plan", "done"),
@@ -190,19 +180,17 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
         fan_out=("run",),
     )
     ids = [f"T{index}" for index in range(1, 12)]
-    runner = _Runner(
+    runner = FakeAgentSession(
         [_approved(_block(*(f"{item} — Task {item}" for item in ids)))] + [_approved() for _ in ids]
     )
-    _install(monkeypatch, runner)
 
-    run_workflow(
+    wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["plan"] + [f"run:{item}" for item in ids]
 
 
@@ -218,25 +206,23 @@ def test_every_item_is_recorded_before_the_first_one_runs(wired, monkeypatch, tm
         fan_out=("run",),
     )
     ids = [f"T{index}" for index in range(1, 11)]
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             _approved(_block(*(f"{item} — Task {item}" for item in ids))),
             _approved(),
             RuntimeError("o processo do agente encerrou"),
         ]
     )
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == 1
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [step.step_id for step in record.steps] == ["plan"] + [f"run:{item}" for item in ids]
     assert [step.status for step in record.steps[:3]] == ["done", "done", "failed"]
     assert {step.status for step in record.steps[3:]} == {"pending"}
@@ -256,35 +242,31 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
-    first = _Runner(
+    first = FakeAgentSession(
         [
             _approved(_block("T1 — Um", "T2 — Dois")),
             _approved("terminei a T1, sem bloco de itens"),
             RuntimeError("o processo do agente encerrou"),
         ]
     )
-    first._prompt_handler.choice = "stop"
-    _install(monkeypatch, first)
-    run_workflow(
+    first.prompts.choice = "stop"
+    wired.run(
+        first,
         workflow_id="demo",
         user_prompt="x",
-        stream=first._stream,
-        prompt_handler=first._prompt_handler,
     )
-    run_id = run_store.list_runs(tmp_path)[0].id
+    run_id = wired.runs.only().id
 
-    resumed = _Runner([_approved()])
-    _install(monkeypatch, resumed)
-    code = run_workflow(
+    resumed = FakeAgentSession([_approved()])
+    code = wired.run(
+        resumed,
         workflow_id="demo",
         user_prompt="x",
-        stream=resumed._stream,
-        prompt_handler=resumed._prompt_handler,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    record = run_store.load_run(run_id)
+    record = wired.runs.load(run_id)
     assert record is not None
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("plan", "done"),
@@ -305,25 +287,23 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         fan_out=("run",),
         requires_approval=False,
     )
-    runner = _Runner(
+    runner = FakeAgentSession(
         [
             _delivered(_block("T1 — Um", "T2 — Dois", "T3 — Três")),
             _delivered(),
             _blocked("a migration depende de uma decisão de schema", needs="user"),
         ]
     )
-    runner._prompt_handler.choice = "stop"
-    _install(monkeypatch, runner)
+    runner.prompts.choice = "stop"
 
-    code = run_workflow(
+    code = wired.run(
+        runner,
         workflow_id="demo",
         user_prompt="x",
-        stream=runner._stream,
-        prompt_handler=runner._prompt_handler,
     )
 
     assert code == RUN_BLOCKED
-    record = run_store.list_runs(tmp_path)[0]
+    record = wired.runs.only()
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("plan", "done"),
         ("run:T1", "done"),
@@ -331,7 +311,7 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         ("run:T3", "pending"),
     ]
     assert len(runner.sent) == 3, "T3 never opened a session"
-    assert runner._stream.statuses[-1]["blocked_ids"] == ["run:T2"]
+    assert runner.stream.statuses[-1]["blocked_ids"] == ["run:T2"]
 
 
 def test_children_inherit_requires_outcome(tmp_path: Path):

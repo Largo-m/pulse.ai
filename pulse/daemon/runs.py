@@ -8,14 +8,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pulse.acp.session_runner import AcpSessionRunner
+from pulse.config import resolve_config
+from pulse.config.agent_profiles import ConfiguredAgentProfiles
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RunControl
+from pulse.domain.ports import PromptPort, StreamSink
 from pulse.domain.run import RunStatus
-from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.engine import EnginePorts, run_workflow
+from pulse.replies.permission import parse_policy
 from pulse.store import runs as run_store
-from pulse.store.paths import safe_cwd
+from pulse.store.paths import safe_cwd, worktrees_dir
+from pulse.store.runs import SqliteRunRepository
 from pulse.store.workflow_defs import get_workflow, list_workflows
+from pulse.vcs.workspace import GitWorkspace
 
 FINISHED_TTL = 15 * 60.0
 FINISHED_KEEP = 10
@@ -52,6 +60,65 @@ class RunAlreadyActive(Exception):
     """Raised when resuming a run that is already running."""
 
 
+class UnknownWorkflow(ValueError):
+    """Id that does not exist in `workflow_defs`."""
+
+
+def run_engine(
+    *,
+    workflow_id: str,
+    user_prompt: str,
+    workspace: Path | None,
+    stream: StreamSink,
+    prompt_handler: PromptPort,
+    resume_run_id: str | None,
+    control: RunControl,
+    run_id: str,
+) -> int:
+    """Wire the engine's ports for one run, then run it.
+
+    The only place that knows which adapter stands behind each port. The checks
+    that need config, the database or the runtime happen here, before the engine
+    spends a session.
+    """
+    definition = get_workflow(workflow_id)
+    if definition is None:
+        raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
+    resolved = resolve_config(workspace=workspace, workflow=workflow_id)
+    runtime = resolved.runtime
+    blocking = check_runtime_ready(runtime.id)
+    if blocking is not None:
+        raise RuntimeError(
+            f"Runtime `{runtime.id}` indisponível: {blocking.message}. "
+            f"{blocking.detail or ''}".strip()
+        )
+    session = AcpSessionRunner(
+        resolved.acp_command,
+        cwd=str(resolved.workspace_dir),
+        permission_policy=parse_policy(resolved.permission_policy),
+        stream=stream,
+        prompt_handler=prompt_handler,
+        runtime=runtime,
+        control=control,
+    )
+    ports = EnginePorts(
+        session=session,
+        stream=stream,
+        runs=SqliteRunRepository(),
+        workspace=GitWorkspace(resolved.workspace_dir, worktrees=worktrees_dir()),
+        agents=ConfiguredAgentProfiles(resolved.workspace_dir, fallback_model=resolved.model),
+    )
+    return run_workflow(
+        definition=definition,
+        user_prompt=user_prompt,
+        ports=ports,
+        use_worktree=resolved.use_worktree,
+        resume_run_id=resume_run_id,
+        control=control,
+        run_id=run_id,
+    )
+
+
 class RunManager:
     def __init__(self) -> None:
         self._runs: dict[str, RunState] = {}
@@ -82,7 +149,7 @@ class RunManager:
         resume_run_id: str | None = None,
     ) -> RunState:
         if get_workflow(workflow_id) is None:
-            raise ValueError(f"workflow desconhecido: {workflow_id}")
+            raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
         self._prune()
         bus = EventBus()
@@ -203,6 +270,7 @@ class RunManager:
 
     def _execute(self, state: RunState) -> None:
         assert state.correlator is not None
+        assert state.control is not None
         stream = ApiStreamSink(state.bus)
         prompt_handler = ApiPromptPort(state.correlator)
         state.bus.publish(
@@ -213,7 +281,7 @@ class RunManager:
             }
         )
         try:
-            exit_code = run_workflow(
+            exit_code = run_engine(
                 workflow_id=state.workflow_id,
                 user_prompt=state.prompt,
                 workspace=Path(state.workspace) if state.workspace else None,

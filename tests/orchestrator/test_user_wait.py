@@ -14,13 +14,16 @@ from pathlib import Path
 
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.domain.control import RUN_STOPPED
+from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
 from pulse.store import runs as run_store
+from pulse.store.runs import SqliteRunRepository
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
 from tests.conftest import store_step
+from tests.orchestrator.test_run_context import _ReplayClient
 
 
 def _run_with_step(step_id: str = "one") -> RunRecord:
@@ -93,7 +96,7 @@ def test_stopping_a_waiting_run_clears_the_wait():
 def test_waits_accumulate_on_the_step_and_survive_a_save():
     run = _run_with_step()
     run.start_step("one")
-    waits = RunWaits(run)
+    waits = RunWaits(run, SqliteRunRepository())
 
     waits.user_wait_ended("one", 30.0)
     waits.user_wait_ended("one", 12.5)
@@ -108,7 +111,7 @@ def test_waits_accumulate_on_the_step_and_survive_a_save():
 def test_a_wait_for_a_step_that_is_not_there_charges_nobody():
     """The resume menu asks before any step runs."""
     run = _run_with_step()
-    RunWaits(run).user_wait_ended("fantasma", 10.0)
+    RunWaits(run, SqliteRunRepository()).user_wait_ended("fantasma", 10.0)
     assert run_store.load_run(run.id).steps[0].waiting_seconds == 0.0
 
 
@@ -116,7 +119,7 @@ def test_concurrent_waits_lose_no_time():
     """Waits close on the ACP reader, the MCP bridge and the engine thread alike."""
     run = _run_with_step()
     run.start_step("one")
-    waits = RunWaits(run)
+    waits = RunWaits(run, SqliteRunRepository())
     workers = 8
     start = threading.Barrier(workers)
 
@@ -227,7 +230,7 @@ def test_a_policy_decision_never_touches_the_run_status():
     run_store.save(run)
     port, _correlator, _bus = _port_and_bus()
     runner = port._on_enter.__self__
-    runner.bind_run(run.id, RunWaits(run))
+    runner.bind_run(run.id, RunWaits(run, SqliteRunRepository()))
 
     port.respond_to_permission(_permission(), policy="auto_approve")
 
@@ -357,7 +360,7 @@ class _StatusProbe(_Port):
 
 def _bound(run: RunRecord, port: _Port) -> AcpSessionRunner:
     runner = _runner(_Sink(), port)
-    runner.bind_run(run.id, RunWaits(run))
+    runner.bind_run(run.id, RunWaits(run, SqliteRunRepository()))
     runner._phase_id = run.steps[0].step_id
     return runner
 
@@ -431,8 +434,6 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
     The bus event, not the local dock, freezes the screen clock so two windows on
     the same run stop together. Renaming the event on one side only fails here.
     """
-    from unittest.mock import MagicMock
-
     from pulse.client.run_session import EngineRunSession
     from pulse.daemon.adapters import ApiStreamSink
     from pulse.daemon.events import EventBus
@@ -450,8 +451,8 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
 
     session = EngineRunSession(
         stream=CockpitSink(state, on_change=lambda: None),
-        prompt_handler=MagicMock(),
-        client=MagicMock(),
+        prompt_handler=NullPromptPort(),
+        client=_ReplayClient([]),
     )
     session._dispatch(published[0])
     assert state.awaiting_input is True
@@ -460,8 +461,7 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
 
 
 def test_the_proxy_still_hides_nothing_from_whoever_asks():
-    """The engine's `_choose` probes the port for `select_choice`; ports without it
-    must still report that it is missing."""
+    """The proxy forwards, it does not invent: a method the port lacks stays missing."""
     proxy = _WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
 
     assert not hasattr(proxy, "select_choice")
@@ -471,7 +471,6 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     """A step started 10min ago, worked 2 and has waited 8: a reattach must show
     `02:00` frozen, not `10:00`, which would count the wait as agent work."""
     from datetime import UTC, datetime, timedelta
-    from unittest.mock import MagicMock
 
     from pulse.client.run_session import EngineRunSession
     from pulse.tui.adapters.cockpit_sink import CockpitSink
@@ -487,8 +486,8 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.RUNNING, started_at=0.0)]
     session = EngineRunSession(
         stream=CockpitSink(state, on_change=lambda: None),
-        prompt_handler=MagicMock(),
-        client=MagicMock(),
+        prompt_handler=NullPromptPort(),
+        client=_ReplayClient([]),
     )
     session._dispatch({"type": "run.awaiting", "waiting": True, "since": time.time() - 8 * 60})
     stamp_live_elapsed(state, run.id)

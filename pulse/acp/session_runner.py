@@ -641,10 +641,6 @@ class AcpSessionRunner(RunEventRecorder):
         return self._control
 
     @property
-    def stream(self) -> StreamSink:
-        return self._stream
-
-    @property
     def prompts(self) -> PromptPort:
         """The prompt port as the engine must use it: every question it asks is a user wait."""
         return cast(PromptPort, self._prompt_handler)

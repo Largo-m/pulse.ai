@@ -57,7 +57,7 @@ def expand(
 
     With `fan_out`, one step per item enumerated by the previous step, each with
     its own `step_id`. An empty list runs the step once, as if `fan_out` were unset.
-    Only the run in memory changes; the caller persists it with `run_store.save`.
+    Only the run in memory changes; the caller saves it.
     """
     if not step.fan_out:
         return [(step, None)]

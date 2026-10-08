@@ -8,10 +8,18 @@ the production adapter.
 from __future__ import annotations
 
 import copy
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from pulse.domain.ports import AgentProfile, WorkspaceError
+from pulse.domain.control import RunControl
+from pulse.domain.ports import (
+    AgentProfile,
+    NullPromptPort,
+    NullStreamSink,
+    PromptPort,
+    UserWaitListener,
+    WorkspaceError,
+)
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus, utc_now
 
 
@@ -75,6 +83,9 @@ class InMemoryRunRepository:
     def add_artifact(self, run_id: str, path: str) -> None:
         """What the session runner does when an agent writes a file."""
         self._artifacts.setdefault(run_id, []).append(path)
+
+    def ids(self) -> list[str]:
+        return list(self._runs)
 
     def only(self) -> RunRecord:
         """The single stored run, as the database would return it."""
@@ -155,3 +166,135 @@ class FixedAgentProfiles:
             permission_policy=self._policy,
             instructions=self._instructions.get(agent_id, ""),
         )
+
+
+class RecordingStream(NullStreamSink):
+    """[pulse.domain.ports.StreamSink] that keeps what the engine showed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.phases: list[str] = []
+        self.messages: list[str] = []
+        self.statuses: list[dict] = []
+        self.contexts: list[tuple[str, str]] = []
+
+    def set_context(self, *, cwd: str, branch: str) -> None:
+        self.contexts.append((cwd, branch))
+
+    def begin_phase(self, title: str) -> None:
+        self.phases.append(title)
+
+    def info(self, title: str) -> None:
+        self.messages.append(title)
+
+    def error(self, title: str, reason: str = "") -> None:
+        self.messages.append(title)
+
+    def apply_phase_statuses(self, **kwargs) -> None:
+        self.statuses.append(kwargs)
+
+
+class ScriptedPrompts(NullPromptPort):
+    """[pulse.domain.ports.PromptPort] answering every menu with the same choice."""
+
+    def __init__(self, choice: str = "stop") -> None:
+        self.choice = choice
+        self.asked: list[str] = []
+        self.prompts: list[str] = []
+
+    def select_choice(self, prompt, choices, *, title=""):
+        self.asked.append(title)
+        self.prompts.append(prompt)
+        return self.choice
+
+    def ask_text(self, prompt, *, title=""):
+        return ""
+
+
+Turn = dict | BaseException
+BeforeTurn = Callable[[str], dict | None]
+
+
+class FakeAgentSession:
+    """[pulse.domain.ports.AgentSession] replaying scripted agent turns.
+
+    Each turn pops the next result (or raises it, as a crashed session would);
+    `before_turn(step_id)` may answer a turn itself, which is how a test acts
+    at a precise point of the run.
+    """
+
+    def __init__(
+        self,
+        results: list[Turn],
+        *,
+        control: RunControl | None = None,
+        before_turn: BeforeTurn | None = None,
+    ) -> None:
+        self._results = list(results)
+        self._before_turn = before_turn
+        self.control = control or RunControl()
+        self.stream = RecordingStream()
+        self.prompts: PromptPort = ScriptedPrompts()
+        self.last_session_id = "sess-1"
+        self.run_id = ""
+        self.opened_in: Path | None = None
+        self.sent: list[str] = []
+        self.agents: list[str] = []
+        self.models: list[str | None] = []
+        self.closed = False
+        self.revivals = 0
+
+    def bind_run(self, run_id: str, waits: UserWaitListener) -> None:
+        self.run_id = run_id
+
+    def open(self, cwd: Path) -> None:
+        self.opened_in = cwd
+
+    def close(self) -> None:
+        self.closed = True
+
+    def revive(self) -> bool:
+        self.revivals += 1
+        return True
+
+    def use_agent(self, profile: AgentProfile) -> None:
+        self.agents.append(profile.agent_id)
+        self.models.append(profile.model)
+
+    def run_isolated_phase(self, *, initial_prompt: str, phase_id: str = "", **_kwargs) -> dict:
+        self.sent.append(initial_prompt)
+        return self._next(phase_id, {"approved": True})
+
+    def run_isolated_prompt(
+        self, *, prompt_text: str, phase_id: str = "", build_continuation=None, **_kwargs
+    ) -> dict:
+        """Mimic the real runner's turn loop, including the continuation.
+
+        Without this, the agent's chance to unblock itself would not be exercised
+        by any test: the engine only offers it through this callback.
+        """
+        self.sent.append(prompt_text)
+        result = self._next(phase_id, {"stopReason": "end_turn"})
+        parts = [str(result.get("phaseSummary", ""))]
+        turn = 0
+        while build_continuation is not None and result.get("stopReason") != "cancelled":
+            follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
+            if not follow_up:
+                break
+            self.sent.append(follow_up)
+            result = self._next(phase_id, {"stopReason": "end_turn"})
+            parts.append(str(result.get("phaseSummary", "")))
+            result["phaseSummary"] = "\n\n".join(part for part in parts if part)
+            turn += 1
+        return result
+
+    def _next(self, step_id: str, default: dict) -> dict:
+        """Next queued result, or the exception the session would raise."""
+        if self._before_turn is not None:
+            answered = self._before_turn(step_id)
+            if answered is not None:
+                return answered
+        result = self._results.pop(0) if self._results else default
+        if isinstance(result, BaseException):
+            raise result
+        return result

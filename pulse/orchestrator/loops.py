@@ -2,14 +2,13 @@
 
 The definition holds the loop and its rounds ([pulse.domain.workflow.Loop]);
 the agent requests another round or the end via the outcome block's `next`
-field. This module applies that decision to the run and persists it.
+field. This module applies that decision to the run; the engine saves it.
 """
 
 from __future__ import annotations
 
 from pulse.domain.run import RunRecord
 from pulse.domain.workflow import Loop, WorkflowDef
-from pulse.store import runs as run_store
 
 
 def repeat_loop(
@@ -18,7 +17,7 @@ def repeat_loop(
     """Handle a request for another round: `(index to jump back to, notice)`.
 
     Index is `None` when the ceiling was reached. The ceiling counts the opener's
-    rounds as persisted in the DB so it survives resuming the run. Rounds reuse
+    rounds as stored on the run so it survives resuming the run. Rounds reuse
     the same `step_id`s so the panel keeps one row per step.
     """
     opener_id = definition.steps[loop.start].step_id
@@ -31,7 +30,6 @@ def repeat_loop(
     run.reopen_loop(
         [definition.steps[index].step_id for index in following.reopens], opener_id=opener_id
     )
-    run_store.save(run)
     if not following.last:
         return loop.start, f"{label} pediu a {following.number}ª rodada"
     who = opener.label if opener else "o início do laço"
@@ -47,5 +45,4 @@ def close_loop(run: RunRecord, definition: WorkflowDef, loop: Loop) -> int:
         [definition.steps[index].step_id for index in loop.rest],
         opener_id=definition.steps[loop.start].step_id,
     )
-    run_store.save(run)
     return loop.end + 1

@@ -355,3 +355,31 @@ def test_an_old_database_stops_pinning_ask_on_the_default_agent(tmp_path: Path):
     connection.close()
 
     assert row["permission_policy"] == ""
+
+
+def _resolved_agent(name: str, command: list[str]):
+    from pulse.config.resolved import ResolvedConfig
+
+    return ResolvedConfig(
+        agent_name=name,
+        agent_binary=command[0],
+        acp_command=command,
+        auth_method="",
+        model="auto",
+        permission_policy="ask",
+        workspace_dir=Path("/projeto"),
+    )
+
+
+def test_an_agent_named_after_a_runtime_runs_that_runtime():
+    assert _resolved_agent("claude", ["agent", "acp"]).runtime.id == "claude"
+
+
+def test_the_default_agent_runs_the_runtime_of_its_command():
+    """`default` is not a runtime id: the command it runs says which CLI it is."""
+    from pulse.runtimes import get_runtime
+
+    claude = list(get_runtime("claude").acp_command)
+
+    assert _resolved_agent("default", claude).runtime.id == "claude"
+    assert _resolved_agent("default", ["agent", "acp"]).runtime.id == "cursor"
