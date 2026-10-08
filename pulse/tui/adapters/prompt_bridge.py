@@ -6,7 +6,8 @@ from enum import Enum
 from queue import Empty, Queue
 from typing import Any
 
-from pulse.prompts.ask_question import (
+from pulse.replies.approval import answer_needs_description
+from pulse.replies.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
     OTHER_OPTION_ID,
@@ -20,8 +21,7 @@ from pulse.prompts.ask_question import (
     plan_prompt_text,
     resolve_question_progress,
 )
-from pulse.prompts.approval import answer_needs_description
-from pulse.prompts.permission import (
+from pulse.replies.permission import (
     PermissionPolicy,
     build_permission_choices,
     decide_permission,
@@ -29,7 +29,7 @@ from pulse.prompts.permission import (
     permission_prompt_text,
     permission_selected,
 )
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     TextQuestion,
     TextQuestionnaire,
     format_questionnaire_answers,
@@ -237,10 +237,7 @@ class TextualPromptHandler:
             question_payload = {
                 "id": question.id,
                 "prompt": question.prompt,
-                "options": [
-                    {"id": letter, "label": label}
-                    for letter, label in question.options
-                ],
+                "options": [{"id": letter, "label": label} for letter, label in question.options],
             }
             result = self._ask_single_question(
                 question_payload,
@@ -353,9 +350,7 @@ class TextualPromptHandler:
         question_id = str(question.get("id", ""))
         prompt = str(question.get("prompt", "Pergunta")).strip()
         options = question.get("options", [])
-        allow_multiple = bool(
-            question.get("allow_multiple", question.get("allowMultiple", False))
-        )
+        allow_multiple = bool(question.get("allow_multiple", question.get("allowMultiple", False)))
         index, total = resolve_question_progress(
             question=question,
             position=position,
@@ -413,9 +408,7 @@ class TextualPromptHandler:
 
         selected_id = str(selected)
         selected_label = self._choice_label(choices, selected_id)
-        if selected_label and answer_needs_description(
-            prompt=prompt, label=selected_label
-        ):
+        if selected_label and answer_needs_description(prompt=prompt, label=selected_label):
             custom = self._prompt_follow_up_text(prompt, selected_label, title=title)
             if custom is None:
                 return None

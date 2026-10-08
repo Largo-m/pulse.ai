@@ -158,7 +158,9 @@ class LogStream(Widget):
             surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
         header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
         right = " · ".join(
-            part for part in (state.model_label or state.agent_label or "Agent", state.branch_label) if part
+            part
+            for part in (state.model_label or state.agent_label or "Agent", state.branch_label)
+            if part
         )
         visible = state.visible_entries()
         count = len(visible)

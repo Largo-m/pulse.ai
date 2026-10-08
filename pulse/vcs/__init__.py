@@ -24,8 +24,9 @@ class GitError(RuntimeError):
 
 
 def _run(args: list[str], *, cwd: Path | str) -> subprocess.CompletedProcess[str]:
+    # argv list; git is resolved from PATH on purpose so the user's own git runs.
     return subprocess.run(  # noqa: S603
-        ["git", *args],
+        ["git", *args],  # noqa: S607
         cwd=str(cwd),
         capture_output=True,
         text=True,
@@ -88,9 +89,7 @@ def branch_exists(repo: Path | str, branch: str) -> bool:
     if not branch:
         return False
     try:
-        result = _run(
-            ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo
-        )
+        result = _run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
@@ -173,8 +172,9 @@ def has_changes(path: Path | str) -> bool:
 
 def git_available() -> bool:
     try:
+        # Fixed argv; git is resolved from PATH on purpose.
         result = subprocess.run(  # noqa: S603
-            ["git", "--version"],
+            ["git", "--version"],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=TIMEOUT,

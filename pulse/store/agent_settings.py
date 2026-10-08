@@ -51,6 +51,7 @@ def apply_setting_to_all_agents(
                 "SELECT agent_id FROM agent_settings WHERE project_id = ?", (project_id,)
             )
         ]
+        # `field` passed the GLOBAL_FIELDS allowlist above; values stay bound as `?`.
         if existing:
             connection.execute(
                 f"UPDATE agent_settings SET {field} = ? WHERE project_id = ?",  # noqa: S608

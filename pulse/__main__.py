@@ -1,3 +1,3 @@
-from pulse.cli import main
+from pulse.cli.main import main
 
 raise SystemExit(main())

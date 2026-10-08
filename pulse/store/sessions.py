@@ -39,7 +39,9 @@ def start_agent_session(
     return session_id
 
 
-def set_acp_session_id(pulse_session_id: str, acp_session_id: str, *, db_path: Path | None = None) -> None:
+def set_acp_session_id(
+    pulse_session_id: str, acp_session_id: str, *, db_path: Path | None = None
+) -> None:
     connection = connect(db_path or default_db_path())
     try:
         connection.execute(
@@ -51,7 +53,9 @@ def set_acp_session_id(pulse_session_id: str, acp_session_id: str, *, db_path: P
         connection.close()
 
 
-def persist_runtime_session(cwd: str, *, pulse_session_id: str, acp_session_id: str, agent_id: str | None) -> None:
+def persist_runtime_session(
+    cwd: str, *, pulse_session_id: str, acp_session_id: str, agent_id: str | None
+) -> None:
     project = load_project_config(Path(cwd))
     if project is None:
         return
@@ -79,7 +83,8 @@ def persist_runtime_session(cwd: str, *, pulse_session_id: str, acp_session_id: 
             )
         elif not row["acp_session_id"]:
             connection.execute(
-                "UPDATE agent_sessions SET acp_session_id = ?, agent_id = COALESCE(?, agent_id) WHERE id = ?",
+                "UPDATE agent_sessions SET acp_session_id = ?, agent_id = COALESCE(?, agent_id) "
+                "WHERE id = ?",
                 (acp_session_id, agent_id, pulse_session_id),
             )
         else:

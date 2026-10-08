@@ -18,7 +18,7 @@ CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (Cursor | Claude Code
 - **Engine** (`pulse-engine`): composition root; dono do estado e das definições.
   Código em [`pulse/daemon/`](pulse/daemon/) e [`pulse/api/`](pulse/api/).
 - **CLI** (`pulse`): cliente fino, somente TUI Textual. Código em
-  [`pulse/cli.py`](pulse/cli.py), [`pulse/tui/`](pulse/tui/) e
+  [`pulse/cli/main.py`](pulse/cli/main.py), [`pulse/tui/`](pulse/tui/) e
   [`pulse/client/`](pulse/client/).
 - O daemon expõe a mesma API em dois transportes: Unix Domain Socket
   `~/.pulse/daemon.sock` (usado pela CLI) e HTTP em `127.0.0.1:8787` (tooling).

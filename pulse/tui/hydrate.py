@@ -35,7 +35,11 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     state.workflow_id = item.workflow_id
     state.workflow_label = item.workflow_label.upper()
     state.phases = [
-        PhaseItem(id=step.id, label=step.label, status=_STEP_TO_PHASE.get(step.status, PhaseStatus.PENDING))
+        PhaseItem(
+            id=step.id,
+            label=step.label,
+            status=_STEP_TO_PHASE.get(step.status, PhaseStatus.PENDING),
+        )
         for step in item.steps
     ]
     state.surface_title = item.title.upper()
@@ -227,9 +231,7 @@ def _load_entries(
 
 
 def _load_artifacts(run_id: str, workspace: Path) -> list[ArtifactItem]:
-    by_step = {
-        entry["path"]: entry["step_id"] for entry in run_store.list_artifacts(run_id)
-    }
+    by_step = {entry["path"]: entry["step_id"] for entry in run_store.list_artifacts(run_id)}
     artifacts: list[ArtifactItem] = []
     for path, step_id in by_step.items():
         key = artifact_key(path)

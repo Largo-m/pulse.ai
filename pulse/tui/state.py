@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pulse.domain.control import RUN_STOPPED
 from pulse.history.events import (
     ArtifactItem,
     LogEntry,
@@ -15,7 +16,6 @@ from pulse.history.events import (
     workflow_label,
     workflow_steps,
 )
-from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 
 Listener = Callable[[], None]
@@ -97,7 +97,9 @@ class CockpitState:
         self.notify()
 
     def done_count(self) -> int:
-        return sum(1 for phase in self.phases if phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
+        return sum(
+            1 for phase in self.phases if phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}
+        )
 
     def total_count(self) -> int:
         return len(self.phases)
@@ -107,7 +109,7 @@ class CockpitState:
         matched = self._match_phase(title)
         now = time.monotonic()
         matched_index = self.phases.index(matched) if matched is not None else None
-        for index, phase in enumerate(self.phases):
+        for phase in self.phases:
             if matched is not None and phase is matched:
                 continue
             if phase.status == PhaseStatus.RUNNING:
@@ -140,7 +142,7 @@ class CockpitState:
             or PhaseItem(id=str(step["id"]), label=str(step.get("label", "")))
             for step in steps
         ]
-        for phase, step in zip(self.phases, steps):
+        for phase, step in zip(self.phases, steps, strict=True):
             phase.label = str(step.get("label", "")) or phase.label
             phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         if selected is not None:
@@ -730,9 +732,7 @@ class CockpitState:
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
         base = _CONTINUATION.sub("", lowered).strip()
-        exact = [
-            phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
-        ]
+        exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
                 for phase in exact:

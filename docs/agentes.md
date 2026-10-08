@@ -10,7 +10,7 @@ Complementa [`ARCHITECTURE.md`](../ARCHITECTURE.md) (visão geral das camadas) e
 
 ---
 
-## 0. Desambiguação: três coisas com nome parecido
+## 0. Desambiguação: duas coisas com nome parecido
 
 Antes de tudo, porque isso confunde quem chega:
 
@@ -18,7 +18,6 @@ Antes de tudo, porque isso confunde quem chega:
 | --- | --- |
 | [`pulse/store/factory/agents/`](../pulse/store/factory/agents/) | Os `.md` de fábrica. **Semente do banco**, lida uma vez. |
 | [`pulse/runtimes/`](../pulse/runtimes/) (plural) | Os **backends**: qual CLI executa um agente (`cursor`, `claude`). |
-| [`pulse/runtime/`](../pulse/runtime/) (singular) | Dois helpers do processo local (`is_interactive`, `is_pulse_ready`). Nada a ver com agentes. |
 
 E os dois sentidos da palavra "agente", que o código separa:
 
@@ -206,7 +205,7 @@ existe.
 
 ### 3.1 O contexto do template
 
-[`render()`](../pulse/prompts/render.py) troca `{{chave}}` e resolve
+[`render()`](../pulse/orchestrator/render.py) troca `{{chave}}` e resolve
 `{{#if chave}}…{{/if}}`. Chave desconhecida é `TemplateError`, não buraco
 silencioso.
 
@@ -390,7 +389,7 @@ acrescenta `C) Pular` antes do cancelar. Hoje só o `review` a usa: a fase exist
 para a pessoa decidir o que vira correção, e "nada" é uma das respostas. As
 fases de spec continuam com três — pular o PRD é outra conversa.
 
-[`classify_outcome`](../pulse/prompts/approval.py) lê só as linhas que começam
+[`classify_outcome`](../pulse/replies/approval.py) lê só as linhas que começam
 com `→` (as escolhas do usuário). Texto livre é tratado como orientação, não como
 escolha: "revise o fluxo de aprovação" não aprova o step só porque contém
 "aprov". O rótulo do pulo precisa conter "Pular" ou "skip" — é por substring que
@@ -406,7 +405,7 @@ ele mesmo especificou — este, o `pulse:items` do fan-out (§6) e o
 
 Um step sem aprovação não tem pessoa atestando a entrega, então quem atesta é o
 agente, no bloco de desfecho
-([`outcome.py`](../pulse/orchestrator/outcome.py)):
+([`outcome.py`](../pulse/domain/outcome.py)):
 
 ````text
 ```pulse:outcome
@@ -483,7 +482,7 @@ O que se faz com cada um é diferente: falha se refaz, bloqueio se destrava.
 
 Não dá para congelar um turno do agente no meio: ou ele termina, ou é descartado.
 Por isso existe um comando só — não há pausa. O contrato
-([`runcontrol.py`](../pulse/runcontrol.py)):
+([`domain/control.py`](../pulse/domain/control.py)):
 
 ```
 stop()   →  control.interrupted = True
@@ -636,7 +635,7 @@ Config, doctor, onboarding e session runner passam a enxergá-lo sem mudanças.
 
 ```
  1. usuário: `pulse`
- 2. cli.py garante o Engine de pé → abre a TUI (HomeScreen)
+ 2. cli/main.py garante o Engine de pé → abre a TUI (HomeScreen)
  3. Home lista os workflows de `workflow_defs`; usuário escolhe e descreve a tarefa
  4. Cockpit monta a sidebar de `workflow_steps` (mesmo caminho do motor)
  5. cliente → POST /api/workflows/{id}/runs
@@ -669,7 +668,7 @@ Reabrir pelo histórico usa as mesmas tabelas: `run_steps` dá a sidebar,
 | Criar/alterar um pipeline | `WORKFLOWS` (fábrica) ou `save_workflow()` em runtime |
 | Adicionar um backend (Gemini, Codex…) | módulo em `pulse/runtimes/` + entrada em `RUNTIMES` |
 | Mudar como o motor sequencia | `orchestrator/engine.py` |
-| Mudar o protocolo de aprovação | `prompts/approval.py` + `factory/shared/approval.md` |
+| Mudar o protocolo de aprovação | `replies/approval.py` + `factory/shared/approval.md` |
 | Mudar o protocolo de fan-out | `orchestrator/fanout.py` + o `PHASE.md` que emite o bloco |
 | Adicionar uma chave de template | `_context()` em `engine.py` |
 

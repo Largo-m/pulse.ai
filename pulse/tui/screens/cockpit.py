@@ -7,8 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.orchestrator.engine import RUN_BLOCKED
-from pulse.runcontrol import RUN_STOPPED
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,
@@ -290,9 +289,7 @@ class CockpitScreen(Screen[None]):
             self._offer_resume()
             return
         elif code == RUN_BLOCKED:
-            self.state.add_info(
-                "Run bloqueada — resolva o que o step pediu e retome de onde parou"
-            )
+            self.state.add_info("Run bloqueada — resolva o que o step pediu e retome de onde parou")
             self._sync_ui(force=True)
             self._offer_resume()
             return

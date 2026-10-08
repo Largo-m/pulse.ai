@@ -425,10 +425,7 @@ def list_artifacts(run_id: str, *, db_path: Path | None = None) -> list[dict[str
         ).fetchall()
     finally:
         connection.close()
-    return [
-        {"path": str(row["path"]), "step_id": str(row["step_id"] or "")}
-        for row in rows
-    ]
+    return [{"path": str(row["path"]), "step_id": str(row["step_id"] or "")} for row in rows]
 
 
 def list_sessions(run_id: str, *, db_path: Path | None = None) -> list[dict[str, str]]:

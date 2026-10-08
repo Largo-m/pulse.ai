@@ -38,7 +38,8 @@ class AcpClient:
         self._session_updates: list[dict[str, Any]] = []
 
     def start(self) -> None:
-        self._process = subprocess.Popen(
+        # argv list from the user's effective config, never from agent output.
+        self._process = subprocess.Popen(  # noqa: S603
             self._command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from pulse.paths import GLOBAL_DB_FILE
+from pulse.store.paths import GLOBAL_DB_FILE
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS machine (
@@ -213,12 +213,12 @@ def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]
     does not rerun on a seeded DB, so callers must backfill factory values.
     """
     added: set[tuple[str, str]] = set()
+    # Identifiers cannot be bound as `?`; they come from the ADDED_COLUMNS constant.
     for table, column, declaration in ADDED_COLUMNS:
-        existing = {
-            str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")
-        }
+        pragma = f"PRAGMA table_info({table})"  # noqa: S608
+        existing = {str(row["name"]) for row in connection.execute(pragma)}
         if column not in existing:
-            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")  # noqa: S608
             added.add((table, column))
     return added
 

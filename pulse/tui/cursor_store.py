@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -171,7 +170,12 @@ def list_session_events(session_id: str) -> list[dict[str, Any]]:
                 events.append(
                     {
                         "kind": "Tool",
-                        "title": str(item.get("title") or item.get("toolName") or item.get("toolCallId") or "tool"),
+                        "title": str(
+                            item.get("title")
+                            or item.get("toolName")
+                            or item.get("toolCallId")
+                            or "tool"
+                        ),
                         "tool_id": str(item.get("toolCallId") or ""),
                         "detail": str(args.get("path") or args.get("file_path") or ""),
                     }
@@ -179,6 +183,8 @@ def list_session_events(session_id: str) -> list[dict[str, Any]]:
             elif kind in {"assistant", "text"}:
                 text = item.get("text") or item.get("content") or ""
                 if text:
-                    events.append({"kind": "Assistant", "title": str(text)[:80], "detail": str(text)})
+                    events.append(
+                        {"kind": "Assistant", "title": str(text)[:80], "detail": str(text)}
+                    )
     con.close()
     return events

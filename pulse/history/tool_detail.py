@@ -15,9 +15,7 @@ _PATH_RE = re.compile(
     r"|(?:\.?[\w.-]+/)+[\w.-]+(?:\.\w+)?"
 )
 _BACKTICK_PATH_RE = re.compile(r"`([^`\n]+?/[^`\n]+)`")
-_TITLE_PATH_RE = re.compile(
-    r"(?:^|\s)((?:\.?/)?(?:[\w.-]+/)+[\w.-]+(?:\.\w+)?|(?:/[\w.-]+)+)"
-)
+_TITLE_PATH_RE = re.compile(r"(?:^|\s)((?:\.?/)?(?:[\w.-]+/)+[\w.-]+(?:\.\w+)?|(?:/[\w.-]+)+)")
 _YAML_LINE_RE = re.compile(r"^[\w.-]+:(?:\s|$)")
 _HTTP_LINE_RE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\S+", re.I)
 _OUTPUT_PATH_RE = re.compile(r"\*\*Output:\*\*\s*`([^`]+)`", re.IGNORECASE)

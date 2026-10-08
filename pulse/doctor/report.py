@@ -8,8 +8,8 @@ from pulse.config import (
 )
 from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
-from pulse.paths import GLOBAL_CONFIG_FILE, safe_cwd
 from pulse.runtimes import get_runtime
+from pulse.store.paths import GLOBAL_CONFIG_FILE, safe_cwd
 
 
 def _status_icon(status: str) -> str:

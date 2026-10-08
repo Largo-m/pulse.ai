@@ -25,7 +25,11 @@ from pulse.doctor.checks import run_environment_checks
 
 
 class SettingsScreen(Screen[None]):
-    BINDINGS = [("escape", "go_back", "Voltar"), ("q", "go_back", "Voltar"), ("b", "go_back", "Voltar")]
+    BINDINGS = [
+        ("escape", "go_back", "Voltar"),
+        ("q", "go_back", "Voltar"),
+        ("b", "go_back", "Voltar"),
+    ]
 
     def __init__(self, *, cwd: Path | None = None) -> None:
         super().__init__()
@@ -192,9 +196,7 @@ class SettingsScreen(Screen[None]):
             self._mode = "pick_model"
             current = self._current_fields()[1]
             self._set_status(self._pick_title("Escolha o modelo"))
-            self._set_options(
-                [(f"model:{item}", _mark_current(item, current)) for item in models]
-            )
+            self._set_options([(f"model:{item}", _mark_current(item, current)) for item in models])
 
         self.app.call_from_thread(apply)
 
@@ -300,8 +302,8 @@ class SettingsScreen(Screen[None]):
 
     def _save_global(self, *, field: str, value: str) -> None:
         from pulse.config.project_config import update_project_defaults
-        from pulse.store.workflow_defs import list_agents
         from pulse.store.agent_settings import apply_setting_to_all_agents
+        from pulse.store.workflow_defs import list_agents
 
         kwargs = {
             "runtime": {"agent": value},
