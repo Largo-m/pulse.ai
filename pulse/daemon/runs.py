@@ -140,7 +140,9 @@ class RunManager:
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
             "prompt": state.prompt,
             "workspace": state.workspace,
-            "status": RunStatus.AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
+            "status": RunStatus.AWAITING_INPUT
+            if (awaiting and state.is_active())
+            else state.status,
             "active": state.is_active(),
             "awaiting_prompt": awaiting,
             "awaiting_since": since,
@@ -172,11 +174,7 @@ class RunManager:
         """
         now = time.time()
         with self._lock:
-            finished = [
-                state
-                for state in self._runs.values()
-                if state.finished_at is not None
-            ]
+            finished = [state for state in self._runs.values() if state.finished_at is not None]
             finished.sort(key=lambda state: state.finished_at or 0.0, reverse=True)
             for index, state in enumerate(finished):
                 stale = now - (state.finished_at or now) > FINISHED_TTL

@@ -36,8 +36,7 @@ class PromptDock(Widget):
         kind = self._request.kind
         if kind in {PromptKind.SELECT, PromptKind.MULTI_SELECT}:
             options = [
-                Option(label, id=option_id or None)
-                for option_id, label in self._request.choices
+                Option(label, id=option_id or None) for option_id, label in self._request.choices
             ]
             yield OptionList(*options, id="prompt-options", compact=True)
             if kind == PromptKind.MULTI_SELECT:

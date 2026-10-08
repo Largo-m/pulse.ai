@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from pulse import __version__
 from pulse.config.global_config import (
@@ -89,8 +89,7 @@ def _history_to_dict(item: Any) -> dict[str, Any]:
         "branch": item.branch,
         "worktree_path": item.worktree_path,
         "steps": [
-            {"id": step.id, "label": step.label, "status": step.status}
-            for step in item.steps
+            {"id": step.id, "label": step.label, "status": step.status} for step in item.steps
         ],
     }
 

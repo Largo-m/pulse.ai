@@ -255,7 +255,9 @@ def update_project_agent(
     agents = dict(config.agents)
     existing = agents.get(agent_name)
     next_binary = binary if binary is not None else (existing.binary if existing else agent_name)
-    next_models = list(models) if models is not None else (list(existing.models) if existing else [])
+    next_models = (
+        list(models) if models is not None else (list(existing.models) if existing else [])
+    )
     if acp_command is not None:
         next_command = list(acp_command)
     elif existing is not None:
@@ -315,7 +317,9 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
                     dump_list(agent.models),
                 ),
             )
-        connection.execute("DELETE FROM project_workflows WHERE project_id = ?", (config.project_id,))
+        connection.execute(
+            "DELETE FROM project_workflows WHERE project_id = ?", (config.project_id,)
+        )
         for workflow_id, workflow in config.workflows.items():
             connection.execute(
                 """

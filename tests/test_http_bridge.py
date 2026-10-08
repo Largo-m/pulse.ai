@@ -69,7 +69,11 @@ def test_http_bridge_tools_call_invokes_prompt_handler():
                 "name": "AskQuestion",
                 "arguments": {
                     "questions": [
-                        {"id": "q1", "prompt": "Qual stack?", "options": [{"id": "py", "label": "Python"}]}
+                        {
+                            "id": "q1",
+                            "prompt": "Qual stack?",
+                            "options": [{"id": "py", "label": "Python"}],
+                        }
                     ]
                 },
             },

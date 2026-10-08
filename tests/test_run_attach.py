@@ -15,7 +15,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.conftest import store_step, store_run_status
 from pulse.client.run_session import DETACHED, EngineRunSession
 from pulse.history.events import PhaseStatus
 from pulse.store import runs as run_store
@@ -23,6 +22,7 @@ from pulse.store.runs import StepRecord
 from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptBridge, PromptKind
 from pulse.tui.hydrate import stamp_live_elapsed
 from pulse.tui.state import CockpitState
+from tests.conftest import store_run_status, store_step
 
 
 class _BlockingClient:
@@ -70,9 +70,7 @@ def test_abandoning_the_bridge_frees_the_thread_without_answering():
     """The question stays open in the daemon; only the screen thread dies."""
     bridge = PromptBridge()
     with ThreadPoolExecutor(max_workers=1) as pool:
-        asking = pool.submit(
-            bridge.request, PromptKind.TEXT, title="t", prompt="responde?"
-        )
+        asking = pool.submit(bridge.request, PromptKind.TEXT, title="t", prompt="responde?")
         deadline = time.monotonic() + 2
         while bridge.poll() is None and time.monotonic() < deadline:
             time.sleep(0.01)

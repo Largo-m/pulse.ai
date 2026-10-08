@@ -109,9 +109,7 @@ def test_unknown_modes_fall_back_to_current_mode():
 
 
 def test_cursor_sets_model_with_set_model():
-    request = get_runtime("cursor").model_request(
-        CURSOR_SESSION, "gpt-5.5", session_id="s1"
-    )
+    request = get_runtime("cursor").model_request(CURSOR_SESSION, "gpt-5.5", session_id="s1")
     assert request is not None
     assert request.method == "session/set_model"
     assert request.params == {"sessionId": "s1", "modelId": "gpt-id"}
@@ -228,7 +226,9 @@ def test_no_fallback_when_nothing_is_available(monkeypatch):
 
 def test_runtime_for_command_ignores_the_pinned_version():
     """Config saved before the version pin still maps to Claude."""
-    assert runtime_for_command(["npx", "-y", "@agentclientprotocol/claude-agent-acp"]).id == "claude"
+    assert (
+        runtime_for_command(["npx", "-y", "@agentclientprotocol/claude-agent-acp"]).id == "claude"
+    )
 
 
 def test_runtime_for_command_matches_the_executable_not_a_substring():

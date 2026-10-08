@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from tests.conftest import make_workflow
-
-from pulse.tui.state import CockpitState, LogKind, PhaseStatus, progress_bar
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 PAIR = [("plan", "Planejar"), ("build", "Construir")]
@@ -251,13 +250,9 @@ def test_visible_artifacts_are_scoped_to_selected_phase():
     state.upsert_artifact("docs/PRD.md", ready=True, has_content=True)
     state.begin_phase("Dois")
     state.upsert_artifact("docs/TECHSPEC.md", ready=True, has_content=True)
-    assert [item.path for item in state.visible_artifacts()] == [
-        "docs/TECHSPEC.md"
-    ]
+    assert [item.path for item in state.visible_artifacts()] == ["docs/TECHSPEC.md"]
     state.select_phase(0)
-    assert [item.path for item in state.visible_artifacts()] == [
-        "docs/PRD.md"
-    ]
+    assert [item.path for item in state.visible_artifacts()] == ["docs/PRD.md"]
 
 
 def test_select_artifact_from_prompt_points_at_matching_file_without_opening():
@@ -266,9 +261,7 @@ def test_select_artifact_from_prompt_points_at_matching_file_without_opening():
     state.upsert_artifact("docs/PRD.md", ready=True, has_content=True)
     state.upsert_artifact("docs/context.md", ready=True, has_content=True)
     assert state.artifact_pane_open is False
-    selected = state.select_artifact_from_prompt(
-        "Aprovar PRD (docs/PRD.md) e avançar?"
-    )
+    selected = state.select_artifact_from_prompt("Aprovar PRD (docs/PRD.md) e avançar?")
     assert selected is True
     assert state.selected_artifact_path == "docs/PRD.md"
     assert state.follow_artifact is False
@@ -363,9 +356,7 @@ def test_pane_stays_closed_while_artifact_has_no_content():
     assert state.artifact_pane_open is False
     assert state.phase_has_artifacts() is False
     assert state.displayable_artifacts() == []
-    assert [item.path for item in state.visible_artifacts()] == [
-        "docs/TECHSPEC.md"
-    ]
+    assert [item.path for item in state.visible_artifacts()] == ["docs/TECHSPEC.md"]
 
 
 def test_artifact_with_content_is_offered_but_never_opens_alone():
@@ -416,9 +407,7 @@ def test_select_from_prompt_ignores_artifacts_without_content():
     state.begin_phase("Um")
     state.upsert_artifact("docs/PRD.md", ready=False)
 
-    selected = state.select_artifact_from_prompt(
-        "Aprovar PRD (docs/PRD.md) e avançar?"
-    )
+    selected = state.select_artifact_from_prompt("Aprovar PRD (docs/PRD.md) e avançar?")
 
     assert selected is False
     assert state.artifact_pane_open is False

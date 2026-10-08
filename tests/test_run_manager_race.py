@@ -3,10 +3,9 @@ from __future__ import annotations
 import threading
 import time
 
-from tests.conftest import make_workflow
-
 import pulse.daemon.runs as runs_module
 from pulse.daemon.runs import RunAlreadyActive, RunManager
+from tests.conftest import make_workflow
 
 
 def test_two_concurrent_resumes_start_only_one_run(monkeypatch):

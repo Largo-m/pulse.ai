@@ -6,11 +6,10 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow
-
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.artifact_pane import ArtifactPane, ArtifactPaneClosed, ArtifactPaneOpened
+from tests.conftest import make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
@@ -111,9 +110,7 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
             state = holder["state"]
             pane = app.query_one(ArtifactPane)
             tabs = app.query_one("#artifact-tabs")
-            assert [child.name for child in tabs.children] == [
-                "docs/PROJECT.md"
-            ]
+            assert [child.name for child in tabs.children] == ["docs/PROJECT.md"]
             state.upsert_artifact("docs/ROADMAP.md", ready=True, has_content=True)
             pane.sync_from_state(state, force=True)
             await pilot.pause()

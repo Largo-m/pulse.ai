@@ -400,9 +400,7 @@ def _run_step(
 
         blocked = record.status == StepStatus.BLOCKED
         if blocked:
-            choice, guidance = _offer_blocked(
-                runner, f"{record.label} está bloqueado", reason
-            )
+            choice, guidance = _offer_blocked(runner, f"{record.label} está bloqueado", reason)
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if _control(runner).interrupted:
@@ -689,9 +687,7 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[Men
     )
 
 
-def _offer_blocked(
-    runner: AcpSessionRunner, title: str, reason: str
-) -> tuple[MenuChoice, str]:
+def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[MenuChoice, str]:
     """Decide what to do with a step the agent could not complete.
 
     Adds a skip option, recorded as `skipped` rather than hidden as `done`.
@@ -794,8 +790,7 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
     grouped = run.step_ids_by_status()
     apply(
         steps=[
-            {"id": item.step_id, "label": item.label, "rounds": item.rounds}
-            for item in run.steps
+            {"id": item.step_id, "label": item.label, "rounds": item.rounds} for item in run.steps
         ],
         done_ids=grouped[StepStatus.DONE],
         skipped_ids=grouped[StepStatus.SKIPPED],

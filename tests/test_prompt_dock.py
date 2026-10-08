@@ -7,7 +7,6 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow
 
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest

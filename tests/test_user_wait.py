@@ -7,13 +7,11 @@ stored duration, and the run is listed as `awaiting_input`.
 
 from __future__ import annotations
 
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-import threading
-
-from tests.conftest import store_step
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
@@ -22,6 +20,7 @@ from pulse.store import runs as run_store
 from pulse.store.runs import RunStatus, StepRecord, StepStatus
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
+from tests.conftest import store_step
 
 
 def _run_with_step(step_id: str = "one") -> run_store.RunRecord:
@@ -257,7 +256,9 @@ def test_a_permission_that_needs_a_person_still_waits():
             time.sleep(0.01)
         pending = correlator.pending()
         assert len(pending) == 1
-        correlator.answer(pending[0].id, {"outcome": {"outcome": "selected", "optionId": "allow-once"}})
+        correlator.answer(
+            pending[0].id, {"outcome": {"outcome": "selected", "optionId": "allow-once"}}
+        )
         assert asking.result(timeout=5)["outcome"]["optionId"] == "allow-once"
 
 
@@ -417,7 +418,9 @@ def test_a_wait_the_run_cannot_record_still_answers_the_agent():
     assert runner._prompt_handler.ask_text("e agora?") == "ok"
     assert sink.events == ["begin", "end"]
     unrecorded = [
-        event for event in run_store.list_events(run.id) if event["title"] == "Espera não registrada"
+        event
+        for event in run_store.list_events(run.id)
+        if event["title"] == "Espera não registrada"
     ]
     assert [event["detail"] for event in unrecorded] == ["OSError: disk full"] * 2
 
@@ -471,11 +474,11 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     """A step started 10min ago, worked 2 and has waited 8: a reattach must show
     `02:00` frozen, not `10:00`, which would count the wait as agent work."""
     from datetime import UTC, datetime, timedelta
+    from unittest.mock import MagicMock
 
     from pulse.client.run_session import EngineRunSession
     from pulse.tui.adapters.cockpit_sink import CockpitSink
     from pulse.tui.hydrate import stamp_live_elapsed
-    from unittest.mock import MagicMock
 
     run = _run_with_step()
     step = run.steps[0]

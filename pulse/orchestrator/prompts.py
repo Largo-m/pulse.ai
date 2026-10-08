@@ -27,9 +27,7 @@ _ADJUST_INSTRUCTION = (
     "Aplique os ajustes pedidos acima. Não recomece do zero: parta do que já "
     "existe e mude só o que foi apontado."
 )
-_CONTINUE_INSTRUCTION = (
-    "Siga a partir do ponto em que parou, incorporando as respostas acima."
-)
+_CONTINUE_INSTRUCTION = "Siga a partir do ponto em que parou, incorporando as respostas acima."
 
 
 def build_continuation_prompt(

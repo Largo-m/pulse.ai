@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 import threading
 import time
-
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -242,9 +240,7 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
         return 0
 
     monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
-    run_id = client.post(
-        "/api/workflows/default/runs", json={"prompt": "tarefa"}
-    ).json()["id"]
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asking.wait(timeout=5)
 
     listed = client.get("/api/runs").json()["runs"]
@@ -305,9 +301,7 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
         return 0
 
     monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
-    run_id = client.post(
-        "/api/workflows/default/runs", json={"prompt": "tarefa"}
-    ).json()["id"]
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
 
     assert done.wait(timeout=5), "the run hung on a permission the policy resolves"
     assert decided[0]["outcome"]["optionId"] == "reject-once"
@@ -336,9 +330,7 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
         return RUN_STOPPED
 
     monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
-    run_id = client.post(
-        "/api/workflows/default/runs", json={"prompt": "tarefa"}
-    ).json()["id"]
+    run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asked.wait(timeout=5)
 
     state = manager.get(run_id)

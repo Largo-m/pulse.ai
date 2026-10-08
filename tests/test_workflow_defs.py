@@ -342,9 +342,7 @@ def test_user_rewritten_template_is_not_touched(tmp_path: Path):
     connect(db_path).close()
 
     workflows = {item.id: item for item in list_workflows(db_path=db_path)}
-    step = next(
-        s for s in workflows["analyze-codebase"].steps if s.step_id == "codebase-explore"
-    )
+    step = next(s for s in workflows["analyze-codebase"].steps if s.step_id == "codebase-explore")
     assert step.prompt_template == "Explore do meu jeito."
     assert factory.APPROVAL_MARK
 
@@ -360,9 +358,7 @@ def test_seeded_db_gains_the_merge_phase_on_open(tmp_path: Path):
 
     db_path = tmp_path / "antigo.db"
     connection = connect(db_path)
-    connection.execute(
-        "DELETE FROM workflow_steps WHERE step_id IN ('review', 'review-fix')"
-    )
+    connection.execute("DELETE FROM workflow_steps WHERE step_id IN ('review', 'review-fix')")
     connection.execute("DELETE FROM agent_defs WHERE id IN ('review', 'review-fix')")
     connection.execute(
         """
@@ -431,9 +427,7 @@ def test_only_review_offers_skip():
 
     step = next(s for s in workflows["new-issue"].steps if s.step_id == "review")
     option = next(
-        line.strip()
-        for line in step.prompt_template.splitlines()
-        if line.strip().startswith("C)")
+        line.strip() for line in step.prompt_template.splitlines() if line.strip().startswith("C)")
     )
     assert classify_outcome(f"→ {option}") == SKIP
 
@@ -450,10 +444,7 @@ def test_merge_layer_is_a_capped_loop():
     assert steps["review-fix"].repeat_max == 3
     assert steps["review"].position < steps["review-fix"].position
     repeating = [
-        step.step_id
-        for workflow in list_workflows()
-        for step in workflow.steps
-        if step.repeat_from
+        step.step_id for workflow in list_workflows() for step in workflow.steps if step.repeat_from
     ]
     assert repeating == ["review-fix", "review-fix"]
 

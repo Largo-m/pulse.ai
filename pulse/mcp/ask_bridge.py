@@ -4,8 +4,8 @@ import json
 import os
 import socket
 import threading
-from pathlib import Path
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from pulse.ports import NullPromptPort

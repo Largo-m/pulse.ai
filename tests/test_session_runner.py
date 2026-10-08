@@ -65,7 +65,9 @@ def test_session_runner_handles_ask_question_request():
         def run_text_questionnaire(self, text):
             return None
 
-    with patch("pulse.acp.session_runner.subprocess.Popen", return_value=_make_process(stdout_text)):
+    with patch(
+        "pulse.acp.session_runner.subprocess.Popen", return_value=_make_process(stdout_text)
+    ):
         runner = AcpSessionRunner(
             ["agent", "acp"],
             cwd="/tmp",

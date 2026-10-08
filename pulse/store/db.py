@@ -214,9 +214,7 @@ def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]
     """
     added: set[tuple[str, str]] = set()
     for table, column, declaration in ADDED_COLUMNS:
-        existing = {
-            str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")
-        }
+        existing = {str(row["name"]) for row in connection.execute(f"PRAGMA table_info({table})")}
         if column not in existing:
             connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
             added.add((table, column))

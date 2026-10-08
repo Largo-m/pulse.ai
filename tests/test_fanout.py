@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
+from pulse.orchestrator import engine
+from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
+from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 from tests.test_engine_steps import (  # noqa: F401
     _approved,
@@ -15,11 +17,6 @@ from tests.test_engine_steps import (  # noqa: F401
     _Runner,
     wired,
 )
-
-from pulse.orchestrator import engine
-from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
-from pulse.orchestrator.engine import run_workflow
-from pulse.store import runs as run_store
 
 
 def _block(*lines: str) -> str:
@@ -197,8 +194,7 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
     )
     ids = [f"T{index}" for index in range(1, 12)]
     runner = _Runner(
-        [_approved(_block(*(f"{item} — Task {item}" for item in ids)))]
-        + [_approved() for _ in ids]
+        [_approved(_block(*(f"{item} — Task {item}" for item in ids)))] + [_approved() for _ in ids]
     )
     _install(monkeypatch, runner)
 
@@ -214,9 +210,7 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
     assert [step.step_id for step in record.steps] == ["plan"] + [f"run:{item}" for item in ids]
 
 
-def test_every_item_is_recorded_before_the_first_one_runs(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_every_item_is_recorded_before_the_first_one_runs(wired, monkeypatch, tmp_path: Path):
     """The N children are persisted at expansion, not when each one starts.
 
     A child that only existed in memory vanished if the run crashed mid fan-out:

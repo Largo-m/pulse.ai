@@ -9,8 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from tests.conftest import make_workflow
-
 from pulse.client.run_session import EngineRunSession
 from pulse.daemon.adapters import ApiStreamSink
 from pulse.daemon.events import EventBus
@@ -19,6 +17,7 @@ from pulse.orchestrator.engine import _announce_context
 from pulse.ports import NullStreamSink
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
+from tests.conftest import make_workflow
 
 
 class _ReplayClient:

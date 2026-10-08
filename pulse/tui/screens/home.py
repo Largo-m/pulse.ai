@@ -16,9 +16,9 @@ from pulse import __version__
 from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
 from pulse.config import global_config_exists
+from pulse.runtime.ready import is_pulse_ready
 from pulse.status_labels import status_color, status_icon
 from pulse.store.workflow_defs import list_workflows
-from pulse.runtime.ready import is_pulse_ready
 
 
 def _home_brand() -> str:
@@ -160,9 +160,7 @@ class HomeScreen(Screen[None]):
         if self._view != SESSION:
             return
         option_id = str(event.option_id or "")
-        self._update_hint(
-            option_id.split(":", 1)[1] if option_id.startswith("workflow:") else None
-        )
+        self._update_hint(option_id.split(":", 1)[1] if option_id.startswith("workflow:") else None)
 
     def _refresh_options(self) -> None:
         options = self.query_one("#home-options", OptionList)

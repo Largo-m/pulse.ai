@@ -101,10 +101,7 @@ def test_engine_run_session_runs_questionnaire_from_questions():
 def test_engine_run_session_recovers_questionnaire_from_agent_text():
     stream = MagicMock()
     stream.agent_text.return_value = (
-        "Preciso de algumas informações antes de continuar.\n"
-        "1. Qual stack?\n"
-        "A) Python\n"
-        "B) Dart\n"
+        "Preciso de algumas informações antes de continuar.\n1. Qual stack?\nA) Python\nB) Dart\n"
     )
     prompt_handler = MagicMock()
     prompt_handler.run_parsed_questionnaire.return_value = "→ A) Python"

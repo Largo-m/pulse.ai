@@ -349,7 +349,9 @@ def test_an_old_database_stops_pinning_ask_on_the_default_agent(tmp_path: Path):
     connection.close()
 
     connection = connect(default_db_path())
-    row = connection.execute("SELECT permission_policy FROM agent_defs WHERE id = 'default'").fetchone()
+    row = connection.execute(
+        "SELECT permission_policy FROM agent_defs WHERE id = 'default'"
+    ).fetchone()
     connection.close()
 
     assert row["permission_policy"] == ""

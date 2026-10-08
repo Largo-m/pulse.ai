@@ -167,9 +167,13 @@ def build_question_choices(
             option_index += 1
         choices.append((option_id, label))
 
-    if choices and not has_other and should_add_other_option(
-        prompt=prompt,
-        option_labels=option_labels,
+    if (
+        choices
+        and not has_other
+        and should_add_other_option(
+            prompt=prompt,
+            option_labels=option_labels,
+        )
     ):
         other_label = format_option_label(option_index, "Outro (descreva)")
         choices.append((OTHER_OPTION_ID, other_label))

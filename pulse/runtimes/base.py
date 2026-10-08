@@ -31,7 +31,9 @@ class ModelRequest:
     model_id: str
 
 
-def run_cli(command: list[str], *, timeout: float = 15.0) -> subprocess.CompletedProcess[str] | None:
+def run_cli(
+    command: list[str], *, timeout: float = 15.0
+) -> subprocess.CompletedProcess[str] | None:
     """Run a CLI capturing its output; None when the binary fails or hangs."""
     try:
         return subprocess.run(
@@ -209,7 +211,9 @@ class AgentRuntime:
         available = modes.get("availableModes")
         if not isinstance(available, list):
             return []
-        return [str(item.get("id")) for item in available if isinstance(item, dict) and item.get("id")]
+        return [
+            str(item.get("id")) for item in available if isinstance(item, dict) and item.get("id")
+        ]
 
     def resolve_mode(self, session: dict[str, Any], *, execute: bool) -> str | None:
         """First preferred mode the agent actually supports."""

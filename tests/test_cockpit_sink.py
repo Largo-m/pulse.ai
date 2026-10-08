@@ -4,10 +4,9 @@ import json
 import sqlite3
 from pathlib import Path
 
-from tests.conftest import make_workflow
-
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+from tests.conftest import make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 

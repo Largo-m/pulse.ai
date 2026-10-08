@@ -97,7 +97,9 @@ class CockpitState:
         self.notify()
 
     def done_count(self) -> int:
-        return sum(1 for phase in self.phases if phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
+        return sum(
+            1 for phase in self.phases if phase.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}
+        )
 
     def total_count(self) -> int:
         return len(self.phases)
@@ -730,9 +732,7 @@ class CockpitState:
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
         base = _CONTINUATION.sub("", lowered).strip()
-        exact = [
-            phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}
-        ]
+        exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
                 for phase in exact:

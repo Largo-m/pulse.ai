@@ -7,14 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import make_workflow, store_step
-
 from pulse.domain import run as run_model
 from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
+from tests.conftest import make_workflow, store_step
 
 
 class _Stream:
@@ -308,13 +307,15 @@ def test_retry_runs_the_same_step_again(wired, monkeypatch, tmp_path: Path):
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
-def test_a_timeout_offers_retry_instead_of_killing_the_run(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_a_timeout_offers_retry_instead_of_killing_the_run(wired, monkeypatch, tmp_path: Path):
     """A timed-out session is a failed attempt, not the end of the run."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     runner = _Runner(
-        [TimeoutError("o agente ficou 600s sem dar sinal em `session/prompt`"), _approved(), _approved()]
+        [
+            TimeoutError("o agente ficou 600s sem dar sinal em `session/prompt`"),
+            _approved(),
+            _approved(),
+        ]
     )
     runner._prompt_handler.choice = "retry"
     _install(monkeypatch, runner)
@@ -429,9 +430,7 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
     assert record.status == "blocked", "a block is not a failure"
 
 
-def test_a_declared_block_stops_the_run_instead_of_cascading(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch, tmp_path: Path):
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
     runner = _Runner([_blocked("falta a credencial do banco", needs="user")])
     runner._prompt_handler.choice = "stop"
@@ -455,9 +454,7 @@ def test_a_declared_block_stops_the_run_instead_of_cascading(
     assert [step.status for step in record.steps] == ["blocked", "pending"]
 
 
-def test_a_blocked_step_gets_one_shot_at_unblocking_itself(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_a_blocked_step_gets_one_shot_at_unblocking_itself(wired, monkeypatch, tmp_path: Path):
     """What the agent can fix itself does not wake anyone up.
 
     Without `needs`, the engine hands the block back to the agent once, in the
@@ -515,9 +512,7 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
     exact friction that would make the protocol not worth it.
     """
     make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
-    runner = _Runner(
-        [{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()]
-    )
+    runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "terminei tudo"}, _delivered()])
     _install(monkeypatch, runner)
 
     code = run_workflow(
@@ -534,9 +529,7 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
-def test_skipping_a_blocked_step_records_it_as_skipped_not_done(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_skipping_a_blocked_step_records_it_as_skipped_not_done(wired, monkeypatch, tmp_path: Path):
     """The explicit skip is the difference: it used to happen disguised as `done`."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
     runner = _Runner([_blocked("falta acesso", needs="user"), _delivered()])
@@ -556,9 +549,7 @@ def test_skipping_a_blocked_step_records_it_as_skipped_not_done(
     assert [step.status for step in record.steps] == ["skipped", "done"]
 
 
-def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(wired, monkeypatch, tmp_path: Path):
     """The poisoned summary: the next step must not receive "I couldn't".
 
     It gets the summary of the last step that actually delivered (here, the
@@ -593,13 +584,9 @@ def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(
     assert runner.prompts[2].startswith("antes: escrevi o plano")
 
 
-def test_requires_outcome_off_brings_the_old_behaviour_back(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_requires_outcome_off_brings_the_old_behaviour_back(wired, monkeypatch, tmp_path: Path):
     """The escape hatch, for workflows that have not adopted the protocol yet."""
-    make_workflow(
-        "demo", steps=[("one", "Um")], requires_approval=False, requires_outcome=False
-    )
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False, requires_outcome=False)
     runner = _Runner([{"stopReason": "end_turn", "phaseSummary": "pronto"}])
     _install(monkeypatch, runner)
 
@@ -616,9 +603,7 @@ def test_requires_outcome_off_brings_the_old_behaviour_back(
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
-def test_an_approval_step_keeps_the_person_as_the_only_gate(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_an_approval_step_keeps_the_person_as_the_only_gate(wired, monkeypatch, tmp_path: Path):
     """A step has a single gate: where there is approval, the user attests."""
     make_workflow("demo", steps=[("one", "Um")], requires_approval=True)
     runner = _Runner([_approved("entreguei")])
@@ -731,9 +716,7 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
     assert run_store.find_resumable(tmp_path) == []
 
 
-def test_resuming_after_a_crash_reruns_the_step_it_left_running(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypatch, tmp_path: Path):
     """A killed daemon leaves its step `running`; only one step may run at a time.
 
     Resume must release that step, or a step added to the workflow before it
@@ -967,7 +950,9 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     )
 
     assert code == 0
-    assert len(second.prompts) == 2, "only the two pending steps run; the closed one does not come back"
+    assert len(second.prompts) == 2, (
+        "only the two pending steps run; the closed one does not come back"
+    )
     record = run_store.load_run(run_id)
     assert [step.status for step in record.steps] == ["done", "done", "done"]
 
@@ -1222,9 +1207,7 @@ def test_clean_review_ends_the_loop_without_asking_approval(wired, monkeypatch, 
     assert any("laço encerrado" in message for message in runner._stream.messages)
 
 
-def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(
-    wired, monkeypatch, tmp_path
-):
+def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, monkeypatch, tmp_path):
     """Review -> fix -> clean review: the round-1 fix delivered and stays `done`."""
     make_workflow(
         "demo",
@@ -1406,9 +1389,7 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
     assert step.ended_at - stamped_before_menu[0] == timedelta(minutes=10)
 
 
-def test_stopping_while_the_blocked_menu_is_open_stops_the_run(
-    wired, monkeypatch, tmp_path: Path
-):
+def test_stopping_while_the_blocked_menu_is_open_stops_the_run(wired, monkeypatch, tmp_path: Path):
     """Stopping with the menu open cancels the question, which returns `None`.
 
     That is a user stop: the run becomes `stopped` and the step goes back to

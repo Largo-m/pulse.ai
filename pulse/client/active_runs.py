@@ -10,7 +10,6 @@ from typing import Any
 
 from pulse.client.engine_client import EngineClient
 
-
 _TIMEOUT = 2.0
 
 

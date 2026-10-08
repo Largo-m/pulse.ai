@@ -171,9 +171,7 @@ class PhaseSidebar(Widget):
 
         shown = item.display_status()
         tone = status_color(shown)
-        name_style = tone if shown in _ATTENTION else (
-            "#E0E0E0" if accent else "#888888"
-        )
+        name_style = tone if shown in _ATTENTION else ("#E0E0E0" if accent else "#888888")
         rounds = f" ×{item.rounds}" if item.rounds > 1 else ""
         label = f"{status_icon(shown)} {self._item_label(item, nested=nested)}"
         max_len = (24 if nested else 28) - len(rounds)

@@ -182,10 +182,7 @@ def serialize_questionnaire(questionnaire: TextQuestionnaire) -> dict[str, Any]:
             {
                 "id": question.id,
                 "prompt": question.prompt,
-                "options": [
-                    {"id": letter, "label": label}
-                    for letter, label in question.options
-                ],
+                "options": [{"id": letter, "label": label} for letter, label in question.options],
             }
             for question in questionnaire.questions
         ],
@@ -225,7 +222,9 @@ def questionnaire_from_payload(payload: dict[str, Any]) -> TextQuestionnaire | N
     if not questions:
         return None
     title = str(payload.get("title") or DEFAULT_QUESTIONNAIRE_TITLE).strip()
-    return TextQuestionnaire(title=title or DEFAULT_QUESTIONNAIRE_TITLE, questions=tuple(questions), raw=raw)
+    return TextQuestionnaire(
+        title=title or DEFAULT_QUESTIONNAIRE_TITLE, questions=tuple(questions), raw=raw
+    )
 
 
 def format_questionnaire_answers(

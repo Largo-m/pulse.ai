@@ -4,7 +4,6 @@ import json
 from collections.abc import Callable
 from typing import Any
 
-
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 TOOL_NAME = "AskQuestion"
 SERVER_NAME = "pulse-ask"

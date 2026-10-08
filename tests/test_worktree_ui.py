@@ -9,9 +9,6 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow
-from tests.test_worktree import make_repo
-
 from pulse import vcs
 from pulse.config.project_config import update_project_defaults
 from pulse.history.catalog import HistoryCatalog
@@ -25,6 +22,8 @@ from pulse.tui.screens.settings import SettingsScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
+from tests.conftest import make_workflow
+from tests.test_worktree import make_repo
 
 git_only = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
@@ -363,10 +362,7 @@ def test_settings_offers_toggle_in_git_repo(tmp_path: Path):
             screen = app.screen
             assert isinstance(screen, SettingsScreen)
             options = screen.query_one("#settings-options", OptionList)
-            ids = [
-                options.get_option_at_index(index).id
-                for index in range(options.option_count)
-            ]
+            ids = [options.get_option_at_index(index).id for index in range(options.option_count)]
             assert "worktree" in ids
 
             screen._toggle_worktree()
@@ -398,10 +394,7 @@ def test_settings_hides_toggle_outside_git(tmp_path: Path):
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
             options = app.screen.query_one("#settings-options", OptionList)
-            ids = [
-                options.get_option_at_index(index).id
-                for index in range(options.option_count)
-            ]
+            ids = [options.get_option_at_index(index).id for index in range(options.option_count)]
             assert "worktree" not in ids
 
     asyncio.run(run())

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from tests.conftest import make_workflow, store_step
-
 from pulse.orchestrator.engine import _release_step
 from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.state import CockpitState
+from tests.conftest import make_workflow, store_step
 
 
 class _FakeStream:

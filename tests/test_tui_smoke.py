@@ -1,22 +1,19 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 
 import pytest
 
 pytest.importorskip("textual")
 
-from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptKind
 from pulse.tui.app import PulseApp
 from pulse.tui.screens.cockpit import CockpitScreen
-from tests.conftest import make_workflow
-
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.state import LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
+from tests.conftest import make_workflow
 
 
 def test_pulse_app_has_cockpit_theme():
@@ -121,9 +118,7 @@ def test_log_stream_and_sidebar_render_text():
             assert "Classificação cancelada" in content
             assert "flow" in content
             assert "Planejar" in phases
-            assert LogKind.READ in {
-                entry.kind for entry in state_holder["screen"].state.entries
-            }
+            assert LogKind.READ in {entry.kind for entry in state_holder["screen"].state.entries}
 
     asyncio.run(run())
 

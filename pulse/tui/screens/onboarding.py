@@ -163,9 +163,7 @@ class OnboardingScreen(Screen[int]):
             if option_id == "auth_login":
                 self._do_login()
             elif option_id == "auth_skip":
-                self._set_status(
-                    f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo."
-                )
+                self._set_status(f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo.")
                 self._set_report("")
                 self.dismiss(1)
             return
@@ -205,6 +203,7 @@ class OnboardingScreen(Screen[int]):
                 "api_key" if auth.detail == "api_key" else self._runtime.auth_method_label
             )
             self._ask_workspace()
+
         self.app.call_from_thread(apply)
 
     @work(thread=True)

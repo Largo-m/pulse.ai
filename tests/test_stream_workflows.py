@@ -7,12 +7,11 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow
-
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
+from tests.conftest import make_workflow
 
 SHAPES: dict[str, list[tuple[str, str]]] = {
     "single": [("only", "Único")],
@@ -36,6 +35,7 @@ def _configure(workflow_id: str) -> CockpitState:
 
 def _titles(workflow_id: str) -> list[str]:
     return [label for _step_id, label in SHAPES[workflow_id]]
+
 
 TOOL_SAMPLES: tuple[tuple[str, dict, LogKind, str], ...] = (
     (
@@ -151,6 +151,7 @@ def test_resume_jump_to_last_phase_marks_prior_done():
         PhaseStatus.SKIPPED,
         PhaseStatus.RUNNING,
     ]
+
 
 @pytest.mark.parametrize("workflow_id", WORKFLOWS)
 @pytest.mark.parametrize("sample", TOOL_SAMPLES, ids=[s[0] for s in TOOL_SAMPLES])

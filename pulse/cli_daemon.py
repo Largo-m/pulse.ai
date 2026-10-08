@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from pulse.client.active_runs import active_runs, describe
 from pulse.client.engine_client import EngineClient
 from pulse.daemon.server import is_daemon_alive, stop_daemon

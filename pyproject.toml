@@ -36,3 +36,27 @@ include = ["pulse*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".claude", ".agents", ".cursor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.11"
+files = ["pulse"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[tool.coverage.run]
+source = ["pulse"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 76

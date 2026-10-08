@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pulse.tui.state import LogKind
 from pulse.history.tool_detail import (
     build_tool_labels,
     extract_tool_target,
@@ -9,6 +8,7 @@ from pulse.history.tool_detail import (
     shorten_path,
     summarize_content,
 )
+from pulse.tui.state import LogKind
 
 
 def test_shorten_path_relative_to_cwd(tmp_path):

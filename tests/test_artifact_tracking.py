@@ -46,9 +46,7 @@ def test_a_write_tool_call_records_the_artifact(tmp_path):
 
     runner._record_run_event(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))
 
-    assert run_store.list_artifacts("run-1") == [
-        {"path": "docs/PLANO.md", "step_id": "one"}
-    ]
+    assert run_store.list_artifacts("run-1") == [{"path": "docs/PLANO.md", "step_id": "one"}]
 
 
 def test_the_path_can_come_from_raw_input(tmp_path):
@@ -58,9 +56,7 @@ def test_the_path_can_come_from_raw_input(tmp_path):
 
     runner._record_run_event(_write_call(rawInput={"file_path": "/repo/src/main.rs"}))
 
-    assert [item["path"] for item in run_store.list_artifacts("run-1")] == [
-        "src/main.rs"
-    ]
+    assert [item["path"] for item in run_store.list_artifacts("run-1")] == ["src/main.rs"]
 
 
 def test_the_same_file_written_twice_is_one_artifact(tmp_path):

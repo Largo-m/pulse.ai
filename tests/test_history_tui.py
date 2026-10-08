@@ -7,8 +7,6 @@ import pytest
 
 pytest.importorskip("textual")
 
-from tests.conftest import make_workflow, store_run_status, store_step
-
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, StepStatus
@@ -18,6 +16,7 @@ from pulse.tui.state import PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
+from tests.conftest import make_workflow, store_run_status, store_step
 
 
 def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
@@ -228,9 +227,7 @@ def test_a_run_waiting_for_the_user_is_listed_as_live(tmp_path: Path):
     assert items[0].status is HistoryStatus.AWAITING_INPUT
     assert items[0].status in LIVE_STATUSES
     assert items[0].status_label == "precisa de você"
-    assert [item.run_id for item in HistoryCatalog(tmp_path).search("precisa")] == [
-        "run-espera"
-    ]
+    assert [item.run_id for item in HistoryCatalog(tmp_path).search("precisa")] == ["run-espera"]
 
 
 def test_removing_a_live_run_warns_without_blocking(tmp_path: Path):

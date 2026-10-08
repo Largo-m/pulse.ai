@@ -88,9 +88,7 @@ def branch_exists(repo: Path | str, branch: str) -> bool:
     if not branch:
         return False
     try:
-        result = _run(
-            ["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo
-        )
+        result = _run(["show-ref", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=repo)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0

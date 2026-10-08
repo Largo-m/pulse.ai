@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.conftest import store_step
 from pulse.history.events import LogEntry, LogKind
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
 from pulse.tui.hydrate import restore_settled_steps
 from pulse.tui.state import CockpitState
+from tests.conftest import store_step
 
 
 def _resumed_run(tmp_path: Path) -> run_store.RunRecord:
@@ -25,8 +25,12 @@ def _resumed_run(tmp_path: Path) -> run_store.RunRecord:
     )
     record.steps[0].status = "done"
     store_step(record.id, record.steps[0])
-    run_store.record_event(record.id, kind="Assistant", title="fiz o um", detail="fiz o um", step_id="one")
-    run_store.record_event(record.id, kind="Assistant", title="fazendo o dois", detail="fazendo o dois", step_id="two")
+    run_store.record_event(
+        record.id, kind="Assistant", title="fiz o um", detail="fiz o um", step_id="one"
+    )
+    run_store.record_event(
+        record.id, kind="Assistant", title="fazendo o dois", detail="fazendo o dois", step_id="two"
+    )
     return record
 
 
@@ -34,7 +38,9 @@ def test_steps_closed_before_the_resume_get_their_log_back(tmp_path: Path):
     _resumed_run(tmp_path)
     state = CockpitState()
     state.sync_phases([{"id": "one", "label": "Um"}, {"id": "two", "label": "Dois"}])
-    state.entries = [LogEntry(kind=LogKind.ASSISTANT, title="fazendo o dois", entry_id=1, phase_id="two")]
+    state.entries = [
+        LogEntry(kind=LogKind.ASSISTANT, title="fazendo o dois", entry_id=1, phase_id="two")
+    ]
     state._next_entry_id = 2
 
     restore_settled_steps(state, "run-r", tmp_path)

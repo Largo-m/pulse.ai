@@ -15,8 +15,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.conftest import make_workflow
-
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.history.events import LogKind
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
@@ -30,6 +28,7 @@ from pulse.prompts.text_questionnaire import (
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
+from tests.conftest import make_workflow
 
 
 def _runner(
@@ -114,9 +113,7 @@ def test_history_reopens_with_kinds_instead_of_generic_tool(tmp_path: Path):
 
     state = _hydrated(tmp_path, run_id)
 
-    assert [(entry.kind, entry.title) for entry in state.entries] == [
-        (LogKind.READ, "a.py")
-    ]
+    assert [(entry.kind, entry.title) for entry in state.entries] == [(LogKind.READ, "a.py")]
 
 
 def test_agent_speech_comes_back_whole_in_the_bubble(tmp_path: Path):
@@ -140,9 +137,7 @@ def test_the_step_header_stays_in_the_log(tmp_path: Path):
     runner._begin_phase("Planejar")
 
     state = _hydrated(tmp_path, run_id)
-    assert [(entry.kind, entry.title) for entry in state.entries] == [
-        (LogKind.INFO, "Planejar")
-    ]
+    assert [(entry.kind, entry.title) for entry in state.entries] == [(LogKind.INFO, "Planejar")]
 
 
 def test_a_late_update_does_not_erase_the_tool_label(tmp_path: Path):
@@ -185,9 +180,7 @@ def test_the_agent_question_and_the_answer_stay_in_the_log(tmp_path: Path):
 
     class _Port:
         def respond_to_ask_question(self, params):
-            return build_ask_question_answers(
-                [{"questionId": "q1", "selectedOptionIds": ["B"]}]
-            )
+            return build_ask_question_answers([{"questionId": "q1", "selectedOptionIds": ["B"]}])
 
     runner = _runner(tmp_path, run_id, port=_Port())
     runner._prompt_handler.respond_to_ask_question(
@@ -295,9 +288,7 @@ def test_a_permission_resolved_by_policy_does_not_become_a_line(tmp_path: Path):
             return permission_selected("allow-once")
 
     runner = _runner(tmp_path, run_id, port=_Port())
-    runner._prompt_handler.respond_to_permission(
-        _permission_params(), policy="auto_approve"
-    )
+    runner._prompt_handler.respond_to_permission(_permission_params(), policy="auto_approve")
 
     assert _dialogue(run_id) == []
 
@@ -373,11 +364,7 @@ def test_code_fence_before_the_questionnaire_stays_in_the_speech(tmp_path: Path)
     tree = "Estrutura atual:\n```\npulse/\n  store/\n```"
 
     runner._text_buffer.append(
-        f"{tree}\n"
-        "Preciso de algumas informações:\n"
-        "1. Qual banco usar?\n"
-        "A) Postgres\n"
-        "B) SQLite\n"
+        f"{tree}\nPreciso de algumas informações:\n1. Qual banco usar?\nA) Postgres\nB) SQLite\n"
     )
     runner._flush_text()
 

@@ -7,6 +7,7 @@ from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.resolved import resolve_config
 from pulse.paths import safe_cwd
 
+
 def _default_models() -> list[str]:
     """Union of the models declared by each registered runtime."""
     from pulse.runtimes import all_runtimes

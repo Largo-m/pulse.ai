@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -180,7 +180,7 @@ class FactoryAgent:
     prompt_template: str
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_phase(agent_id: str, phase: str = "PHASE") -> str:
     """A step's `prompt_template`: the `<phase>.md` in the agent's folder.
 

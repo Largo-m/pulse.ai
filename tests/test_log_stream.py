@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from tests.conftest import make_workflow
-
-from pulse.tui.state import CockpitState, LogKind
+from pulse.tui.state import CockpitState
 from pulse.tui.widgets.log_stream import LogStream, _assistant_line, format_assistant_lines
+from tests.conftest import make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 

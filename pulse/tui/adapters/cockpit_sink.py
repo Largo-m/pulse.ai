@@ -4,6 +4,11 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from pulse.history.tool_detail import (
+    build_tool_labels,
+    extract_paths,
+    merge_tool_update,
+)
 from pulse.prompts.text_questionnaire import (
     QUESTIONNAIRE_NOTICE,
     QUESTIONNAIRE_START,
@@ -12,11 +17,6 @@ from pulse.prompts.text_questionnaire import (
 from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
-from pulse.history.tool_detail import (
-    build_tool_labels,
-    extract_paths,
-    merge_tool_update,
-)
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
@@ -279,7 +279,11 @@ class CockpitSink:
             needs = False
             if entry.kind == LogKind.SEARCH and _is_vague_search(entry.title):
                 needs = True
-            elif entry.kind in {LogKind.READ, LogKind.EDIT, LogKind.WRITE} and entry.title.strip() in {
+            elif entry.kind in {
+                LogKind.READ,
+                LogKind.EDIT,
+                LogKind.WRITE,
+            } and entry.title.strip() in {
                 "…",
                 "...",
             }:

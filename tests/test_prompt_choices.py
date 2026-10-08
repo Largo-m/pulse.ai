@@ -58,9 +58,7 @@ def test_should_not_add_other_option_approval_gate():
 def test_classify_outcome_reads_the_approval_questionnaire():
     def answers(text: str) -> str:
         return (
-            "Respostas coletadas via questionário interativo do Pulse:\n\n"
-            "1. Aprovar?\n"
-            f"→ {text}\n"
+            f"Respostas coletadas via questionário interativo do Pulse:\n\n1. Aprovar?\n→ {text}\n"
         )
 
     assert classify_outcome(answers("A) Sim, aprovar e seguir")) == "approve"
@@ -92,7 +90,9 @@ def test_handler_format_answer_with_follow_up_detail():
         question,
         {"selectedOptionIds": ["B::Incluir testes do interceptor"]},
     )
-    assert formatted == "B) Não, preciso de ajustes (descreva abaixo) — Incluir testes do interceptor"
+    assert (
+        formatted == "B) Não, preciso de ajustes (descreva abaixo) — Incluir testes do interceptor"
+    )
 
 
 def test_build_choices_suppresses_other_for_migration():
@@ -225,6 +225,7 @@ def test_an_english_gate_is_read_like_a_portuguese_one():
     Without this, `approve` did not approve: the step fell into `continue`, the
     engine handed the conversation back to the agent and the gate never closed.
     """
+
     def answers(label: str) -> str:
         return f"1. Approve the Techspec and continue?\n→ {label}"
 
@@ -235,7 +236,7 @@ def test_an_english_gate_is_read_like_a_portuguese_one():
 
 
 def test_english_approval_block_does_not_get_an_other_option():
-    """"Outro" in a gate becomes free text where the engine expects one of three choices."""
+    """ "Outro" in a gate becomes free text where the engine expects one of three choices."""
     assert not should_add_other_option(
         prompt="1. Approve the Techspec and continue?",
         option_labels=["Yes, approve and continue", "No, I need changes", "Cancel workflow"],

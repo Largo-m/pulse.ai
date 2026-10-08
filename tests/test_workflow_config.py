@@ -1,7 +1,15 @@
 from pathlib import Path
 
-from pulse.config.global_config import load_global_config, mark_onboarding_complete, update_global_workflow
-from pulse.config.project_config import init_project_config, load_project_config, update_project_workflow
+from pulse.config.global_config import (
+    load_global_config,
+    mark_onboarding_complete,
+    update_global_workflow,
+)
+from pulse.config.project_config import (
+    init_project_config,
+    load_project_config,
+    update_project_workflow,
+)
 
 
 def test_update_global_workflow(tmp_path: Path):

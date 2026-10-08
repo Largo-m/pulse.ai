@@ -14,7 +14,9 @@ def _point_at(monkeypatch, tmp_path: Path) -> None:
 def test_a_daemon_never_clears_the_meta_of_another(monkeypatch, tmp_path: Path):
     """The daemon that lost the race for the port must not orphan the winner."""
     _point_at(monkeypatch, tmp_path)
-    paths.write_daemon_meta(pid=111, http_host="127.0.0.1", http_port=1, socket_path=tmp_path / "daemon.sock")
+    paths.write_daemon_meta(
+        pid=111, http_host="127.0.0.1", http_port=1, socket_path=tmp_path / "daemon.sock"
+    )
 
     paths.clear_daemon_meta(222)
 
@@ -23,7 +25,9 @@ def test_a_daemon_never_clears_the_meta_of_another(monkeypatch, tmp_path: Path):
 
 def test_the_owner_clears_its_own_meta(monkeypatch, tmp_path: Path):
     _point_at(monkeypatch, tmp_path)
-    paths.write_daemon_meta(pid=111, http_host="127.0.0.1", http_port=1, socket_path=tmp_path / "daemon.sock")
+    paths.write_daemon_meta(
+        pid=111, http_host="127.0.0.1", http_port=1, socket_path=tmp_path / "daemon.sock"
+    )
 
     paths.clear_daemon_meta(111)
 

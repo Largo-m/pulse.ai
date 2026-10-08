@@ -73,7 +73,9 @@ def test_find_project_root_without_readable_cwd(unreadable_cwd: None) -> None:
     assert find_project_root() is None
 
 
-def test_daemon_anchors_in_its_own_state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_daemon_anchors_in_its_own_state_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The engine leaves its launcher's directory as soon as it starts."""
     home = tmp_path / "estado"
     monkeypatch.setattr("pulse.paths.GLOBAL_DIR", home)

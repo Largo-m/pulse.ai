@@ -6,7 +6,11 @@ from pulse.config.global_config import (
     update_global_agent,
     update_global_defaults,
 )
-from pulse.config.project_config import init_project_config, load_project_config, update_project_defaults
+from pulse.config.project_config import (
+    init_project_config,
+    load_project_config,
+    update_project_defaults,
+)
 
 
 def test_update_global_defaults_model(tmp_path: Path):

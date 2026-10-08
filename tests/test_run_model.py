@@ -109,7 +109,9 @@ def test_release_returns_an_interrupted_step_to_pending(status: StepStatus):
 
 
 def test_release_leaves_a_settled_step_alone():
-    step = StepRecord(step_id="one", status=StepStatus.DONE, ended_at=datetime(2026, 1, 1, tzinfo=UTC))
+    step = StepRecord(
+        step_id="one", status=StepStatus.DONE, ended_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
 
     assert step.release() is False
     assert step.status == StepStatus.DONE
@@ -384,7 +386,11 @@ def test_daemon_run_state_finishes_once_with_the_mapped_status():
 
     state.finish(RUN_BLOCKED)
 
-    assert (state.status, state.exit_code, state.is_active()) == (RunStatus.BLOCKED, RUN_BLOCKED, False)
+    assert (state.status, state.exit_code, state.is_active()) == (
+        RunStatus.BLOCKED,
+        RUN_BLOCKED,
+        False,
+    )
     with pytest.raises(RuntimeError):
         state.finish(0)
 
@@ -502,7 +508,9 @@ def test_the_previous_delivery_is_the_last_settled_step_with_a_summary():
     previous = run.previous_delivery("build")
 
     assert previous is not None
-    assert previous.step_id == "plan", "a blocked text is not a delivery, an empty skip says nothing"
+    assert previous.step_id == "plan", (
+        "a blocked text is not a delivery, an empty skip says nothing"
+    )
 
 
 def test_a_resumed_fan_out_still_sees_the_step_that_listed_the_items():

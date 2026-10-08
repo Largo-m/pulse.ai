@@ -7,11 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.conftest import make_workflow
-
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import UnknownWorkflow, run_workflow
 from pulse.runtime.tty import is_cockpit_stream
+from tests.conftest import make_workflow
 
 
 @dataclass

@@ -5,12 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tests.conftest import make_workflow, store_step
-
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import restore_run
 from pulse.tui.state import CockpitState, PhaseStatus
+from tests.conftest import make_workflow, store_step
 
 
 def _run_with_history(workspace: Path) -> str:
@@ -125,9 +124,7 @@ def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Pat
 
         app = Harness()
         async with app.run_test(size=(140, 40)) as pilot:
-            screen = CockpitScreen(
-                "demo", "fazer algo", workspace=tmp_path, resume_run_id=run_id
-            )
+            screen = CockpitScreen("demo", "fazer algo", workspace=tmp_path, resume_run_id=run_id)
             monkeypatch.setattr(screen, "_run_workflow", lambda: None)
             app.push_screen(screen)
             await pilot.pause()
@@ -141,7 +138,7 @@ def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Pat
 
 
 def test_the_choice_offers_back_instead_of_view_only():
-    """"Só visualizar" promised a screen; "Voltar" says what the key does."""
+    """ "Só visualizar" promised a screen; "Voltar" says what the key does."""
     import asyncio
 
     import pytest
@@ -167,8 +164,7 @@ def test_the_choice_offers_back_instead_of_view_only():
 
             options = screen.query_one("#resume-options", OptionList)
             ids = [
-                str(options.get_option_at_index(index).id)
-                for index in range(options.option_count)
+                str(options.get_option_at_index(index).id) for index in range(options.option_count)
             ]
             assert ids == [RESUME, BACK], "restart from scratch is gone; only resume remains"
 
