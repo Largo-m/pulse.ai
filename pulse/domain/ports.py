@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
+
+from pulse.domain.run import RunRecord, StepRecord
 
 JsonObject: TypeAlias = dict[str, object]
 """An ACP JSON-RPC payload. Its shape belongs to the runtime, so adapters narrow it at the edge."""
@@ -97,6 +100,33 @@ class PromptPort(Protocol):
         *,
         title: str = "",
     ) -> Choice | None: ...
+
+
+@runtime_checkable
+class RunRepository(Protocol):
+    """Where a run lives between steps, so a stopped or crashed run can be resumed."""
+
+    def create(
+        self,
+        *,
+        run_id: str,
+        workflow_id: str,
+        workspace: Path,
+        user_prompt: str,
+        steps: Sequence[StepRecord],
+    ) -> RunRecord:
+        """A new running run whose steps are all pending, stored before it is returned."""
+        ...
+
+    def load(self, run_id: str) -> RunRecord | None: ...
+
+    def save(self, run: RunRecord) -> None:
+        """Store the whole aggregate at once: the run and its steps never disagree."""
+        ...
+
+    def artifacts(self, run_id: str) -> list[str]:
+        """Paths the agents wrote during the run, relative to where it worked."""
+        ...
 
 
 @runtime_checkable

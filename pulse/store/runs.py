@@ -11,6 +11,7 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -435,3 +436,37 @@ def list_sessions(run_id: str, *, db_path: Path | None = None) -> list[dict[str,
         }
         for row in rows
     ]
+
+
+class SqliteRunRepository:
+    """[pulse.domain.ports.RunRepository] over the Pulse database."""
+
+    def __init__(self, db_path: Path | None = None) -> None:
+        self._db_path = db_path
+
+    def create(
+        self,
+        *,
+        run_id: str,
+        workflow_id: str,
+        workspace: Path,
+        user_prompt: str,
+        steps: Sequence[StepRecord],
+    ) -> RunRecord:
+        return create_run(
+            run_id=run_id,
+            workflow_id=workflow_id,
+            workspace=workspace,
+            user_prompt=user_prompt,
+            steps=list(steps),
+            db_path=self._db_path,
+        )
+
+    def load(self, run_id: str) -> RunRecord | None:
+        return load_run(run_id, db_path=self._db_path)
+
+    def save(self, run: RunRecord) -> None:
+        save(run, db_path=self._db_path)
+
+    def artifacts(self, run_id: str) -> list[str]:
+        return [entry["path"] for entry in list_artifacts(run_id, db_path=self._db_path)]
