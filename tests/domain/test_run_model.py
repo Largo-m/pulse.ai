@@ -386,6 +386,29 @@ def test_a_crashed_run_fails_with_its_running_step():
     )
 
 
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda run: run.reopen_loop(["idle", "busy"], opener_id="idle"),
+        lambda run: run.close_loop(["idle", "busy"], opener_id="idle"),
+        lambda run: run.retire_steps_outside(set()),
+    ],
+    ids=["reopen_loop", "close_loop", "retire_steps_outside"],
+)
+def test_a_refused_change_to_several_steps_changes_none_of_them(change):
+    """Found by `test_run_properties`: the steps before the running one were already changed.
+
+    The next save would have persisted a loop or a retirement that was refused.
+    """
+    idle = StepRecord(step_id="idle")
+    run = _run(idle, _running("busy"))
+
+    with pytest.raises(InvalidTransition):
+        change(run)
+
+    assert (idle.status, idle.rounds, idle.ended_at) == (StepStatus.PENDING, 1, None)
+
+
 def test_own_branch_names_the_workflow_and_the_short_run_id():
     run = RunRecord(id="0123456789abcdef", workflow_id="nova spec/v2", workspace_root="/tmp")
 
