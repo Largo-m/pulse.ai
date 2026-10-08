@@ -25,9 +25,17 @@ paths:
           schema:
             type: string
           description: Project whose agent override applies; the engine's own directory otherwise
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Probe this runtime's ACP command instead of the configured agent (onboarding)
       responses:
         "200":
-          description: ok, message, error and response_text of the probe
+          description: ok, message, error, response_text and available_models of the probe
+        "404":
+          description: Unknown runtime
   /api/workflows:
     get:
       summary: List workflows defined in the database

@@ -9,22 +9,10 @@ from pulse.config.global_config import (
     global_config_exists,
     load_global_config,
     mark_onboarding_complete,
-    migrate_legacy_global_config,
     save_global_config,
     update_global_agent,
     update_global_defaults,
     update_global_workflow,
-)
-from pulse.config.paths import (
-    GLOBAL_CONFIG_DIR,
-    GLOBAL_CONFIG_FILE,
-    GLOBAL_DB_FILE,
-    LEGACY_GLOBAL_CONFIG_DIR,
-    LEGACY_GLOBAL_CONFIG_FILE,
-    PROJECT_CONFIG_DIRNAME,
-    PROJECT_CONFIG_FILENAME,
-    find_project_config_file,
-    project_config_file,
 )
 from pulse.config.project_config import (
     ProjectConfig,
@@ -41,19 +29,11 @@ from pulse.config.project_config import (
 from pulse.config.resolved import ResolvedConfig, resolve_config
 
 __all__ = [
-    "GLOBAL_CONFIG_DIR",
-    "GLOBAL_CONFIG_FILE",
-    "GLOBAL_DB_FILE",
-    "LEGACY_GLOBAL_CONFIG_DIR",
-    "LEGACY_GLOBAL_CONFIG_FILE",
-    "PROJECT_CONFIG_DIRNAME",
-    "PROJECT_CONFIG_FILENAME",
     "AgentConfig",
     "GlobalConfig",
     "ProjectConfig",
     "ResolvedConfig",
     "WorkflowConfig",
-    "find_project_config_file",
     "parse_agents",
     "parse_workflows",
     "global_config_exists",
@@ -62,10 +42,8 @@ __all__ = [
     "load_global_config",
     "load_project_config",
     "mark_onboarding_complete",
-    "migrate_legacy_global_config",
     "parse_project_config",
     "project_config_exists",
-    "project_config_file",
     "render_project_config",
     "resolve_config",
     "save_global_config",

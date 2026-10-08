@@ -112,7 +112,11 @@ class ArtifactPane(Widget):
             close = self.query_one("#artifact-close", Static)
         except Exception:
             close = None
-        if close is not None and close.display and close.region.contains(event.screen_x, event.screen_y):
+        if (
+            close is not None
+            and close.display
+            and close.region.contains(event.screen_x, event.screen_y)
+        ):
             event.stop()
             self.post_message(ArtifactPaneClosed())
             return

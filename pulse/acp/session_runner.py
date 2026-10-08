@@ -5,21 +5,26 @@ import subprocess
 import threading
 import time
 import uuid
-from queue import Empty, Queue
 from collections.abc import Callable
+from queue import Empty, Queue
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.models import resolve_model_display_name
 from pulse.acp.run_events import RunEventRecorder
-from pulse.runtimes import AgentRuntime, runtime_for_command
+from pulse.domain.control import RunControl
+from pulse.domain.ports import (
+    NullPromptPort,
+    NullStreamSink,
+    NullUserWaitListener,
+    UserWaitListener,
+)
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.ports import NullPromptPort, NullStreamSink, NullUserWaitListener, UserWaitListener
-from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.prompts.permission import PermissionPolicy, decide_permission
-from pulse.prompts.text_questionnaire import parse_text_questionnaire
-from pulse.runcontrol import RunControl
+from pulse.replies.approval import APPROVE, CANCEL, SKIP, classify_outcome
+from pulse.replies.permission import PermissionPolicy, decide_permission
+from pulse.replies.text_questionnaire import parse_text_questionnaire
+from pulse.runtimes import AgentRuntime, runtime_for_command
 
 # An agent that asks until no doubt is left needs room; the cap only stops an
 # endless question loop, and hitting it sends the step to the retry menu.
@@ -70,7 +75,9 @@ class _WatchedPrompts:
 
         return watched
 
-    def _record(self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> None:
+    def _record(
+        self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any
+    ) -> None:
         if self._on_answer is None:
             return
         try:
@@ -354,7 +361,8 @@ class AcpSessionRunner(RunEventRecorder):
             )
             self._ask_bridge.start()
 
-        self._process = subprocess.Popen(
+        # argv list from the user's effective config, never from agent output.
+        self._process = subprocess.Popen(  # noqa: S603
             self._command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -432,11 +440,7 @@ class AcpSessionRunner(RunEventRecorder):
             if method == "session/update":
                 params = message.get("params", {})
                 session_id = params.get("sessionId")
-                if (
-                    self._session_id is None
-                    or session_id is None
-                    or session_id == self._session_id
-                ):
+                if self._session_id is None or session_id is None or session_id == self._session_id:
                     self._stream.handle_update(params)
                     self._record_run_event(params)
                 continue
@@ -587,14 +591,12 @@ class AcpSessionRunner(RunEventRecorder):
         """Apply the model using the runtime dialect, without failing the session on error."""
         if self._session_id is None:
             return
-        request = self._runtime.model_request(
-            session, preferred_model, session_id=self._session_id
-        )
+        request = self._runtime.model_request(session, preferred_model, session_id=self._session_id)
         if request is None:
             return
         try:
             self._request(request.method, request.params)
-        except (RuntimeError, TimeoutError) as error:
+        except (RuntimeError, TimeoutError):
             return
         self._emit_info(f"Modelo: {resolve_model_display_name(session, request.model_id)}")
 

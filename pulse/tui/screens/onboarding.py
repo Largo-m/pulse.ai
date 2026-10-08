@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import httpx
 from textual import on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -9,9 +11,8 @@ from textual.screen import Screen
 from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
-from pulse.acp.client import probe_acp_connection
+from pulse.client.engine_client import EngineClient
 from pulse.config import (
-    GLOBAL_CONFIG_FILE,
     global_config_exists,
     init_project_config,
     load_global_config,
@@ -21,6 +22,7 @@ from pulse.config import (
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
 from pulse.doctor.checks import run_agent_checks
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
+from pulse.store.paths import GLOBAL_DB_FILE
 
 
 class OnboardingScreen(Screen[int]):
@@ -59,7 +61,7 @@ class OnboardingScreen(Screen[int]):
             if existing and existing.is_onboarded:
                 self._step = "overwrite"
                 self._set_status("Config já existe")
-                self._set_report(str(GLOBAL_CONFIG_FILE))
+                self._set_report(str(GLOBAL_DB_FILE))
                 self._set_options(
                     [
                         ("overwrite_yes", "Sim — reconfigurar"),
@@ -163,9 +165,7 @@ class OnboardingScreen(Screen[int]):
             if option_id == "auth_login":
                 self._do_login()
             elif option_id == "auth_skip":
-                self._set_status(
-                    f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo."
-                )
+                self._set_status(f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo.")
                 self._set_report("")
                 self.dismiss(1)
             return
@@ -205,30 +205,29 @@ class OnboardingScreen(Screen[int]):
                 "api_key" if auth.detail == "api_key" else self._runtime.auth_method_label
             )
             self._ask_workspace()
+
         self.app.call_from_thread(apply)
 
     @work(thread=True)
     def _run_acp_probe(self) -> None:
         self.app.call_from_thread(self._set_status, "Testando conexão ACP…")
-        probe = probe_acp_connection(
-            command=list(self._runtime.acp_command),
-            cwd=str(self._workspace),
-        )
-        models = list(probe.available_models or [])
+        probe = self._probe_through_engine()
+        models = [str(model) for model in probe.get("available_models") or []]
         if not models:
             models = collect_available_models(self._workspace, agent_name=self._runtime.id)
         self._models = models or list(self._runtime.default_models) or list(DEFAULT_MODELS)
-        self._acp_ok = probe.success
+        self._acp_ok = bool(probe.get("ok"))
+        message = str(probe.get("message") or "")
 
         def apply() -> None:
-            if probe.success:
+            if self._acp_ok:
                 self._set_status("Conexão ACP")
-                self._set_report(probe.message)
+                self._set_report(message)
                 self._finish()
                 return
             self._step = "acp_fail"
             self._set_status("Conexão ACP")
-            self._set_report(probe.error or probe.message)
+            self._set_report(str(probe.get("error") or message))
             self._set_options(
                 [
                     ("acp_continue", "Continuar mesmo assim"),
@@ -237,6 +236,17 @@ class OnboardingScreen(Screen[int]):
             )
 
         self.app.call_from_thread(apply)
+
+    def _probe_through_engine(self) -> dict[str, Any]:
+        """An unreachable engine is a failed probe, so the user can still continue."""
+        client = EngineClient()
+        try:
+            client.ensure_daemon()
+            return client.acp_probe(workspace=self._workspace, runtime=self._runtime.id)
+        except (RuntimeError, httpx.HTTPError) as error:
+            return {"ok": False, "message": "Engine indisponível", "error": str(error)}
+        finally:
+            client.close()
 
     def _ask_model(self) -> None:
         self._step = "model"

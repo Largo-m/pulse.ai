@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 
 
 class StepStatus(StrEnum):

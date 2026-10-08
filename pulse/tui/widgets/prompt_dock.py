@@ -36,8 +36,7 @@ class PromptDock(Widget):
         kind = self._request.kind
         if kind in {PromptKind.SELECT, PromptKind.MULTI_SELECT}:
             options = [
-                Option(label, id=option_id or None)
-                for option_id, label in self._request.choices
+                Option(label, id=option_id or None) for option_id, label in self._request.choices
             ]
             yield OptionList(*options, id="prompt-options", compact=True)
             if kind == PromptKind.MULTI_SELECT:
@@ -80,7 +79,7 @@ class PromptDock(Widget):
         """Map key → option index, read from the label shown on screen.
 
         Options are labelled `A)`, `B)`, `C)`
-        ([pulse.prompts.ask_question.format_option_label]); deriving keys from
+        ([pulse.replies.ask_question.format_option_label]); deriving keys from
         the label guarantees the key always matches the visible text. Labels
         without an `X)` prefix get no hotkey.
         """

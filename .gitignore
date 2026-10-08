@@ -1,12 +1,5 @@
-backend/docs/*
-backend/cursor-execute-tasks.sh
-backend/cursor-execute-specs.sh
-backend/skills-lock.json
 .cursor/*
-specs/*
 .pulse/worktrees/
-.pulse/runs/
-.pulse/artifacts/*/acp-events.jsonl
 .venv/
 __pycache__/
 *.py[cod]
@@ -15,3 +8,9 @@ build/
 .pytest_cache/
 .DS_Store
 *.backup
+.coverage
+.coverage.*
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/

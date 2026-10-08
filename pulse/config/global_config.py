@@ -37,10 +37,6 @@ class GlobalConfig:
         return self.completed_at is not None
 
 
-def migrate_legacy_global_config() -> bool:
-    return False
-
-
 def global_config_exists(path: Path | None = None) -> bool:
     return load_global_config(path) is not None
 
@@ -177,7 +173,9 @@ def update_global_agent(
     agents = dict(config.agents)
     existing = agents.get(agent_name)
     next_binary = binary if binary is not None else (existing.binary if existing else agent_name)
-    next_models = list(models) if models is not None else (list(existing.models) if existing else [])
+    next_models = (
+        list(models) if models is not None else (list(existing.models) if existing else [])
+    )
     if acp_command is not None:
         next_command = list(acp_command)
     elif existing is not None:

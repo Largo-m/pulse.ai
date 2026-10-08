@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -180,7 +180,7 @@ class FactoryAgent:
     prompt_template: str
 
 
-@lru_cache(maxsize=None)
+@cache
 def load_phase(agent_id: str, phase: str = "PHASE") -> str:
     """A step's `prompt_template`: the `<phase>.md` in the agent's folder.
 
@@ -227,7 +227,8 @@ def seed(connection: Any) -> None:
     agents.append(("default", "Agente", "", ""))
     connection.executemany(
         """
-        INSERT OR IGNORE INTO agent_defs (id, label, runtime, model, permission_policy, instructions)
+        INSERT OR IGNORE INTO agent_defs
+            (id, label, runtime, model, permission_policy, instructions)
         VALUES (?, ?, '', '', ?, ?)
         """,
         agents,
@@ -282,7 +283,8 @@ def inherit_policy_on_default_agent(connection: Any) -> None:
     `_resolve_pulse_agent`. Idempotent: after the first open no row matches.
     """
     connection.execute(
-        "UPDATE agent_defs SET permission_policy = '' WHERE id = 'default' AND permission_policy = 'ask'"
+        "UPDATE agent_defs SET permission_policy = '' "
+        "WHERE id = 'default' AND permission_policy = 'ask'"
     )
 
 
@@ -313,6 +315,7 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
     approval block are updated; user-rewritten templates are left alone. Runs on
     every DB open, so it exits early via `SELECT` before calling `load_agents`.
     """
+    # Only the `?` placeholders are interpolated; every value is bound.
     placeholders = ",".join("?" * len(UNATTENDED_STEPS))
     pending = connection.execute(
         f"""
@@ -339,6 +342,7 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
 
 
 def _count_present(connection: Any, table: str, column: str, ids: tuple[str, ...]) -> int:
+    # `table` and `column` are literals from `is_seeded`, never input.
     placeholders = ",".join("?" * len(ids))
     query = f"SELECT count(*) FROM {table} WHERE {column} IN ({placeholders})"  # noqa: S608
     return int(connection.execute(query, ids).fetchone()[0])

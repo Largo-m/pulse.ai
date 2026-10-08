@@ -7,8 +7,8 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
+from pulse.domain.ports import NullPromptPort
 from pulse.mcp.ask_protocol import dispatch_message
-from pulse.ports import NullPromptPort
 
 ENDPOINT_PATH = "/mcp"
 

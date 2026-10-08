@@ -8,12 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pulse.config.paths import safe_cwd
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.domain.control import RunControl
 from pulse.orchestrator.engine import run_workflow
-from pulse.runcontrol import RunControl
 from pulse.store import runs as run_store
+from pulse.store.paths import safe_cwd
 from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
@@ -140,7 +140,9 @@ class RunManager:
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
             "prompt": state.prompt,
             "workspace": state.workspace,
-            "status": RunStatus.AWAITING_INPUT if (awaiting and state.is_active()) else state.status,
+            "status": RunStatus.AWAITING_INPUT
+            if (awaiting and state.is_active())
+            else state.status,
             "active": state.is_active(),
             "awaiting_prompt": awaiting,
             "awaiting_since": since,
@@ -172,11 +174,7 @@ class RunManager:
         """
         now = time.time()
         with self._lock:
-            finished = [
-                state
-                for state in self._runs.values()
-                if state.finished_at is not None
-            ]
+            finished = [state for state in self._runs.values() if state.finished_at is not None]
             finished.sort(key=lambda state: state.finished_at or 0.0, reverse=True)
             for index, state in enumerate(finished):
                 stale = now - (state.finished_at or now) > FINISHED_TTL

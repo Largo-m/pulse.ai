@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from pulse.acp.client import probe_acp_connection
 from pulse.config import (
-    GLOBAL_CONFIG_FILE,
     global_config_exists,
     load_global_config,
     load_project_config,
 )
-from pulse.config.paths import safe_cwd
 from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
 from pulse.runtimes import get_runtime
+from pulse.store.paths import GLOBAL_DB_FILE, safe_cwd
 
 
 def _status_icon(status: str) -> str:
@@ -51,7 +50,7 @@ def run_doctor(*, test_acp: bool = False) -> int:
                 CheckResult(
                     name="Config global",
                     status="ok",
-                    message=f"Config em {GLOBAL_CONFIG_FILE}",
+                    message=f"Config em {GLOBAL_DB_FILE}",
                     detail=global_detail,
                 )
             )

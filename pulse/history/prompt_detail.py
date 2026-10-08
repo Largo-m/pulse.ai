@@ -10,19 +10,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from pulse.prompts.ask_question import (
+from pulse.replies.ask_question import (
     PLAN_APPROVAL_TITLE,
     build_question_choices,
     multi_select_prompt,
     parse_ask_question_params,
     plan_prompt_text,
 )
-from pulse.prompts.permission import (
+from pulse.replies.permission import (
     build_permission_choices,
     decide_permission,
     permission_prompt_text,
 )
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     TextQuestionnaire,
     parse_text_questionnaire,
     split_questionnaire_answers,

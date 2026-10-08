@@ -29,9 +29,7 @@ class ClaudeRuntime(AgentRuntime):
     auth_env_var = "ANTHROPIC_API_KEY"
     auth_method_id = None
     auth_method_label = "claude_login"
-    install_hint = (
-        "Instale o Claude Code (https://claude.com/claude-code) e o Node.js 18+ (`npx`)."
-    )
+    install_hint = "Instale o Claude Code (https://claude.com/claude-code) e o Node.js 18+ (`npx`)."
     login_command = ("claude", "/login")
     login_label = "Executar `claude /login`"
     interview_modes = ("default", "acceptEdits", "agent")

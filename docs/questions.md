@@ -39,7 +39,7 @@ C) Cancelar workflow
 ```
 ````
 
-Regras que o parser exige (`pulse/prompts/text_questionnaire.py`):
+Regras que o parser exige (`pulse/replies/text_questionnaire.py`):
 
 - header `Preciso de algumas informações…` ou `I need some information…`
 - pergunta `N. texto`
@@ -60,7 +60,7 @@ Depois do `session/prompt` acabar, o runner chama `_run_text_questionnaire`:
 O handler mostra **uma pergunta por vez**. Sem opções → campo livre. “Outro” → texto livre (`__other__`).
 
 O campo de texto abre depois do select por duas razões
-([`approval.answer_needs_description`](../pulse/prompts/approval.py)):
+([`approval.answer_needs_description`](../pulse/replies/approval.py)):
 
 1. **O rótulo pede.** Não só `(descreva)`: vale parêntese, colchete ou cauda
    depois de travessão/dois-pontos, com qualquer verbo de escrever nos dois
@@ -146,7 +146,7 @@ Tipos do dock: `select`, `multi_select`, `text`, `confirm`.
 ### Steps com aprovação
 
 Até **12 turns** (`MAX_PHASE_APPROVAL_TURNS`). Depois de cada turn, o Pulse
-classifica as linhas `→ …` (`pulse/prompts/approval.py`):
+classifica as linhas `→ …` (`pulse/replies/approval.py`):
 
 | Outcome | Gatilho (texto) | Efeito |
 | --- | --- | --- |

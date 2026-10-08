@@ -20,35 +20,36 @@ from typing import Any
 from pulse import vcs
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import ResolvedConfig, resolve_config
-from pulse.config.paths import worktrees_dir
 from pulse.doctor.checks import check_runtime_ready
-from pulse.orchestrator.cli_output import (
-    print_workflow_banner,
-    print_workflow_error,
-    print_workflow_result,
-)
-from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
-from pulse.orchestrator.loops import close_loop, find_loops, repeat_loop
-from pulse.orchestrator.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
-from pulse.orchestrator.prompts import (
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
+from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
+from pulse.domain.ports import NullPromptPort, NullStreamSink
+from pulse.domain.workflow import StepDef, WorkflowDef
+from pulse.orchestrator.agent_text import (
     build_continuation_prompt,
     build_outcome_reminder_prompt,
     build_unblock_prompt,
     guidance_block,
     outcome_protocol,
 )
+from pulse.orchestrator.cli_output import (
+    print_workflow_banner,
+    print_workflow_error,
+    print_workflow_result,
+)
+from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
+from pulse.orchestrator.loops import close_loop, repeat_loop
+from pulse.orchestrator.render import TemplateError, render
+from pulse.orchestrator.tty import is_cockpit_stream, is_interactive
 from pulse.orchestrator.turn import MenuChoice, TurnResult
 from pulse.orchestrator.waits import RunWaits
-from pulse.ports import NullPromptPort, NullStreamSink
-from pulse.prompts.approval import format_summary
-from pulse.prompts.permission import PermissionPolicy
-from pulse.prompts.render import TemplateError, render
-from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED, RunControl
-from pulse.runtime.tty import is_cockpit_stream, is_interactive
+from pulse.replies.approval import format_summary
+from pulse.replies.permission import PermissionPolicy
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
+from pulse.store.paths import worktrees_dir
 from pulse.store.runs import StepRecord, StepStatus
-from pulse.store.workflow_defs import StepDef, WorkflowDef, get_agent, get_workflow
+from pulse.store.workflow_defs import get_agent, get_workflow
 
 _POLICIES: dict[str, PermissionPolicy] = {
     "ask": "ask",
@@ -289,7 +290,7 @@ def _execute(
         runner.authenticate()
         _sync_steps(runner, run)
 
-        loops = find_loops(definition)
+        loops = definition.loops()
         index = 0
         while index < len(definition.steps):
             definition_step = definition.steps[index]
@@ -319,7 +320,8 @@ def _execute(
                     run_store.save(run)
                     return RUN_STOPPED
 
-                opens_loop = at in loops and loops[at].start == at
+                loop = loops.get(at)
+                opens_loop = loop is not None and loop.opens(at)
                 exit_code, signal = _run_step(
                     runner=runner,
                     cockpit=cockpit,
@@ -338,14 +340,14 @@ def _execute(
                     run_store.save(run)
                     return exit_code
 
-                if signal == LoopSignal.CLOSE and opens_loop:
-                    index = close_loop(run, definition, loops[at])
+                if signal == LoopSignal.CLOSE and loop is not None and opens_loop:
+                    index = close_loop(run, definition, loop)
                     _sync_steps(runner, run)
                     _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
-                if signal == LoopSignal.REPEAT and at in loops and loops[at].end == at:
-                    target, message = repeat_loop(run, definition, loops[at], record.label)
+                if signal == LoopSignal.REPEAT and loop is not None and loop.closes(at):
+                    target, message = repeat_loop(run, definition, loop, record.label)
                     _notify(runner, message)
                     if target is not None:
                         index = target
@@ -400,9 +402,7 @@ def _run_step(
 
         blocked = record.status == StepStatus.BLOCKED
         if blocked:
-            choice, guidance = _offer_blocked(
-                runner, f"{record.label} está bloqueado", reason
-            )
+            choice, guidance = _offer_blocked(runner, f"{record.label} está bloqueado", reason)
         else:
             choice, guidance = _offer_retry(runner, f"Step {record.label} falhou", reason)
         if _control(runner).interrupted:
@@ -459,8 +459,7 @@ def _attempt_step(
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
 
-    declares_outcome = step.requires_outcome and not step.requires_approval
-    if declares_outcome:
+    if step.declares_outcome:
         prompt_text += outcome_protocol()
 
     try:
@@ -487,7 +486,7 @@ def _attempt_step(
                 prompt_text=prompt_text,
                 preferred_model=model,
                 phase_id=step.step_id,
-                build_continuation=_unblock_continuation(step) if declares_outcome else None,
+                build_continuation=_unblock_continuation(step) if step.declares_outcome else None,
             )
     except Exception as error:  # noqa: BLE001
         _fail(run, record)
@@ -523,11 +522,11 @@ def _attempt_step(
         return None, turn.stop_reason or "o agente não concluiu o step"
 
     repeats = False
-    if declares_outcome:
+    if step.declares_outcome:
         declared = parse_outcome(turn.summary)
         if not declared.delivered:
             return _block(run, record, _blocked_reason(declared))
-        repeats = bool(step.repeat_from) and declared.repeats
+        repeats = step.repeat is not None and declared.repeats
         if may_close and declared.closes:
             return _settle(run, record, cockpit, LoopSignal.CLOSE)
 
@@ -689,9 +688,7 @@ def _offer_retry(runner: AcpSessionRunner, title: str, reason: str) -> tuple[Men
     )
 
 
-def _offer_blocked(
-    runner: AcpSessionRunner, title: str, reason: str
-) -> tuple[MenuChoice, str]:
+def _offer_blocked(runner: AcpSessionRunner, title: str, reason: str) -> tuple[MenuChoice, str]:
     """Decide what to do with a step the agent could not complete.
 
     Adds a skip option, recorded as `skipped` rather than hidden as `done`.
@@ -794,8 +791,7 @@ def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
     grouped = run.step_ids_by_status()
     apply(
         steps=[
-            {"id": item.step_id, "label": item.label, "rounds": item.rounds}
-            for item in run.steps
+            {"id": item.step_id, "label": item.label, "rounds": item.rounds} for item in run.steps
         ],
         done_ids=grouped[StepStatus.DONE],
         skipped_ids=grouped[StepStatus.SKIPPED],
