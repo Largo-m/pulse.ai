@@ -476,7 +476,10 @@ largar o stream sem a run precisar emitir nada.
 `domain/` e `replies/` não importam nenhum outro pacote do Pulse: são valores,
 regras e parsers sem I/O. `orchestrator/` usa os dois para executar a run. A
 TUI lê valores do domínio, mas **não** chama o orquestrador para executar.
-O porquê dessa divisão está na
+Quem usa um tipo do domínio importa de `pulse.domain`, nunca de um módulo que
+o reexporta (`tests/architecture/test_domain_imports.py`), e o `mypy` checa
+`domain/` como `--strict`, sem nenhum `Any` no código
+(`tests/architecture/test_domain_typing.py`). O porquê dessa divisão está na
 [ADR 0001](docs/adr/0001-camada-de-dominio.md).
 
 | Arquivo | Função |

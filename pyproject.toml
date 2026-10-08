@@ -119,6 +119,25 @@ python_version = "3.11"
 files = ["pulse"]
 warn_unused_ignores = true
 
+# Policy: the domain is `--strict` with no `Any` written or inferred in its code.
+# `disallow_any_expr` stays off: typeshed types `re.Match.group` as `str | Any`.
+[[tool.mypy.overrides]]
+module = ["pulse.domain", "pulse.domain.*"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+disallow_any_explicit = true
+disallow_any_unimported = true
+disallow_any_decorated = true
+
 # Baseline: mypy errors that predate the quality gates, grouped by error code.
 # Phase 7 zeroes this list; never add to it.
 [[tool.mypy.overrides]]

@@ -1,11 +1,27 @@
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from collections.abc import Sequence
+from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
+
+JsonObject: TypeAlias = dict[str, object]
+"""An ACP JSON-RPC payload. Its shape belongs to the runtime, so adapters narrow it at the edge."""
+
+Choice = TypeVar("Choice")
+
+
+class Questionnaire(Protocol):
+    """A questionnaire parsed from the agent's text; `pulse.replies` owns the concrete shape."""
+
+    @property
+    def title(self) -> str: ...
+
+    @property
+    def raw(self) -> str: ...
 
 
 @runtime_checkable
 class StreamSink(Protocol):
-    def handle_update(self, params: dict[str, Any]) -> None: ...
+    def handle_update(self, params: JsonObject) -> None: ...
 
     def begin_phase(self, title: str) -> None: ...
 
@@ -26,19 +42,19 @@ class StreamSink(Protocol):
 
 @runtime_checkable
 class PromptPort(Protocol):
-    def respond_to_ask_question(self, params: dict[str, Any]) -> dict[str, Any]: ...
+    def respond_to_ask_question(self, params: JsonObject) -> JsonObject: ...
 
-    def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]: ...
+    def respond_to_create_plan(self, params: JsonObject) -> JsonObject: ...
 
     def respond_to_permission(
         self,
-        params: dict[str, Any],
+        params: JsonObject,
         *,
         policy: str,
         allow_terminal: bool = False,
-    ) -> dict[str, Any]: ...
+    ) -> JsonObject: ...
 
-    def run_parsed_questionnaire(self, questionnaire: Any) -> str | None: ...
+    def run_parsed_questionnaire(self, questionnaire: Questionnaire) -> str | None: ...
 
     def run_text_questionnaire(self, text: str) -> str | None: ...
 
@@ -59,7 +75,7 @@ class NullStreamSink:
         self._agent_text = ""
         self.cockpit = False
 
-    def handle_update(self, params: dict[str, Any]) -> None:
+    def handle_update(self, params: JsonObject) -> None:
         update = params.get("update", {})
         if not isinstance(update, dict):
             return
@@ -96,7 +112,15 @@ class NullStreamSink:
     def error(self, title: str, reason: str = "") -> None:
         return None
 
-    def apply_phase_statuses(self, **kwargs: Any) -> None:
+    def apply_phase_statuses(
+        self,
+        *,
+        steps: Sequence[dict[str, str]] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
+    ) -> None:
         return None
 
     def set_session_id(self, session_id: str) -> None:
@@ -115,22 +139,22 @@ class NullUserWaitListener:
 
 
 class NullPromptPort:
-    def respond_to_ask_question(self, params: dict[str, Any]) -> dict[str, Any]:
+    def respond_to_ask_question(self, params: JsonObject) -> JsonObject:
         return {"outcome": {"outcome": "cancelled"}}
 
-    def respond_to_create_plan(self, params: dict[str, Any]) -> dict[str, Any]:
+    def respond_to_create_plan(self, params: JsonObject) -> JsonObject:
         return {"outcome": {"outcome": "cancelled"}}
 
     def respond_to_permission(
         self,
-        params: dict[str, Any],
+        params: JsonObject,
         *,
         policy: str,
         allow_terminal: bool = False,
-    ) -> dict[str, Any]:
+    ) -> JsonObject:
         return {"outcome": {"outcome": "cancelled"}}
 
-    def run_parsed_questionnaire(self, questionnaire: Any) -> str | None:
+    def run_parsed_questionnaire(self, questionnaire: Questionnaire) -> str | None:
         return None
 
     def run_text_questionnaire(self, text: str) -> str | None:
@@ -142,8 +166,8 @@ class NullPromptPort:
     def select_choice(
         self,
         prompt: str,
-        choices: list[tuple[str, Any]],
+        choices: list[tuple[str, Choice]],
         *,
         title: str = "",
-    ) -> Any | None:
+    ) -> Choice | None:
         return None
