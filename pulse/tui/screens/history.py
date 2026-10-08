@@ -17,6 +17,7 @@ from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import LIVE_STATUSES, HistoryItem
 from pulse.history.status_labels import LABEL_WIDTH, status_color
+from pulse.tui import strings
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 
@@ -25,13 +26,13 @@ REFRESH_SECONDS = 2.0
 
 class HistoryListScreen(Screen[None]):
     BINDINGS = [
-        ("q", "back_home", "Voltar"),
-        ("b", "back_home", "Voltar"),
-        ("escape", "back_home", "Voltar"),
-        ("slash", "focus_search", "Buscar"),
-        ("/", "focus_search", "Buscar"),
-        ("d", "delete_run", "Remover"),
-        ("delete", "delete_run", "Remover"),
+        ("q", "back_home", strings.BACK),
+        ("b", "back_home", strings.BACK),
+        ("escape", "back_home", strings.BACK),
+        ("slash", "focus_search", strings.HISTORY_BINDING_SEARCH),
+        ("/", "focus_search", strings.HISTORY_BINDING_SEARCH),
+        ("d", "delete_run", strings.REMOVE),
+        ("delete", "delete_run", strings.REMOVE),
     ]
 
     def __init__(self, workspace: Path | None = None) -> None:
@@ -43,9 +44,9 @@ class HistoryListScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-content"):
-            yield Static("HISTÓRICO", classes="history-title")
+            yield Static(strings.HISTORY_TITLE, classes="history-title")
             yield Static(self._hint_text(), id="history-hint", classes="history-hint")
-            yield Input(placeholder="Buscar runs…", id="history-search")
+            yield Input(placeholder=strings.HISTORY_SEARCH_PLACEHOLDER, id="history-search")
             yield OptionList(id="history-options")
             yield Static("", id="history-empty", classes="history-empty")
         yield Footer()
@@ -74,7 +75,7 @@ class HistoryListScreen(Screen[None]):
             self.app.call_from_thread(self._apply, items, query)
 
     def _hint_text(self) -> str:
-        return "/ busca  ·  Enter abre  ·  d remove"
+        return strings.HISTORY_HINT
 
     def _refresh(self) -> None:
         self._apply(self._catalog.search(self._query), self._query, force=True)
@@ -99,7 +100,7 @@ class HistoryListScreen(Screen[None]):
         hint = self.query_one("#history-hint", Static)
         hint.update(self._hint_text())
         if not items:
-            empty.update("Nenhuma run encontrada")
+            empty.update(strings.HISTORY_EMPTY)
             empty.display = True
             return
         empty.update("")
@@ -161,15 +162,15 @@ class HistoryListScreen(Screen[None]):
             self._refresh()
             self.query_one("#history-options", OptionList).focus()
             if removed:
-                self.notify(f"Run removida: {item.title}")
+                self.notify(strings.HISTORY_RUN_REMOVED.format(title=item.title))
             else:
-                self.notify("Essa run já não estava mais no histórico")
+                self.notify(strings.HISTORY_RUN_ALREADY_GONE)
 
         self.app.push_screen(
             ConfirmScreen(
-                title="REMOVER DO HISTÓRICO",
+                title=strings.CONFIRM_TITLE_REMOVE_FROM_HISTORY,
                 detail=_delete_warning(item),
-                confirm_label="Remover",
+                confirm_label=strings.REMOVE,
             ),
             callback=_answered,
         )
@@ -195,10 +196,10 @@ def _delete_warning(item: HistoryItem) -> str:
     """
     lines = [
         item.title,
-        "Apaga a run, os logs e a lista de artefatos. Os arquivos no workspace ficam.",
+        strings.HISTORY_REMOVE_DETAIL,
     ]
     if item.status in LIVE_STATUSES:
-        lines.append("Atenção: esta run consta em andamento — remover pode derrubá-la.")
+        lines.append(strings.HISTORY_REMOVE_LIVE_WARNING)
     return "\n".join(lines)
 
 

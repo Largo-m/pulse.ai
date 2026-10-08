@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from pulse.replies.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
+from pulse.domain.ui_text import DEFAULT_QUESTIONNAIRE_TITLE
 
 _HEADER_PATTERN = re.compile(
     r"(?:^|\n)(Preciso de algumas informações[^\n]*|I need some information[^\n]*)",
@@ -20,7 +20,6 @@ QUESTIONNAIRE_START = re.compile(
     r"|Apresentando todas as perguntas",
     re.IGNORECASE,
 )
-QUESTIONNAIRE_NOTICE = "Questionário interativo"
 _ANSWER_MARK = "→ "
 
 

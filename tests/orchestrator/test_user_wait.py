@@ -423,7 +423,7 @@ def test_a_wait_the_run_cannot_record_still_answers_the_agent():
     unrecorded = [
         event
         for event in run_store.list_events(run.id)
-        if event["title"] == "Espera não registrada"
+        if event["title"] == "User wait not recorded"
     ]
     assert [event["detail"] for event in unrecorded] == ["OSError: disk full"] * 2
 

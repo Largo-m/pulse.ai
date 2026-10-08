@@ -1,6 +1,5 @@
 from pulse.replies.approval import answer_needs_description
 from pulse.replies.ask_question import (
-    DEFAULT_QUESTIONNAIRE_TITLE,
     OTHER_OPTION_ID,
     build_ask_question_answers,
     build_ask_question_cancelled,
@@ -28,7 +27,6 @@ from pulse.replies.text_questionnaire import (
 )
 
 __all__ = [
-    "DEFAULT_QUESTIONNAIRE_TITLE",
     "OTHER_OPTION_ID",
     "PermissionPolicy",
     "TextQuestion",

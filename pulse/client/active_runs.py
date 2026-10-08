@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from pulse.client.engine_client import EngineClient
+from pulse.domain import ui_text
 
 _TIMEOUT = 2.0
 
@@ -71,12 +72,14 @@ def run_line(run: dict[str, Any], *, tail: str = "") -> str:
 def held_tail(run: dict[str, Any]) -> str:
     """`há 3min` for a waiting run; empty if the wait time is unknown."""
     held = waiting_for(run)
-    return f"há {held}" if held else ""
+    return ui_text.waiting_since(held) if held else ""
 
 
 def describe(run: dict[str, Any]) -> str:
     """A menu line: the loop, its current step and whether it awaits someone."""
     if run.get("awaiting_prompt"):
         held = waiting_for(run)
-        return run_line(run, tail=f"precisa de você há {held}" if held else "precisa de você")
-    return run_line(run, tail="executando")
+        if held:
+            return run_line(run, tail=f"{ui_text.AWAITING_YOU} {ui_text.waiting_since(held)}")
+        return run_line(run, tail=ui_text.AWAITING_YOU)
+    return run_line(run, tail=ui_text.RUNNING)

@@ -17,7 +17,7 @@ from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pulse",
-        description="Orquestrador terminal-first de workflows com agentes de IA.",
+        description="Terminal-first orchestrator of AI agent workflows.",
     )
     parser.add_argument(
         "--version",
@@ -28,49 +28,49 @@ def _build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser(
         "init",
-        help="Wizard de onboarding",
+        help="Onboarding wizard",
     )
     init_parser.add_argument(
         "--force",
         action="store_true",
-        help="Reconfigurar mesmo com config existente",
+        help="Reconfigure even when a config exists",
     )
 
     doctor_parser = subparsers.add_parser(
         "doctor",
-        help="Verificar ambiente",
+        help="Check the environment",
     )
     doctor_parser.add_argument(
         "--test-acp",
         action="store_true",
-        help="Incluir teste de conexão ACP",
+        help="Include the ACP connection test",
     )
     doctor_parser.add_argument(
         "--local",
         action="store_true",
-        help="Rodar checks localmente sem daemon",
+        help="Run the checks locally, without the daemon",
     )
 
     config_parser = subparsers.add_parser(
         "config",
-        help="Mostrar ou criar config de projeto",
+        help="Show or create the project config",
     )
     config_parser.add_argument(
         "config_action",
         nargs="?",
         default="show",
         choices=["show", "init"],
-        help="show: config efetiva; init: registrar projeto no SQLite",
+        help="show: effective config; init: register the project in SQLite",
     )
     config_parser.add_argument(
         "--workflow",
         default=None,
-        help="Mostrar config efetiva de um workflow",
+        help="Show the effective config of a workflow",
     )
 
     daemon_parser = subparsers.add_parser(
         "daemon",
-        help="Controlar o Pulse Engine",
+        help="Control the Pulse Engine",
     )
     daemon_parser.add_argument(
         "daemon_action",
@@ -89,7 +89,7 @@ def _print_plain_welcome() -> None:
     print(PULSE_LINE)
     print(PULSE_WAVE)
     print(f"Pulse v{__version__}")
-    print("Rode `pulse` em um terminal interativo para abrir a TUI.")
+    print("Run `pulse` in an interactive terminal to open the TUI.")
 
 
 def _doctor_via_engine(*, test_acp: bool) -> int:
@@ -114,7 +114,7 @@ def _doctor_via_engine(*, test_acp: bool) -> int:
                 failed = True
         return 1 if failed else 0
     except (RuntimeError, OSError, httpx.HTTPError) as error:
-        print(f"[pulse] Engine indisponível ({error}); usando doctor local")
+        print(f"[pulse] Engine unavailable ({error}); using the local doctor")
         return run_doctor(test_acp=test_acp)
     finally:
         client.close()
@@ -152,7 +152,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     try:
         client.ensure_daemon()
     except (RuntimeError, OSError) as error:
-        print(f"[pulse] Aviso: não foi possível iniciar o engine ({error})")
+        print(f"[pulse] Warning: could not start the engine ({error})")
     finally:
         client.close()
 

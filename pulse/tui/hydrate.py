@@ -16,10 +16,10 @@ from pulse.domain.run import StepStatus
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
+from pulse.tui import strings
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
 
-_NO_LOGS = "Nenhum log persistido para esta run."
 _STEP_TO_PHASE = {
     StepStatus.PENDING: PhaseStatus.PENDING,
     StepStatus.RUNNING: PhaseStatus.RUNNING,
@@ -221,8 +221,8 @@ def _load_entries(
     return [
         LogEntry(
             kind=LogKind.INFO,
-            title=_NO_LOGS,
-            detail=_NO_LOGS,
+            title=strings.NO_PERSISTED_LOGS,
+            detail=strings.NO_PERSISTED_LOGS,
             entry_id=index + 1,
             phase_id=phase.id,
         )

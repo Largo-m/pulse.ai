@@ -6,12 +6,14 @@ from enum import Enum
 from queue import Empty, Queue
 from typing import Any
 
-from pulse.replies.approval import answer_needs_description
-from pulse.replies.ask_question import (
+from pulse.domain.ui_text import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
-    OTHER_OPTION_ID,
     PLAN_APPROVAL_TITLE,
+)
+from pulse.replies.approval import answer_needs_description
+from pulse.replies.ask_question import (
+    OTHER_OPTION_ID,
     build_ask_question_answers,
     build_ask_question_cancelled,
     build_question_choices,
@@ -35,6 +37,7 @@ from pulse.replies.text_questionnaire import (
     format_questionnaire_answers,
     parse_text_questionnaire,
 )
+from pulse.tui import strings
 
 
 class PromptKind(str, Enum):
@@ -56,9 +59,9 @@ class PromptRequest:
 
 def format_prompt_reply(request: PromptRequest, result: object | None) -> str:
     if result is None:
-        return "Cancelado"
+        return strings.CANCELLED
     if request.kind == PromptKind.CONFIRM:
-        return "Sim" if result else "Não"
+        return strings.YES if result else strings.NO
     if request.kind == PromptKind.TEXT:
         text = str(result).strip()
         return text or "—"
@@ -306,7 +309,7 @@ class TextualPromptHandler:
         selected = self._bridge.select(
             permission_prompt_text(permission, tool_call),
             choices,
-            title="Permissão",
+            title=strings.PERMISSION_TITLE,
         )
         if selected is None:
             return permission_cancelled()
@@ -348,7 +351,7 @@ class TextualPromptHandler:
         batch_size: int,
     ) -> dict[str, Any] | None:
         question_id = str(question.get("id", ""))
-        prompt = str(question.get("prompt", "Pergunta")).strip()
+        prompt = str(question.get("prompt", strings.QUESTION)).strip()
         options = question.get("options", [])
         allow_multiple = bool(question.get("allow_multiple", question.get("allowMultiple", False)))
         index, total = resolve_question_progress(
@@ -436,7 +439,7 @@ class TextualPromptHandler:
         return value
 
     def _prompt_other_text(self, prompt: str, *, title: str) -> str | None:
-        value = self._bridge.text(f"{prompt}\n[Outro — descreva]", title=title)
+        value = self._bridge.text(strings.OTHER_OPTION_PROMPT.format(prompt=prompt), title=title)
         if value is None:
             return None
         value = value.strip()

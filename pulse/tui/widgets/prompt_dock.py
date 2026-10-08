@@ -9,13 +9,14 @@ from textual.widget import Widget
 from textual.widgets import Button, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest
 
 
 class PromptDock(Widget):
     can_focus = True
     BINDINGS = [
-        ("escape", "cancel", "Cancel"),
+        ("escape", "cancel", strings.PROMPT_BINDING_CANCEL),
     ]
 
     def __init__(
@@ -31,7 +32,7 @@ class PromptDock(Widget):
         self._closed = False
 
     def compose(self) -> ComposeResult:
-        yield Static(self._request.title or "Prompt", classes="prompt-title")
+        yield Static(self._request.title or strings.PROMPT_DEFAULT_TITLE, classes="prompt-title")
         yield Static(self._request.prompt, classes="prompt-text")
         kind = self._request.kind
         if kind in {PromptKind.SELECT, PromptKind.MULTI_SELECT}:
@@ -40,23 +41,25 @@ class PromptDock(Widget):
             ]
             yield OptionList(*options, id="prompt-options", compact=True)
             if kind == PromptKind.MULTI_SELECT:
-                yield Static("Espaço marca · Enter confirma · Esc cancela", classes="prompt-hint")
+                yield Static(strings.PROMPT_HINT_MULTI_SELECT, classes="prompt-hint")
                 with Horizontal(id="prompt-actions"):
-                    yield Button("Confirmar", variant="primary", id="ok")
-                    yield Button("Cancelar", id="cancel")
+                    yield Button(strings.CONFIRM, variant="primary", id="ok")
+                    yield Button(strings.CANCEL, id="cancel")
             else:
                 yield Static(
-                    "↑↓ escolhe · letra vai direto · Enter confirma · Esc cancela",
+                    strings.PROMPT_HINT_SELECT,
                     classes="prompt-hint",
                 )
         elif kind == PromptKind.TEXT:
             default = str(self._request.default or "")
-            yield Input(value=default, placeholder="Resposta…", id="prompt-input")
-            yield Static("Enter confirma · Esc cancela", classes="prompt-hint")
+            yield Input(
+                value=default, placeholder=strings.PROMPT_INPUT_PLACEHOLDER, id="prompt-input"
+            )
+            yield Static(strings.HINT_CONFIRM_OR_CANCEL, classes="prompt-hint")
         elif kind == PromptKind.CONFIRM:
             with Horizontal(id="prompt-actions"):
-                yield Button("Sim", variant="success", id="yes")
-                yield Button("Não", variant="error", id="no")
+                yield Button(strings.YES, variant="success", id="yes")
+                yield Button(strings.NO, variant="error", id="no")
 
     def on_mount(self) -> None:
         self.focus_inner()

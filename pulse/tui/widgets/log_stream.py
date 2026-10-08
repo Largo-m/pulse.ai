@@ -12,6 +12,7 @@ from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest, format_prompt_reply
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import ERROR, ERROR_SOFT
@@ -156,20 +157,27 @@ class LogStream(Widget):
         if current is not None:
             surface = current.label.upper()
         else:
-            surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
-        header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
+            surface = state.surface_title or strings.STREAM_DEFAULT_SURFACE
+        header.update(Text(strings.STREAM_HEADER.format(surface=surface), style="#A2D729 bold"))
         right = " · ".join(
             part
-            for part in (state.model_label or state.agent_label or "Agent", state.branch_label)
+            for part in (
+                state.model_label or state.agent_label or strings.AGENT,
+                state.branch_label,
+            )
             if part
         )
         visible = state.visible_entries()
         count = len(visible)
         position = (state.selected_phase_index + 1) if state.phases else 0
         total = state.total_count()
-        kind = "step"
         meta.update(
-            Text(f"{count} entries · {kind} {position}/{total}          {right}", style="#888888")
+            Text(
+                strings.STREAM_META.format(
+                    count=count, position=position, total=total, right=right
+                ),
+                style="#888888",
+            )
         )
 
         if not force and fingerprint == self._fingerprint:
@@ -247,7 +255,7 @@ class LogStream(Widget):
         return output
 
     def _render_assistant(self, entry_active: bool, body: str) -> Text:
-        return self._render_bubble(entry_active, "Assistente", body)
+        return self._render_bubble(entry_active, strings.STREAM_ASSISTANT, body)
 
     def _render_entries(self, state: CockpitState) -> Text:
         output = Text()
@@ -255,9 +263,9 @@ class LogStream(Widget):
         if not entries:
             current = state.selected_nav_item()
             if current is not None and current.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}:
-                output.append("Nenhuma atividade neste item.\n", style="#888888")
+                output.append(f"{strings.STREAM_NO_ACTIVITY}\n", style="#888888")
             else:
-                output.append("Aguardando atividade do agente…\n", style="#888888")
+                output.append(f"{strings.STREAM_WAITING}\n", style="#888888")
             return output
 
         spin = _SPINNER[self._spin_frame]
@@ -268,14 +276,14 @@ class LogStream(Widget):
                 continue
             if entry.kind == LogKind.QUESTION:
                 output.append_text(
-                    self._render_bubble(active, "Pergunta", entry.body or entry.title)
+                    self._render_bubble(active, strings.QUESTION, entry.body or entry.title)
                 )
                 continue
             if entry.kind == LogKind.ANSWER:
                 output.append_text(
                     self._render_bubble(
                         active,
-                        "Você",
+                        strings.ANSWER,
                         entry.body or entry.title,
                         gutter_style="#A2D729",
                         styled=False,
@@ -286,8 +294,8 @@ class LogStream(Widget):
             prefix = "▌ " if active else "  "
             if entry.kind == LogKind.ERROR:
                 output.append(prefix, style=ERROR if active else "#333333")
-                output.append("Erro\n", style=f"bold {ERROR}")
-                title = entry.title.strip() or "Falha no workflow"
+                output.append(f"{strings.ERROR}\n", style=f"bold {ERROR}")
+                title = entry.title.strip() or strings.STREAM_WORKFLOW_FAILURE
                 output.append(f"  {escape(title)}\n", style=f"bold {ERROR_SOFT}")
                 reason = entry.detail.strip()
                 if reason and reason != title:
@@ -308,7 +316,7 @@ class LogStream(Widget):
             output.append(f"{entry.kind.value}\n", style="#A2D729")
             target = entry.title.strip() or entry.detail.strip() or "…"
             if entry.pending and target in {"…", "..."}:
-                output.append("  carregando…\n", style="#888888")
+                output.append(f"  {strings.STREAM_LOADING}\n", style="#888888")
             else:
                 output.append(f"  {escape(target)}\n", style="#B0B0B0")
             detail = entry.detail.strip()

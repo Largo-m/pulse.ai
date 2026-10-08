@@ -143,8 +143,8 @@ def test_engine_run_session_errors_when_questionnaire_missing():
     code = session.run(workflow_id="demo", user_prompt="x", workspace=Path("/tmp"))
     assert code == 1
     stream.error.assert_called_with(
-        "Questionário inválido",
-        "O agente pediu um questionário, mas as perguntas não puderam ser abertas.",
+        "Invalid questionnaire",
+        "The agent asked for a questionnaire, but its questions could not be parsed.",
     )
 
 

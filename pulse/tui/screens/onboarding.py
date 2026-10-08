@@ -19,14 +19,16 @@ from pulse.config import (
     mark_onboarding_complete,
     project_config_exists,
 )
-from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
+from pulse.config.global_config import PERMISSION_POLICIES
+from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models
 from pulse.doctor.checks import run_agent_checks
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
 from pulse.store.paths import GLOBAL_DB_FILE
+from pulse.tui import strings
 
 
 class OnboardingScreen(Screen[int]):
-    BINDINGS = [("escape", "cancel", "Cancelar"), ("q", "cancel", "Cancelar")]
+    BINDINGS = [("escape", "cancel", strings.CANCEL), ("q", "cancel", strings.CANCEL)]
 
     def __init__(self, *, force: bool = False) -> None:
         super().__init__()
@@ -42,15 +44,15 @@ class OnboardingScreen(Screen[int]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="onboard-content"):
-            yield Static("CONFIGURAR PULSE", classes="onboard-title")
-            yield Static("Ambiente", id="onboard-status", classes="onboard-hint")
+            yield Static(strings.ONBOARD_TITLE, classes="onboard-title")
+            yield Static(strings.ENVIRONMENT, id="onboard-status", classes="onboard-hint")
             yield OptionList(id="onboard-options")
             yield Input(
-                placeholder="Caminho do workspace…",
+                placeholder=strings.ONBOARD_WORKSPACE_PLACEHOLDER,
                 id="onboard-input",
             )
             yield Static("", id="onboard-report", classes="onboard-report")
-            yield Static("Enter confirma  ·  Esc cancela", classes="onboard-hint-keys")
+            yield Static(strings.ONBOARD_HINT_KEYS, classes="onboard-hint-keys")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -60,12 +62,12 @@ class OnboardingScreen(Screen[int]):
             existing = load_global_config()
             if existing and existing.is_onboarded:
                 self._step = "overwrite"
-                self._set_status("Config já existe")
+                self._set_status(strings.ONBOARD_CONFIG_EXISTS)
                 self._set_report(str(GLOBAL_DB_FILE))
                 self._set_options(
                     [
-                        ("overwrite_yes", "Sim — reconfigurar"),
-                        ("overwrite_no", "Não — manter"),
+                        ("overwrite_yes", strings.ONBOARD_RECONFIGURE),
+                        ("overwrite_no", strings.ONBOARD_KEEP),
                     ]
                 )
                 return
@@ -73,10 +75,16 @@ class OnboardingScreen(Screen[int]):
 
     def _ask_runtime(self) -> None:
         self._step = "runtime"
-        self._set_status("Agente padrão")
+        self._set_status(strings.ONBOARD_DEFAULT_AGENT)
         self._set_report("")
         self._set_options(
-            [(f"runtime:{item.id}", f"{item.label} — `{item.binary}`") for item in all_runtimes()]
+            [
+                (
+                    f"runtime:{item.id}",
+                    strings.ONBOARD_RUNTIME_OPTION.format(label=item.label, binary=item.binary),
+                )
+                for item in all_runtimes()
+            ]
         )
 
     def action_cancel(self) -> None:
@@ -116,11 +124,13 @@ class OnboardingScreen(Screen[int]):
         checks = run_agent_checks(self._runtime.id)
         auth_check = checks[-1]
         cli_checks = checks[:-1]
-        self._set_status(f"Ambiente — {self._runtime.label}")
+        self._set_status(strings.ONBOARD_ENVIRONMENT_FOR.format(runtime=self._runtime.label))
         self._set_report("\n".join(f"[{c.status}] {c.message}" for c in checks))
         if any(check.status == "fail" for check in cli_checks):
             self._step = "agent_fail"
-            self._set_options([("quit", f"Sair — {self._runtime.install_hint}")])
+            self._set_options(
+                [("quit", strings.ONBOARD_QUIT_INSTALL.format(hint=self._runtime.install_hint))]
+            )
             return
         if auth_check.status == "fail":
             self._step = "auth"
@@ -132,9 +142,9 @@ class OnboardingScreen(Screen[int]):
 
     def _auth_options(self, retry: bool = False) -> list[tuple[str, str]]:
         return [
-            ("auth_login", "Tentar de novo" if retry else self._runtime.login_label),
-            ("auth_skip", f"Usar {self._runtime.auth_env_var} depois"),
-            ("quit", "Cancelar"),
+            ("auth_login", strings.ONBOARD_RETRY if retry else self._runtime.login_label),
+            ("auth_skip", strings.ONBOARD_AUTH_LATER.format(env_var=self._runtime.auth_env_var)),
+            ("quit", strings.CANCEL),
         ]
 
     def _ask_workspace(self) -> None:
@@ -142,10 +152,10 @@ class OnboardingScreen(Screen[int]):
         if existing:
             self._workspace = existing.workspace_dir
         self._step = "workspace"
-        self._set_status("Diretório padrão do workspace")
+        self._set_status(strings.ONBOARD_WORKSPACE_STATUS)
         self._set_report("")
         self._hide_options()
-        self._show_input(str(self._workspace), "Caminho absoluto do workspace")
+        self._show_input(str(self._workspace), strings.ONBOARD_WORKSPACE_INPUT)
 
     @on(OptionList.OptionSelected, "#onboard-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -165,7 +175,9 @@ class OnboardingScreen(Screen[int]):
             if option_id == "auth_login":
                 self._do_login()
             elif option_id == "auth_skip":
-                self._set_status(f"Exporte {self._runtime.auth_env_var} e rode `pulse` de novo.")
+                self._set_status(
+                    strings.ONBOARD_EXPORT_KEY.format(env_var=self._runtime.auth_env_var)
+                )
                 self._set_report("")
                 self.dismiss(1)
             return
@@ -182,8 +194,8 @@ class OnboardingScreen(Screen[int]):
             return
         path = Path(text).expanduser()
         if not path.is_dir():
-            self._set_status("Diretório padrão do workspace")
-            self._set_report("Diretório inválido. Escolha uma pasta existente.")
+            self._set_status(strings.ONBOARD_WORKSPACE_STATUS)
+            self._set_report(strings.ONBOARD_INVALID_DIRECTORY)
             return
         self._workspace = path.resolve()
         self._hide_input()
@@ -191,13 +203,15 @@ class OnboardingScreen(Screen[int]):
 
     @work(thread=True)
     def _do_login(self) -> None:
-        self.app.call_from_thread(self._set_status, f"Abrindo {self._runtime.login_label}…")
+        self.app.call_from_thread(
+            self._set_status, strings.ONBOARD_OPENING_LOGIN.format(login=self._runtime.login_label)
+        )
         code = self._runtime.login()
         auth = run_agent_checks(self._runtime.id)[-1]
 
         def apply() -> None:
             if code != 0 or auth.status == "fail":
-                self._set_status("Login não concluído")
+                self._set_status(strings.ONBOARD_LOGIN_FAILED)
                 self._set_report(auth.message)
                 self._set_options(self._auth_options(retry=True))
                 return
@@ -210,7 +224,7 @@ class OnboardingScreen(Screen[int]):
 
     @work(thread=True)
     def _run_acp_probe(self) -> None:
-        self.app.call_from_thread(self._set_status, "Testando conexão ACP…")
+        self.app.call_from_thread(self._set_status, strings.ONBOARD_TESTING_ACP)
         probe = self._probe_through_engine()
         models = [str(model) for model in probe.get("available_models") or []]
         if not models:
@@ -221,17 +235,17 @@ class OnboardingScreen(Screen[int]):
 
         def apply() -> None:
             if self._acp_ok:
-                self._set_status("Conexão ACP")
+                self._set_status(strings.ONBOARD_ACP_CONNECTION)
                 self._set_report(message)
                 self._finish()
                 return
             self._step = "acp_fail"
-            self._set_status("Conexão ACP")
+            self._set_status(strings.ONBOARD_ACP_CONNECTION)
             self._set_report(str(probe.get("error") or message))
             self._set_options(
                 [
-                    ("acp_continue", "Continuar mesmo assim"),
-                    ("quit", "Cancelar"),
+                    ("acp_continue", strings.ONBOARD_CONTINUE_ANYWAY),
+                    ("quit", strings.CANCEL),
                 ]
             )
 
@@ -244,13 +258,13 @@ class OnboardingScreen(Screen[int]):
             client.ensure_daemon()
             return client.acp_probe(workspace=self._workspace, runtime=self._runtime.id)
         except (RuntimeError, httpx.HTTPError) as error:
-            return {"ok": False, "message": "Engine indisponível", "error": str(error)}
+            return {"ok": False, "message": strings.ONBOARD_ENGINE_UNAVAILABLE, "error": str(error)}
         finally:
             client.close()
 
     def _ask_model(self) -> None:
         self._step = "model"
-        self._set_status("Modelo preferido")
+        self._set_status(strings.ONBOARD_MODEL)
         unique: list[str] = []
         for item in self._models:
             if item not in unique:
@@ -259,8 +273,10 @@ class OnboardingScreen(Screen[int]):
 
     def _ask_policy(self) -> None:
         self._step = "policy"
-        self._set_status("Política de permissões")
-        self._set_options([(f"policy:{key}", label) for key, label in permission_choices()])
+        self._set_status(strings.ONBOARD_POLICY)
+        self._set_options(
+            [(f"policy:{key}", strings.PERMISSION_LABELS[key]) for key in PERMISSION_POLICIES]
+        )
 
     def _finish(self) -> None:
         config_path = mark_onboarding_complete(
@@ -275,6 +291,6 @@ class OnboardingScreen(Screen[int]):
         )
         if not project_config_exists(self._workspace):
             init_project_config(self._workspace)
-        self._set_status("Pronto")
-        self._set_report(f"Config salvo em {config_path}")
+        self._set_status(strings.ONBOARD_READY)
+        self._set_report(strings.ONBOARD_CONFIG_SAVED.format(path=config_path))
         self.dismiss(0)

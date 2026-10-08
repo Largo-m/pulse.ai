@@ -24,7 +24,7 @@ def test_a_workflow_without_steps_does_not_start(tmp_path: Path):
     save_workflow(WorkflowDef(id="vazio", label="Vazio"))
     session = FakeAgentSession([])
 
-    with pytest.raises(EmptyWorkflow, match="step"):
+    with pytest.raises(EmptyWorkflow, match="^workflow `vazio` has no steps$"):
         EngineHarness(tmp_path).run(session, workflow_id="vazio", user_prompt="x")
 
     assert session.opened_in is None
@@ -37,7 +37,7 @@ def test_a_worktree_that_will_not_open_stops_the_run_before_the_agent(tmp_path: 
     harness.workspace = _WorktreeThatWillNotOpen(tmp_path, repo=True)
     session = FakeAgentSession([])
 
-    with pytest.raises(RuntimeError, match="worktree desta run: disco cheio"):
+    with pytest.raises(RuntimeError, match="^could not open the worktree for this run: disco"):
         harness.run(session, workflow_id="demo", user_prompt="x", use_worktree=True)
 
     assert session.opened_in is None

@@ -130,7 +130,7 @@ def parse_outcome(text: str) -> Outcome:
         return Outcome(status=OutcomeStatus.MISSING)
     return Outcome(
         status=OutcomeStatus.BLOCKED,
-        reason=reason or f"o agente declarou um desfecho que o Pulse não conhece: `{raw_status}`",
+        reason=reason or f"the agent declared an outcome Pulse does not know: `{raw_status}`",
         needs=needs,
     )
 

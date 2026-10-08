@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse.tui import strings
+
 MAX_ARTIFACT_CHARS = 200_000
 
 
@@ -80,5 +82,5 @@ def read_artifact_markdown(path: str, cwd: str | None = None) -> tuple[str, floa
     except OSError:
         return "", 0.0, False
     if len(text) > MAX_ARTIFACT_CHARS:
-        text = text[:MAX_ARTIFACT_CHARS].rstrip() + "\n\n[… artefato truncado …]"
+        text = text[:MAX_ARTIFACT_CHARS].rstrip() + strings.ARTIFACT_TRUNCATED
     return text, mtime, True

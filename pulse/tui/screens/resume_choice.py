@@ -7,6 +7,8 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.tui import strings
+
 RESUME = "resume"
 BACK = "back"
 
@@ -15,8 +17,8 @@ class ResumeChoiceScreen(ModalScreen[str | None]):
     """Asks what to do with a workflow that was left unfinished."""
 
     BINDINGS = [
-        ("escape", "back", "Voltar"),
-        ("q", "back", "Voltar"),
+        ("escape", "back", strings.BACK),
+        ("q", "back", strings.BACK),
     ]
 
     def __init__(self, *, slug: str, summary: str) -> None:
@@ -26,15 +28,17 @@ class ResumeChoiceScreen(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="resume-box"):
-            yield Static("WORKFLOW NÃO CONCLUÍDO", classes="resume-title")
+            yield Static(strings.RESUME_TITLE, classes="resume-title")
             yield Static(self._slug, classes="resume-slug")
-            yield Static(f"parou em: {self._summary}", classes="resume-summary")
+            yield Static(
+                strings.RESUME_STOPPED_AT.format(summary=self._summary), classes="resume-summary"
+            )
             yield OptionList(
-                Option("Retomar de onde parou", id=RESUME),
-                Option("Voltar", id=BACK),
+                Option(strings.RESUME_OPTION, id=RESUME),
+                Option(strings.BACK, id=BACK),
                 id="resume-options",
             )
-            yield Static("Enter confirma · Esc volta", classes="resume-hint")
+            yield Static(strings.HINT_CONFIRM_OR_BACK, classes="resume-hint")
 
     def on_mount(self) -> None:
         self.query_one("#resume-options", OptionList).focus()

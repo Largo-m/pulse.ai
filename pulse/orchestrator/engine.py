@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from pulse.domain import ui_text
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.domain.ports import (
@@ -98,7 +99,7 @@ def run_workflow(
     a crash mid-run is recorded on the run, then raised.
     """
     if not definition.steps:
-        raise EmptyWorkflow(f"workflow `{definition.id}` não tem step nenhum")
+        raise EmptyWorkflow(f"workflow `{definition.id}` has no steps")
 
     run = _resolve_run(
         definition,
@@ -113,7 +114,7 @@ def run_workflow(
             run, ports.workspace, ports.runs, use_worktree=use_worktree
         )
     except WorkspaceError as error:
-        raise RuntimeError(f"Não consegui abrir o worktree desta run: {error}") from error
+        raise RuntimeError(f"could not open the worktree for this run: {error}") from error
 
     # Must precede the first `phase.begin`: the artifact pane uses it to know
     # which folder to watch.
@@ -195,7 +196,7 @@ def _execute(wiring: _Wiring, *, definition: WorkflowDef, run: RunRecord) -> int
                     continue
 
                 if not wiring.control.checkpoint():
-                    _notify(wiring, "Run parada pelo usuário")
+                    _notify(wiring, ui_text.RUN_STOPPED_BY_USER)
                     run.end(RUN_STOPPED)
                     wiring.runs.save(run)
                     return RUN_STOPPED
@@ -220,7 +221,7 @@ def _execute(wiring: _Wiring, *, definition: WorkflowDef, run: RunRecord) -> int
                     index = close_loop(run, definition, loop)
                     wiring.runs.save(run)
                     _sync_steps(wiring, run)
-                    _notify(wiring, f"{record.label}: nada a corrigir — laço encerrado")
+                    _notify(wiring, ui_text.loop_closed(record.label))
                     break
 
                 if signal == LoopSignal.REPEAT and loop is not None and loop.closes(at):
@@ -271,9 +272,11 @@ def _run_step(
 
         blocked = record.status == StepStatus.BLOCKED
         if blocked:
-            choice, guidance = _offer_blocked(wiring, f"{record.label} está bloqueado", reason)
+            choice, guidance = _offer_blocked(
+                wiring, ui_text.step_blocked_title(record.label), reason
+            )
         else:
-            choice, guidance = _offer_retry(wiring, f"Step {record.label} falhou", reason)
+            choice, guidance = _offer_retry(wiring, ui_text.step_failed_title(record.label), reason)
         if wiring.control.interrupted:
             _release_step(wiring, run=run, record=record, label=record.label)
             return RUN_STOPPED, None
@@ -283,12 +286,12 @@ def _run_step(
                 record.skip_blocked()
                 wiring.runs.save(run)
                 _sync_steps(wiring, run)
-                _notify(wiring, f"{record.label} pulado pelo usuário")
+                _notify(wiring, ui_text.step_skipped_by_user(record.label))
                 return 0, None
             if choice != MenuChoice.RETRY:
                 record.close_after_wait()
                 wiring.runs.save(run)
-                _notify(wiring, f"Run bloqueada em {record.label}: {reason}")
+                _notify(wiring, ui_text.run_blocked_at(record.label, reason))
                 return RUN_BLOCKED, None
         elif choice != MenuChoice.RETRY:
             record.close_after_wait()
@@ -296,9 +299,9 @@ def _run_step(
             return 1, None
         _revive_session(wiring)
         if guidance:
-            _notify(wiring, f"Refazendo {record.label} com orientação do usuário")
+            _notify(wiring, ui_text.retrying_step_with_guidance(record.label))
         else:
-            _notify(wiring, f"Refazendo {record.label}")
+            _notify(wiring, ui_text.retrying_step(record.label))
 
 
 def _attempt_step(
@@ -362,7 +365,7 @@ def _attempt_step(
 
     if turn.cancelled:
         _fail(wiring, run, record)
-        return None, "step cancelado"
+        return None, ui_text.STEP_CANCELLED
 
     if turn.skipped:
         record.skip()
@@ -375,12 +378,12 @@ def _attempt_step(
     if step.requires_approval and not turn.approved:
         _fail(wiring, run, record)
         if not turn.has_approval_answers:
-            return None, "o agente encerrou sem o bloco de aprovação nem um desfecho válido"
-        return None, "step não aprovado"
+            return None, ui_text.NO_APPROVAL_NOR_OUTCOME
+        return None, ui_text.STEP_NOT_APPROVED
 
     if not step.requires_approval and not turn.ended_cleanly:
         _fail(wiring, run, record)
-        return None, turn.stop_reason or "o agente não concluiu o step"
+        return None, turn.stop_reason or ui_text.AGENT_DID_NOT_COMPLETE
 
     repeats = False
     if step.declares_outcome:
@@ -446,11 +449,8 @@ def _unblock_continuation(step: StepDef) -> PromptContinuation:
 
 def _blocked_reason(declared: Outcome) -> str:
     if declared.status == OutcomeStatus.MISSING:
-        return (
-            "o agente encerrou sem declarar o desfecho do step — "
-            "não dá para afirmar que ele entregou o que o step pede"
-        )
-    return declared.reason or "o agente declarou bloqueio sem dizer o motivo"
+        return ui_text.OUTCOME_NOT_DECLARED
+    return declared.reason or ui_text.BLOCKED_WITHOUT_REASON
 
 
 def _fail(wiring: _Wiring, run: RunRecord, record: StepRecord) -> None:
@@ -515,7 +515,7 @@ def _release_step(
     if record.release():
         wiring.runs.save(run)
         _sync_steps(wiring, run)
-    _notify(wiring, f"Run parada em {label}" if label else "Run parada pelo usuário")
+    _notify(wiring, ui_text.run_stopped_at(label) if label else ui_text.RUN_STOPPED_BY_USER)
 
 
 def _offer_retry(wiring: _Wiring, title: str, reason: str) -> tuple[MenuChoice, str]:
@@ -525,9 +525,9 @@ def _offer_retry(wiring: _Wiring, title: str, reason: str) -> tuple[MenuChoice, 
         title,
         reason,
         [
-            ("Refazer", MenuChoice.RETRY),
-            ("Outro — dizer o que fazer", MenuChoice.GUIDANCE),
-            ("Parar", MenuChoice.STOP),
+            (ui_text.RETRY, MenuChoice.RETRY),
+            (ui_text.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
+            (ui_text.STOP, MenuChoice.STOP),
         ],
     )
 
@@ -542,10 +542,10 @@ def _offer_blocked(wiring: _Wiring, title: str, reason: str) -> tuple[MenuChoice
         title,
         reason,
         [
-            ("Refazer — já resolvi", MenuChoice.RETRY),
-            ("Outro — dizer o que fazer", MenuChoice.GUIDANCE),
-            ("Pular este step", MenuChoice.SKIP),
-            ("Parar a run", MenuChoice.STOP),
+            (ui_text.RETRY_RESOLVED, MenuChoice.RETRY),
+            (ui_text.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
+            (ui_text.SKIP_STEP, MenuChoice.SKIP),
+            (ui_text.STOP_RUN, MenuChoice.STOP),
         ],
     )
 
@@ -558,10 +558,10 @@ def _choose(
 ) -> tuple[MenuChoice, str]:
     """Ask the user and return `(choice, guidance)`.
 
-    "Outro" lets the user write what the agent should do. With nobody to ask,
+    The guidance option lets the user write what the agent should do. With nobody to ask,
     the answer is stop, and the reason is left on the stream for whoever reads it.
     """
-    prompt = reason.strip() or "O step não foi concluído."
+    prompt = reason.strip() or ui_text.STEP_NOT_COMPLETED
     choice = wiring.session.prompts.select_choice(prompt, choices, title=title)
     if choice is None:
         if not wiring.control.interrupted:
@@ -581,10 +581,10 @@ def _choose(
 
 def _session_error(error: BaseException) -> str:
     if isinstance(error, TimeoutError):
-        return f"o agente parou de responder — {error}"
+        return ui_text.agent_stopped_responding(str(error))
     if isinstance(error, RuntimeError | OSError):
-        return f"a sessão do agente caiu — {error}"
-    return f"o step quebrou — {type(error).__name__}: {error}"
+        return ui_text.agent_session_dropped(str(error))
+    return ui_text.step_crashed(f"{type(error).__name__}: {error}")
 
 
 def _revive_session(wiring: _Wiring) -> None:
@@ -594,15 +594,13 @@ def _revive_session(wiring: _Wiring) -> None:
     """
     try:
         if wiring.session.revive():
-            _notify(wiring, "Sessão do agente reiniciada")
+            _notify(wiring, ui_text.AGENT_SESSION_RESTARTED)
     except (RuntimeError, TimeoutError, OSError) as error:
-        _notify(wiring, f"Não consegui reiniciar a sessão do agente: {error}")
+        _notify(wiring, ui_text.agent_session_restart_failed(str(error)))
 
 
 def _ask_guidance(wiring: _Wiring, title: str) -> str:
-    answer = wiring.session.prompts.ask_text(
-        "O que o agente deve fazer nesta nova tentativa?", title=title
-    )
+    answer = wiring.session.prompts.ask_text(ui_text.GUIDANCE_QUESTION, title=title)
     return (answer or "").strip()
 
 

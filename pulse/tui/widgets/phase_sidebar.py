@@ -12,6 +12,7 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from pulse.history.status_labels import status_color, status_icon, status_label
+from pulse.tui import strings
 from pulse.tui.state import NAV_PHASE, CockpitState, PhaseItem, PhaseStatus
 
 
@@ -81,7 +82,7 @@ class PhaseSidebar(Widget):
         now = time.monotonic()
         line = 0
         if not state.phases:
-            output.append("Nenhum step configurado\n", style="#888888")
+            output.append(f"{strings.SIDEBAR_NO_STEPS}\n", style="#888888")
             return output
 
         for key, members in state.phase_groups():

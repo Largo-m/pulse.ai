@@ -136,7 +136,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         else:
             selected = find_runtime(runtime)
             if selected is None:
-                raise HTTPException(status_code=404, detail=f"runtime desconhecido: {runtime}")
+                raise HTTPException(status_code=404, detail=f"unknown runtime: {runtime}")
             command = list(selected.acp_command)
         result = probe_acp_connection(command=command, cwd=cwd)
         return {
@@ -218,7 +218,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
     def get_run(run_id: str) -> dict[str, Any]:
         state = runs.get(run_id)
         if state is None:
-            raise HTTPException(status_code=404, detail="run não encontrado")
+            raise HTTPException(status_code=404, detail="run not found")
         return {
             "id": state.id,
             "workflow_id": state.workflow_id,
@@ -231,7 +231,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
     @app.post("/api/runs/{run_id}/cancel")
     def cancel_run(run_id: str) -> dict[str, Any]:
         if not runs.cancel(run_id):
-            raise HTTPException(status_code=404, detail="run não encontrado")
+            raise HTTPException(status_code=404, detail="run not found")
         return {"ok": True}
 
     @app.get("/api/runs/{run_id}/events")
@@ -244,7 +244,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         """
         state = runs.get(run_id)
         if state is None:
-            raise HTTPException(status_code=404, detail="run não encontrado")
+            raise HTTPException(status_code=404, detail="run not found")
 
         def event_stream():
             for event in state.bus.subscribe(after=max(0, after)):
@@ -258,7 +258,7 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
     @app.post("/api/prompts/{prompt_id}/answer")
     def answer_prompt(prompt_id: str, body: PromptAnswerBody) -> dict[str, Any]:
         if not runs.answer_prompt(prompt_id, body.answer):
-            raise HTTPException(status_code=404, detail="prompt não encontrado")
+            raise HTTPException(status_code=404, detail="prompt not found")
         return {"ok": True}
 
     @app.get("/api/history")
@@ -273,14 +273,14 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         root = Path(workspace).resolve() if workspace else safe_cwd()
         item = HistoryCatalog(root).get(item_id)
         if item is None:
-            raise HTTPException(status_code=404, detail="item não encontrado")
+            raise HTTPException(status_code=404, detail="item not found")
         return _history_to_dict(item)
 
     @app.delete("/api/history/{item_id}")
     def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
         root = Path(workspace).resolve() if workspace else safe_cwd()
         if not HistoryCatalog(root).delete(item_id):
-            raise HTTPException(status_code=404, detail="item não encontrado")
+            raise HTTPException(status_code=404, detail="item not found")
         return {"ok": True}
 
     @app.exception_handler(Exception)

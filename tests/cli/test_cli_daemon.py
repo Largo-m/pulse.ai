@@ -41,3 +41,12 @@ def test_status_reports_a_live_daemon_with_its_endpoints(monkeypatch, tmp_path: 
         f"  socket: {socket_path}\n"
         "  http: 127.0.0.1:9911\n"
     )
+
+
+def test_an_unknown_action_is_refused_with_a_usage_exit_code(capsys):
+    """argparse limits the choices, but the command is also called directly; a typo
+    must name the action in an English message and exit 2, not touch the daemon."""
+    exit_code = run_daemon_command("restart")
+
+    assert exit_code == 2
+    assert capsys.readouterr().out == "[pulse] Unknown daemon action: restart\n"

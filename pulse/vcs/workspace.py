@@ -47,5 +47,5 @@ class GitWorkspace:
     def _repo(self) -> Path:
         repo = vcs.repo_root(self._root)
         if repo is None:
-            raise vcs.GitError(f"{self._root} não é um repositório git")
+            raise vcs.GitError(f"{self._root} is not a git repository")
         return repo

@@ -7,6 +7,8 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.tui import strings
+
 _CONFIRM = "confirm"
 _CANCEL = "cancel"
 
@@ -18,9 +20,9 @@ class ConfirmScreen(ModalScreen[bool]):
     """
 
     BINDINGS = [
-        ("escape", "cancel", "Cancelar"),
-        ("q", "cancel", "Cancelar"),
-        ("n", "cancel", "Cancelar"),
+        ("escape", "cancel", strings.CANCEL),
+        ("q", "cancel", strings.CANCEL),
+        ("n", "cancel", strings.CANCEL),
     ]
 
     def __init__(
@@ -28,8 +30,8 @@ class ConfirmScreen(ModalScreen[bool]):
         *,
         title: str,
         detail: str = "",
-        confirm_label: str = "Confirmar",
-        cancel_label: str = "Cancelar",
+        confirm_label: str = strings.CONFIRM,
+        cancel_label: str = strings.CANCEL,
     ) -> None:
         super().__init__()
         self._title = title
@@ -47,7 +49,7 @@ class ConfirmScreen(ModalScreen[bool]):
                 Option(self._confirm_label, id=_CONFIRM),
                 id="confirm-options",
             )
-            yield Static("Enter confirma · Esc cancela", classes="confirm-hint")
+            yield Static(strings.HINT_CONFIRM_OR_CANCEL, classes="confirm-hint")
 
     def on_mount(self) -> None:
         self.query_one("#confirm-options", OptionList).focus()

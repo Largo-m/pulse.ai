@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pulse.domain import ui_text
 from pulse.domain.control import RUN_STOPPED
 from pulse.history.events import (
     ArtifactItem,
@@ -16,13 +16,13 @@ from pulse.history.events import (
     workflow_label,
     workflow_steps,
 )
+from pulse.tui import strings
 from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
 NAV_PHASE = "phase"
 FANOUT_SEP = ":"
-_CONTINUATION = re.compile(r"\s+—\s+continuação \(\d+\)$")
 
 
 def progress_bar(done: int, total: int, width: int = 10) -> str:
@@ -36,8 +36,8 @@ def progress_bar(done: int, total: int, width: int = 10) -> str:
 class CockpitState:
     workflow_id: str = ""
     workflow_label: str = ""
-    surface_title: str = "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
-    agent_label: str = "Agent"
+    surface_title: str = strings.STREAM_DEFAULT_SURFACE
+    agent_label: str = strings.AGENT
     model_label: str = ""
     branch_label: str = ""
     phases: list[PhaseItem] = field(default_factory=list)
@@ -380,7 +380,7 @@ class CockpitState:
         self.notify()
 
     def add_error(self, title: str, reason: str = "") -> None:
-        text = str(title or "Erro").strip() or "Erro"
+        text = str(title or strings.ERROR).strip() or strings.ERROR
         detail = str(reason or "").strip()
         self._clear_active_flags()
         self._active_assistant_id = None
@@ -412,7 +412,7 @@ class CockpitState:
         self._clear_active_flags()
         entry = LogEntry(
             kind=LogKind.ASSISTANT,
-            title="Assistant",
+            title=strings.ENTRY_ASSISTANT_TITLE,
             body=text,
             active=True,
             entry_id=self._next_entry_id,
@@ -430,7 +430,7 @@ class CockpitState:
 
     def add_qa(self, prompt: str, answer: str) -> None:
         question = str(prompt or "").strip()
-        reply = str(answer or "").strip() or "Cancelado"
+        reply = str(answer or "").strip() or strings.CANCELLED
         if not question:
             return
         self._active_assistant_id = None
@@ -438,7 +438,7 @@ class CockpitState:
         self.entries.append(
             LogEntry(
                 kind=LogKind.QUESTION,
-                title="Pergunta",
+                title=strings.QUESTION,
                 body=question,
                 active=False,
                 entry_id=self._next_entry_id,
@@ -449,7 +449,7 @@ class CockpitState:
         self.entries.append(
             LogEntry(
                 kind=LogKind.ANSWER,
-                title="Você",
+                title=strings.ANSWER,
                 body=reply,
                 active=True,
                 entry_id=self._next_entry_id,
@@ -731,7 +731,7 @@ class CockpitState:
 
     def _match_phase(self, title: str) -> PhaseItem | None:
         lowered = title.lower()
-        base = _CONTINUATION.sub("", lowered).strip()
+        base = ui_text.phase_label_of(lowered)
         exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):

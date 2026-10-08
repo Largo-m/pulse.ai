@@ -16,19 +16,17 @@ from pulse.config import (
     load_project_config,
     resolve_config,
 )
-from pulse.config.model_catalog import (
-    PERMISSION_LABELS,
-    collect_available_models,
-    permission_choices,
-)
+from pulse.config.global_config import PERMISSION_POLICIES
+from pulse.config.model_catalog import collect_available_models
 from pulse.doctor.checks import run_environment_checks
+from pulse.tui import strings
 
 
 class SettingsScreen(Screen[None]):
     BINDINGS = [
-        ("escape", "go_back", "Voltar"),
-        ("q", "go_back", "Voltar"),
-        ("b", "go_back", "Voltar"),
+        ("escape", "go_back", strings.BACK),
+        ("q", "go_back", strings.BACK),
+        ("b", "go_back", strings.BACK),
     ]
 
     def __init__(self, *, cwd: Path | None = None) -> None:
@@ -41,11 +39,13 @@ class SettingsScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-content"):
-            yield Static("CONFIGURAÇÕES", classes="settings-title")
-            yield Static("Agents e ambiente", id="settings-status", classes="settings-hint")
+            yield Static(strings.SETTINGS_TITLE, classes="settings-title")
+            yield Static(
+                strings.SETTINGS_ROOT_STATUS, id="settings-status", classes="settings-hint"
+            )
             yield OptionList(id="settings-options")
             yield Static("", id="settings-report", classes="settings-report")
-            yield Static("Enter seleciona  ·  Esc volta", classes="settings-hint-keys")
+            yield Static(strings.SETTINGS_HINT_KEYS, classes="settings-hint-keys")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -90,16 +90,20 @@ class SettingsScreen(Screen[None]):
         self._scope = None
         self._workflow_id = None
         self._set_report("")
-        self._set_status("Agents e ambiente")
+        self._set_status(strings.SETTINGS_ROOT_STATUS)
         options = [
-            ("global", "Global — runtime, modelo e permissões de todos os agents"),
-            ("agents", "Agents — runtime, modelo e permissões"),
+            ("global", strings.SETTINGS_GLOBAL_OPTION),
+            ("agents", strings.SETTINGS_AGENTS_OPTION),
         ]
         if vcs.is_repo(self._cwd):
-            state = "ligado" if self._worktree_enabled() else "desligado"
-            options.append(("worktree", f"Worktree — isolar cada run em branch própria · {state}"))
-        options.append(("doctor", "Verificar ambiente"))
-        options.append(("back", "Voltar"))
+            state = (
+                strings.SETTINGS_WORKTREE_ON
+                if self._worktree_enabled()
+                else strings.SETTINGS_WORKTREE_OFF
+            )
+            options.append(("worktree", strings.SETTINGS_WORKTREE_OPTION.format(state=state)))
+        options.append(("doctor", strings.SETTINGS_DOCTOR_OPTION))
+        options.append(("back", strings.BACK))
         self._set_options(options)
 
     def _worktree_enabled(self) -> bool:
@@ -113,12 +117,7 @@ class SettingsScreen(Screen[None]):
         update_project_defaults(self._cwd, use_worktree=enabled)
         self._show_root()
         self._set_report(
-            "As runs deste projeto passam a rodar num `git worktree` próprio, em "
-            "`~/.pulse/worktrees/`, numa branch `pulse/…` por run. A árvore de "
-            "trabalho do editor fica intocada."
-            if enabled
-            else "As runs voltam a rodar na árvore de trabalho do projeto. "
-            "Os worktrees já criados continuam onde estão."
+            strings.SETTINGS_WORKTREE_ENABLED if enabled else strings.SETTINGS_WORKTREE_DISABLED
         )
 
     def _show_scope(self, next_mode: str, title: str) -> None:
@@ -126,9 +125,9 @@ class SettingsScreen(Screen[None]):
         self._set_status(title)
         self._set_options(
             [
-                ("scope:global", "Global — SQLite da máquina"),
-                ("scope:project", "Projeto — SQLite por project_id"),
-                ("back", "Voltar"),
+                ("scope:global", strings.SETTINGS_SCOPE_GLOBAL),
+                ("scope:project", strings.SETTINGS_SCOPE_PROJECT),
+                ("back", strings.BACK),
             ]
         )
 
@@ -188,14 +187,14 @@ class SettingsScreen(Screen[None]):
 
     @work(thread=True)
     def _load_models(self, *, for_workflow: bool = False) -> None:
-        self.app.call_from_thread(self._set_status, "Carregando modelos…")
+        self.app.call_from_thread(self._set_status, strings.SETTINGS_LOADING_MODELS)
         runtime = self._current_fields()[0]
         models = collect_available_models(self._cwd, agent_name=runtime or None)
 
         def apply() -> None:
             self._mode = "pick_model"
             current = self._current_fields()[1]
-            self._set_status(self._pick_title("Escolha o modelo"))
+            self._set_status(self._pick_title(strings.SETTINGS_PICK_MODEL))
             self._set_options([(f"model:{item}", _mark_current(item, current)) for item in models])
 
         self.app.call_from_thread(apply)
@@ -203,11 +202,12 @@ class SettingsScreen(Screen[None]):
     def _show_permissions(self) -> None:
         self._mode = "pick_permission"
         current = self._current_fields()[2]
-        self._set_status(self._pick_title("Escolha a política de permissões"))
+        self._set_status(self._pick_title(strings.SETTINGS_PICK_POLICY))
+        current_label = strings.PERMISSION_LABELS.get(current, current)
         self._set_options(
             [
-                (f"policy:{key}", _mark_current(label, PERMISSION_LABELS.get(current, current)))
-                for key, label in permission_choices()
+                (f"policy:{key}", _mark_current(strings.PERMISSION_LABELS[key], current_label))
+                for key in PERMISSION_POLICIES
             ]
         )
 
@@ -219,17 +219,9 @@ class SettingsScreen(Screen[None]):
         self._workflow_id = None
         self._mode = "global_fields"
         runtime, model, policy = self._effective_global_fields()
-        self._set_report(
-            "O global sobrescreve todos os agents. Trocar um agent depois vale só para ele."
-        )
-        self._set_status("Global")
-        self._set_options(
-            [
-                ("g_agent", f"Runtime — {runtime}"),
-                ("g_model", f"Modelo — {model}"),
-                ("g_permission", f"Permissões — {PERMISSION_LABELS.get(policy, policy)}"),
-            ]
-        )
+        self._set_report(strings.SETTINGS_GLOBAL_REPORT)
+        self._set_status(strings.SETTINGS_GLOBAL)
+        self._set_options(_field_options("g", runtime, model, policy))
 
     def _show_pulse_agents(self) -> None:
         ensure_project_workflows(self._cwd)
@@ -239,29 +231,25 @@ class SettingsScreen(Screen[None]):
         self._target = "agent"
         self._mode = "pick_workflow"
         self._set_report("")
-        self._set_status("Escolha o agent")
+        self._set_status(strings.SETTINGS_PICK_AGENT)
         options: list[tuple[str, str]] = []
         saved = self._workflow_id
         for agent in list_agents():
             self._workflow_id = agent.id
             runtime, model, _policy = self._effective_agent_fields()
-            options.append((f"workflow:{agent.id}", f"{agent.label} — {runtime} · {model}"))
+            label = strings.SETTINGS_AGENT_OPTION.format(
+                label=agent.label, runtime=runtime, model=model
+            )
+            options.append((f"workflow:{agent.id}", label))
         self._workflow_id = saved
         self._set_options(options)
 
     def _show_workflow_fields(self) -> None:
         self._mode = "workflow_fields"
         runtime, model, policy = self._effective_agent_fields()
-        policy_label = PERMISSION_LABELS.get(policy, policy)
         self._set_report("")
         self._set_status(self._agent_label())
-        self._set_options(
-            [
-                ("wf_agent", f"Runtime — {runtime}"),
-                ("wf_model", f"Modelo — {model}"),
-                ("wf_permission", f"Permissões — {policy_label}"),
-            ]
-        )
+        self._set_options(_field_options("wf", runtime, model, policy))
 
     def _project_id(self) -> str | None:
         project = load_project_config(self._cwd)
@@ -273,7 +261,7 @@ class SettingsScreen(Screen[None]):
         from pulse.store.workflow_defs import get_agent
 
         agent = get_agent(self._workflow_id or "")
-        return agent.label if agent is not None else (self._workflow_id or "Agent")
+        return agent.label if agent is not None else (self._workflow_id or strings.AGENT)
 
     def _current_fields(self) -> tuple[str, str, str]:
         """Runtime, model and policy of the target being edited."""
@@ -284,7 +272,9 @@ class SettingsScreen(Screen[None]):
         return "", "", ""
 
     def _pick_title(self, title: str) -> str:
-        return f"{title} (global)" if self._target == "global" else title
+        return (
+            strings.SETTINGS_PICK_GLOBAL.format(title=title) if self._target == "global" else title
+        )
 
     def _effective_global_fields(self) -> tuple[str, str, str]:
         """Effective values: project, else machine, else Pulse defaults."""
@@ -348,12 +338,12 @@ class SettingsScreen(Screen[None]):
         resolved = resolve_config(self._cwd, workflow=self._workflow_id)
         self._mode = "pick_agent"
         current = self._current_fields()[0]
-        self._set_status(self._pick_title("Escolha o runtime"))
+        self._set_status(self._pick_title(strings.SETTINGS_PICK_RUNTIME))
         options = []
         for name, agent in resolved.agents.items():
-            label = f"{name} — {agent.binary}"
+            label = strings.SETTINGS_RUNTIME_OPTION.format(name=name, binary=agent.binary)
             if name == current:
-                label = f"{label}  · atual"
+                label = strings.CURRENT_MARK.format(label=label)
             options.append((f"agent:{name}", label))
         self._set_options(options)
 
@@ -416,17 +406,31 @@ class SettingsScreen(Screen[None]):
 
         cfg = load_global_config()
         if cfg:
-            lines.append(f"[ok] Config global · modelo={cfg.model}")
+            lines.append(strings.SETTINGS_DOCTOR_GLOBAL_CONFIG.format(model=cfg.model))
         project = load_project_config(self._cwd)
         if project is not None:
-            lines.append(f"[ok] Config projeto · {project.source_file}")
+            lines.append(strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(source=project.source_file))
         self._mode = "doctor"
-        self._set_status("Ambiente")
-        self._set_report("\n".join(lines) if lines else "Nenhum check")
-        self._set_options([("back", "Voltar")])
+        self._set_status(strings.ENVIRONMENT)
+        self._set_report("\n".join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS)
+        self._set_options([("back", strings.BACK)])
 
 
 def _mark_current(label: str, current: str) -> str:
     if current and label == current:
-        return f"{label}  · atual"
+        return strings.CURRENT_MARK.format(label=label)
     return label
+
+
+def _field_options(prefix: str, runtime: str, model: str, policy: str) -> list[tuple[str, str]]:
+    """Runtime, model and policy rows of a settings target, ids prefixed by `prefix`."""
+    return [
+        (f"{prefix}_agent", strings.SETTINGS_FIELD_RUNTIME.format(value=runtime)),
+        (f"{prefix}_model", strings.SETTINGS_FIELD_MODEL.format(value=model)),
+        (
+            f"{prefix}_permission",
+            strings.SETTINGS_FIELD_PERMISSIONS.format(
+                value=strings.PERMISSION_LABELS.get(policy, policy)
+            ),
+        ),
+    ]

@@ -51,7 +51,7 @@ class EngineClient:
             if self.ping() and self._protocol_ok():
                 return
             time.sleep(0.25)
-        raise RuntimeError("Não foi possível conectar ao pulse-engine")
+        raise RuntimeError("could not connect to pulse-engine")
 
     def close(self) -> None:
         if self._client is not None:

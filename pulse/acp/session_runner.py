@@ -14,6 +14,7 @@ from typing import Any, cast
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.models import resolve_model_display_name
 from pulse.acp.run_events import RunEventRecorder
+from pulse.domain import ui_text
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
     AgentProfile,
@@ -187,7 +188,7 @@ class AcpSessionRunner(RunEventRecorder):
         except Exception as error:  # noqa: BLE001
             self._save_event(
                 kind="Info",
-                title="Espera não registrada",
+                title="User wait not recorded",
                 detail=f"{type(error).__name__}: {error}",
             )
 
@@ -199,7 +200,7 @@ class AcpSessionRunner(RunEventRecorder):
             session = self.new_session(self._cwd)
             session_id = session.get("sessionId")
             if not session_id:
-                raise RuntimeError("Sessão ACP não retornou sessionId")
+                raise RuntimeError("ACP session returned no sessionId")
             self._activate_session(str(session_id))
             result = self.prompt(self._session_id, prompt_text)
             return result
@@ -222,7 +223,7 @@ class AcpSessionRunner(RunEventRecorder):
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:
-            raise RuntimeError("Sessão ACP não retornou sessionId")
+            raise RuntimeError("ACP session returned no sessionId")
         self._activate_session(str(session_id))
 
         self.apply_model(session, preferred_model)
@@ -237,8 +238,9 @@ class AcpSessionRunner(RunEventRecorder):
 
         try:
             for turn in range(MAX_PHASE_APPROVAL_TURNS):
-                label = phase_label if turn == 0 else f"{phase_label} — continuação ({turn + 1})"
-                self._begin_phase(label)
+                self._begin_phase(
+                    ui_text.continuation_label(phase_label, turn + 1) if turn else phase_label
+                )
                 self._stream.reset_capture()
                 phase_result = self.prompt(self._session_id, next_prompt)
                 if phase_result.get("stopReason") == "cancelled":
@@ -315,7 +317,7 @@ class AcpSessionRunner(RunEventRecorder):
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:
-            raise RuntimeError("Sessão ACP não retornou sessionId")
+            raise RuntimeError("ACP session returned no sessionId")
         self._activate_session(str(session_id))
 
         self.apply_model(session, preferred_model)
@@ -328,7 +330,7 @@ class AcpSessionRunner(RunEventRecorder):
         try:
             for turn in range(max(1, max_turns)):
                 if turn:
-                    self._begin_phase(f"{phase_label} — continuação ({turn + 1})")
+                    self._begin_phase(ui_text.continuation_label(phase_label, turn + 1))
                 else:
                     self._begin_phase(phase_label)
                 self._stream.reset_capture()
@@ -494,7 +496,7 @@ class AcpSessionRunner(RunEventRecorder):
 
     def _send(self, payload: dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
-            raise RuntimeError("Processo ACP não iniciado")
+            raise RuntimeError("ACP process not started")
         self._process.stdin.write(json.dumps(payload) + "\n")
         self._process.stdin.flush()
 
@@ -531,7 +533,7 @@ class AcpSessionRunner(RunEventRecorder):
                 deadline = time.monotonic() + CANCEL_GRACE_SECONDS
 
             if self._process is not None and self._process.poll() is not None:
-                raise RuntimeError(f"o processo do agente encerrou durante `{method}`")
+                raise RuntimeError(f"the agent process exited during `{method}`")
 
             remaining = deadline - time.monotonic()
             try:
@@ -547,13 +549,13 @@ class AcpSessionRunner(RunEventRecorder):
                 error = response["error"]
                 if cancelling:
                     return {"stopReason": "cancelled"}
-                raise RuntimeError(error.get("message", "Erro ACP desconhecido"))
+                raise RuntimeError(error.get("message", "unknown ACP error"))
             return response.get("result", {})
 
         if cancelling:
             return {"stopReason": "cancelled"}
         self._hung = True
-        raise TimeoutError(f"o agente ficou {int(limit)}s sem dar sinal em `{method}`")
+        raise TimeoutError(f"the agent gave no sign of life for {int(limit)}s in `{method}`")
 
     def _cancel_active_session(self) -> None:
         """Ask the agent to abort the active session's turn."""
@@ -608,7 +610,7 @@ class AcpSessionRunner(RunEventRecorder):
             self._request(request.method, request.params)
         except (RuntimeError, TimeoutError):
             return
-        self._emit_info(f"Modelo: {resolve_model_display_name(session, request.model_id)}")
+        self._emit_info(ui_text.model_notice(resolve_model_display_name(session, request.model_id)))
 
     def apply_mode(self, session: dict[str, Any], *, execute: bool) -> None:
         if self._session_id is None:

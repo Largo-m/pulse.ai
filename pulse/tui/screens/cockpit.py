@@ -10,6 +10,7 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
+from pulse.tui import strings
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,
@@ -42,20 +43,20 @@ _PROMPT_BLOCKED = {
 
 class CockpitScreen(Screen[None]):
     BINDINGS = [
-        Binding("q", "back_to_menu", "Menu"),
-        Binding("b", "back_to_menu", "Menu"),
-        Binding("s", "stop_run", "Parar"),
-        Binding("tab", "toggle_focus", "Focus"),
-        Binding("a", "toggle_artifact_pane", "Artifacts"),
-        Binding("escape", "escape_back", "Back"),
-        Binding("left_square_bracket", "artifact_prev", "Prev file"),
-        Binding("right_square_bracket", "artifact_next", "Next file"),
-        Binding("left", "artifact_left", "Prev file"),
-        Binding("right", "artifact_right", "Next file"),
-        Binding("up", "nav_up", "Up", priority=True),
-        Binding("down", "nav_down", "Down", priority=True),
-        Binding("k", "nav_up", "Up", priority=True),
-        Binding("j", "nav_down", "Down", priority=True),
+        Binding("q", "back_to_menu", strings.BINDING_MENU),
+        Binding("b", "back_to_menu", strings.BINDING_MENU),
+        Binding("s", "stop_run", strings.BINDING_STOP),
+        Binding("tab", "toggle_focus", strings.BINDING_FOCUS),
+        Binding("a", "toggle_artifact_pane", strings.BINDING_ARTIFACTS),
+        Binding("escape", "escape_back", strings.BINDING_BACK),
+        Binding("left_square_bracket", "artifact_prev", strings.BINDING_PREV_FILE),
+        Binding("right_square_bracket", "artifact_next", strings.BINDING_NEXT_FILE),
+        Binding("left", "artifact_left", strings.BINDING_PREV_FILE),
+        Binding("right", "artifact_right", strings.BINDING_NEXT_FILE),
+        Binding("up", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("down", "nav_down", strings.BINDING_DOWN, priority=True),
+        Binding("k", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("j", "nav_down", strings.BINDING_DOWN, priority=True),
     ]
 
     def __init__(
@@ -269,7 +270,7 @@ class CockpitScreen(Screen[None]):
         except Exception as error:  # noqa: BLE001
             if self._detached:
                 return
-            self.state.add_error("Workflow falhou", str(error))
+            self.state.add_error(strings.WORKFLOW_FAILED, str(error))
             self._dirty = True
             code = 1
         if code == DETACHED:
@@ -283,25 +284,25 @@ class CockpitScreen(Screen[None]):
 
     def _on_workflow_done(self, code: int) -> None:
         if code == 0:
-            self.state.add_info("Workflow concluído")
+            self.state.add_info(strings.WORKFLOW_DONE)
         elif code == RUN_STOPPED:
-            self.state.add_info("Run parada — dá para retomar de onde parou")
+            self.state.add_info(strings.RUN_STOPPED)
             self._sync_ui(force=True)
             self._offer_resume()
             return
         elif code == RUN_BLOCKED:
-            self.state.add_info("Run bloqueada — resolva o que o step pediu e retome de onde parou")
+            self.state.add_info(strings.RUN_BLOCKED)
             self._sync_ui(force=True)
             self._offer_resume()
             return
         else:
             if not self.state.has_error():
                 self.state.add_error(
-                    "Workflow falhou",
-                    f"O fluxo encerrou com código {code}.",
+                    strings.WORKFLOW_FAILED,
+                    strings.WORKFLOW_EXIT_CODE.format(code=code),
                 )
             if self._resumable_run() is not None:
-                self.state.add_info("Dá para retomar do step que falhou")
+                self.state.add_info(strings.RUN_RESUMABLE_FROM_FAILURE)
             self._sync_ui(force=True)
             self._offer_resume()
             return
@@ -313,7 +314,7 @@ class CockpitScreen(Screen[None]):
         if session is None or not self.state.running or not self.state.can_stop:
             return
         session.stop()
-        self.state.add_info("Parando — cortando o step em execução")
+        self.state.add_info(strings.RUN_STOPPING)
         self._sync_ui(force=True)
 
     def _offer_resume(self) -> None:
@@ -465,4 +466,4 @@ def _run_summary(record) -> str:
     """Where the run stopped, for the resume choice screen."""
     done = sum(1 for step in record.steps if step.settled)
     current = record.current_step or (record.steps[0].step_id if record.steps else "—")
-    return f"{current} · steps {done}/{len(record.steps)}"
+    return strings.RUN_SUMMARY.format(current=current, done=done, total=len(record.steps))

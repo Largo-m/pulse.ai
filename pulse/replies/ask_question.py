@@ -3,8 +3,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from pulse.domain import ui_text
+
 OTHER_OPTION_ID = "__other__"
-DEFAULT_QUESTIONNAIRE_TITLE = "Preciso de algumas informações antes de continuar."
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _FREE_TEXT_VERB = re.compile(
     r"descrev|descri[çc][ãa]|especifi|detalh|expliqu|explicar|informe|informar"
@@ -109,11 +110,8 @@ def is_approval_prompt(prompt: str) -> bool:
     return bool(_APPROVAL_PROMPT.search(prompt))
 
 
-FREE_TEXT_ANSWER_PREFIX = "Outro — "
-
-
 def is_free_text_answer(answer: str) -> bool:
-    return answer.strip().lower().startswith(FREE_TEXT_ANSWER_PREFIX.strip().lower())
+    return answer.strip().lower().startswith(ui_text.FREE_TEXT_ANSWER_PREFIX.strip().lower())
 
 
 def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
@@ -160,7 +158,7 @@ def build_question_choices(
         if is_other_option(option_id, label):
             has_other = True
             option_id = OTHER_OPTION_ID
-            label = format_option_label(option_index, "Outro (descreva)")
+            label = format_option_label(option_index, ui_text.OTHER_DESCRIBE_OPTION)
             option_index += 1
         else:
             label = format_option_label(option_index, label)
@@ -175,7 +173,7 @@ def build_question_choices(
             option_labels=option_labels,
         )
     ):
-        other_label = format_option_label(option_index, "Outro (descreva)")
+        other_label = format_option_label(option_index, ui_text.OTHER_DESCRIBE_OPTION)
         choices.append((OTHER_OPTION_ID, other_label))
 
     return choices
@@ -183,16 +181,15 @@ def build_question_choices(
 
 def multi_select_prompt(prompt: str) -> str:
     """The multi-select question text as the dock shows it."""
-    return f"{prompt}\n(escolha uma ou mais)"
+    return f"{prompt}\n{ui_text.MULTI_SELECT_HINT}"
 
 
-PLAN_APPROVAL_TITLE = "Aprovar plano?"
 PLAN_PREVIEW_CHARS = 1200
 
 
 def plan_prompt_text(params: dict[str, Any]) -> str:
     """Body of the plan approval dock (`cursor/create_plan`)."""
-    name = str(params.get("name") or "Plano").strip()
+    name = str(params.get("name") or ui_text.PLAN_FALLBACK_NAME).strip()
     overview = str(params.get("overview") or "").strip()
     plan = str(params.get("plan") or "").strip()
     body = name

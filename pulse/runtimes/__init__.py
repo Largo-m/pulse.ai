@@ -36,7 +36,7 @@ def get_runtime(name: str) -> AgentRuntime:
     """Runtime by id. An unknown id does not exist: falling back would start another CLI."""
     runtime = find_runtime(name)
     if runtime is None:
-        raise UnknownRuntime(f"runtime desconhecido: {name!r}")
+        raise UnknownRuntime(f"unknown runtime: {name!r}")
     return runtime
 
 

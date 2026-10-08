@@ -43,7 +43,7 @@ def ready(monkeypatch):
 
 def test_an_unknown_workflow_does_not_exist():
     """With no catalog in code, an id missing from the database does not exist."""
-    with pytest.raises(UnknownWorkflow, match="desconhecido"):
+    with pytest.raises(UnknownWorkflow, match="^unknown workflow: nao-existe$"):
         _start(Path("/tmp"), workflow_id="nao-existe")  # noqa: S108 - never touched: refused first
 
 
@@ -60,7 +60,7 @@ def test_an_unready_runtime_refuses_the_run_before_any_session(monkeypatch, tmp_
         lambda **_kwargs: pytest.fail("the engine must not start"),
     )
 
-    with pytest.raises(RuntimeError, match="indisponível: sem agent. instale o Cursor CLI"):
+    with pytest.raises(RuntimeError, match=r"` unavailable: sem agent\. instale o Cursor CLI$"):
         _start(tmp_path)
 
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from pulse.domain import ui_text
 from pulse.replies.ask_question import (
-    PLAN_APPROVAL_TITLE,
     build_question_choices,
     multi_select_prompt,
     parse_ask_question_params,
@@ -28,7 +28,7 @@ from pulse.replies.text_questionnaire import (
     split_questionnaire_answers,
 )
 
-CANCELLED = "Cancelado"
+CANCELLED = ui_text.ANSWER_CANCELLED
 EMPTY = "—"
 _DETAIL_SEP = "::"
 
@@ -201,14 +201,14 @@ def _create_plan_qa(
     params = _arg(args, kwargs, 0, "params")
     if not isinstance(params, dict):
         return []
-    prompt = f"{PLAN_APPROVAL_TITLE}\n{plan_prompt_text(params)}"
+    prompt = f"{ui_text.PLAN_APPROVAL_TITLE}\n{plan_prompt_text(params)}"
 
     outcome = result.get("outcome") if isinstance(result, dict) else None
     decision = outcome.get("outcome") if isinstance(outcome, dict) else ""
     if decision == "accepted":
-        return [(prompt, "Sim")]
+        return [(prompt, ui_text.ANSWER_YES)]
     if decision == "rejected":
-        return [(prompt, "Não")]
+        return [(prompt, ui_text.ANSWER_NO)]
     return [(prompt, CANCELLED)]
 
 

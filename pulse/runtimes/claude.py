@@ -29,9 +29,8 @@ class ClaudeRuntime(AgentRuntime):
     auth_env_var = "ANTHROPIC_API_KEY"
     auth_method_id = None
     auth_method_label = "claude_login"
-    install_hint = "Instale o Claude Code (https://claude.com/claude-code) e o Node.js 18+ (`npx`)."
+    install_hint = "Install Claude Code (https://claude.com/claude-code) and Node.js 18+ (`npx`)."
     login_command = ("claude", "/login")
-    login_label = "Executar `claude /login`"
     interview_modes = ("default", "acceptEdits", "agent")
     execute_modes = ("default", "acceptEdits", "agent")
 
@@ -42,8 +41,8 @@ class ClaudeRuntime(AgentRuntime):
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="warn",
-                message="Não foi possível confirmar a sessão Claude",
-                detail="`claude auth status` não respondeu; rode `claude` e confira o login",
+                message="Could not confirm the Claude session",
+                detail="`claude auth status` did not answer; run `claude` and check the login",
             )
         try:
             payload = json.loads((completed.stdout or "").strip())
@@ -54,20 +53,20 @@ class ClaudeRuntime(AgentRuntime):
                 return RuntimeCheck(
                     name=self.auth_check_name,
                     status="ok",
-                    message="Sessão Claude ativa",
+                    message="Claude session active",
                     detail=str(payload.get("authMethod") or "claude_login"),
                 )
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="fail",
-                message="Não autenticado no Claude Code",
+                message="Not authenticated in Claude Code",
                 detail=self.auth_hint,
             )
         return RuntimeCheck(
             name=self.auth_check_name,
             status="warn",
-            message="Não foi possível confirmar a sessão Claude",
-            detail="`claude auth status` não respondeu; rode `claude` e confira o login",
+            message="Could not confirm the Claude session",
+            detail="`claude auth status` did not answer; run `claude` and check the login",
         )
 
     def model_request(

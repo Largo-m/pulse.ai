@@ -19,6 +19,7 @@ from pulse.config import global_config_exists
 from pulse.config.ready import is_pulse_ready
 from pulse.history.status_labels import status_color, status_icon
 from pulse.store.workflow_defs import list_workflows
+from pulse.tui import strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 
 
@@ -34,7 +35,7 @@ _HOME_BRAND = _home_brand()
 
 
 def _session_workflows() -> list:
-    """Workflows offered by "Nova sessão": the pipelines, sorted by label.
+    """Workflows offered by the new-session menu: the pipelines, sorted by label.
 
     The generic loop (`is_default`) is hidden from this menu only; it remains
     available in the database and the daemon API.
@@ -51,9 +52,6 @@ ALERTS = "alerts"
 
 ALERT_POLL_SECONDS = 3.0
 
-ROOT_HINT = "↑↓ navega · Enter seleciona · Q sai"
-TASK_PLACEHOLDER = "Descreva a tarefa e tecle Enter · Esc cancela"
-
 
 def _alert_panel(runs: list[dict[str, Any]]) -> Text:
     """Alert panel listing how many sessions are waiting and which ones.
@@ -62,9 +60,9 @@ def _alert_panel(runs: list[dict[str, Any]]) -> Text:
     """
     tone = status_color("awaiting_input")
     count = len(runs)
-    noun = "sessão precisa" if count == 1 else "sessões precisam"
+    header = strings.HOME_ALERTS_ONE if count == 1 else strings.HOME_ALERTS_MANY
     panel = Text()
-    panel.append(f"{status_icon('awaiting_input')} {count} {noun} de você", style=tone)
+    panel.append(f"{status_icon('awaiting_input')} {header.format(count=count)}", style=tone)
     for run in runs:
         panel.append(f"\n   {run_line(run, tail=held_tail(run))}", style="#888888")
     return panel
@@ -72,8 +70,8 @@ def _alert_panel(runs: list[dict[str, Any]]) -> Text:
 
 class HomeScreen(Screen[None]):
     BINDINGS = [
-        ("q", "quit_app", "Sair"),
-        ("escape", "back", "Voltar"),
+        ("q", "quit_app", strings.QUIT),
+        ("escape", "back", strings.BACK),
     ]
 
     _alerts: list[dict[str, Any]] = []
@@ -82,14 +80,14 @@ class HomeScreen(Screen[None]):
         with Vertical(id="home-content"):
             yield Static(_HOME_BRAND, classes="home-brand")
             yield Static(
-                f"Orquestrador de agentes de IA · v{__version__}",
+                strings.HOME_SUBTITLE.format(version=__version__),
                 classes="home-sub",
             )
             yield Static("", id="home-alerts")
             yield OptionList(id="home-options")
-            yield Static(ROOT_HINT, classes="home-hint")
+            yield Static(strings.HOME_ROOT_HINT, classes="home-hint")
             yield Input(
-                placeholder=TASK_PLACEHOLDER,
+                placeholder=strings.HOME_TASK_PLACEHOLDER,
                 id="workflow-prompt",
                 classes="-hidden",
             )
@@ -149,11 +147,13 @@ class HomeScreen(Screen[None]):
         """
         description = self._descriptions.get(workflow_id or "", "")
         keys = (
-            "Enter inicia agora"
+            strings.HOME_START_NOW
             if self._default_prompts.get(workflow_id or "")
-            else "Enter para descrever a tarefa"
+            else strings.HOME_DESCRIBE_TASK
         )
-        self.query_one(".home-hint", Static).update(f"{description}\n{keys} · Esc volta")
+        self.query_one(".home-hint", Static).update(
+            strings.HOME_SESSION_HINT.format(description=description, keys=keys)
+        )
 
     @on(OptionList.OptionHighlighted, "#home-options")
     def on_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
@@ -168,17 +168,17 @@ class HomeScreen(Screen[None]):
         hint = self.query_one(".home-hint", Static)
         if not global_config_exists():
             self._view = ROOT
-            options.add_option(Option("Configurar Pulse", id="init"))
-            options.add_option(Option("Sair", id="exit"))
-            hint.update(ROOT_HINT)
+            options.add_option(Option(strings.HOME_SETUP, id="init"))
+            options.add_option(Option(strings.QUIT, id="exit"))
+            hint.update(strings.HOME_ROOT_HINT)
             return
         if self._view == ALERTS:
             for run in self._alerts:
                 options.add_option(
                     Option(run_line(run, tail=held_tail(run)), id=f"attach:{run.get('id')}")
                 )
-            options.add_option(Option("← Voltar", id="back"))
-            hint.update("Enter abre a sessão para responder · Esc volta")
+            options.add_option(Option(strings.BACK_ARROW, id="back"))
+            hint.update(strings.HOME_ALERTS_HINT)
             return
         if self._view == SESSION:
             workflows = _session_workflows()
@@ -193,25 +193,25 @@ class HomeScreen(Screen[None]):
                 if workflow.description:
                     label = f"{label} · {workflow.description}"
                 options.add_option(Option(label, id=f"workflow:{workflow.id}"))
-            options.add_option(Option("← Voltar", id="back"))
+            options.add_option(Option(strings.BACK_ARROW, id="back"))
             self._update_hint(workflows[0].id if workflows else None)
             return
         if is_pulse_ready():
             if self._alerts:
                 count = len(self._alerts)
                 label = (
-                    "Responder 1 sessão pendente"
+                    strings.HOME_ANSWER_ONE
                     if count == 1
-                    else f"Responder {count} sessões pendentes"
+                    else strings.HOME_ANSWER_MANY.format(count=count)
                 )
                 options.add_option(Option(label, id="alerts"))
-            options.add_option(Option("Nova sessão", id="session"))
-            options.add_option(Option("Histórico", id="history"))
+            options.add_option(Option(strings.HOME_NEW_SESSION, id="session"))
+            options.add_option(Option(strings.HOME_HISTORY, id="history"))
         else:
-            options.add_option(Option("Configurar Pulse", id="init"))
-        options.add_option(Option("Configurações", id="settings"))
-        options.add_option(Option("Sair", id="exit"))
-        hint.update(ROOT_HINT)
+            options.add_option(Option(strings.HOME_SETUP, id="init"))
+        options.add_option(Option(strings.HOME_SETTINGS, id="settings"))
+        options.add_option(Option(strings.QUIT, id="exit"))
+        hint.update(strings.HOME_ROOT_HINT)
 
     @on(OptionList.OptionSelected, "#home-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -257,7 +257,7 @@ class HomeScreen(Screen[None]):
             prompt_input = self.query_one("#workflow-prompt", Input)
             prompt_input.display = True
             prompt_input.focus()
-            prompt_input.placeholder = TASK_PLACEHOLDER
+            prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -311,13 +311,10 @@ class HomeScreen(Screen[None]):
         running = active_runs()
         if running:
             count = len(running)
-            noun = "sessão continua" if count == 1 else "sessões continuam"
-            self.app.exit(
-                message=(
-                    f"[pulse] {count} {noun} rodando em segundo plano. "
-                    "Rode `pulse` e abra Histórico para acompanhar."
-                )
+            message = (
+                strings.HOME_EXIT_RUNNING_ONE if count == 1 else strings.HOME_EXIT_RUNNING_MANY
             )
+            self.app.exit(message=message.format(count=count))
             return
         self.app.exit()
 

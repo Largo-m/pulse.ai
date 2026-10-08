@@ -13,7 +13,7 @@ def run_daemon_command(action: str) -> int:
         return _start()
     if action == "stop":
         return _stop()
-    print(f"[pulse] Ação de daemon desconhecida: {action}")
+    print(f"[pulse] Unknown daemon action: {action}")
     return 2
 
 
@@ -40,22 +40,22 @@ def _warn_about_live_runs() -> None:
         return
     count = len(running)
     noun = "run" if count == 1 else "runs"
-    print(f"[pulse] Atenção: {count} {noun} em execução — parar o engine encerra:")
+    print(f"[pulse] Warning: {count} {noun} running — stopping the engine ends:")
     for run in running:
         print(f"  - {describe(run)}")
 
 
 def _start() -> int:
     if is_daemon_alive():
-        print("pulse-engine já está em execução")
+        print("pulse-engine is already running")
         return 0
     client = EngineClient()
     try:
         client.ensure_daemon()
-        print("pulse-engine iniciado")
+        print("pulse-engine started")
         return 0
     except (RuntimeError, OSError) as error:
-        print(f"[pulse] Falha ao iniciar engine: {error}")
+        print(f"[pulse] Failed to start the engine: {error}")
         return 1
     finally:
         client.close()
@@ -64,7 +64,7 @@ def _start() -> int:
 def _stop() -> int:
     _warn_about_live_runs()
     if not stop_daemon():
-        print("[pulse] pulse-engine não saiu depois do SIGTERM; continua rodando")
+        print("[pulse] pulse-engine did not exit after SIGTERM; it is still running")
         return 1
-    print("pulse-engine parado")
+    print("pulse-engine stopped")
     return 0

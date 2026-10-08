@@ -4,23 +4,24 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from pulse.domain import ui_text
+from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
 from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
     merge_tool_update,
 )
 from pulse.replies.text_questionnaire import (
-    QUESTIONNAIRE_NOTICE,
     QUESTIONNAIRE_START,
     extract_questionnaire_block,
 )
+from pulse.tui import strings
 from pulse.tui.artifacts import artifact_has_content
 from pulse.tui.cursor_store import CursorStoreIndex
 from pulse.tui.state import CockpitState, LogKind
 
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
-_MODEL_RE = re.compile(r"^Modelo:\s*(.+)$", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
 
 NotifyFn = Callable[[], None]
@@ -159,10 +160,9 @@ class CockpitSink:
             title = update.get("title")
             if title:
                 self._finish_message_line()
-                title_text = str(title)
-                match = _MODEL_RE.match(title_text)
-                if match:
-                    self._state.set_model(match.group(1).strip())
+                model = ui_text.model_of_notice(str(title))
+                if model:
+                    self._state.set_model(model)
                     self._backfill_vague_entries()
                     self._emit()
             return
@@ -239,7 +239,7 @@ class CockpitSink:
         self._emit()
 
     def error(self, title: str, reason: str = "") -> None:
-        text = str(title or "").strip() or "Erro"
+        text = str(title or "").strip() or strings.ERROR
         self._finish_message_line()
         self._state.add_error(text, str(reason or "").strip())
         self._emit()

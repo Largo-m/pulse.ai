@@ -83,13 +83,13 @@ def run_engine(
     """
     definition = get_workflow(workflow_id)
     if definition is None:
-        raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
+        raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
     resolved = resolve_config(workspace=workspace, workflow=workflow_id)
     runtime = resolved.runtime
     blocking = check_runtime_ready(runtime.id)
     if blocking is not None:
         raise RuntimeError(
-            f"Runtime `{runtime.id}` indisponível: {blocking.message}. "
+            f"Runtime `{runtime.id}` unavailable: {blocking.message}. "
             f"{blocking.detail or ''}".strip()
         )
     session = AcpSessionRunner(
@@ -149,7 +149,7 @@ class RunManager:
         resume_run_id: str | None = None,
     ) -> RunState:
         if get_workflow(workflow_id) is None:
-            raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
+            raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
         self._prune()
         bus = EventBus()
@@ -171,7 +171,7 @@ class RunManager:
         with self._lock:
             existing = self._runs.get(run_id)
             if existing is not None and existing.is_active():
-                raise RunAlreadyActive(f"run já está em execução: {run_id}")
+                raise RunAlreadyActive(f"run is already running: {run_id}")
             self._runs[run_id] = state
         thread = threading.Thread(
             target=self._execute,

@@ -29,7 +29,7 @@ def print_doctor_report(
         detail = f" — {check.detail}" if check.detail else ""
         print(f"{_status_icon(check.status)} {check.message}{detail}")
     if acp_probe_message:
-        print(f"  Teste ACP: {acp_probe_message}")
+        print(f"  ACP test: {acp_probe_message}")
 
 
 def run_doctor(*, test_acp: bool = False) -> int:
@@ -41,16 +41,16 @@ def run_doctor(*, test_acp: bool = False) -> int:
     if global_config_exists():
         config = load_global_config()
         if config:
-            global_detail = f"modelo={config.model}, permissões={config.permission_policy}"
+            global_detail = f"model={config.model}, permissions={config.permission_policy}"
             if config.agents:
-                global_detail += f", agentes={len(config.agents)}"
+                global_detail += f", agents={len(config.agents)}"
             if config.workflows:
                 global_detail += f", workflows={len(config.workflows)}"
             checks.append(
                 CheckResult(
-                    name="Config global",
+                    name="Global config",
                     status="ok",
-                    message=f"Config em {GLOBAL_DB_FILE}",
+                    message=f"Config in {GLOBAL_DB_FILE}",
                     detail=global_detail,
                 )
             )
@@ -61,25 +61,25 @@ def run_doctor(*, test_acp: bool = False) -> int:
         if project.default_agent:
             overrides.append(f"agent={project.default_agent}")
         if project.model:
-            overrides.append(f"modelo={project.model}")
+            overrides.append(f"model={project.model}")
         if project.permission_policy:
-            overrides.append(f"permissões={project.permission_policy}")
+            overrides.append(f"permissions={project.permission_policy}")
         if project.workspace:
             overrides.append(f"workspace={project.workspace}")
         if project.workflows:
             overrides.append(f"workflows={len(project.workflows)}")
         checks.append(
             CheckResult(
-                name="Config projeto",
+                name="Project config",
                 status="ok",
-                message=f"Config em {project.source_file}",
-                detail=", ".join(overrides) or "sem overrides",
+                message=f"Config in {project.source_file}",
+                detail=", ".join(overrides) or "no overrides",
             )
         )
 
     if test_acp:
         if not any(check.status == "fail" for check in checks):
-            print(f"Testando conexão ACP com `{active}`…")
+            print(f"Testing the ACP connection with `{active}`…")
             probe = probe_acp_connection(
                 command=list(resolved.acp_command),
                 cwd=str(safe_cwd()),
@@ -98,8 +98,8 @@ def run_doctor(*, test_acp: bool = False) -> int:
                 CheckResult(
                     name="ACP",
                     status="warn",
-                    message="Teste ACP ignorado",
-                    detail=f"Corrija o runtime `{active}` e a autenticação antes",
+                    message="ACP test skipped",
+                    detail=f"Fix the `{active}` runtime and its authentication first",
                 )
             )
 

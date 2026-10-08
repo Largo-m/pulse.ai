@@ -173,7 +173,7 @@ def test_a_timeout_offers_retry_instead_of_killing_the_run(wired, monkeypatch, t
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     runner = FakeAgentSession(
         [
-            TimeoutError("o agente ficou 600s sem dar sinal em `session/prompt`"),
+            TimeoutError("the agent gave no sign of life for 600s in `session/prompt`"),
             _approved(),
             _approved(),
         ]

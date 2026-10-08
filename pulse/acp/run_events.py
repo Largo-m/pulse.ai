@@ -10,10 +10,11 @@ import sqlite3
 from contextlib import suppress
 from typing import Any
 
+from pulse.domain import ui_text
 from pulse.history.events import LogKind
 from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
-from pulse.replies.text_questionnaire import QUESTIONNAIRE_NOTICE, strip_questionnaire_block
+from pulse.replies.text_questionnaire import strip_questionnaire_block
 
 
 class RunEventRecorder:
@@ -182,7 +183,7 @@ class RunEventRecorder:
         except Exception as error:  # noqa: BLE001
             self._save_event(
                 kind="Info",
-                title="Diálogo não registrado",
+                title="Dialog not recorded",
                 detail=f"{name}: {type(error).__name__}: {error}",
             )
             return
@@ -190,8 +191,8 @@ class RunEventRecorder:
             if not question.strip():
                 continue
             self._flush_text()
-            self._save_event(kind="Question", title="Pergunta", detail=question)
-            self._save_event(kind="Answer", title="Você", detail=answer)
+            self._save_event(kind="Question", title=ui_text.QUESTION_TITLE, detail=question)
+            self._save_event(kind="Answer", title=ui_text.ANSWER_TITLE, detail=answer)
 
     def _flush_text(self) -> None:
         """Flush the agent's accumulated speech into a single log row.
@@ -209,8 +210,8 @@ class RunEventRecorder:
         if had_questionnaire:
             self._save_event(
                 kind="Info",
-                title=QUESTIONNAIRE_NOTICE,
-                detail=QUESTIONNAIRE_NOTICE,
+                title=ui_text.QUESTIONNAIRE_NOTICE,
+                detail=ui_text.QUESTIONNAIRE_NOTICE,
             )
 
     def _save_event(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:

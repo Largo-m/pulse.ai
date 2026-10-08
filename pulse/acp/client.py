@@ -87,7 +87,7 @@ class AcpClient:
 
     def _send(self, payload: dict[str, Any]) -> None:
         if self._process is None or self._process.stdin is None:
-            raise RuntimeError("Processo ACP não iniciado")
+            raise RuntimeError("ACP process not started")
         self._process.stdin.write(json.dumps(payload) + "\n")
         self._process.stdin.flush()
 
@@ -105,12 +105,12 @@ class AcpClient:
         try:
             response_id = self._response_queue.get(timeout=self._timeout_seconds)
         except Empty as error:
-            raise TimeoutError(f"Timeout aguardando resposta de `{method}`") from error
+            raise TimeoutError(f"timed out waiting for a response to `{method}`") from error
 
         response = self._responses.pop(response_id, {})
         if "error" in response:
             error = response["error"]
-            raise RuntimeError(error.get("message", "Erro ACP desconhecido"))
+            raise RuntimeError(error.get("message", "unknown ACP error"))
         return response.get("result", {})
 
     def initialize(self) -> dict[str, Any]:
@@ -188,43 +188,43 @@ def probe_acp_connection(
             on_status(message)
 
     try:
-        status("Iniciando agente ACP…")
+        status("Starting the ACP agent…")
         client.start()
         status("Handshake initialize…")
         client.initialize()
-        status("Criando sessão…")
+        status("Creating a session…")
         session = client.new_session(cwd)
         session_id = session.get("sessionId")
         if not session_id:
             return AcpProbeResult(
                 success=False,
-                message="Sessão ACP não retornou sessionId",
+                message="ACP session returned no sessionId",
                 error="missing_session_id",
             )
 
         models = _extract_models(session)
-        status(f'Enviando prompt de teste: "{prompt_text}"…')
+        status(f'Sending the test prompt: "{prompt_text}"…')
         client.prompt(str(session_id), prompt_text)
         response_text = client.collect_message_text().strip()
 
         if not response_text:
             return AcpProbeResult(
                 success=False,
-                message="ACP respondeu sem conteúdo de mensagem",
+                message="ACP replied with no message content",
                 available_models=models,
                 error="empty_response",
             )
 
         return AcpProbeResult(
             success=True,
-            message="Conexão ACP validada",
+            message="ACP connection verified",
             response_text=response_text,
             available_models=models,
         )
     except (RuntimeError, TimeoutError, OSError) as error:
         return AcpProbeResult(
             success=False,
-            message="Falha no teste ACP",
+            message="ACP test failed",
             error=str(error),
         )
     finally:

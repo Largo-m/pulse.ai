@@ -123,6 +123,7 @@ def test_unknown_workflow_returns_404():
     client = TestClient(app, base_url="http://127.0.0.1")
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
+    assert response.json() == {"detail": "unknown workflow: nope"}
 
 
 def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
@@ -188,6 +189,22 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
 def test_control_endpoints_404_for_unknown_run():
     client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
     assert client.post("/api/runs/nao-existe/cancel").status_code == 404
+
+
+def test_an_unknown_run_is_reported_in_english_on_every_route():
+    """Errors are part of the API contract and, unlike screen copy, are in English;
+    a client logging the detail must read the same words on every route."""
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
+
+    responses = [
+        client.get("/api/runs/nao-existe"),
+        client.post("/api/runs/nao-existe/cancel"),
+        client.get("/api/runs/nao-existe/events"),
+    ]
+
+    assert [(response.status_code, response.json()) for response in responses] == [
+        (404, {"detail": "run not found"})
+    ] * 3
 
 
 def test_history_delete_endpoint(tmp_path: Path):
@@ -374,6 +391,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
         json={"prompt": "x", "resume_run_id": run_id},
     )
     assert again.status_code == 409
+    assert again.json() == {"detail": f"run is already running: {run_id}"}
     release.set()
 
 
@@ -479,3 +497,4 @@ def test_acp_probe_of_an_unknown_runtime_is_not_found(monkeypatch):
     response = client.post("/api/doctor/acp-probe", params={"runtime": "nope"})
 
     assert response.status_code == 404
+    assert response.json() == {"detail": "unknown runtime: nope"}

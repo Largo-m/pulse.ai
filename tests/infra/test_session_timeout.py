@@ -95,7 +95,7 @@ def test_a_dead_process_ends_the_wait_right_away():
     runner._process = _Dead()  # type: ignore[assignment]
 
     started = time.monotonic()
-    with pytest.raises(RuntimeError, match="encerrou"):
+    with pytest.raises(RuntimeError, match="^the agent process exited during `session/close`$"):
         runner._request("session/close", {"sessionId": "sess-1"})
     assert time.monotonic() - started < 5.0
 

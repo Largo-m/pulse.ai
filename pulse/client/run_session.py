@@ -8,6 +8,7 @@ import httpx
 
 from pulse.client.engine_client import EngineClient
 from pulse.client.protocol import PING, REPLAY_END
+from pulse.domain import ui_text
 
 DETACHED = -1
 
@@ -142,7 +143,7 @@ class EngineRunSession:
         if kind == "phase.error":
             error = getattr(self._stream, "error", None)
             if callable(error):
-                error(str(event.get("title", "Erro")), str(event.get("reason", "")))
+                error(str(event.get("title", ui_text.ERROR_TITLE)), str(event.get("reason", "")))
             return
         if kind == "phases.sync":
             apply = getattr(self._stream, "apply_phase_statuses", None)
@@ -196,7 +197,7 @@ class EngineRunSession:
             if message:
                 error = getattr(self._stream, "error", None)
                 if callable(error):
-                    error("Workflow falhou", str(message))
+                    error(ui_text.WORKFLOW_FAILED_TITLE, str(message))
             self._stream.finish()
             return
 
@@ -288,8 +289,8 @@ class EngineRunSession:
         if parsed is not None and callable(run_parsed):
             return run_parsed(parsed)
         self._emit_error(
-            "Questionário inválido",
-            "O agente pediu um questionário, mas as perguntas não puderam ser abertas.",
+            "Invalid questionnaire",
+            "The agent asked for a questionnaire, but its questions could not be parsed.",
         )
         return None
 

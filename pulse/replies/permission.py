@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pulse.domain import ui_text
 from pulse.replies.ask_question import format_option_label
 
 PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
@@ -23,20 +24,15 @@ _PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"}
 _READ_ONLY_KINDS = frozenset({"read", "search", "fetch", "think"})
 _WRITE_KINDS = frozenset({"edit", "delete", "move"})
 
-_PERMISSION_KIND_LABELS = {
-    "allow_once": "Permitir esta vez",
-    "allow_always": "Sempre permitir",
-    "reject_once": "Recusar",
-    "reject_always": "Sempre recusar",
-}
-
 
 def _permission_choice_label(option: dict[str, Any]) -> str:
     name = str(option.get("name") or option.get("label") or "").strip()
     if name:
         return name
     kind = str(option.get("kind", "")).lower().replace("-", "_")
-    return _PERMISSION_KIND_LABELS.get(kind, kind.replace("_", " ").strip() or "Opção")
+    return ui_text.PERMISSION_KIND_LABELS.get(
+        kind, kind.replace("_", " ").strip() or ui_text.OPTION_FALLBACK
+    )
 
 
 def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
@@ -54,8 +50,8 @@ def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
         index += 1
     if not choices:
         return [
-            ("allow-once", format_option_label(0, "Permitir esta vez")),
-            ("reject-once", format_option_label(1, "Recusar")),
+            ("allow-once", format_option_label(0, ui_text.ALLOW_ONCE)),
+            ("reject-once", format_option_label(1, ui_text.REJECT_ONCE)),
         ]
     return choices
 
@@ -69,7 +65,7 @@ def permission_prompt_text(permission: dict[str, Any], tool_call: dict[str, Any]
         if part and part not in parts:
             parts.append(part)
     if not parts:
-        return "O agente pede permissão para continuar."
+        return ui_text.PERMISSION_PROMPT_FALLBACK
     return "\n".join(parts)
 
 

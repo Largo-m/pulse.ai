@@ -419,6 +419,7 @@ Só tela e interação. Não executa workflow no próprio processo.
 | [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor |
 | [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe |
 | [`pulse/tui/state.py`](pulse/tui/state.py) | `CockpitState` — estado visual, só memória |
+| [`pulse/tui/strings.py`](pulse/tui/strings.py) | Todo texto visível da TUI, em português, num só módulo |
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
 | [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir de uma run gravada |
@@ -503,6 +504,7 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object, com os laços (`loops()`, `RepeatRule`, `Loop.next_round`), o protocolo de desfecho e os filhos de fan-out |
 | [`pulse/domain/outcome.py`](pulse/domain/outcome.py) | O bloco `pulse:outcome` e o seu parser estrito |
 | [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
+| [`pulse/domain/ui_text.py`](pulse/domain/ui_text.py) | O texto em português que o Pulse compõe fora da TUI para a tela (avisos do motor, menu de step bloqueado, rótulos de diálogo e de status); erros, exceções e logs ficam em inglês no código |
 | [`pulse/domain/ports.py`](pulse/domain/ports.py) | As portas do motor — `StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace` — e as implementações Null |
 | [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada, sobre `EnginePorts` |

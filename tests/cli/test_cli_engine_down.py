@@ -92,7 +92,7 @@ def test_daemon_start_failure_exits_with_an_error(monkeypatch, capsys, error: Ex
 
     assert run_daemon_command("start") == 1
 
-    assert capsys.readouterr().out == f"[pulse] Falha ao iniciar engine: {error}\n"
+    assert capsys.readouterr().out == f"[pulse] Failed to start the engine: {error}\n"
 
 
 def test_the_tui_opens_even_when_the_engine_does_not_start(monkeypatch, capsys):

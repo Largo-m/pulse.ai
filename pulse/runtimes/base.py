@@ -7,6 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from pulse.domain import ui_text
+
 
 @dataclass(frozen=True)
 class RuntimeCheck:
@@ -57,7 +59,7 @@ class AgentRuntime:
     """
 
     id: str = "generic"
-    label: str = "Agente ACP"
+    label: str = "ACP agent"
     binary: str = ""
     acp_args: tuple[str, ...] = ("acp",)
     acp_override: tuple[str, ...] = ()
@@ -68,7 +70,6 @@ class AgentRuntime:
     auth_method_label: str = ""
     install_hint: str = ""
     login_command: tuple[str, ...] = ()
-    login_label: str = ""
     interview_modes: tuple[str, ...] = ("agent", "plan", "default")
     execute_modes: tuple[str, ...] = ("agent", "default", "acceptEdits")
 
@@ -104,7 +105,7 @@ class AgentRuntime:
             return RuntimeCheck(
                 name=name,
                 status="fail",
-                message=f"Binário `{self.binary}` não encontrado no PATH",
+                message=f"Binary `{self.binary}` not found on PATH",
                 detail=self.install_hint or None,
             )
         completed = self.run_cli([found, "--version"])
@@ -112,14 +113,14 @@ class AgentRuntime:
             return RuntimeCheck(
                 name=name,
                 status="fail",
-                message=f"Falha ao executar `{self.binary} --version`",
+                message=f"Failed to run `{self.binary} --version`",
                 detail=self.install_hint or None,
             )
         version = (completed.stdout or completed.stderr).strip()
         return RuntimeCheck(
             name=name,
             status="ok",
-            message=f"Encontrado em {found}",
+            message=f"Found at {found}",
             detail=version or None,
         )
 
@@ -132,33 +133,40 @@ class AgentRuntime:
                     RuntimeCheck(
                         name=dependency,
                         status="fail",
-                        message=f"`{dependency}` não encontrado no PATH",
+                        message=f"`{dependency}` not found on PATH",
                         detail=self.install_hint or None,
                     )
                 )
             else:
                 results.append(
-                    RuntimeCheck(name=dependency, status="ok", message=f"Encontrado em {found}")
+                    RuntimeCheck(name=dependency, status="ok", message=f"Found at {found}")
                 )
         return results
 
     @property
+    def login_label(self) -> str:
+        """The onboarding action that opens this runtime's own login; empty without one."""
+        if not self.login_command:
+            return ""
+        return ui_text.run_login_label(" ".join(self.login_command))
+
+    @property
     def auth_check_name(self) -> str:
-        return f"Autenticação {self.label}"
+        return f"{self.label} authentication"
 
     def check_auth(self) -> RuntimeCheck:
         if self.auth_env_var and os.environ.get(self.auth_env_var, "").strip():
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="ok",
-                message=f"{self.auth_env_var} definida no ambiente",
+                message=f"{self.auth_env_var} set in the environment",
                 detail="api_key",
             )
         if self.find_binary() is None:
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="fail",
-                message=f"Sem {self.auth_env_var} e `{self.binary}` indisponível",
+                message=f"No {self.auth_env_var} and `{self.binary}` unavailable",
                 detail=self.auth_hint,
             )
         return self._check_auth_cli()
@@ -167,7 +175,7 @@ class AgentRuntime:
         return RuntimeCheck(
             name=self.auth_check_name,
             status="warn",
-            message="Autenticação não verificável",
+            message="Authentication cannot be verified",
             detail=self.auth_hint,
         )
 
@@ -175,9 +183,9 @@ class AgentRuntime:
     def auth_hint(self) -> str:
         parts = []
         if self.login_command:
-            parts.append(f"Execute `{' '.join(self.login_command)}`")
+            parts.append(f"Run `{' '.join(self.login_command)}`")
         if self.auth_env_var:
-            parts.append(f"ou exporte {self.auth_env_var}")
+            parts.append(f"or export {self.auth_env_var}")
         return " ".join(parts)
 
     def checks(self) -> list[RuntimeCheck]:
