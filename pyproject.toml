@@ -253,6 +253,27 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "Only the CLI opens the TUI"
+type = "forbidden"
+source_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.domain",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.replies",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.vcs",
+]
+forbidden_modules = ["pulse.tui"]
+
+[[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"
 type = "protected"
 protected_modules = ["pulse.store.factory"]

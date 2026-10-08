@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from pulse.domain.run import SETTLED, StepStatus
-from pulse.tui.status_labels import status_label
+from pulse.history.status_labels import status_label
 
 
 class HistoryStatus(str, Enum):

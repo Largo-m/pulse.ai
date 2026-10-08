@@ -56,7 +56,8 @@ lives in the package of its layer.
   `daemon/`; what both sides share lives in `domain/` (`domain/control.py`) or
   with its owner (`client/protocol.py`, `store/paths.py`). The import-linter
   contracts in `pyproject.toml` enforce this; their `ignore_imports` baseline
-  only shrinks.
+  only shrinks. Only `cli/` imports `tui/`: what a screen and a non-UI package
+  both need (status labels) lives with the non-UI owner.
 - **Ports & Adapters**: the domain depends on `StreamSink` / `PromptPort`
   ([`pulse/domain/ports.py`](pulse/domain/ports.py)), not on Textual or HTTP.
   New I/O needs a port first, then adapters (TUI, API, `Null*`).

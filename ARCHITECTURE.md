@@ -409,7 +409,6 @@ Só tela e interação. Não executa workflow no próprio processo.
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
 | [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir de uma run gravada |
-| [`pulse/tui/status_labels.py`](pulse/tui/status_labels.py) | Rótulo, cor e ícone de cada status, iguais em toda tela |
 | [`pulse/tui/brand.py`](pulse/tui/brand.py) | Banner e linha de pulso da home e da CLI |
 
 A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
@@ -514,6 +513,7 @@ enxergá-lo sem mudanças.
 | [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
 | [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |
 | [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
+| [`pulse/history/status_labels.py`](pulse/history/status_labels.py) | Rótulo, cor e ícone de cada status: os mesmos na tela e na busca do histórico |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
 | [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run |
@@ -626,12 +626,15 @@ mesmas perguntas apareceriam duas vezes.
 | Definição vir do banco | Definição vir de arquivo do pacote |
 | `replies/` parsear respostas | `domain/` ou `replies/` importar outro pacote do Pulse |
 | `store/db.py` carregar `store/factory/` | Qualquer outro módulo importar a semente |
+| `cli/` abrir a TUI; a TUI ler `history/` | Qualquer outro pacote importar `tui/` |
 
 As regras de import são contratos do import-linter (`[tool.importlinter]`
 no `pyproject.toml`), verificados por `lint-imports` e por
 `tests/architecture/test_import_contracts.py`. Cadeias indiretas anteriores ao
 contrato ficam em `ignore_imports`, cada uma com o motivo; entrada que deixa de
 existir quebra o check, então a lista só diminui.
+Os contratos que listam "todo pacote menos alguns" são conferidos contra as
+pastas de `pulse/`, então um pacote novo já nasce coberto.
 
 ---
 
