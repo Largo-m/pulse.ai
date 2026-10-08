@@ -20,6 +20,8 @@ jobs:
   test:
     name: pytest (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    # A hung test fails the job instead of holding a runner for hours.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -39,6 +41,7 @@ jobs:
   random-order:
     name: pytest in random order (3 runs)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -53,6 +56,7 @@ jobs:
   mutation:
     name: mutation score of the parsers
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -68,6 +72,7 @@ jobs:
   lint:
     name: lint and types
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -90,6 +95,7 @@ jobs:
   security:
     name: security scans
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
