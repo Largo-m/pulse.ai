@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from pulse.prompts.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
+from pulse.replies.ask_question import DEFAULT_QUESTIONNAIRE_TITLE
 
 _HEADER_PATTERN = re.compile(
     r"(?:^|\n)(Preciso de algumas informações[^\n]*|I need some information[^\n]*)",

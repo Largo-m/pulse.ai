@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import pulse.cli_daemon as cli_daemon
+import pulse.cli.daemon_command as cli_daemon
 import pulse.client.daemon_process as daemon_process
-import pulse.paths as paths
-from pulse.cli_daemon import run_daemon_command
+import pulse.store.paths as paths
+from pulse.cli.daemon_command import run_daemon_command
 
 
 def test_status_reports_a_stopped_daemon(monkeypatch, tmp_path: Path, capsys):

@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from pulse.daemon.runs import RunState
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.domain.run import (
     InvalidTransition,
     RunRecord,
@@ -13,7 +14,6 @@ from pulse.domain.run import (
     StepStatus,
     fan_out_child_id,
 )
-from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
 
 
 def _running(step_id: str = "one") -> StepRecord:

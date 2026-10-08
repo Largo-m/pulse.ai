@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pulse.config.project_config import find_project_root, init_project_config
 from pulse.config.resolved import resolve_config
-from pulse.paths import safe_cwd
+from pulse.store.paths import safe_cwd
 
 
 def run_config_command(

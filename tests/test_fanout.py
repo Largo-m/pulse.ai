@@ -345,8 +345,8 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
 
 
 def test_children_inherit_requires_outcome(tmp_path: Path):
+    from pulse.domain.workflow import StepDef
     from pulse.orchestrator.fanout import expand
-    from pulse.store.workflow_defs import StepDef
 
     step = StepDef(
         workflow_id="demo",

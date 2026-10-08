@@ -5,10 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from pulse.domain.workflow import AgentDef, StepDef, WorkflowDef
 from pulse.store.workflow_defs import (
-    AgentDef,
-    StepDef,
-    WorkflowDef,
     delete_workflow,
     get_agent,
     get_workflow,
@@ -68,7 +66,7 @@ def test_the_review_loop_runs_outside_the_spec_pipeline():
 
 def test_every_factory_step_renders_with_what_the_engine_offers():
     """A placeholder without a value is a `TemplateError` at run time, caught here first."""
-    from pulse.prompts.render import render
+    from pulse.orchestrator.render import render
 
     context = dict.fromkeys(
         (
@@ -387,9 +385,9 @@ def test_artifact_writers_do_not_run_with_deny_writes():
 
     The review phase exists to produce `reviews/round-NNN.md`; under the spec
     phases' policy the file would never reach disk or the artifacts pane. As
-    [pulse.prompts.permission] states, a step that writes is `ask` or `auto_approve`.
+    [pulse.replies.permission] states, a step that writes is `ask` or `auto_approve`.
     """
-    from pulse.prompts.permission import decide_permission
+    from pulse.replies.permission import decide_permission
 
     params = {
         "toolCall": {"kind": "write"},
@@ -413,7 +411,7 @@ def test_only_review_offers_skip():
     Label and engine must agree: `classify_outcome` maps the choice to `skipped`
     by substring, so a label without "Pular" would promise what the engine won't do.
     """
-    from pulse.prompts.approval import SKIP, classify_outcome
+    from pulse.replies.approval import SKIP, classify_outcome
 
     workflows = {item.id: item for item in list_workflows()}
     offering = [

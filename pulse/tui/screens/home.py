@@ -13,12 +13,12 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from pulse import __version__
-from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
 from pulse.config import global_config_exists
-from pulse.runtime.ready import is_pulse_ready
-from pulse.status_labels import status_color, status_icon
+from pulse.config.ready import is_pulse_ready
 from pulse.store.workflow_defs import list_workflows
+from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.tui.status_labels import status_color, status_icon
 
 
 def _home_brand() -> str:

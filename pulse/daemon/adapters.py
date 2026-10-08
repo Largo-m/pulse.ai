@@ -4,8 +4,8 @@ import time
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.prompts.permission import decide_permission
-from pulse.prompts.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
+from pulse.replies.permission import decide_permission
+from pulse.replies.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
 
 
 class ApiStreamSink:

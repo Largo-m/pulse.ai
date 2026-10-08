@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pulse.paths as paths
+import pulse.store.paths as paths
 
 
 def _point_at(monkeypatch, tmp_path: Path) -> None:

@@ -9,7 +9,7 @@ STATE_DIRNAME = ".pulse"
 def test_the_state_dir_is_named_in_a_single_module():
     """`~/.pulse` had two definitions (config and daemon) that could drift apart.
 
-    Every layer must read the location from `pulse/paths.py`; a second literal
+    Every layer must read the location from `pulse/store/paths.py`; a second literal
     would let the daemon write its socket where the client never looks.
     """
     package = Path(__file__).resolve().parent.parent / "pulse"
@@ -22,4 +22,4 @@ def test_the_state_dir_is_named_in_a_single_module():
         )
     )
 
-    assert definers == [Path("paths.py")]
+    assert definers == [Path("store/paths.py")]

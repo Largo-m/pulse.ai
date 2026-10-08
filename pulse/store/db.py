@@ -4,7 +4,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-from pulse.paths import GLOBAL_DB_FILE
+from pulse.store.paths import GLOBAL_DB_FILE
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS machine (

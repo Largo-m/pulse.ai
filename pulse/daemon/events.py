@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from queue import Empty, Queue
 from typing import Any
 
-from pulse.protocol import PING, REPLAY_END
+from pulse.client.protocol import PING, REPLAY_END
 
 
 @dataclass

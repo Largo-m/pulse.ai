@@ -9,7 +9,7 @@ import pytest
 
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import UnknownWorkflow, run_workflow
-from pulse.runtime.tty import is_cockpit_stream
+from pulse.orchestrator.tty import is_cockpit_stream
 from tests.conftest import make_workflow
 
 
@@ -107,7 +107,8 @@ def test_unknown_workflow_is_an_error(monkeypatch):
 
 
 def test_workflow_without_steps_does_not_start(monkeypatch):
-    from pulse.store.workflow_defs import WorkflowDef, save_workflow
+    from pulse.domain.workflow import WorkflowDef
+    from pulse.store.workflow_defs import save_workflow
 
     save_workflow(WorkflowDef(id="vazio", label="Vazio"))
     monkeypatch.setattr(engine, "is_interactive", lambda: False)

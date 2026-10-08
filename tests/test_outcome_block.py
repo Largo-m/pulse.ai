@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pulse.orchestrator.outcome import LoopSignal, OutcomeStatus, parse_outcome
+from pulse.domain.outcome import LoopSignal, OutcomeStatus, parse_outcome
 
 
 def _block(body: str) -> str:

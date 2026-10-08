@@ -1,5 +1,5 @@
-from pulse.prompts.approval import answer_needs_description
-from pulse.prompts.ask_question import (
+from pulse.replies.approval import answer_needs_description
+from pulse.replies.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     OTHER_OPTION_ID,
     build_ask_question_answers,
@@ -13,13 +13,13 @@ from pulse.prompts.ask_question import (
     resolve_question_progress,
     should_add_other_option,
 )
-from pulse.prompts.permission import (
+from pulse.replies.permission import (
     PermissionPolicy,
     permission_cancelled,
     permission_selected,
     pick_permission_option,
 )
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     TextQuestion,
     TextQuestionnaire,
     extract_questionnaire_block,

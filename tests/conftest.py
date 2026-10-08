@@ -2,9 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from pulse.domain.workflow import AgentDef, StepDef, WorkflowDef
 from pulse.store import runs as run_store
 from pulse.store.runs import RunStatus, StepRecord
-from pulse.store.workflow_defs import AgentDef, StepDef, WorkflowDef, save_agent, save_workflow
+from pulse.store.workflow_defs import save_agent, save_workflow
 
 
 @pytest.fixture(autouse=True)

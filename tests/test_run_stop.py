@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pulse.acp import session_runner as session_runner_module
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.runcontrol import RunControl
+from pulse.domain.control import RunControl
 
 
 def _runner(control: RunControl) -> tuple[AcpSessionRunner, list[dict]]:

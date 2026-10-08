@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from pulse import __version__
+from pulse.client.protocol import ENGINE_PROTOCOL
 from pulse.config.global_config import (
     load_global_config,
     update_global_defaults,
@@ -19,9 +20,8 @@ from pulse.config.resolved import resolve_config
 from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
-from pulse.paths import safe_cwd
-from pulse.protocol import ENGINE_PROTOCOL
 from pulse.runtimes import find_runtime
+from pulse.store.paths import safe_cwd
 
 TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
 

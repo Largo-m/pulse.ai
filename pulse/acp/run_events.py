@@ -11,7 +11,7 @@ from typing import Any
 from pulse.history.events import LogKind
 from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
-from pulse.prompts.text_questionnaire import QUESTIONNAIRE_NOTICE, strip_questionnaire_block
+from pulse.replies.text_questionnaire import QUESTIONNAIRE_NOTICE, strip_questionnaire_block
 
 
 class RunEventRecorder:

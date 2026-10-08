@@ -13,9 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
+from pulse.domain.control import RUN_STOPPED
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
-from pulse.runcontrol import RUN_STOPPED
 from pulse.store import runs as run_store
 from pulse.store.runs import RunStatus, StepRecord, StepStatus
 from pulse.tui.hydrate import _stamp_elapsed

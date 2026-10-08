@@ -10,9 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from pulse.domain.workflow import StepDef
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, fan_out_child_id
-from pulse.store.workflow_defs import StepDef
 
 BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 ITEM = re.compile(r"^[ \t>*-]*([^\s:—–-][^:—–]*?)[ \t]*[:—–-][ \t]*(\S.*)$")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pulse.prompts.ask_question import format_option_label
+from pulse.replies.ask_question import format_option_label
 
 PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
 

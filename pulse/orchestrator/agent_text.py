@@ -5,7 +5,7 @@ Everything else in the prompt comes from the user (`workflow_steps.prompt_templa
 
 from __future__ import annotations
 
-from pulse.prompts.approval import ADJUST, format_summary
+from pulse.replies.approval import ADJUST, format_summary
 
 _CONTINUATION = """\
 ## Continuação do step `{step_id}`

@@ -79,7 +79,7 @@ class PromptDock(Widget):
         """Map key → option index, read from the label shown on screen.
 
         Options are labelled `A)`, `B)`, `C)`
-        ([pulse.prompts.ask_question.format_option_label]); deriving keys from
+        ([pulse.replies.ask_question.format_option_label]); deriving keys from
         the label guarantees the key always matches the visible text. Labels
         without an `X)` prefix get no hotkey.
         """

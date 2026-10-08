@@ -13,8 +13,8 @@ from pulse.config.project_config import init_project_config, update_project_defa
 from pulse.config.resolved import resolve_config
 from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _branch_name, _prepare_workspace
-from pulse.paths import worktrees_dir
 from pulse.store import runs as run_store
+from pulse.store.paths import worktrees_dir
 from pulse.store.runs import StepRecord
 
 pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")

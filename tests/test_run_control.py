@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pulse.runcontrol import RUN_STOPPED, STOPPED, RunControl
+from pulse.domain.control import RUN_STOPPED, STOPPED, RunControl
 
 
 def test_stop_is_a_single_transition():

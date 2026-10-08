@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pulse.domain.workflow import WorkflowDef
 from pulse.store import runs as run_store
-from pulse.store.workflow_defs import WorkflowDef
 
 
 @dataclass(frozen=True)

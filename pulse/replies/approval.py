@@ -6,7 +6,7 @@ or cancel) to decide whether the next agent may run.
 
 from __future__ import annotations
 
-from pulse.prompts.ask_question import (
+from pulse.replies.ask_question import (
     ADJUST_WORDS,
     APPROVE_WORDS,
     CANCEL_WORDS,

@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from pulse.domain import run as run_model
+from pulse.domain.control import RUN_STOPPED, RunControl
 from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
-from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow, store_step
 

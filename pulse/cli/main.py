@@ -3,13 +3,13 @@ from __future__ import annotations
 import argparse
 
 from pulse import __version__
-from pulse.brand import BANNER, PULSE_LINE, PULSE_WAVE
-from pulse.cli_daemon import run_daemon_command
+from pulse.cli.daemon_command import run_daemon_command
 from pulse.client.engine_client import EngineClient
 from pulse.config import global_config_exists
 from pulse.config.commands import run_config_command
 from pulse.doctor import run_doctor
-from pulse.runtime.tty import is_interactive
+from pulse.orchestrator.tty import is_interactive
+from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 
 
 def _build_parser() -> argparse.ArgumentParser:

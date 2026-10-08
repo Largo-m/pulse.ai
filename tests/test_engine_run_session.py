@@ -192,7 +192,7 @@ def test_attach_does_not_reopen_a_question_already_answered():
     Otherwise returning to the cockpit reopened every question of the run and
     answered ids the daemon had already forgotten.
     """
-    from pulse.protocol import REPLAY_END
+    from pulse.client.protocol import REPLAY_END
 
     stream = MagicMock()
     prompt_handler = MagicMock()
@@ -214,7 +214,7 @@ def test_attach_does_not_reopen_a_question_already_answered():
 
 
 def test_attach_lets_the_screen_know_where_the_past_ends():
-    from pulse.protocol import REPLAY_END
+    from pulse.client.protocol import REPLAY_END
 
     stream = MagicMock()
     events = [

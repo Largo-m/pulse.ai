@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from pulse.client.engine_client import EngineClient
-from pulse.protocol import PING, REPLAY_END
+from pulse.client.protocol import PING, REPLAY_END
 
 DETACHED = -1
 
@@ -271,7 +271,7 @@ class EngineRunSession:
         self._client.answer_prompt(prompt_id, answer)
 
     def _handle_questionnaire(self, payload: dict[str, Any]) -> Any:
-        from pulse.prompts.text_questionnaire import (
+        from pulse.replies.text_questionnaire import (
             parse_text_questionnaire,
             questionnaire_from_payload,
         )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator.loops import Loop, find_loops
-from pulse.store.workflow_defs import StepDef, WorkflowDef
 
 
 def _workflow(*steps: tuple[str, str]) -> WorkflowDef:

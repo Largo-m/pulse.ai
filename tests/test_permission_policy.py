@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pulse.prompts.permission import decide_permission
+from pulse.replies.permission import decide_permission
 
 OPTIONS = [
     {"optionId": "always", "kind": "allow_always"},

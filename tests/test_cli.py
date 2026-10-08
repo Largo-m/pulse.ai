@@ -1,4 +1,4 @@
-from pulse.cli import _build_parser, main
+from pulse.cli.main import _build_parser, main
 
 
 def test_parser_accepts_init():
@@ -53,7 +53,7 @@ def test_main_dispatches_doctor(monkeypatch):
         captured["test_acp"] = test_acp
         return 0
 
-    monkeypatch.setattr("pulse.cli.run_doctor", fake_doctor)
+    monkeypatch.setattr("pulse.cli.main.run_doctor", fake_doctor)
     assert main(["doctor", "--test-acp", "--local"]) == 0
     assert captured["test_acp"] is True
 
@@ -72,7 +72,7 @@ def test_main_dispatches_config_init(monkeypatch):
         captured["workflow"] = workflow
         return 0
 
-    monkeypatch.setattr("pulse.cli.run_config_command", fake_config)
+    monkeypatch.setattr("pulse.cli.main.run_config_command", fake_config)
     assert main(["config", "init"]) == 0
     assert captured["action"] == "init"
     assert captured["workflow"] is None

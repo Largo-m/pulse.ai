@@ -1,4 +1,4 @@
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     extract_questionnaire_block,
     parse_text_questionnaire,
     questionnaire_from_payload,

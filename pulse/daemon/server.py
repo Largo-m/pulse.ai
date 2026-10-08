@@ -10,7 +10,7 @@ import uvicorn
 
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
-from pulse.paths import (
+from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,

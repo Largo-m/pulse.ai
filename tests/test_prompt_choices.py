@@ -2,18 +2,18 @@ import time
 
 import pytest
 
-from pulse.prompts.approval import (
+from pulse.replies.approval import (
     answer_needs_description,
     classify_outcome,
     picked_answers,
 )
-from pulse.prompts.ask_question import (
+from pulse.replies.ask_question import (
     build_question_choices,
     is_other_option,
     option_requires_description,
     should_add_other_option,
 )
-from pulse.prompts.text_questionnaire import TextQuestion
+from pulse.replies.text_questionnaire import TextQuestion
 from pulse.tui.adapters.prompt_bridge import PromptBridge, TextualPromptHandler
 
 
@@ -245,7 +245,7 @@ def test_english_approval_block_does_not_get_an_other_option():
 
 def test_a_choice_with_text_reaches_the_agent_as_adjust_with_the_reason(monkeypatch):
     """End to end: what the engine reads afterwards has the outcome and the guidance."""
-    from pulse.prompts.text_questionnaire import parse_text_questionnaire
+    from pulse.replies.text_questionnaire import parse_text_questionnaire
 
     block = (
         "```text\n"
@@ -285,7 +285,7 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
     """
     import threading
 
-    from pulse.prompts.text_questionnaire import parse_text_questionnaire
+    from pulse.replies.text_questionnaire import parse_text_questionnaire
     from pulse.tui.adapters.prompt_bridge import PromptKind
 
     questionnaire = parse_text_questionnaire(
@@ -333,12 +333,12 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
     ],
 )
 def test_typed_text_never_cancels_or_skips_the_step(answers: str) -> None:
-    from pulse.prompts.approval import CANCEL, SKIP, classify_outcome
+    from pulse.replies.approval import CANCEL, SKIP, classify_outcome
 
     assert classify_outcome(answers) not in {CANCEL, SKIP}
 
 
 def test_picked_skip_option_still_skips() -> None:
-    from pulse.prompts.approval import SKIP, classify_outcome
+    from pulse.replies.approval import SKIP, classify_outcome
 
     assert classify_outcome("→ C) Pular esta fase") == SKIP

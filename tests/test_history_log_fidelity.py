@@ -18,9 +18,9 @@ from pathlib import Path
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.history.events import LogKind
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
-from pulse.prompts.ask_question import build_ask_question_answers
-from pulse.prompts.permission import permission_selected
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.ask_question import build_ask_question_answers
+from pulse.replies.permission import permission_selected
+from pulse.replies.text_questionnaire import (
     QUESTIONNAIRE_NOTICE,
     format_questionnaire_answers,
     parse_text_questionnaire,

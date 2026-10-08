@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
-from pulse.runcontrol import RUN_STOPPED
+from pulse.domain.control import RUN_STOPPED
 
 
 def test_status_and_workflows():
@@ -378,7 +378,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
 
 
 def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
-    from pulse.protocol import REPLAY_END
+    from pulse.client.protocol import REPLAY_END
 
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")

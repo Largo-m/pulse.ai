@@ -12,13 +12,18 @@ from typing import Any
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.models import resolve_model_display_name
 from pulse.acp.run_events import RunEventRecorder
+from pulse.domain.control import RunControl
+from pulse.domain.ports import (
+    NullPromptPort,
+    NullStreamSink,
+    NullUserWaitListener,
+    UserWaitListener,
+)
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.ports import NullPromptPort, NullStreamSink, NullUserWaitListener, UserWaitListener
-from pulse.prompts.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.prompts.permission import PermissionPolicy, decide_permission
-from pulse.prompts.text_questionnaire import parse_text_questionnaire
-from pulse.runcontrol import RunControl
+from pulse.replies.approval import APPROVE, CANCEL, SKIP, classify_outcome
+from pulse.replies.permission import PermissionPolicy, decide_permission
+from pulse.replies.text_questionnaire import parse_text_questionnaire
 from pulse.runtimes import AgentRuntime, runtime_for_command
 
 # An agent that asks until no doubt is left needs room; the cap only stops an

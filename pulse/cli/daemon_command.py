@@ -3,7 +3,7 @@ from __future__ import annotations
 from pulse.client.active_runs import active_runs, describe
 from pulse.client.daemon_process import is_daemon_alive, stop_daemon
 from pulse.client.engine_client import EngineClient
-from pulse.paths import read_daemon_meta
+from pulse.store.paths import read_daemon_meta
 
 
 def run_daemon_command(action: str) -> int:

@@ -33,7 +33,7 @@ class _BlockingClient:
         self.closed = False
 
     def stream_events(self, run_id: str, *, after: int = 0):
-        from pulse.protocol import PING
+        from pulse.client.protocol import PING
 
         yield {"type": "phase.begin", "title": "Um"}
         while not self.closed:

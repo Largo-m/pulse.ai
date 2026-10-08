@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from pulse.domain.control import RUN_STOPPED, RunControl
 from pulse.orchestrator.engine import _release_step
-from pulse.runcontrol import RUN_STOPPED, RunControl
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.state import CockpitState

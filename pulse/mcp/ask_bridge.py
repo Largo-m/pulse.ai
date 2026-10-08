@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pulse.ports import NullPromptPort
+from pulse.domain.ports import NullPromptPort
 
 SOCKET_ENV = "PULSE_ASK_SOCKET"
 DEFAULT_SOCKET_TIMEOUT = 600.0
