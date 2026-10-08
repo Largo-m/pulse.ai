@@ -451,24 +451,42 @@ def test_an_open_question_blocks_run_keys_and_points_at_the_cited_artifact(monke
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: bool(cockpit.query(PromptDock)))
-            state = cockpit.state
-
-            assert state.selected_artifact_path == "spec.md"
-            assert state.follow_artifact is False
-            assert state.artifact_pane_open is False, "the question selects, the user opens"
-            for action in ("stop_run", "toggle_artifact_pane", "artifact_next"):
-                assert cockpit.check_action(action, ()) is False, action
-            state.focus_target = "stream"
-            assert cockpit.check_action("nav_down", ()) is False
-            state.focus_target = "phases"
-            assert cockpit.check_action("nav_down", ()) is True
-
-            await pilot.press("a")
-            await app.workers.wait_for_complete()
-            await _until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
-
-            assert answers == ["yes"]
-            assert list(cockpit.query(PromptDock)) == []
+            try:
+                await _answer_the_open_question(pilot, cockpit, answers)
+            finally:
+                # A failed assertion must fail the test, not leave the run's
+                # thread blocked on an unanswered question while the app exits.
+                cockpit.bridge.close()
 
     asyncio.run(run())
+
+
+async def _answer_the_open_question(pilot, cockpit: CockpitScreen, answers: list) -> None:
+    from textual.widgets import OptionList
+
+    app = pilot.app
+    await _until(pilot, lambda: bool(cockpit.query(PromptDock)))
+    # A key pressed before the dock holds focus goes to the cockpit and is lost.
+    dock = cockpit.query_one(PromptDock)
+    await _until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
+    state = cockpit.state
+
+    assert state.selected_artifact_path == "spec.md"
+    assert state.follow_artifact is False
+    assert state.artifact_pane_open is False, "the question selects, the user opens"
+    for action in ("stop_run", "toggle_artifact_pane", "artifact_next"):
+        assert cockpit.check_action(action, ()) is False, action
+    state.focus_target = "stream"
+    assert cockpit.check_action("nav_down", ()) is False
+    state.focus_target = "phases"
+    assert cockpit.check_action("nav_down", ()) is True
+
+    # Moving focus_target may have taken focus off the dock; hand it back first.
+    dock.focus_inner()
+    await _until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
+    await pilot.press("a")
+    await app.workers.wait_for_complete()
+    await _until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
+
+    assert answers == ["yes"]
+    assert list(cockpit.query(PromptDock)) == []
