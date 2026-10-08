@@ -20,7 +20,6 @@ from typing import Any
 from pulse import vcs
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config import ResolvedConfig, resolve_config
-from pulse.config.paths import worktrees_dir
 from pulse.doctor.checks import check_runtime_ready
 from pulse.orchestrator.cli_output import (
     print_workflow_banner,
@@ -39,6 +38,7 @@ from pulse.orchestrator.prompts import (
 )
 from pulse.orchestrator.turn import MenuChoice, TurnResult
 from pulse.orchestrator.waits import RunWaits
+from pulse.paths import worktrees_dir
 from pulse.ports import NullPromptPort, NullStreamSink
 from pulse.prompts.approval import format_summary
 from pulse.prompts.permission import PermissionPolicy

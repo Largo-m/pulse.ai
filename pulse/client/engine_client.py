@@ -11,7 +11,8 @@ from typing import Any
 
 import httpx
 
-from pulse.daemon.paths import (
+from pulse.daemon.protocol import ENGINE_PROTOCOL
+from pulse.paths import (
     DAEMON_LOG_FILE,
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
@@ -19,7 +20,6 @@ from pulse.daemon.paths import (
     ensure_global_dir,
     read_daemon_meta,
 )
-from pulse.daemon.protocol import ENGINE_PROTOCOL
 
 
 class EngineClient:

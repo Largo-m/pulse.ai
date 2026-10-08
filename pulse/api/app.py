@@ -14,13 +14,13 @@ from pulse.config.global_config import (
     load_global_config,
     update_global_defaults,
 )
-from pulse.config.paths import safe_cwd
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
+from pulse.paths import safe_cwd
 
 TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
 

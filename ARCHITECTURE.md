@@ -436,7 +436,7 @@ meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa
 pasta da Lixeira, onde o macOS nega até `getcwd()` — e toda run nova morria aí,
 antes do primeiro step. Por isso `run_daemon` faz `chdir` para `~/.pulse`, e
 quem ainda precisa perguntar "onde estamos?" usa
-[`safe_cwd`](pulse/config/paths.py), que cai no mesmo diretório em vez de
+[`safe_cwd`](pulse/paths.py), que cai no mesmo diretório em vez de
 levantar. Nada se perde: a run sempre roda com `cwd` explícito — o workspace que
 o cliente mandou, ou o worktree dela.
 

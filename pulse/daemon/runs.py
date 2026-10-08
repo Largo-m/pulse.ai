@@ -8,10 +8,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from pulse.config.paths import safe_cwd
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.orchestrator.engine import run_workflow
+from pulse.paths import safe_cwd
 from pulse.runcontrol import RunControl
 from pulse.store import runs as run_store
 from pulse.store.runs import RunStatus

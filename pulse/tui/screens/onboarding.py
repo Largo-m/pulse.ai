@@ -11,7 +11,6 @@ from textual.widgets.option_list import Option
 
 from pulse.acp.client import probe_acp_connection
 from pulse.config import (
-    GLOBAL_CONFIG_FILE,
     global_config_exists,
     init_project_config,
     load_global_config,
@@ -20,6 +19,7 @@ from pulse.config import (
 )
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
 from pulse.doctor.checks import run_agent_checks
+from pulse.paths import GLOBAL_CONFIG_FILE
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
 
 

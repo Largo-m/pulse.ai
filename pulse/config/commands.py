@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.config.paths import find_project_config_file, safe_cwd
-from pulse.config.project_config import init_project_config
+from pulse.config.project_config import find_project_root, init_project_config
 from pulse.config.resolved import resolve_config
+from pulse.paths import safe_cwd
 
 
 def run_config_command(
@@ -36,7 +36,7 @@ def _show(base: Path, workflow: str | None) -> int:
         f"({resolved.sources.get('workspace_dir', '')})"
     )
     print(f"  worktree           {'ligado' if resolved.use_worktree else 'desligado'}  (project)")
-    project = find_project_config_file(base)
+    project = find_project_root(base)
     if project is not None:
         print(f"  project_config     {project}")
     return 0

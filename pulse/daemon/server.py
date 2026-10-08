@@ -11,7 +11,8 @@ from pathlib import Path
 import uvicorn
 
 from pulse.api.app import create_app
-from pulse.daemon.paths import (
+from pulse.daemon.runs import RunManager
+from pulse.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
@@ -20,7 +21,6 @@ from pulse.daemon.paths import (
     read_daemon_meta,
     write_daemon_meta,
 )
-from pulse.daemon.runs import RunManager
 
 
 def is_daemon_alive() -> bool:

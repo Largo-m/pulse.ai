@@ -37,10 +37,6 @@ class GlobalConfig:
         return self.completed_at is not None
 
 
-def migrate_legacy_global_config() -> bool:
-    return False
-
-
 def global_config_exists(path: Path | None = None) -> bool:
     return load_global_config(path) is not None
 

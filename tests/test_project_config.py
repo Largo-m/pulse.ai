@@ -1,10 +1,8 @@
 from pathlib import Path
 
-from pulse.config.paths import (
-    find_project_config_file,
-)
 from pulse.config.project_config import (
     ensure_project_workflows,
+    find_project_root,
     init_project_config,
     load_project_config,
     project_config_exists,
@@ -36,7 +34,7 @@ def test_find_project_config_walks_up_from_subdir(tmp_path: Path):
     nested = tmp_path / "a" / "b"
     nested.mkdir(parents=True)
 
-    found = find_project_config_file(nested)
+    found = find_project_root(nested)
 
     assert found == tmp_path.resolve()
 
@@ -141,7 +139,7 @@ def test_ensure_project_workflows_keeps_the_overrides_the_user_set(tmp_path: Pat
     path = ensure_project_workflows(tmp_path)
     loaded = load_project_config(tmp_path)
 
-    assert path == find_project_config_file(tmp_path)
+    assert path == find_project_root(tmp_path)
     assert loaded is not None
     assert loaded.workflows["meu-fluxo"].agent == "cursor"
     assert loaded.workflows["meu-fluxo"].model == "Auto"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pulse.daemon.paths as paths
+import pulse.paths as paths
 from pulse.cli_daemon import run_daemon_command
 
 

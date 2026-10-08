@@ -9,11 +9,11 @@ from pathlib import Path
 import pytest
 
 from pulse import vcs
-from pulse.config.paths import worktrees_dir
 from pulse.config.project_config import init_project_config, update_project_defaults
 from pulse.config.resolved import resolve_config
 from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _branch_name, _prepare_workspace
+from pulse.paths import worktrees_dir
 from pulse.store import runs as run_store
 from pulse.store.runs import StepRecord
 

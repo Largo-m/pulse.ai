@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pulse.daemon.paths as paths
+import pulse.paths as paths
 
 
 def _point_at(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(paths, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(paths, "DAEMON_META_FILE", tmp_path / "daemon.json")
-    monkeypatch.setattr(paths, "DAEMON_PID_FILE", tmp_path / "daemon.pid")
     monkeypatch.setattr(paths, "DAEMON_SOCKET", tmp_path / "daemon.sock")
 
 

@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from pulse.config.paths import global_state_dir, safe_cwd
 from pulse.config.project_config import find_project_root, init_project_config
 from pulse.config.resolved import resolve_config
 from pulse.daemon.server import _anchor_cwd
+from pulse.paths import global_state_dir, safe_cwd
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ def test_find_project_root_without_readable_cwd(unreadable_cwd: None) -> None:
 def test_daemon_anchors_in_its_own_state_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The engine leaves its launcher's directory as soon as it starts."""
     home = tmp_path / "estado"
-    monkeypatch.setattr("pulse.daemon.paths.GLOBAL_DIR", home)
+    monkeypatch.setattr("pulse.paths.GLOBAL_DIR", home)
     origin = tmp_path / "projeto-que-vai-sumir"
     origin.mkdir()
     monkeypatch.chdir(origin)

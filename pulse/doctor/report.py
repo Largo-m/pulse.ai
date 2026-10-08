@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from pulse.acp.client import probe_acp_connection
 from pulse.config import (
-    GLOBAL_CONFIG_FILE,
     global_config_exists,
     load_global_config,
     load_project_config,
 )
-from pulse.config.paths import safe_cwd
 from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
+from pulse.paths import GLOBAL_CONFIG_FILE, safe_cwd
 from pulse.runtimes import get_runtime
 
 

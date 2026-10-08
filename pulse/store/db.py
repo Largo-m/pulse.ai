@@ -4,6 +4,8 @@ import os
 import sqlite3
 from pathlib import Path
 
+from pulse.paths import GLOBAL_DB_FILE
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS machine (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -178,8 +180,6 @@ def default_db_path() -> Path:
     override = os.environ.get("PULSE_DB")
     if override:
         return Path(override)
-    from pulse.config.paths import GLOBAL_DB_FILE
-
     return GLOBAL_DB_FILE
 
 

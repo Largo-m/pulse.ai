@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.config import global_config_exists, load_global_config, project_config_exists
-from pulse.config.paths import safe_cwd
+from pulse.paths import safe_cwd
 
 
 def is_pulse_ready(cwd: Path | None = None) -> bool:
