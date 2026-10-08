@@ -13,7 +13,6 @@ from typing import Any
 
 GLOBAL_DIR = Path.home() / ".pulse"
 GLOBAL_DB_FILE = GLOBAL_DIR / "pulse.db"
-GLOBAL_CONFIG_FILE = GLOBAL_DB_FILE
 DAEMON_SOCKET = GLOBAL_DIR / "daemon.sock"
 DAEMON_META_FILE = GLOBAL_DIR / "daemon.json"
 DAEMON_LOG_FILE = GLOBAL_DIR / "daemon.log"

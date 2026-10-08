@@ -9,7 +9,7 @@ from pulse.config import (
 from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
 from pulse.runtimes import get_runtime
-from pulse.store.paths import GLOBAL_CONFIG_FILE, safe_cwd
+from pulse.store.paths import GLOBAL_DB_FILE, safe_cwd
 
 
 def _status_icon(status: str) -> str:
@@ -50,7 +50,7 @@ def run_doctor(*, test_acp: bool = False) -> int:
                 CheckResult(
                     name="Config global",
                     status="ok",
-                    message=f"Config em {GLOBAL_CONFIG_FILE}",
+                    message=f"Config em {GLOBAL_DB_FILE}",
                     detail=global_detail,
                 )
             )
