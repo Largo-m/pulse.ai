@@ -76,21 +76,7 @@ def expand(
         step_id = fan_out_child_id(step.step_id, item.id)
         label = item.label or item.id
         position = base_position + index
-        units.append(
-            (
-                StepDef(
-                    workflow_id=step.workflow_id,
-                    step_id=step_id,
-                    position=position,
-                    label=label,
-                    agent_id=step.agent_id,
-                    prompt_template=step.prompt_template,
-                    requires_approval=step.requires_approval,
-                    requires_outcome=step.requires_outcome,
-                ),
-                item,
-            )
-        )
+        units.append((step.for_item(step_id=step_id, label=label, position=position), item))
         children.append(
             StepRecord(step_id=step_id, position=position, label=label, agent_id=step.agent_id)
         )

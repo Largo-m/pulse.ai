@@ -481,13 +481,13 @@ TUI lê valores do domínio, mas **não** chama o orquestrador para executar.
 | Arquivo | Função |
 |---------|--------|
 | [`pulse/domain/run.py`](pulse/domain/run.py) | Agregado da run: `RunRecord`/`StepRecord`, status e transições com guarda, sem I/O |
-| [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object |
+| [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object, com os laços (`loops()`, `RepeatRule`, `Loop.next_round`), o protocolo de desfecho e os filhos de fan-out |
 | [`pulse/domain/outcome.py`](pulse/domain/outcome.py) | O bloco `pulse:outcome` e o seu parser estrito |
 | [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
 | [`pulse/domain/ports.py`](pulse/domain/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
 | [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada |
-| [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Repetição de trecho e fan-out de itens |
+| [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |
 | [`pulse/orchestrator/agent_text.py`](pulse/orchestrator/agent_text.py) | Os dois textos que o próprio Pulse escreve |
 | [`pulse/orchestrator/render.py`](pulse/orchestrator/render.py) | Engine `{{placeholder}}` |
 

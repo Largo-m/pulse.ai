@@ -289,9 +289,9 @@ O contador (`run_steps.rounds`) vai no step que **abre** a faixa, não no que a
 fecha: é ele que tem um artefato por volta para a pessoa abrir, e no outro o
 número seria ruído. Quem está fora da faixa fica em `rounds = 1`.
 
-`repeat_from` que aponte para a frente, ou para um id que não existe, é ignorado
-em silêncio: um laço que não fecha travaria a run, e rodar a lista reta é o
-comportamento menos pior.
+`repeat_from` que aponte para a frente ou para um id que não existe, e
+`repeat_max` menor que 2, são ignorados em silêncio: um laço que não fecha
+travaria a run, e rodar a lista reta é o comportamento menos pior.
 
 O teto não é opcional. Sem ele, um agente que sempre pede mais uma rodada deixa
 a run sem fim, e o motor não tem como julgar se a próxima volta vale a pena.

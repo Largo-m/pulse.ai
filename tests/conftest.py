@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from pulse.domain.workflow import AgentDef, StepDef, WorkflowDef
+from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
 from pulse.store.runs import RunStatus, StepRecord
 from pulse.store.workflow_defs import save_agent, save_workflow
@@ -46,8 +46,9 @@ def make_workflow(
                 requires_approval=requires_approval,
                 fan_out=step_id in fan_out,
                 requires_outcome=requires_outcome,
-                repeat_from=repeat[1] if repeat and repeat[0] == step_id else "",
-                repeat_max=repeat[2] if repeat and repeat[0] == step_id else 0,
+                repeat=RepeatRule(back_to=repeat[1], max_rounds=repeat[2])
+                if repeat and repeat[0] == step_id
+                else None,
             )
             for index, (step_id, step_label) in enumerate(entries, start=1)
         ),
