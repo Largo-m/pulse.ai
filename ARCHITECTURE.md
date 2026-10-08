@@ -204,6 +204,11 @@ sessão, para ele destravar o que estiver ao alcance dele; o que sobra vira
 a entrega é que não aconteceu. `requires_outcome = 0` desliga o protocolo por
 step e devolve o comportamento antigo.
 
+O parser é estrito: o corpo do bloco não contém outra cerca e a cerca de
+fechamento termina a linha. Assim uma cerca `pulse:outcome` aberta e citada de um
+arquivo não engole o bloco real do agente; bloco malformado conta como ausente
+(`tests/architecture/test_prompt_injection.py`).
+
 **3. A lista de itens do fan-out**
 ([`pulse/orchestrator/fanout.py`](pulse/orchestrator/fanout.py)).
 
@@ -442,7 +447,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS; ancora o cwd em `~/.pulse` |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); ancora o cwd em `~/.pulse` |
 | [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas. `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |

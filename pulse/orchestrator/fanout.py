@@ -13,7 +13,10 @@ from dataclasses import dataclass
 from pulse.domain.run import RunRecord, StepRecord, fan_out_child_id
 from pulse.domain.workflow import StepDef
 
-BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+# Same fence rule as the outcome block ([pulse.domain.outcome.BLOCK]).
+BLOCK = re.compile(
+    r"```pulse:items[ \t]*\n((?:(?!```).)*)```[ \t]*(?:\n|$)", re.DOTALL | re.IGNORECASE
+)
 ITEM = re.compile(r"^[ \t>*-]*([^\s:—–-][^:—–]*?)[ \t]*[:—–-][ \t]*(\S.*)$")
 
 MAX_ITEMS = 40

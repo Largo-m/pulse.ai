@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
+import socket
 import sys
 import threading
 from pathlib import Path
@@ -19,6 +21,10 @@ from pulse.store.paths import (
     write_daemon_meta,
 )
 
+SOCKET_MODE = 0o600
+# Masks every permission bit SOCKET_MODE does not grant.
+_SOCKET_UMASK = 0o777 & ~SOCKET_MODE
+
 
 def _anchor_cwd() -> None:
     """Anchor the daemon in `~/.pulse` instead of the launcher's directory.
@@ -31,6 +37,30 @@ def _anchor_cwd() -> None:
         os.chdir(ensure_global_dir())
     except OSError:
         pass
+
+
+def bind_private_socket(path: Path) -> socket.socket:
+    """The daemon's Unix socket, connectable only by the user who started it.
+
+    Whoever connects can start runs and answer their questions (AGENTS.md §6.1).
+    uvicorn's own `bind_socket` makes the socket 0666 before anyone could tighten
+    it, so Pulse binds it under a umask that keeps it private from the first
+    instant. Changing the umask is process-wide; this runs before any server
+    thread starts.
+    """
+    with contextlib.suppress(FileNotFoundError):
+        path.unlink()
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    previous = os.umask(_SOCKET_UMASK)
+    try:
+        server.bind(str(path))
+    except OSError:
+        server.close()
+        raise
+    finally:
+        os.umask(previous)
+    os.chmod(path, SOCKET_MODE)
+    return server
 
 
 def run_daemon(
@@ -49,13 +79,7 @@ def run_daemon(
     config_tcp = uvicorn.Config(app, host=host, port=port, log_level="warning")
     config_uds = uvicorn.Config(app, uds=str(sock), log_level="warning")
     tcp_socket = config_tcp.bind_socket()
-    if sock.exists():
-        try:
-            sock.unlink()
-        except OSError:
-            pass
-    uds_socket = config_uds.bind_socket()
-    os.chmod(sock, 0o600)
+    uds_socket = bind_private_socket(sock)
     write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock)
 
     def _cleanup(*_args: object) -> None:

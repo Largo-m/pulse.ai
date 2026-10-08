@@ -11,7 +11,11 @@ import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-BLOCK = re.compile(r"```pulse:outcome[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+# The body never holds a fence and the closing fence ends its line, so a stray
+# opener quoted from a file cannot run on and swallow the agent's real block.
+BLOCK = re.compile(
+    r"```pulse:outcome[ \t]*\n((?:(?!```).)*)```[ \t]*(?:\n|$)", re.DOTALL | re.IGNORECASE
+)
 FIELD = re.compile(
     r"^[ \t>*-]*(status|reason|needs|motivo|precisa|next|proximo|próximo)[ \t]*:[ \t]*(.*)$",
     re.IGNORECASE,
