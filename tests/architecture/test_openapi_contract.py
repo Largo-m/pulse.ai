@@ -7,7 +7,7 @@ from pathlib import Path
 
 from pulse.api.app import create_app
 
-CONTRACT = Path(__file__).resolve().parents[1] / "contracts" / "openapi.yaml"
+CONTRACT = Path(__file__).resolve().parents[2] / "contracts" / "openapi.yaml"
 _PATH = re.compile(r"^  (/\S+):\s*$")
 _METHOD = re.compile(r"^    (get|post|put|patch|delete):\s*$")
 

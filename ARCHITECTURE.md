@@ -420,6 +420,8 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (UDS preferido; TCP fallback); pode auto-iniciar o daemon |
 | [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria (ou **anexa**) → escuta SSE → responde `prompt.request` → devolve exit code |
 | [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
+| [`pulse/client/daemon_process.py`](pulse/client/daemon_process.py) | O processo do daemon visto de fora: está vivo? parar — pelo arquivo de meta, sem importar o servidor |
+| [`pulse/protocol.py`](pulse/protocol.py) | `ENGINE_PROTOCOL` e os eventos de controle do stream; módulo neutro que cliente e daemon leem |
 
 ### 3.4 Engine — daemon (composition root)
 
@@ -610,12 +612,19 @@ mesmas perguntas apareceriam duas vezes.
 
 | Pode | Não deve |
 |------|----------|
-| TUI chamar `pulse/client/` | TUI importar `orchestrator/` ou `acp/` para executar |
+| TUI chamar `pulse/client/` | TUI ou `client/` importar `orchestrator/`, `acp/` ou `daemon/` |
 | Engine chamar `orchestrator/`, `acp/`, `config/` | Domínio importar Textual / widgets |
 | Motor sequenciar steps | Motor interpretar o que o agente produziu |
 | Motor ler o desfecho da aprovação | Motor esperar artefato com nome conhecido |
 | Definição vir do banco | Definição vir de arquivo do pacote |
 | `prompts/` parsear respostas | `prompts/` depender de UI |
+| `store/db.py` carregar `store/factory/` | Qualquer outro módulo importar a semente |
+
+As três regras de import são contratos do import-linter (`[tool.importlinter]`
+no `pyproject.toml`), verificados por `lint-imports` e por
+`tests/architecture/test_import_contracts.py`. Cadeias indiretas anteriores ao
+contrato ficam em `ignore_imports`, cada uma com o motivo; entrada que deixa de
+existir quebra o check, então a lista só diminui.
 
 ---
 
@@ -650,7 +659,8 @@ pytest
 ```
 
 Duas invariantes que valem checar depois de mexer no pacote (o
-`tests/test_package_invariants.py` as verifica no `pytest` e no CI):
+`tests/architecture/test_factory_seed.py` as verifica no `pytest` e no CI, junto
+com os contratos de import, o OpenAPI, o limite de linhas e os links da doc):
 
 ```bash
 # arquivo não-Python só na semente de fábrica

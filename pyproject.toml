@@ -23,6 +23,7 @@ dev = [
     "ruff>=0.16",
     "mypy>=2.0",
     "vulture>=2.16",
+    "import-linter>=2.15",
     "pre-commit>=4.0",
 ]
 
@@ -194,9 +195,44 @@ source = ["pulse"]
 
 [tool.coverage.report]
 # Measured when the gate landed; each phase raises it, never lowers it.
-fail_under = 76.6
+fail_under = 76.8
 precision = 2
 
 [tool.vulture]
 paths = ["pulse"]
 min_confidence = 80
+
+# Architecture fitness functions (AGENTS.md §2.1, §2.2); run by `lint-imports`
+# and by tests/architecture/test_import_contracts.py.
+[tool.importlinter]
+root_package = "pulse"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "TUI and client are thin: they never import the engine"
+type = "forbidden"
+source_modules = ["pulse.tui", "pulse.client"]
+forbidden_modules = ["pulse.orchestrator", "pulse.acp", "pulse.daemon"]
+# Baseline: indirect chains that predate the contract; an entry that stops
+# matching fails the check, so this list can only shrink.
+ignore_imports = [
+    # Settings and onboarding still list models by spawning ACP locally;
+    # the fix is a models route in the daemon.
+    "pulse.config.model_catalog -> pulse.acp.client",
+    # Lazy import inside `model_request`, which only the session runner calls;
+    # the fix is moving model-id parsing out of `acp/`.
+    "pulse.runtimes.base -> pulse.acp.models",
+    "pulse.runtimes.claude -> pulse.acp.models",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain stays free of UI and web frameworks"
+type = "forbidden"
+source_modules = ["pulse.domain", "pulse.orchestrator"]
+forbidden_modules = ["textual", "fastapi", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Only store/db.py loads the factory seed"
+type = "protected"
+protected_modules = ["pulse.store.factory"]
+allowed_importers = ["pulse.store.db"]

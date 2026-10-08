@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-PACKAGE = Path(__file__).resolve().parent.parent / "pulse"
+PACKAGE = Path(__file__).resolve().parents[2] / "pulse"
 FACTORY = PACKAGE / "store" / "factory"
 DOMAIN_VOCABULARY = re.compile(
     r"\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase", re.IGNORECASE
