@@ -49,7 +49,7 @@ def test_acp_client_initialize_and_session():
     )
 
     with patch("pulse.acp.client.subprocess.Popen", return_value=_make_process(stdout_text)):
-        client = AcpClient(["agent", "acp"], timeout_seconds=5)
+        client = AcpClient(["agent", "acp"], cwd=".", timeout_seconds=5)
         client.start()
         client.initialize()
         session = client.new_session("/workspace/repo")

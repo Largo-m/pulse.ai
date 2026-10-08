@@ -97,7 +97,7 @@ def _missing_binary(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _started(process: FakeProcess) -> AcpClient:
     """A client wired to `process` with its read loop already drained, on this thread."""
-    client = AcpClient(["agent", "acp"], timeout_seconds=5)
+    client = AcpClient(["agent", "acp"], cwd=".", timeout_seconds=5)
     client._process = process  # type: ignore[assignment]  # duck-typed Popen
     client._read_stdout()
     return client
@@ -129,7 +129,7 @@ def test_noise_and_foreign_notifications_are_ignored_by_the_read_loop():
 
 
 def test_the_read_loop_without_a_process_does_nothing():
-    client = AcpClient(["agent", "acp"])
+    client = AcpClient(["agent", "acp"], cwd=".")
 
     client._read_stdout()
 
@@ -152,7 +152,7 @@ def test_an_error_reply_without_a_message_still_raises():
 
 
 def test_a_silent_agent_times_out_naming_the_request():
-    client = AcpClient(["agent", "acp"], timeout_seconds=0.0)
+    client = AcpClient(["agent", "acp"], cwd=".", timeout_seconds=0.0)
     client._process = FakeProcess()  # type: ignore[assignment]  # duck-typed Popen
 
     with pytest.raises(TimeoutError, match="session/new"):
@@ -161,11 +161,11 @@ def test_a_silent_agent_times_out_naming_the_request():
 
 def test_sending_before_start_is_an_error():
     with pytest.raises(RuntimeError, match="not started"):
-        AcpClient(["agent", "acp"]).prompt("sess-1", "hi")
+        AcpClient(["agent", "acp"], cwd=".").prompt("sess-1", "hi")
 
 
 def test_close_terminates_an_agent_that_does_not_exit_and_survives_a_broken_pipe():
-    client = AcpClient(["agent", "acp"])
+    client = AcpClient(["agent", "acp"], cwd=".")
     process = FakeProcess(hangs=True, fail_stdin_close=True)
     client._process = process  # type: ignore[assignment]  # duck-typed Popen
 
@@ -176,7 +176,7 @@ def test_close_terminates_an_agent_that_does_not_exit_and_survives_a_broken_pipe
 
 
 def test_close_before_start_is_a_no_op():
-    client = AcpClient(["agent", "acp"])
+    client = AcpClient(["agent", "acp"], cwd=".")
 
     client.close()
 
