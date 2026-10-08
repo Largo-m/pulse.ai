@@ -50,8 +50,8 @@ jobs:
         run: ruff format --check .
       - name: mypy
         run: mypy
-      - name: package invariants (AGENTS.md §2.2)
-        run: pytest -q tests/test_package_invariants.py
+      - name: architecture invariants (AGENTS.md §2)
+        run: pytest -q tests/architecture
       # Advisory until the baseline is paid down; they report but never block.
       - name: complexity C901 (advisory)
         continue-on-error: true

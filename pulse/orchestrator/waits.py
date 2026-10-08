@@ -13,7 +13,7 @@ from pulse.store import runs as run_store
 
 
 class RunWaits:
-    """[pulse.ports.UserWaitListener] that pauses the run and charges the wait to the step."""
+    """[pulse.domain.ports.UserWaitListener] pausing the run and charging the wait to the step."""
 
     def __init__(self, run: run_store.RunRecord) -> None:
         self._run = run

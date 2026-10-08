@@ -9,7 +9,7 @@ from pulse.history.tool_detail import (
     extract_paths,
     merge_tool_update,
 )
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     QUESTIONNAIRE_NOTICE,
     QUESTIONNAIRE_START,
     extract_questionnaire_block,

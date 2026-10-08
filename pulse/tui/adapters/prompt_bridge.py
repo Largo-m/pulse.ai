@@ -6,8 +6,8 @@ from enum import Enum
 from queue import Empty, Queue
 from typing import Any
 
-from pulse.prompts.approval import answer_needs_description
-from pulse.prompts.ask_question import (
+from pulse.replies.approval import answer_needs_description
+from pulse.replies.ask_question import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
     OTHER_OPTION_ID,
@@ -21,7 +21,7 @@ from pulse.prompts.ask_question import (
     plan_prompt_text,
     resolve_question_progress,
 )
-from pulse.prompts.permission import (
+from pulse.replies.permission import (
     PermissionPolicy,
     build_permission_choices,
     decide_permission,
@@ -29,7 +29,7 @@ from pulse.prompts.permission import (
     permission_prompt_text,
     permission_selected,
 )
-from pulse.prompts.text_questionnaire import (
+from pulse.replies.text_questionnaire import (
     TextQuestion,
     TextQuestionnaire,
     format_questionnaire_answers,

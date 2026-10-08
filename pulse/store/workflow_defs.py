@@ -6,46 +6,11 @@ There is no catalog in code; factory definitions are seeded by
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store.db import connect, default_db_path
-
-
-@dataclass(frozen=True)
-class AgentDef:
-    id: str
-    label: str
-    runtime: str = ""
-    model: str = ""
-    permission_policy: str = ""
-    instructions: str = ""
-
-
-@dataclass(frozen=True)
-class StepDef:
-    workflow_id: str
-    step_id: str
-    position: int
-    label: str
-    agent_id: str
-    prompt_template: str
-    requires_approval: bool
-    fan_out: bool = False
-    requires_outcome: bool = True
-    repeat_from: str = ""
-    repeat_max: int = 0
-
-
-@dataclass(frozen=True)
-class WorkflowDef:
-    id: str
-    label: str
-    description: str = ""
-    is_default: bool = False
-    default_prompt: str = ""
-    steps: tuple[StepDef, ...] = ()
 
 
 def _agent(row: Any) -> AgentDef:
@@ -70,8 +35,7 @@ def _step(row: Any) -> StepDef:
         requires_approval=bool(row["requires_approval"]),
         fan_out=bool(row["fan_out"]),
         requires_outcome=bool(row["requires_outcome"]),
-        repeat_from=str(row["repeat_from"] or ""),
-        repeat_max=int(row["repeat_max"] or 0),
+        repeat=RepeatRule.from_columns(str(row["repeat_from"] or ""), int(row["repeat_max"] or 0)),
     )
 
 
@@ -202,8 +166,8 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
                     int(step.requires_approval),
                     int(step.fan_out),
                     int(step.requires_outcome),
-                    step.repeat_from,
-                    int(step.repeat_max),
+                    step.repeat.back_to if step.repeat else "",
+                    step.repeat.max_rounds if step.repeat else 0,
                 )
                 for index, step in enumerate(workflow.steps, start=1)
             ],

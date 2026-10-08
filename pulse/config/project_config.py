@@ -7,9 +7,9 @@ from pathlib import Path
 
 from pulse.config.agents import AgentConfig, WorkflowConfig
 from pulse.config.global_config import PERMISSION_POLICIES
-from pulse.paths import safe_cwd
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
+from pulse.store.paths import safe_cwd
 
 DEFAULT_PROJECT_WORKFLOWS: dict[str, WorkflowConfig] = {}
 

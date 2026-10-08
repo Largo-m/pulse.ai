@@ -13,7 +13,7 @@ from textual.widgets.option_list import Option
 from pulse.client.active_runs import active_run_ids
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import LIVE_STATUSES, HistoryItem
-from pulse.status_labels import LABEL_WIDTH, status_color
+from pulse.history.status_labels import LABEL_WIDTH, status_color
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 

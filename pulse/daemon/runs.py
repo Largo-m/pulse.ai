@@ -10,10 +10,10 @@ from typing import Any
 
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.domain.control import RunControl
 from pulse.orchestrator.engine import run_workflow
-from pulse.paths import safe_cwd
-from pulse.runcontrol import RunControl
 from pulse.store import runs as run_store
+from pulse.store.paths import safe_cwd
 from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow, list_workflows
 

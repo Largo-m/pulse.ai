@@ -6,8 +6,8 @@ from pathlib import Path
 from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
-from pulse.paths import safe_cwd
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, find_runtime, get_runtime
+from pulse.store.paths import safe_cwd
 
 _DEFAULT_RUNTIME = get_runtime(DEFAULT_RUNTIME_ID)
 
