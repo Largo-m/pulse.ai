@@ -14,12 +14,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from pulse.domain.ports import WorkspaceError
+
 TIMEOUT = 15.0
 
 MAX_BRANCH_ATTEMPTS = 20
 
 
-class GitError(RuntimeError):
+class GitError(WorkspaceError):
     """A failed git command whose result cannot be ignored."""
 
 

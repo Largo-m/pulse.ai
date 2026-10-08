@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
@@ -126,6 +127,128 @@ class RunRepository(Protocol):
 
     def artifacts(self, run_id: str) -> list[str]:
         """Paths the agents wrote during the run, relative to where it worked."""
+        ...
+
+
+class PhaseContinuation(Protocol):
+    """The prompt after the user answered the approval questionnaire with anything but approve."""
+
+    def __call__(self, *, phase_summary: str, questionnaire_answers: str, outcome: str) -> str: ...
+
+
+class PromptContinuation(Protocol):
+    """The next prompt in the same ACP session, from the turn so far; empty ends the step."""
+
+    def __call__(self, *, result: JsonObject, turn: int) -> str: ...
+
+
+@dataclass(frozen=True)
+class AgentProfile:
+    """What a step's agent runs with: the user's config over the agent definition.
+
+    `permission_policy` stays text here; the session parses it at its edge and
+    falls back to asking, never to allowing.
+    """
+
+    agent_id: str
+    model: str | None
+    permission_policy: str
+    instructions: str = ""
+
+
+@runtime_checkable
+class AgentProfiles(Protocol):
+    def profile(self, agent_id: str) -> AgentProfile: ...
+
+
+@runtime_checkable
+class AgentSession(Protocol):
+    """The agent process a run talks to; every step opens its own session in it.
+
+    One step's session never carries over to the next: the next step only gets
+    the summary the engine forwards.
+    """
+
+    @property
+    def prompts(self) -> PromptPort:
+        """Where the engine asks its own questions, so they count as user waits."""
+        ...
+
+    @property
+    def last_session_id(self) -> str: ...
+
+    def bind_run(self, run_id: str, waits: UserWaitListener) -> None: ...
+
+    def open(self, cwd: Path) -> None:
+        """Start the agent in `cwd`, known only once the run has a place to work."""
+        ...
+
+    def close(self) -> None: ...
+
+    def revive(self) -> bool:
+        """Restart a dead or hung agent; `True` when it had to."""
+        ...
+
+    def use_agent(self, profile: AgentProfile) -> None: ...
+
+    def run_isolated_phase(
+        self,
+        *,
+        workflow: str,
+        phase_label: str,
+        initial_prompt: str,
+        preferred_model: str | None = None,
+        build_continuation: PhaseContinuation | None = None,
+        phase_id: str = "",
+    ) -> JsonObject:
+        """A step that ends in the approval questionnaire."""
+        ...
+
+    def run_isolated_prompt(
+        self,
+        *,
+        workflow: str,
+        phase_label: str,
+        prompt_text: str,
+        preferred_model: str | None = None,
+        phase_id: str = "",
+        build_continuation: PromptContinuation | None = None,
+    ) -> JsonObject:
+        """A step that ends when the agent ends its turn."""
+        ...
+
+
+class WorkspaceError(RuntimeError):
+    """The run could not get a place to work: a worktree that would not open."""
+
+
+@runtime_checkable
+class Workspace(Protocol):
+    """The project a run works on, and the per-run worktrees it may open from it.
+
+    `root` stays the run's identity (config and history resolve by it); a
+    worktree only changes where the agent writes.
+    """
+
+    @property
+    def root(self) -> Path: ...
+
+    def is_repo(self) -> bool: ...
+
+    def current_branch(self) -> str:
+        """Empty on a detached HEAD or outside a repository."""
+        ...
+
+    def has_branch(self, branch: str) -> bool: ...
+
+    def worktree_exists(self, path: str) -> bool: ...
+
+    def attach_worktree(self, run_id: str, branch: str) -> Path:
+        """Reopen the run's worktree on a branch it already owns."""
+        ...
+
+    def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
+        """Open the run's worktree on a new branch; the name gets a suffix if taken."""
         ...
 
 

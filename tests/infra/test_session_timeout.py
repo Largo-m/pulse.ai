@@ -134,5 +134,5 @@ def test_retry_after_a_timeout_restarts_a_process_that_is_alive_but_mute():
     runner.initialize = lambda: restarted.append("initialize")  # type: ignore[method-assign]
     runner.authenticate = lambda: restarted.append("authenticate")  # type: ignore[method-assign]
 
-    assert runner.ensure_process() is True
+    assert runner.revive() is True
     assert restarted == ["close", "start", "initialize", "authenticate"]

@@ -91,8 +91,8 @@ class _Runner:
     def close(self) -> None:
         self.closed = True
 
-    def use_agent(self, agent_id: str, policy: str) -> None:
-        self.agents.append(agent_id)
+    def use_agent(self, profile) -> None:
+        self.agents.append(profile.agent_id)
 
     def run_isolated_phase(self, *, initial_prompt: str, **_kwargs) -> dict:
         self.sent.append(initial_prompt)
@@ -126,7 +126,7 @@ class _Runner:
             raise result
         return result
 
-    def ensure_process(self) -> bool:
+    def revive(self) -> bool:
         self.revivals += 1
         return True
 

@@ -6,6 +6,18 @@ from pulse.replies.ask_question import format_option_label
 
 PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
 
+_POLICIES: dict[str, PermissionPolicy] = {
+    "ask": "ask",
+    "auto_approve": "auto_approve",
+    "deny_writes": "deny_writes",
+}
+
+
+def parse_policy(value: str) -> PermissionPolicy:
+    """The policy a config value names; anything else asks, since asking is never unsafe."""
+    return _POLICIES.get(value.strip(), "ask")
+
+
 _PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"})
 
 _READ_ONLY_KINDS = frozenset({"read", "search", "fetch", "think"})

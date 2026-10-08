@@ -22,7 +22,7 @@ from pulse.config import ResolvedConfig, resolve_config
 from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
-from pulse.domain.ports import NullPromptPort, NullStreamSink, PromptPort, StreamSink
+from pulse.domain.ports import AgentProfile, NullPromptPort, NullStreamSink, PromptPort, StreamSink
 from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator.agent_text import (
@@ -38,17 +38,10 @@ from pulse.orchestrator.render import TemplateError, render
 from pulse.orchestrator.turn import MenuChoice, TurnResult
 from pulse.orchestrator.waits import RunWaits
 from pulse.replies.approval import format_summary
-from pulse.replies.permission import PermissionPolicy
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
 from pulse.store.workflow_defs import get_agent, get_workflow
-
-_POLICIES: dict[str, PermissionPolicy] = {
-    "ask": "ask",
-    "auto_approve": "auto_approve",
-    "deny_writes": "deny_writes",
-}
 
 
 class UnknownWorkflow(ValueError):
@@ -569,9 +562,16 @@ def _activate_agent(
     Agent `instructions` are inlined into the prompt so they work with any runtime.
     """
     resolved = resolve_config(workspace=workspace, pulse_agent=step.agent_id)
-    runner.use_agent(step.agent_id, _POLICIES.get(resolved.permission_policy, "ask"))
     definition = get_agent(step.agent_id)
     instructions = definition.instructions.strip() if definition is not None else ""
+    runner.use_agent(
+        AgentProfile(
+            agent_id=step.agent_id,
+            model=resolved.model or fallback_model,
+            permission_policy=resolved.permission_policy,
+            instructions=instructions,
+        )
+    )
     return resolved.model or fallback_model, instructions
 
 
@@ -668,7 +668,7 @@ def _revive_session(runner: AcpSessionRunner) -> None:
     Retrying on a dead session would just fail again.
     """
     try:
-        if runner.ensure_process():
+        if runner.revive():
             _notify(runner, "Sessão do agente reiniciada")
     except (RuntimeError, TimeoutError, OSError) as error:
         _notify(runner, f"Não consegui reiniciar a sessão do agente: {error}")

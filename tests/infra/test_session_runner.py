@@ -85,3 +85,28 @@ def test_session_runner_handles_ask_question_request():
     assert result["stopReason"] == "end_turn"
     assert '"answers"' in sent
     assert '"questionId"' in sent
+
+
+def test_the_runner_is_the_agent_session_adapter():
+    from pulse.domain.ports import AgentSession
+
+    assert isinstance(AcpSessionRunner(["agent", "acp"], cwd="/tmp"), AgentSession)
+
+
+def test_open_starts_the_agent_where_the_run_works(tmp_path):
+    """The engine learns the worktree after the session is built; the agent must start there."""
+    handshake = "\n".join(
+        json.dumps({"jsonrpc": "2.0", "id": index, "result": {"protocolVersion": 1}})
+        for index in (1, 2)
+    )
+    with patch(
+        "pulse.acp.session_runner.subprocess.Popen",
+        return_value=_make_process(handshake + "\n"),
+    ) as popen:
+        runner = AcpSessionRunner(
+            ["agent", "acp"], cwd="/elsewhere", timeout_seconds=5, enable_mcp_ask=False
+        )
+        runner.open(tmp_path)
+        runner.close()
+
+    assert popen.call_args.kwargs["cwd"] == str(tmp_path)

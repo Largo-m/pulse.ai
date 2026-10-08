@@ -11,6 +11,7 @@ import copy
 from collections.abc import Sequence
 from pathlib import Path
 
+from pulse.domain.ports import AgentProfile, WorkspaceError
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus, utc_now
 
 
@@ -79,3 +80,78 @@ class InMemoryRunRepository:
         """The single stored run, as the database would return it."""
         (run,) = self._runs.values()
         return copy.deepcopy(run)
+
+
+class FakeWorkspace:
+    """[pulse.domain.ports.Workspace] with branches and worktrees in memory, no git."""
+
+    def __init__(self, root: Path, *, repo: bool = True, branch: str = "main") -> None:
+        self._root = root
+        self._repo = repo
+        self._branch = branch if repo else ""
+        self.branches: set[str] = {branch} if repo else set()
+        self.worktrees: dict[Path, str] = {}
+
+    @property
+    def root(self) -> Path:
+        return self._root
+
+    def is_repo(self) -> bool:
+        return self._repo
+
+    def current_branch(self) -> str:
+        return self._branch
+
+    def has_branch(self, branch: str) -> bool:
+        return branch in self.branches
+
+    def worktree_exists(self, path: str) -> bool:
+        return bool(path) and Path(path) in self.worktrees
+
+    def attach_worktree(self, run_id: str, branch: str) -> Path:
+        if not self.has_branch(branch):
+            raise WorkspaceError(f"branch {branch} does not exist")
+        target = self._target(run_id)
+        self.worktrees[target] = branch
+        return target
+
+    def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
+        if not self._repo:
+            raise WorkspaceError(f"{self._root} is not a repository")
+        name, attempt = branch, 2
+        while name in self.branches:
+            name, attempt = f"{branch}-{attempt}", attempt + 1
+        self.branches.add(name)
+        target = self._target(run_id)
+        self.worktrees[target] = name
+        return target, name
+
+    def lose_worktree(self, path: Path) -> None:
+        """The user deleted the folder; the branch stays."""
+        del self.worktrees[path]
+
+    def _target(self, run_id: str) -> Path:
+        return self._root.parent / "worktrees" / run_id
+
+
+class FixedAgentProfiles:
+    """[pulse.domain.ports.AgentProfiles] answering the same model and policy for every agent."""
+
+    def __init__(
+        self,
+        *,
+        model: str | None = "auto",
+        policy: str = "ask",
+        instructions: dict[str, str] | None = None,
+    ) -> None:
+        self._model = model
+        self._policy = policy
+        self._instructions = instructions or {}
+
+    def profile(self, agent_id: str) -> AgentProfile:
+        return AgentProfile(
+            agent_id=agent_id,
+            model=self._model,
+            permission_policy=self._policy,
+            instructions=self._instructions.get(agent_id, ""),
+        )

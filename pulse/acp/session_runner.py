@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, cast
 
@@ -14,9 +15,12 @@ from pulse.acp.models import resolve_model_display_name
 from pulse.acp.run_events import RunEventRecorder
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
+    AgentProfile,
     NullPromptPort,
     NullStreamSink,
     NullUserWaitListener,
+    PhaseContinuation,
+    PromptContinuation,
     PromptPort,
     StreamSink,
     UserWaitListener,
@@ -24,7 +28,7 @@ from pulse.domain.ports import (
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.replies.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.replies.permission import PermissionPolicy, decide_permission
+from pulse.replies.permission import PermissionPolicy, decide_permission, parse_policy
 from pulse.replies.text_questionnaire import parse_text_questionnaire
 from pulse.runtimes import AgentRuntime, runtime_for_command
 
@@ -213,8 +217,7 @@ class AcpSessionRunner(RunEventRecorder):
         phase_label: str,
         initial_prompt: str,
         preferred_model: str | None = None,
-        build_continuation: Callable[..., str] | None = None,
-        continuation_kwargs: dict[str, Any] | None = None,
+        build_continuation: PhaseContinuation | None = None,
         phase_id: str = "",
     ) -> dict[str, Any]:
         if phase_id:
@@ -282,7 +285,6 @@ class AcpSessionRunner(RunEventRecorder):
                     phase_summary=phase_summary,
                     questionnaire_answers=answers_text,
                     outcome=outcome,
-                    **dict(continuation_kwargs or {}),
                 )
 
             phase_result["approved"] = approved
@@ -303,7 +305,7 @@ class AcpSessionRunner(RunEventRecorder):
         preferred_model: str | None = None,
         agent_mode: bool = True,
         phase_id: str = "",
-        build_continuation: Callable[..., str] | None = None,
+        build_continuation: PromptContinuation | None = None,
         max_turns: int = MAX_PROMPT_TURNS,
     ) -> dict[str, Any]:
         """Run the step in its own session, allowing continuation turns.
@@ -371,7 +373,14 @@ class AcpSessionRunner(RunEventRecorder):
         self._reader = threading.Thread(target=self._read_stdout, daemon=True)
         self._reader.start()
 
-    def ensure_process(self) -> bool:
+    def open(self, cwd: Path) -> None:
+        """Start the agent where the run works, then handshake and log in."""
+        self._cwd = str(cwd)
+        self.start()
+        self.initialize()
+        self.authenticate()
+
+    def revive(self) -> bool:
         """Restart the agent process if it is no longer alive.
 
         Returns `True` when a restart was needed, so retrying a step whose
@@ -640,12 +649,9 @@ class AcpSessionRunner(RunEventRecorder):
         """The prompt port as the engine must use it: every question it asks is a user wait."""
         return cast(PromptPort, self._prompt_handler)
 
-    def set_permission_policy(self, policy: PermissionPolicy) -> None:
-        self._permission_policy = policy
-
-    def use_agent(self, agent_id: str, policy: PermissionPolicy) -> None:
-        self._pulse_agent = agent_id
-        self._permission_policy = policy
+    def use_agent(self, profile: AgentProfile) -> None:
+        self._pulse_agent = profile.agent_id
+        self._permission_policy = parse_policy(profile.permission_policy)
 
     def _activate_session(self, session_id: str) -> None:
         self._tool_payloads.clear()
