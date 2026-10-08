@@ -2,6 +2,10 @@ openapi: 3.0.3
 info:
   title: Pulse Engine API
   version: 0.1.0
+  description: >-
+    Local clients only. Any request carrying an `Origin` header (a browser) is
+    refused with 403 before routing, and `Host` must be 127.0.0.1, localhost or
+    pulse (400 otherwise). See docs/adr/0003-listeners-locais-recusam-navegador.md.
 paths:
   /api/status:
     get:

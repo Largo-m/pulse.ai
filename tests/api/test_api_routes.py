@@ -6,6 +6,7 @@ without a client noticing.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -171,3 +172,24 @@ def test_an_unexpected_failure_is_a_500_with_its_message(monkeypatch):
     response = client.get("/api/runs")
 
     assert (response.status_code, response.json()) == (500, {"detail": "store unreadable"})
+
+
+def test_an_unexpected_failure_leaves_its_traceback_in_the_daemon_log(monkeypatch, caplog):
+    """The client only sees the message; whoever debugs the daemon needs the stack."""
+    manager = RunManager()
+
+    def broken() -> list[dict[str, object]]:
+        raise RuntimeError("store unreadable")
+
+    monkeypatch.setattr(manager, "list_runs", broken)
+    client = TestClient(
+        create_app(manager), base_url="http://127.0.0.1", raise_server_exceptions=False
+    )
+
+    with caplog.at_level(logging.ERROR, logger="pulse.api.app"):
+        client.get("/api/runs")
+
+    [record] = caplog.records
+    assert record.getMessage() == "GET /api/runs failed"
+    assert record.exc_info is not None
+    assert str(record.exc_info[1]) == "store unreadable"

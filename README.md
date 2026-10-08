@@ -30,6 +30,9 @@ pulse-engine                  # foreground (= python -m pulse.daemon serve)
 pulse-engine --host 127.0.0.1 --port 8787
 ```
 
+`--host` só aceita endereço de loopback: a API não tem autenticação e recusa
+requests de navegador ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)).
+
 ## Runtimes suportados
 
 Um *runtime* é o backend que executa um Pulse agent. Cada um declara binário,

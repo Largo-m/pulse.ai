@@ -448,11 +448,12 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); ancora o cwd em `~/.pulse` |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); recusa `--host` fora de loopback; ancora o cwd em `~/.pulse` |
 | [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas. `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
-| [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, handler de erro e os routers abaixo |
+| [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
+| [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
 | [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, workflows/runs/prompts, histórico; `deps.py` entrega o `RunManager` |
 
 O daemon **não** usa o diretório de quem o iniciou. Ele sobe destacado e ficaria
@@ -463,6 +464,12 @@ quem ainda precisa perguntar "onde estamos?" usa
 [`safe_cwd`](pulse/store/paths.py), que cai no mesmo diretório em vez de
 levantar. Nada se perde: a run sempre roda com `cwd` explícito — o workspace que
 o cliente mandou, ou o worktree dela.
+
+Os dois transportes atendem só clientes locais que não são navegador: request
+com `Origin` recebe `403` e `Host` precisa ser local. Um POST `no-cors` de uma
+página não tem preflight — CORS só esconderia a resposta, a rota rodaria. O
+bridge MCP `AskQuestion` segue a mesma regra
+([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)).
 
 #### API (`/api`)
 

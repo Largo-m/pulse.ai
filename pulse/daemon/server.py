@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import os
 import signal
 import socket
@@ -22,6 +23,8 @@ from pulse.store.paths import (
 )
 
 SOCKET_MODE = 0o600
+USAGE_ERROR = 2
+LOCALHOST = "localhost"
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
 
@@ -102,6 +105,15 @@ def run_daemon(
         clear_daemon_meta(pid)
 
 
+def is_loopback(host: str) -> bool:
+    if host == LOCALHOST:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "serve":
@@ -119,5 +131,9 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
             continue
         i += 1
+    # The TCP API is unauthenticated; off loopback anyone on the network could drive runs.
+    if not is_loopback(host):
+        sys.stderr.write(f"pulse-engine: refusing to listen on non-loopback host {host!r}\n")
+        return USAGE_ERROR
     run_daemon(host=host, port=port)
     return 0
