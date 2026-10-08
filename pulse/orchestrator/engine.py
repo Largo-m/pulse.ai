@@ -38,7 +38,7 @@ from pulse.orchestrator.cli_output import (
     print_workflow_result,
 )
 from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
-from pulse.orchestrator.loops import close_loop, find_loops, repeat_loop
+from pulse.orchestrator.loops import close_loop, repeat_loop
 from pulse.orchestrator.render import TemplateError, render
 from pulse.orchestrator.tty import is_cockpit_stream, is_interactive
 from pulse.orchestrator.turn import MenuChoice, TurnResult
@@ -290,7 +290,7 @@ def _execute(
         runner.authenticate()
         _sync_steps(runner, run)
 
-        loops = find_loops(definition)
+        loops = definition.loops()
         index = 0
         while index < len(definition.steps):
             definition_step = definition.steps[index]
@@ -458,8 +458,7 @@ def _attempt_step(
         prompt_text = f"{instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
 
-    declares_outcome = step.requires_outcome and not step.requires_approval
-    if declares_outcome:
+    if step.declares_outcome:
         prompt_text += outcome_protocol()
 
     try:
@@ -486,7 +485,7 @@ def _attempt_step(
                 prompt_text=prompt_text,
                 preferred_model=model,
                 phase_id=step.step_id,
-                build_continuation=_unblock_continuation(step) if declares_outcome else None,
+                build_continuation=_unblock_continuation(step) if step.declares_outcome else None,
             )
     except Exception as error:  # noqa: BLE001
         _fail(run, record)
@@ -522,11 +521,11 @@ def _attempt_step(
         return None, turn.stop_reason or "o agente não concluiu o step"
 
     repeats = False
-    if declares_outcome:
+    if step.declares_outcome:
         declared = parse_outcome(turn.summary)
         if not declared.delivered:
             return _block(run, record, _blocked_reason(declared))
-        repeats = bool(step.repeat_from) and declared.repeats
+        repeats = step.repeat is not None and declared.repeats
         if may_close and declared.closes:
             return _settle(run, record, cockpit, LoopSignal.CLOSE)
 

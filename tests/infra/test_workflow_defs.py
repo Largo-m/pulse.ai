@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pulse.domain.workflow import AgentDef, StepDef, WorkflowDef
+from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store.workflow_defs import (
     delete_workflow,
     get_agent,
@@ -58,7 +58,7 @@ def test_the_review_loop_runs_outside_the_spec_pipeline():
     assert [step.agent_id for step in review.steps] == ["review", "review-fix"]
     assert [step.requires_approval for step in review.steps] == [True, False]
     fix = review.steps[1]
-    assert (fix.repeat_from, fix.repeat_max) == ("review", 3)
+    assert fix.repeat == RepeatRule(back_to="review", max_rounds=3)
     for step in review.steps:
         assert ".pulse/reviews/" in step.prompt_template
         assert "<slug>/reviews/" not in step.prompt_template
@@ -438,18 +438,69 @@ def test_merge_layer_is_a_capped_loop():
     """
     steps = {step.step_id: step for step in get_workflow("new-issue").steps}
 
-    assert steps["review-fix"].repeat_from == "review"
-    assert steps["review-fix"].repeat_max == 3
+    assert steps["review-fix"].repeat == RepeatRule(back_to="review", max_rounds=3)
     assert steps["review"].position < steps["review-fix"].position
     repeating = [
-        step.step_id for workflow in list_workflows() for step in workflow.steps if step.repeat_from
+        step.step_id for workflow in list_workflows() for step in workflow.steps if step.repeat
     ]
     assert repeating == ["review-fix", "review-fix"]
 
     for workflow_id in ("new-issue", "review"):
         steps = {step.step_id: step for step in get_workflow(workflow_id).steps}
-        assert steps["review-fix"].repeat_max == 3
+        assert steps["review-fix"].repeat == RepeatRule(back_to="review", max_rounds=3)
         assert "repeats" in steps["review"].prompt_template.lower()
         assert "next: repeat" in steps["review-fix"].prompt_template
         assert "next: close" in steps["review"].prompt_template
         assert "next: close" not in steps["review-fix"].prompt_template
+
+
+def _looping_workflow(repeat: RepeatRule | None) -> WorkflowDef:
+    save_agent(AgentDef(id="tester", label="Tester"))
+    return WorkflowDef(
+        id="looping",
+        label="Looping",
+        steps=tuple(
+            StepDef(
+                workflow_id="looping",
+                step_id=step_id,
+                position=position,
+                label=step_id,
+                agent_id="tester",
+                prompt_template="{{user_prompt}}",
+                requires_approval=False,
+                repeat=repeat if step_id == "fix" else None,
+            )
+            for position, step_id in enumerate(("review", "fix"), start=1)
+        ),
+    )
+
+
+def test_a_repeat_rule_survives_a_save_and_a_load():
+    """The rule is two columns in SQLite and one value in the definition."""
+    rule = RepeatRule(back_to="review", max_rounds=3)
+    save_workflow(_looping_workflow(rule))
+
+    loaded = get_workflow("looping")
+
+    assert loaded is not None
+    assert [step.repeat for step in loaded.steps] == [None, rule]
+
+
+def test_a_stored_rule_that_cannot_loop_loads_as_no_loop():
+    """A hand-edited `repeat_max` below two used to be ignored by the engine; it still is."""
+    from pulse.store.db import connect, default_db_path
+
+    save_workflow(_looping_workflow(RepeatRule(back_to="review", max_rounds=3)))
+    connection = connect(default_db_path())
+    connection.execute(
+        "UPDATE workflow_steps SET repeat_max = 1 WHERE workflow_id = ? AND step_id = ?",
+        ("looping", "fix"),
+    )
+    connection.commit()
+    connection.close()
+
+    loaded = get_workflow("looping")
+
+    assert loaded is not None
+    assert [step.repeat for step in loaded.steps] == [None, None]
+    assert loaded.loops() == {}
