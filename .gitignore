@@ -15,3 +15,4 @@ coverage.xml
 .mypy_cache/
 .ruff_cache/
 .import_linter_cache/
+mutants/

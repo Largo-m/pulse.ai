@@ -26,6 +26,7 @@ dev = [
     "mypy>=2.0",
     "vulture>=2.16",
     "import-linter>=2.15",
+    "mutmut>=3.3",
     "pre-commit>=4.0",
 ]
 
@@ -100,10 +101,11 @@ disallow_any_decorated = true
 
 [tool.coverage.run]
 source = ["pulse"]
+branch = true
 
 [tool.coverage.report]
 # Measured when the gate landed; each phase raises it, never lowers it.
-fail_under = 84.3
+fail_under = 93.0
 precision = 2
 
 [tool.vulture]
@@ -192,3 +194,23 @@ name = "Only store/db.py loads the factory seed"
 type = "protected"
 protected_modules = ["pulse.store.factory"]
 allowed_importers = ["pulse.store.db"]
+
+# Mutation testing of the parsers that read agent text (AGENTS.md §5.1, §6.1):
+# `mutmut run`, `mutmut export-cicd-stats`, then `python scripts/mutation_gate.py --min 80`.
+[tool.mutmut]
+source_paths = ["pulse/"]
+only_mutate = [
+    "pulse/domain/outcome.py",
+    "pulse/orchestrator/fanout.py",
+    "pulse/orchestrator/render.py",
+    "pulse/replies/*",
+]
+pytest_add_cli_args = ["-p", "no:randomly", "-p", "no:cacheprovider"]
+# The prompt-injection corpus lives with the security-audit skill.
+also_copy = [".claude/skills/security-audit/tools/prompt-injection-tester/"]
+pytest_add_cli_args_test_selection = [
+    "tests/domain",
+    "tests/orchestrator",
+    "tests/replies",
+    "tests/architecture/test_prompt_injection.py",
+]

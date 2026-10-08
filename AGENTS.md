@@ -180,9 +180,9 @@ Good docstrings state the contract and the reason, like the ones in
 
 - **Code judo over rearranging.** Prefer the reframing that deletes branches,
   flags or layers over one that moves complexity around.
-- **File size**: no file crosses **1000 lines**. `orchestrator/engine.py`,
-  `tui/state.py` and `acp/session_runner.py` are close — extract a focused
-  module (as `loops.py` / `fanout.py` were) before adding to them.
+- **File size**: no file crosses **700 lines**. When one gets close, extract a
+  focused module (as `loops.py`, `menus.py`, `step_turns.py` and
+  `artifact_tab.py` were) before adding to it.
   `tests/architecture/test_file_size.py` enforces it; its exception list caps
   each oversized file at its current size and only shrinks.
 - **No spaghetti growth**: no one-off booleans, nullable modes or special cases
@@ -269,21 +269,28 @@ depend on the factory seed.
 pip install -e ".[dev]" && pre-commit install   # once per clone
 
 pytest tests/<package>/      # nearest tests first while iterating
-pytest --cov                 # whole suite + coverage floor, must be green
+pytest --cov                 # whole suite + branch coverage floor, must be green
+coverage report --include="pulse/domain/*" --fail-under=90
 ruff check . && ruff format --check .
 mypy
 vulture                      # dead code
 lint-imports                 # import contracts with the offending chains (also run by pytest)
+mutmut run && mutmut export-cicd-stats && python scripts/mutation_gate.py --min 80
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
-the suite three more times in random order, plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
+the suite three more times in random order, the parsers' mutation score,
+plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
 must be green to merge. Complexity (`C901`, at most 10 per function) is part of
 `ruff check`, and `vulture` blocks too: split a function or delete dead code
 instead of suppressing them.
 
-- **Coverage floor** is `fail_under` in `pyproject.toml`. Each phase raises
-  it; never lower it.
+- **Coverage floor** is `fail_under` in `pyproject.toml`, measured on
+  branches; `pulse/domain/` must stay at 90% or more. Each phase raises the
+  floor; never lower it.
+- **Mutation score**: the parsers that read agent text (`[tool.mutmut]` in
+  `pyproject.toml`) must kill at least 80% of mutmut's mutants. A surviving
+  mutant is a behavior no test pins: add the test, don't widen the exclusions.
 - **No baseline exceptions.** ruff `per-file-ignores` hold only the policy
   entries (tests, modules that write to the terminal) and mypy has no
   `disable_error_code` overrides; `tests/architecture/test_lint_baseline.py`

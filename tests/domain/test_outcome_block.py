@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pulse.domain.outcome import LoopSignal, OutcomeStatus, parse_outcome
+import pytest
+
+from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 
 
 def _block(body: str) -> str:
@@ -115,3 +117,38 @@ def test_a_closing_fence_must_end_its_line():
         OutcomeStatus.MISSING
     )
     assert parse_outcome("```pulse:outcome\nstatus: done\n```  \nafter").delivered
+
+
+def test_lines_that_are_not_fields_do_not_end_the_block():
+    assert parse_outcome(_block("Summary of the work\n\nstatus: done")).delivered
+
+
+def test_the_unaccented_portuguese_next_field_steers_the_loop():
+    assert parse_outcome(_block("status: done\nproximo: repetir")).next is LoopSignal.REPEAT
+
+
+@pytest.mark.parametrize("body", ["reason: forgot the status", "status:", "status:   "])
+def test_a_block_without_a_status_is_no_outcome(body: str):
+    """Silence is not success, and an empty status is silence."""
+    assert parse_outcome(_block(body)) == Outcome(status=OutcomeStatus.MISSING)
+
+
+def test_a_bare_block_keeps_reason_and_needs_empty():
+    assert parse_outcome(_block("status: blocked")) == Outcome(status=OutcomeStatus.BLOCKED)
+
+
+def test_an_unknown_status_blocks_and_says_why():
+    """A word Pulse does not know is not a delivery; the person sees which word it was."""
+    assert parse_outcome(_block("status: maybe\nneeds: user")) == Outcome(
+        status=OutcomeStatus.BLOCKED,
+        reason="the agent declared an outcome Pulse does not know: `maybe`",
+        needs="user",
+    )
+
+
+def test_an_unknown_status_keeps_the_reason_the_agent_gave():
+    assert parse_outcome(_block("status: maybe\nreason: half done")).reason == "half done"
+
+
+def test_backticks_around_a_value_are_dropped():
+    assert parse_outcome(_block("status: blocked\nreason: `no access`")).reason == "no access"
