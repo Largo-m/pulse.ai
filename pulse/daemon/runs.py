@@ -291,7 +291,7 @@ class RunManager:
                 control=state.control,
                 run_id=state.id,
             )
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
             traceback.print_exc()
             state.finish(1)
             state.bus.publish(

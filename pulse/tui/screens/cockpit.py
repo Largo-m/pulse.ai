@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
@@ -236,11 +238,10 @@ class CockpitScreen(Screen[None]):
             self._prompt_open = False
             if request.future is not None and not request.future.done():
                 request.future.set_result(result)
+            # The screen may be tearing down its children when the answer arrives.
             if self.is_mounted:
-                try:
+                with contextlib.suppress(NoMatches):
                     self.query_one(LogStream).focus()
-                except Exception:
-                    pass
 
         self.query_one(LogStream).show_prompt(request, _finish)
 
@@ -264,7 +265,8 @@ class CockpitScreen(Screen[None]):
                 )
         except PromptAbandoned:
             return
-        except Exception as error:
+        # Worker top-level: any failure becomes the run's error entry and exit code 1.
+        except Exception as error:  # noqa: BLE001
             if self._detached:
                 return
             self.state.add_error("Workflow falhou", str(error))
@@ -275,10 +277,9 @@ class CockpitScreen(Screen[None]):
         self._run_over = True
         self.state.mark_finished(code)
         self._dirty = True
-        try:
+        # The app already exited (user quit): the state above is all that is left to update.
+        with contextlib.suppress(RuntimeError):
             self.app.call_from_thread(self._on_workflow_done, code)
-        except Exception:
-            pass
 
     def _on_workflow_done(self, code: int) -> None:
         if code == 0:

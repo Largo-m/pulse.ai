@@ -248,3 +248,36 @@ def test_merge_tool_update_parses_json_raw_input():
         {"rawInput": '{"path": "/repo/a.md", "pattern": "x"}'},
     )
     assert merged["rawInput"]["path"] == "/repo/a.md"
+
+
+def test_merge_tool_update_keeps_the_last_good_raw_input_over_truncated_json():
+    """A streamed `rawInput` cut mid-JSON must not erase what was already known."""
+    merged = merge_tool_update(
+        {"rawInput": {"path": "/repo/a.md"}},
+        {"rawInput": '{"path": "/repo/b.md", "pat'},
+    )
+    assert merged["rawInput"] == {"path": "/repo/a.md"}
+
+
+def test_shorten_path_outside_the_workspace_keeps_the_last_four_parts(tmp_path):
+    """A file the agent touched elsewhere is still shown, just shortened."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    outside = "/opt/data/very/deep/tree/file.md"
+
+    assert shorten_path(outside, cwd=str(workspace)) == "very/deep/tree/file.md"
+
+
+def test_shorten_path_with_a_nul_byte_is_returned_as_given(tmp_path):
+    """An agent path that the OS refuses to resolve must not break the labels."""
+    assert shorten_path("/repo/a\x00b", cwd=str(tmp_path)) == "/repo/a\x00b"
+
+
+def test_shorten_path_through_a_symlink_loop_still_yields_a_path(tmp_path):
+    """A symlink loop raises on some Python versions; the path is still shown."""
+    (tmp_path / "a").symlink_to(tmp_path / "b")
+    (tmp_path / "b").symlink_to(tmp_path / "a")
+
+    shown = shorten_path(str(tmp_path / "a" / "x.md"), cwd=str(tmp_path))
+
+    assert shown.endswith("x.md")

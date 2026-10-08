@@ -9,6 +9,10 @@ _CURSOR_DIR = Path.home() / ".cursor"
 _ACP_SESSIONS = _CURSOR_DIR / "acp-sessions"
 _CHATS = _CURSOR_DIR / "chats"
 
+# Cursor's store is a foreign format: a blob may be a non-bytes value (`TypeError`
+# from `bytes`), not UTF-8 or not JSON. Such rows are skipped, not fatal.
+_UNREADABLE_BLOB = (TypeError, UnicodeDecodeError, json.JSONDecodeError)
+
 
 def find_session_store(session_id: str) -> Path | None:
     if not session_id:
@@ -108,10 +112,8 @@ def _load_tool_args(db_path: Path) -> dict[str, dict[str, Any]]:
         return found
     for (data,) in rows:
         try:
-            raw = bytes(data)
-            text = raw.decode("utf-8")
-            obj = json.loads(text)
-        except Exception:
+            obj = json.loads(bytes(data).decode("utf-8"))
+        except _UNREADABLE_BLOB:
             continue
         content = obj.get("content")
         if not isinstance(content, list):
@@ -151,7 +153,7 @@ def list_session_events(session_id: str) -> list[dict[str, Any]]:
     for (data,) in rows:
         try:
             obj = json.loads(bytes(data).decode("utf-8"))
-        except Exception:
+        except _UNREADABLE_BLOB:
             continue
         role = str(obj.get("role") or "")
         if role == "user":

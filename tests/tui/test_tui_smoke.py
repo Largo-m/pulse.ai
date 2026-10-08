@@ -731,3 +731,177 @@ def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
             {"attach_run_id": "run-9", "workspace": tmp_path},
         )
     ]
+
+
+class _FakeEngineSession:
+    """Stands in for `EngineRunSession`: returns `code` or raises `error`."""
+
+    error: Exception | None = None
+    code = 0
+
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    def run(self, **_kwargs) -> int:
+        if self.error is not None:
+            raise self.error
+        return self.code
+
+
+class _ThreadApp:
+    """The slice of `App` the run worker calls once the run is over."""
+
+    def __init__(self, error: Exception | None = None) -> None:
+        self.error = error
+        self.done: list[int] = []
+
+    def call_from_thread(self, callback, code: int) -> None:
+        if self.error is not None:
+            raise self.error
+        self.done.append(code)
+
+
+def _worker_screen(fake_app: _ThreadApp) -> CockpitScreen:
+    make_workflow("demo", steps=[("a", "A")])
+
+    class _Screen(CockpitScreen):
+        @property
+        def app(self):  # type: ignore[override]
+            return fake_app
+
+    return _Screen("demo", "x")
+
+
+def test_a_run_whose_daemon_is_unreachable_ends_failed_with_the_reason(monkeypatch):
+    """The run worker is a thread top-level: a transport error must become the
+    run's visible error and exit code 1, never an exception that kills the UI."""
+    import httpx
+
+    import pulse.client.run_session as run_session
+
+    class _Unreachable(_FakeEngineSession):
+        error = httpx.ConnectError("daemon socket refused")
+
+    monkeypatch.setattr(run_session, "EngineRunSession", _Unreachable)
+    fake_app = _ThreadApp()
+    screen = _worker_screen(fake_app)
+
+    screen._run_workflow()
+
+    errors = [entry for entry in screen.state.entries if entry.kind == LogKind.ERROR]
+    assert [(entry.title, entry.detail) for entry in errors] == [
+        ("Workflow falhou", "daemon socket refused")
+    ]
+    assert screen.state.exit_code == 1
+    assert fake_app.done == [1]
+
+
+def test_a_run_ending_after_the_app_exited_still_records_the_exit_code(monkeypatch):
+    """Quitting the app leaves no loop to hand the result to (`RuntimeError`);
+    the worker must still finish quietly with the run's state up to date."""
+    import pulse.client.run_session as run_session
+
+    monkeypatch.setattr(run_session, "EngineRunSession", _FakeEngineSession)
+    screen = _worker_screen(_ThreadApp(RuntimeError("App is not running")))
+
+    screen._run_workflow()
+
+    assert screen._run_over is True
+    assert screen.state.exit_code == 0
+    assert not [entry for entry in screen.state.entries if entry.kind == LogKind.ERROR]
+
+
+def test_home_alert_poll_finishing_after_the_app_exited_does_not_crash(monkeypatch):
+    """The alert poll runs in a thread; if the app can no longer take its result
+    (`call_from_thread` raises `RuntimeError`), the worker ends cleanly instead
+    of erroring the whole app."""
+    from textual.worker import WorkerState
+
+    import pulse.tui.screens.home as home_module
+
+    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
+    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    monkeypatch.setattr(home_module, "awaiting_runs", lambda: [_waiting_run()])
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Static
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            screen._apply_alerts([])
+
+            def _app_gone(*_args) -> None:
+                raise RuntimeError("App is not running")
+
+            monkeypatch.setattr(app, "call_from_thread", _app_gone)
+            screen._poll_alerts()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert [worker.state for worker in screen.workers] in ([], [WorkerState.SUCCESS])
+            assert screen._alerts == []
+
+    asyncio.run(run())
+
+
+def test_header_labels_follow_state_even_though_watchers_fire_before_compose():
+    """Reactive watchers run before `compose` mounts the labels; that first call
+    must be a no-op, and later changes must reach the labels."""
+    from textual.app import App, ComposeResult
+    from textual.widgets import Static
+
+    from pulse.tui.widgets.app_header import AppHeader
+
+    async def run() -> None:
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield AppHeader()
+
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            header = app.query_one(AppHeader)
+            header.run_label = "RUN 1/3"
+            header.workflow_label = "demo"
+            await pilot.pause()
+            assert str(header.query_one("#run-status", Static).render()) == "RUN 1/3"
+            assert str(header.query_one("#workflow-label", Static).render()) == "demo"
+
+    asyncio.run(run())
+
+
+def test_unmounted_log_stream_has_no_prompt_to_focus():
+    """Focusing the prompt before the stream is composed reports `False`, not a crash."""
+    from pulse.tui.state import CockpitState
+
+    assert LogStream(CockpitState()).focus_prompt() is False
+
+
+def test_click_on_an_unmounted_sidebar_is_ignored():
+    """A click routed before the sidebar composed its content selects nothing."""
+    from textual.events import Click
+
+    from pulse.tui.state import CockpitState
+
+    make_workflow("demo", steps=[("a", "A")])
+    state = CockpitState()
+    state.configure_workflow("demo")
+    sidebar = PhaseSidebar(state)
+    posted: list = []
+    sidebar.post_message = posted.append  # type: ignore[method-assign]
+
+    sidebar.on_click(Click(sidebar, 1, 1, 0, 0, 1, False, False, False, screen_x=1, screen_y=1))
+
+    assert posted == []

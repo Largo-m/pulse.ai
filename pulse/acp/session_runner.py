@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 import threading
 import time
@@ -84,12 +85,8 @@ class _WatchedPrompts:
     def _record(
         self, name: str, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any
     ) -> None:
-        if self._on_answer is None:
-            return
-        try:
+        if self._on_answer is not None:
             self._on_answer(name, args, kwargs, result)
-        except Exception:
-            pass
 
 
 def _policy_decision(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any] | None:
@@ -477,7 +474,14 @@ class AcpSessionRunner(RunEventRecorder):
                 )
             else:
                 result = {"outcome": "cancelled"}
-        except Exception as error:
+        # Any failure answering the agent becomes a JSON-RPC error reply: the
+        # agent is waiting on this id, and the read loop must keep running.
+        except Exception as error:  # noqa: BLE001
+            self._save_event(
+                kind="Info",
+                title="Agent request failed",
+                detail=f"{method}: {type(error).__name__}: {error}",
+            )
             error_payload = {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -656,17 +660,21 @@ class AcpSessionRunner(RunEventRecorder):
         self._session_id = str(session_id)
         self.last_session_id = self._session_id
         self._stream.set_session_id(self._session_id)
-        try:
-            from pulse.store.sessions import persist_runtime_session
+        from pulse.store.sessions import persist_runtime_session
 
+        try:
             persist_runtime_session(
                 self._cwd,
                 pulse_session_id=self._run_id,
                 acp_session_id=self._session_id,
                 agent_id=self._pulse_agent,
             )
-        except Exception:
-            pass
+        except (sqlite3.Error, OSError) as error:
+            self._save_event(
+                kind="Info",
+                title="Runtime session not recorded",
+                detail=f"{type(error).__name__}: {error}",
+            )
 
     def close_session(self) -> None:
         if self._session_id is None:

@@ -54,7 +54,7 @@ def _start() -> int:
         client.ensure_daemon()
         print("pulse-engine iniciado")
         return 0
-    except Exception as error:
+    except (RuntimeError, OSError) as error:
         print(f"[pulse] Falha ao iniciar engine: {error}")
         return 1
     finally:

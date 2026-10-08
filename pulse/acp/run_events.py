@@ -6,6 +6,8 @@ translates `session/update` into `run_events` rows and run artifacts.
 
 from __future__ import annotations
 
+import sqlite3
+from contextlib import suppress
 from typing import Any
 
 from pulse.history.events import LogKind
@@ -82,7 +84,14 @@ class RunEventRecorder:
             if tool_id and log_kind != LogKind.TOOL:
                 self._tool_kinds[tool_id] = log_kind.value
             return log_kind.value, title, detail
-        except Exception:
+        # The classifier walks an untrusted agent payload inside the ACP read
+        # loop; a shape it does not expect must not end the session.
+        except Exception as error:  # noqa: BLE001
+            self._save_event(
+                kind="Info",
+                title="Tool call not labeled",
+                detail=f"{type(error).__name__}: {error}",
+            )
             return "Tool", self._fallback_title(update), self._fallback_detail(update)
 
     @staticmethod
@@ -107,13 +116,17 @@ class RunEventRecorder:
         writes = str(update.get("kind") or "").lower() in self._WRITE_KINDS
         if not writes and log_kind not in {"Write", "Edit"}:
             return
+        from pulse.store.runs import record_artifact
+
         for path in self._artifact_paths(update):
             try:
-                from pulse.store.runs import record_artifact
-
                 record_artifact(self._bound_run_id, path, step_id=self._phase_id)
-            except Exception:
-                pass
+            except (sqlite3.Error, OSError) as error:
+                self._save_event(
+                    kind="Info",
+                    title="Artifact not recorded",
+                    detail=f"{path}: {type(error).__name__}: {error}",
+                )
 
     def _artifact_paths(self, update: dict[str, Any]) -> list[str]:
         """Paths touched by the tool call, relative to the workspace.
@@ -201,9 +214,11 @@ class RunEventRecorder:
             )
 
     def _save_event(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:
-        try:
-            from pulse.store.runs import record_event
+        from pulse.store.runs import record_event
 
+        # The run log is the record of last resort: with the database failing
+        # there is nowhere left to write, and the agent's session must go on.
+        with suppress(sqlite3.Error, OSError):
             record_event(
                 self._bound_run_id,
                 step_id=self._phase_id,
@@ -213,5 +228,3 @@ class RunEventRecorder:
                 detail=detail,
                 tool_id=tool_id,
             )
-        except Exception:
-            pass

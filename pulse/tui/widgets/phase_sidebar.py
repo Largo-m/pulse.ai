@@ -4,6 +4,7 @@ import time
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
@@ -63,7 +64,7 @@ class PhaseSidebar(Widget):
             return
         try:
             content = self.query_one("#phase-content", Static)
-        except Exception:
+        except NoMatches:
             return
         y = event.screen_y - content.region.y
         if y < 0:

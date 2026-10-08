@@ -31,11 +31,13 @@ class EngineClient:
         http_base: str | None = None,
         socket_path: Path | None = None,
         timeout: float = 30.0,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._prefer_uds = prefer_uds
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
         self._http_base = http_base
         self._timeout = timeout
+        self._transport = transport
         self._client: httpx.Client | None = None
 
     def ensure_daemon(self, *, timeout: float = 20.0) -> None:
@@ -60,7 +62,8 @@ class EngineClient:
         try:
             data = self.get("/api/status")
             return bool(data.get("ok"))
-        except Exception:
+        except (httpx.HTTPError, ValueError):
+            # A refused socket, an error status or a non-JSON body all mean no usable engine.
             self.close()
             return False
 
@@ -151,7 +154,7 @@ class EngineClient:
         try:
             data = self.get("/api/status")
             return int(data.get("protocol") or 0) >= ENGINE_PROTOCOL
-        except Exception:
+        except (httpx.HTTPError, ValueError):
             return False
 
     def _stop_daemon(self) -> None:
@@ -180,6 +183,11 @@ class EngineClient:
 
     def _http(self) -> httpx.Client:
         if self._client is not None:
+            return self._client
+        if self._transport is not None:
+            self._client = httpx.Client(
+                transport=self._transport, base_url="http://pulse", timeout=self._timeout
+            )
             return self._client
         if self._http_base:
             self._client = httpx.Client(base_url=self._http_base.rstrip("/"), timeout=self._timeout)

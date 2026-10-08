@@ -8,6 +8,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Static
 
@@ -116,7 +117,7 @@ class LogStream(Widget):
     def focus_prompt(self) -> bool:
         try:
             dock = self.query_one(PromptDock)
-        except Exception:
+        except NoMatches:
             return False
         dock.focus_inner()
         return True

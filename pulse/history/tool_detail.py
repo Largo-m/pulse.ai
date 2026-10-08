@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -69,17 +70,15 @@ def shorten_path(path: str, *, cwd: str | None = None) -> str:
         return ""
     if text.startswith("file://"):
         text = text[7:]
-    try:
-        candidate = Path(text)
-    except Exception:
-        return text
+    candidate = Path(text)
     if not candidate.is_absolute():
         return text.removeprefix("./") or text
     if cwd:
-        try:
+        # Outside the workspace (ValueError), unreadable or with a NUL byte
+        # (OSError / ValueError), or a symlink loop (RuntimeError before 3.13):
+        # the path is still shown, shortened below.
+        with suppress(ValueError, OSError, RuntimeError):
             return str(candidate.resolve().relative_to(Path(cwd).resolve()))
-        except Exception:
-            pass
     parts = candidate.parts
     if len(parts) > 4:
         return str(Path(*parts[-4:]))
@@ -96,7 +95,7 @@ def _as_dict(value: object) -> dict[str, Any]:
     if isinstance(value, str) and value.strip().startswith("{"):
         try:
             parsed = json.loads(value)
-        except Exception:
+        except json.JSONDecodeError:
             return {}
         if isinstance(parsed, dict):
             return parsed

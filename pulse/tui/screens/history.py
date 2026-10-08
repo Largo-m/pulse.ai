@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
+import sqlite3
 from pathlib import Path
 
 from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
@@ -63,12 +66,12 @@ class HistoryListScreen(Screen[None]):
         query = self._query
         try:
             items = self._catalog.search(query)
-        except Exception:
+        except sqlite3.Error:
+            # A busy or locked database skips this poll; the next one retries.
             return
-        try:
+        # The app already exited while the poll was in flight.
+        with contextlib.suppress(RuntimeError):
             self.app.call_from_thread(self._apply, items, query)
-        except Exception:
-            pass
 
     def _hint_text(self) -> str:
         return "/ busca  ·  Enter abre  ·  d remove"
@@ -175,7 +178,7 @@ class HistoryListScreen(Screen[None]):
         """The run under the list cursor, if any."""
         try:
             options = self.query_one("#history-options", OptionList)
-        except Exception:
+        except NoMatches:
             return None
         index = options.highlighted
         if index is None or not (0 <= index < options.option_count):

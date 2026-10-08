@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
@@ -21,17 +24,14 @@ class AppHeader(Widget):
             yield Static("SYS.PIPELINE", classes="pipeline-badge")
             yield Static(self.workflow_label, classes="workflow-label", id="workflow-label")
 
+    # The watchers fire before `compose` has mounted the labels; compose seeds them.
     def watch_run_label(self, value: str) -> None:
-        try:
+        with contextlib.suppress(NoMatches):
             self.query_one("#run-status", Static).update(value)
-        except Exception:
-            pass
 
     def watch_workflow_label(self, value: str) -> None:
-        try:
+        with contextlib.suppress(NoMatches):
             self.query_one("#workflow-label", Static).update(value)
-        except Exception:
-            pass
 
     def sync_from_state(self, state: CockpitState) -> None:
         done, total = state.done_count(), state.total_count()

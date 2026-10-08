@@ -8,6 +8,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import httpx
+
 from pulse.client.engine_client import EngineClient
 
 _TIMEOUT = 2.0
@@ -18,7 +20,7 @@ def list_runs() -> list[dict[str, Any]]:
     client = EngineClient(timeout=_TIMEOUT)
     try:
         return client.list_runs()
-    except Exception:
+    except (httpx.HTTPError, ValueError):
         return []
     finally:
         client.close()

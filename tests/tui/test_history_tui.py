@@ -316,3 +316,73 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
             assert options.get_option_at_index(options.highlighted).id == "run-old"
 
     asyncio.run(run())
+
+
+def test_a_locked_database_skips_the_poll_and_keeps_the_list(tmp_path: Path, monkeypatch):
+    """The background poll must survive a busy SQLite: the list stays as it was
+    and the next poll retries, instead of the worker erroring the app."""
+    import sqlite3
+
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+
+            def _locked(_query: str = "") -> list:
+                raise sqlite3.OperationalError("database is locked")
+
+            monkeypatch.setattr(screen._catalog, "search", _locked)
+            screen._fetch()
+            await pilot.pause()
+
+            assert set(screen._items) == {"run-login"}
+
+    asyncio.run(run())
+
+
+def test_a_poll_answered_after_the_app_exited_is_dropped(tmp_path: Path, monkeypatch):
+    """When the app can no longer take the result (`call_from_thread` raises
+    `RuntimeError`), the poll ends quietly."""
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+
+            def _app_gone(*_args) -> None:
+                raise RuntimeError("App is not running")
+
+            monkeypatch.setattr(app, "call_from_thread", _app_gone)
+            screen._fetch()
+
+            assert set(screen._items) == {"run-login"}
+
+    asyncio.run(run())
+
+
+def test_an_unmounted_history_list_has_no_highlighted_run(tmp_path: Path):
+    """Actions fired before the list is composed act on nothing rather than crash."""
+    assert HistoryListScreen(workspace=tmp_path)._highlighted() is None

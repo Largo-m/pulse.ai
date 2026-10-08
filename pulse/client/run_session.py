@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from pulse.client.engine_client import EngineClient
 from pulse.client.protocol import PING, REPLAY_END
@@ -80,7 +83,8 @@ class EngineRunSession:
                 if self._detached:
                     break
                 self._dispatch(event)
-        except Exception:
+        except (httpx.HTTPError, httpx.StreamError):
+            # `detach` closes the client under the read; that cut is the detach, not a failure.
             if not self._detached:
                 raise
         finally:
@@ -95,10 +99,9 @@ class EngineRunSession:
         the loop wakes up even if it does not.
         """
         self._detached = True
-        try:
+        # Leaving must not fail on a socket that is already gone; the run is untouched.
+        with contextlib.suppress(OSError):
             self._client.close()
-        except Exception:
-            pass
 
     def stop(self) -> bool:
         """Stop requested from the UI, outside the thread running the run."""
@@ -106,7 +109,7 @@ class EngineRunSession:
             return False
         try:
             self._client.cancel_run(self.run_id)
-        except Exception:
+        except httpx.HTTPError:
             return False
         return True
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
 from textual.widget import Widget
@@ -90,13 +91,13 @@ class ArtifactPane(Widget):
             self.query_one("#artifact-meta", Static).display = expanded
             self.query_one("#artifact-tabs", Horizontal).display = expanded
             self.query_one("#artifact-body", VerticalScroll).display = expanded
-        except Exception:
+        except NoMatches:
             return
 
     def scroll_by(self, direction: int) -> None:
         try:
             body = self.query_one("#artifact-body", VerticalScroll)
-        except Exception:
+        except NoMatches:
             return
         if direction < 0:
             body.scroll_up(animate=False)
@@ -110,7 +111,7 @@ class ArtifactPane(Widget):
             return
         try:
             close = self.query_one("#artifact-close", Static)
-        except Exception:
+        except NoMatches:
             close = None
         if (
             close is not None
@@ -122,7 +123,7 @@ class ArtifactPane(Widget):
             return
         try:
             row = self.query_one("#artifact-tabs", Horizontal)
-        except Exception:
+        except NoMatches:
             return
         for child in row.children:
             if not isinstance(child, Static):
@@ -188,7 +189,7 @@ class ArtifactPane(Widget):
         selected = self._state.selected_artifact()
         try:
             markdown = self.query_one("#artifact-markdown", Markdown)
-        except Exception:
+        except NoMatches:
             return
         if selected is None:
             key = ("", 0.0, False)

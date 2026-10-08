@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import Any
 
@@ -119,10 +120,9 @@ class HomeScreen(Screen[None]):
         runs = awaiting_runs()
         if get_current_worker().is_cancelled:
             return
-        try:
+        # The app already exited while the poll was in flight.
+        with contextlib.suppress(RuntimeError):
             self.app.call_from_thread(self._apply_alerts, runs)
-        except Exception:
-            pass
 
     def _apply_alerts(self, runs: list[dict[str, Any]]) -> None:
         if not self.is_mounted:

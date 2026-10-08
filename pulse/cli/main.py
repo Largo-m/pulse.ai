@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+import httpx
+
 from pulse import __version__
 from pulse.cli.daemon_command import run_daemon_command
 from pulse.client.engine_client import EngineClient
@@ -111,7 +113,7 @@ def _doctor_via_engine(*, test_acp: bool) -> int:
             if not probe.get("ok"):
                 failed = True
         return 1 if failed else 0
-    except Exception as error:
+    except (RuntimeError, OSError, httpx.HTTPError) as error:
         print(f"[pulse] Engine indisponível ({error}); usando doctor local")
         return run_doctor(test_acp=test_acp)
     finally:
@@ -149,7 +151,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     client = EngineClient()
     try:
         client.ensure_daemon()
-    except Exception as error:
+    except (RuntimeError, OSError) as error:
         print(f"[pulse] Aviso: não foi possível iniciar o engine ({error})")
     finally:
         client.close()

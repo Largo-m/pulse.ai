@@ -34,15 +34,8 @@ class EventBus:
             if self._closed:
                 return
             self._history.append(event)
-            dead: list[Queue[dict[str, Any] | None]] = []
             for queue in self._subscribers:
-                try:
-                    queue.put_nowait(event)
-                except Exception:
-                    dead.append(queue)
-            for queue in dead:
-                if queue in self._subscribers:
-                    self._subscribers.remove(queue)
+                queue.put_nowait(event)
 
     def subscribe(self, *, after: int = 0, poll: float = 5.0) -> Iterator[dict[str, Any]]:
         """The run's past events, then live ones, in one sequence.
