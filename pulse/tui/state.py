@@ -173,17 +173,11 @@ class CockpitState(ArtifactTab):
         now = time.monotonic()
         for phase in self.phases:
             if phase.id in blocked:
-                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.BLOCKED
+                phase.end_as(PhaseStatus.BLOCKED, now)
             elif phase.id in failed:
-                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.FAILED
+                phase.end_as(PhaseStatus.FAILED, now)
             elif phase.id in skipped:
-                if phase.status == PhaseStatus.RUNNING:
-                    phase.ended_at = now if phase.started_at is not None else phase.ended_at
-                phase.status = PhaseStatus.SKIPPED
+                phase.end_as(PhaseStatus.SKIPPED, now)
             elif phase.id in done and phase.status != PhaseStatus.RUNNING:
                 phase.status = PhaseStatus.DONE
         self.notify()
@@ -224,9 +218,7 @@ class CockpitState(ArtifactTab):
         for phase in self.phases:
             phase.end_waiting(now)
             if phase.status == PhaseStatus.RUNNING:
-                if phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.FAILED
+                phase.end_as(PhaseStatus.FAILED, now)
         self.notify()
 
     def mark_stopped(self) -> None:
@@ -238,13 +230,10 @@ class CockpitState(ArtifactTab):
         self.stopped = True
         self.awaiting_input = False
         for item in self.phases:
-            item.awaiting_since = None
-            if item.status != PhaseStatus.RUNNING:
-                continue
-            item.status = PhaseStatus.PENDING
-            item.started_at = None
-            item.ended_at = None
-            item.waiting_total = 0.0
+            if item.status == PhaseStatus.RUNNING:
+                item.restart()
+            else:
+                item.awaiting_since = None
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:

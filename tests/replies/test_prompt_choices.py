@@ -2,6 +2,7 @@ import pytest
 
 from pulse.replies.acp_payloads import QuestionAnswer, QuestionOption
 from pulse.replies.approval import (
+    ApprovalOutcome,
     answer_needs_description,
     classify_outcome,
     picked_answers,
@@ -329,12 +330,12 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
     ],
 )
 def test_typed_text_never_cancels_or_skips_the_step(answers: str) -> None:
-    from pulse.replies.approval import CANCEL, SKIP, classify_outcome
+    from pulse.replies.approval import classify_outcome
 
-    assert classify_outcome(answers) not in {CANCEL, SKIP}
+    assert classify_outcome(answers) not in {ApprovalOutcome.CANCEL, ApprovalOutcome.SKIP}
 
 
 def test_picked_skip_option_still_skips() -> None:
-    from pulse.replies.approval import SKIP, classify_outcome
+    from pulse.replies.approval import classify_outcome
 
-    assert classify_outcome("→ C) Pular esta fase") == SKIP
+    assert classify_outcome("→ C) Pular esta fase") == ApprovalOutcome.SKIP

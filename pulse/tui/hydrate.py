@@ -12,22 +12,12 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pulse.domain.run import StepStatus
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
 from pulse.tui import strings
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
-
-_STEP_TO_PHASE = {
-    StepStatus.PENDING: PhaseStatus.PENDING,
-    StepStatus.RUNNING: PhaseStatus.RUNNING,
-    StepStatus.DONE: PhaseStatus.DONE,
-    StepStatus.SKIPPED: PhaseStatus.SKIPPED,
-    StepStatus.FAILED: PhaseStatus.FAILED,
-    StepStatus.BLOCKED: PhaseStatus.BLOCKED,
-}
 
 
 def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
@@ -38,7 +28,7 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
         PhaseItem(
             id=step.id,
             label=step.label,
-            status=_STEP_TO_PHASE.get(step.status, PhaseStatus.PENDING),
+            status=step.status,
         )
         for step in item.steps
     ]
@@ -84,7 +74,7 @@ def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
         return ""
 
     state.sync_phases([{"id": step.step_id, "label": step.label} for step in record.steps])
-    status = {step.step_id: _STEP_TO_PHASE[step.status] for step in record.steps}
+    status = {step.step_id: step.status for step in record.steps}
     for phase in state.phases:
         phase.status = status.get(phase.id, PhaseStatus.PENDING)
         if phase.status == PhaseStatus.RUNNING:
@@ -157,9 +147,8 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
         spent = (now_wall - begin).total_seconds()
         if spent < 0:
             continue
-        phase.started_at = now_mono - spent - max(0.0, carried.get(phase.id, 0.0))
-        phase.ended_at = None
-        phase.waiting_total = max(0.0, waiting.get(phase.id, 0.0))
+        started_at = now_mono - spent - max(0.0, carried.get(phase.id, 0.0))
+        phase.resume_clock(started_at, waiting.get(phase.id, 0.0))
     state.notify()
 
 
@@ -176,9 +165,7 @@ def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
-            phase.started_at = 0.0
-            phase.ended_at = seconds
-            phase.waiting_total = 0.0
+            phase.show_closed(seconds)
 
 
 _BODY_KINDS = frozenset({LogKind.ASSISTANT, LogKind.QUESTION, LogKind.ANSWER})

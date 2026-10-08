@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 from pulse.domain import ui_text
 from pulse.domain.ports import PhaseContinuation, PromptContinuation, StreamSink
-from pulse.replies.approval import APPROVE, CANCEL, SKIP, classify_outcome
+from pulse.replies.approval import ApprovalOutcome, classify_outcome
 
 # An agent that asks until no doubt is left needs room; the cap only stops an
 # endless question loop, and hitting it sends the step to the retry menu.
@@ -110,10 +110,10 @@ class StepTurns:
                     break
 
                 outcome = classify_outcome(answers_text)
-                if outcome == APPROVE:
+                if outcome == ApprovalOutcome.APPROVE:
                     approved = True
                     break
-                if outcome in {CANCEL, SKIP}:
+                if outcome in {ApprovalOutcome.CANCEL, ApprovalOutcome.SKIP}:
                     return {
                         "stopReason": phase_result.get("stopReason", "end_turn"),
                         "phaseStopReason": phase_result.get("stopReason"),

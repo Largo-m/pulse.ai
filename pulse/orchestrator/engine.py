@@ -359,7 +359,8 @@ def _judge_turn(
         wiring.runs.save(run)
         return None, ""
 
-    if may_close and not turn.approved and parse_outcome(turn.summary).closes:
+    outcome = parse_outcome(turn.summary)
+    if may_close and not turn.approved and outcome.closes:
         return _settle(wiring, run, record, LoopSignal.CLOSE)
 
     unfinished = _unfinished_reason(step, turn)
@@ -369,7 +370,7 @@ def _judge_turn(
 
     if not step.declares_outcome:
         return _settle(wiring, run, record, None)
-    return _judge_outcome(wiring, run, step, record, parse_outcome(turn.summary), may_close)
+    return _judge_outcome(wiring, run, step, record, outcome, may_close)
 
 
 def _unfinished_reason(step: StepDef, turn: TurnResult) -> str | None:

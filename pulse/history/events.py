@@ -4,14 +4,10 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from pulse.domain.run import StepStatus
 
-class PhaseStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    DONE = "done"
-    SKIPPED = "skipped"
-    FAILED = "failed"
-    BLOCKED = "blocked"
+# The screen shows the persisted step states; one vocabulary, no translation.
+PhaseStatus = StepStatus
 
 
 class LogKind(StrEnum):
@@ -117,6 +113,32 @@ class PhaseItem:
             self.ended_at = ended_at if ended_at is not None else time.monotonic()
         if self.status == PhaseStatus.RUNNING:
             self.status = PhaseStatus.DONE
+
+    def end_as(self, status: PhaseStatus, now: float) -> None:
+        """Move to a terminal `status`, stopping the clock if the step was running."""
+        if self.status == PhaseStatus.RUNNING and self.started_at is not None:
+            self.ended_at = now
+        self.status = status
+
+    def restart(self) -> None:
+        """Back to pending with no time spent: an interrupted step reruns from scratch."""
+        self.status = PhaseStatus.PENDING
+        self.started_at = None
+        self.ended_at = None
+        self.awaiting_since = None
+        self.waiting_total = 0.0
+
+    def show_closed(self, seconds: float) -> None:
+        """A fixed duration read from storage; it does not tick."""
+        self.started_at = 0.0
+        self.ended_at = seconds
+        self.waiting_total = 0.0
+
+    def resume_clock(self, started_at: float, waiting_total: float) -> None:
+        """Keep ticking a running step from where the persisted clock left it."""
+        self.started_at = started_at
+        self.ended_at = None
+        self.waiting_total = max(0.0, waiting_total)
 
 
 @dataclass
