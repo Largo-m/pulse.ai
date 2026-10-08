@@ -16,11 +16,8 @@ from textual.worker import get_current_worker
 
 from pulse import __version__
 from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
-from pulse.config import global_config_exists
-from pulse.config.ready import is_pulse_ready
 from pulse.history.status_labels import status_color, status_icon
-from pulse.store.workflow_defs import list_workflows
-from pulse.tui import strings
+from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.tui.screens.navigation import pulse_app
 
@@ -36,16 +33,26 @@ def _home_brand() -> str:
 _HOME_BRAND = _home_brand()
 
 
-def _session_workflows() -> list:
+def _session_workflows() -> list[engine.WorkflowShape]:
     """Workflows offered by the new-session menu: the pipelines, sorted by label.
 
     The generic loop (`is_default`) is hidden from this menu only; it remains
-    available in the database and the daemon API.
+    available in the database and the daemon API. A daemon that stopped
+    answering leaves the menu empty rather than closing the app.
     """
-    return sorted(
-        (item for item in list_workflows() if not item.is_default),
-        key=lambda item: item.label,
-    )
+    try:
+        listed = engine.workflows()
+    except engine.EngineUnavailable:
+        return []
+    return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
+
+
+def _setup() -> engine.SetupState | None:
+    """Where the first run stands; `None` when the daemon cannot say."""
+    try:
+        return engine.setup_state(Path.cwd())
+    except engine.EngineUnavailable:
+        return None
 
 
 ROOT = "root"
@@ -168,7 +175,8 @@ class HomeScreen(Screen[None]):
         options = self.query_one("#home-options", OptionList)
         options.clear_options()
         hint = self.query_one(".home-hint", Static)
-        if not global_config_exists():
+        setup = _setup()
+        if setup is None or not setup.configured:
             self._view = ROOT
             options.add_option(Option(strings.HOME_SETUP, id="init"))
             options.add_option(Option(strings.QUIT, id="exit"))
@@ -185,7 +193,7 @@ class HomeScreen(Screen[None]):
         if self._view == SESSION:
             workflows = _session_workflows()
             self._descriptions = {
-                item.id: " → ".join(step.label for step in item.steps) for item in workflows
+                item.id: " → ".join(label for _step_id, label in item.steps) for item in workflows
             }
             self._default_prompts = {
                 item.id: item.default_prompt for item in workflows if item.default_prompt
@@ -198,7 +206,7 @@ class HomeScreen(Screen[None]):
             options.add_option(Option(strings.BACK_ARROW, id="back"))
             self._update_hint(workflows[0].id if workflows else None)
             return
-        if is_pulse_ready():
+        if setup.ready:
             if self._alerts:
                 count = len(self._alerts)
                 label = (

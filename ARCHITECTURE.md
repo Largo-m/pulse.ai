@@ -51,8 +51,9 @@ Você digita `pulse`
    run isolada (§Onde a run trabalha): diretório criado pelo git, em
    `~/.pulse/worktrees/`, e nunca conteúdo escrito pelo Pulse.
 3. **Daemon = verdade única** — runs, config efetiva e estado vivem no Engine.
-4. **CLI é cliente fino** — a TUI não importa `orchestrator/` nem `acp/` para
-   executar; fala com a API.
+4. **CLI é cliente fino** — a TUI não executa, não lê SQLite, não resolve
+   config nem roda checks: tudo passa pela API (`pulse/tui/engine.py`). O
+   contrato do import-linter barra também as cadeias indiretas.
 5. **Um contrato, dois transportes** — mesmas rotas `/api/*` em **UDS**
    (`~/.pulse/daemon.sock`, CLI local) e **TCP** (`127.0.0.1:8787`, tooling e
    clientes futuros).
@@ -419,20 +420,28 @@ Só tela e interação. Não executa workflow no próprio processo.
 | Caminho | Função |
 |---------|--------|
 | [`pulse/tui/app.py`](pulse/tui/app.py) | App Textual; abre home, cockpit, settings, onboarding, history |
-| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows vindos do banco |
+| [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable` |
+| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows que o daemon serve |
 | [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
-| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor |
+| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings` |
+| [`pulse/tui/screens/onboarding.py`](pulse/tui/screens/onboarding.py) | Assistente da primeira execução: checks, login, workspace e sonda ACP, via `/api/setup` e `/api/runtimes` |
 | [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe |
 | [`pulse/tui/state.py`](pulse/tui/state.py) | `CockpitState` — estado visual, só memória |
 | [`pulse/tui/artifact_tab.py`](pulse/tui/artifact_tab.py) | A aba de artefatos do cockpit: lista, seleção e painel (mixin de `CockpitState`) |
 | [`pulse/tui/strings.py`](pulse/tui/strings.py) | Todo texto visível da TUI, em português, num só módulo |
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
-| [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir de uma run gravada |
+| [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir do `RunLog` de uma run gravada (`GET /api/runs/{id}/log`) |
 | [`pulse/tui/brand.py`](pulse/tui/brand.py) | Banner e linha de pulso da home e da CLI |
 
-A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
-**mesmo caminho do motor**. Não há mapa de fases na UI.
+A sidebar é montada por `configure_workflow(id, label=…, steps=…)` com a forma
+que `/api/workflows` serve — a mesma definição que o motor lê. Não há mapa de
+fases na UI.
+
+O login do runtime (`agent login`, `claude /login`) é o único processo que o
+lado cliente abre ([`client/runtime_login.py`](pulse/client/runtime_login.py)):
+é interativo e precisa do terminal do usuário, que o daemon destacado não tem.
+O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 
 ### 3.3 Cliente do Engine
 
@@ -443,6 +452,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
 | [`pulse/client/daemon_process.py`](pulse/client/daemon_process.py) | O processo do daemon visto de fora: está vivo? parar — pelo arquivo de meta, sem importar o servidor |
 | [`pulse/client/protocol.py`](pulse/client/protocol.py) | `ENGINE_PROTOCOL` e os eventos de controle do stream; módulo neutro que cliente e daemon leem |
+| [`pulse/client/runtime_login.py`](pulse/client/runtime_login.py) | Roda o login do runtime no terminal do usuário |
 
 ### 3.4 Engine — daemon (composition root)
 
@@ -455,7 +465,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
 | [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
-| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, workflows/runs/prompts, histórico; `deps.py` entrega o `RunManager` |
+| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
 
 **Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
 mesmo caminho do cancelamento — a run grava `RUN_STOPPED`, o step volta a
@@ -566,7 +576,10 @@ enxergá-lo sem mudanças.
 | [`pulse/store/db.py`](pulse/store/db.py) | Schema + disparo da semente |
 | [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
 | [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models; `ConfiguredAgentProfiles` é o adapter de `AgentProfiles` |
-| [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
+| [`pulse/config/project_settings.py`](pulse/config/project_settings.py) | O que a tela de settings mostra e grava: valor efetivo (agente → projeto → máquina → padrão) e as escritas |
+| [`pulse/config/onboarding.py`](pulse/config/onboarding.py) | Onde a primeira execução está e o que concluir o assistente grava |
+| [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` (no daemon); `HistoryItem` com o codec que cliente e daemon usam |
+| [`pulse/history/run_log.py`](pulse/history/run_log.py) | `RunLog`: a run gravada como o cockpit a reconstrói — tempos dos steps, log e artefatos — com o codec do fio |
 | [`pulse/history/status_labels.py`](pulse/history/status_labels.py) | Rótulo, cor e ícone de cada status: os mesmos na tela e na busca do histórico |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
@@ -674,6 +687,7 @@ mesmas perguntas apareceriam duas vezes.
 | Pode | Não deve |
 |------|----------|
 | TUI chamar `pulse/client/` | TUI ou `client/` importar `orchestrator/`, `acp/` ou `daemon/` |
+| TUI ler os modelos puros de `history/` | TUI alcançar `store/`, `config/`, `doctor/`, `runtimes/`, `vcs/` — nem por cadeia indireta |
 | Daemon montar `acp/`, `store/`, `vcs/`, `config/` como portas do motor | Motor (`orchestrator/`) importar `acp/`, `store/`, `vcs/` ou `doctor/` |
 | Motor falar com o mundo pelas portas de `domain/ports.py` | Domínio importar Textual / widgets |
 | Motor sequenciar steps | Motor interpretar o que o agente produziu |
@@ -681,13 +695,15 @@ mesmas perguntas apareceriam duas vezes.
 | Definição vir do banco | Definição vir de arquivo do pacote |
 | `replies/` parsear respostas | `domain/` ou `replies/` importar outro pacote do Pulse |
 | `store/db.py` carregar `store/factory/` | Qualquer outro módulo importar a semente |
-| `cli/` abrir a TUI; a TUI ler `history/` | Qualquer outro pacote importar `tui/` |
+| `cli/` abrir a TUI | Qualquer outro pacote importar `tui/` |
 
 As regras de import são contratos do import-linter (`[tool.importlinter]`
 no `pyproject.toml`), verificados por `lint-imports` e por
-`tests/architecture/test_import_contracts.py`. Cadeias indiretas anteriores ao
-contrato ficam em `ignore_imports`, cada uma com o motivo; entrada que deixa de
-existir quebra o check, então a lista só diminui.
+`tests/architecture/test_import_contracts.py`. Dívida anterior ao contrato fica
+em `ignore_imports`, cada uma com o motivo; entrada que deixa de existir quebra
+o check e um teto por contrato impede entrada nova, então a lista só diminui. A
+TUI e o cliente não têm dívida: a única entrada do contrato da TUI é o layout de
+`~/.pulse` (`store/paths.py`), ponto de encontro de cliente e daemon por desenho.
 Os contratos que listam "todo pacote menos alguns" são conferidos contra as
 pastas de `pulse/`, então um pacote novo já nasce coberto.
 

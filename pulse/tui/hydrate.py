@@ -1,9 +1,10 @@
 """Rebuild the cockpit from a persisted run.
 
-Everything comes from the database: `run_steps` feeds the sidebar, `run_events`
-the stream and `run_artifacts` the pane, so a run from any agent reopens the same.
-[hydrate_history_item] builds the static history view; [restore_run] restores
-the past into a cockpit that will keep running.
+Everything comes from the run's `RunLog`, which the daemon reads from the
+database: its steps feed the sidebar, its events the stream and its artifacts
+the pane, so a run from any agent reopens the same. [hydrate_history_item]
+builds the static history view; [restore_run] restores the past into a cockpit
+that will keep running.
 """
 
 from __future__ import annotations
@@ -14,13 +15,13 @@ from pathlib import Path
 
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
-from pulse.store import runs as run_store
+from pulse.history.run_log import RunLog
 from pulse.tui import strings
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
 
 
-def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
+def hydrate_history_item(item: HistoryItem, workspace: Path, log: RunLog | None) -> CockpitState:
     state = CockpitState()
     state.workflow_id = item.workflow_id
     state.workflow_label = item.workflow_label.upper()
@@ -43,9 +44,10 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     if state.acp_sessions:
         state.acp_session_id = state.acp_sessions[-1]["acp_session_id"]
 
-    _stamp_elapsed(state, item.run_id)
-    state.entries = _load_entries(item.run_id, state.phases)
-    state.artifacts = _load_artifacts(item.run_id, Path(item.worktree_path or workspace))
+    if log is not None:
+        _stamp_elapsed(state, log)
+    state.entries = _load_entries(log, state.phases)
+    state.artifacts = _load_artifacts(log, Path(item.worktree_path or workspace))
     displayable = [artifact for artifact in state.artifacts if artifact.has_content]
     if displayable:
         state.selected_artifact_path = displayable[-1].path
@@ -62,51 +64,44 @@ def hydrate_history_item(item: HistoryItem, workspace: Path) -> CockpitState:
     return state
 
 
-def restore_run(state: CockpitState, run_id: str, workspace: Path) -> str:
+def restore_run(state: CockpitState, log: RunLog, workspace: Path) -> str:
     """Load the run's existing history into the cockpit before it resumes.
 
     `sync_phases` preserves phases by id, so this survives the engine's later
     `phases.sync`. Returns the run's working directory (its worktree, if any) so
     the pane reads artifacts from the right root before `run.context` arrives.
     """
-    record = run_store.load_run(run_id)
-    if record is None:
-        return ""
-
-    state.sync_phases([{"id": step.step_id, "label": step.label} for step in record.steps])
-    status = {step.step_id: step.status for step in record.steps}
+    state.sync_phases([{"id": step.step_id, "label": step.label} for step in log.steps])
+    status = {step.step_id: step.status for step in log.steps}
     for phase in state.phases:
         phase.status = status.get(phase.id, PhaseStatus.PENDING)
         if phase.status == PhaseStatus.RUNNING:
             phase.status = PhaseStatus.PENDING
-    _stamp_elapsed(state, run_id)
+    _stamp_elapsed(state, log)
 
-    state.entries = _load_entries(run_id, state.phases, placeholder=False)
-    state.artifacts = _load_artifacts(run_id, Path(record.exec_root or workspace))
-    state.branch_label = record.branch
+    state.entries = _load_entries(log, state.phases, placeholder=False)
+    state.artifacts = _load_artifacts(log, Path(log.exec_root or workspace))
+    state.branch_label = log.branch
     state._next_entry_id = max((entry.entry_id for entry in state.entries), default=0) + 1
     state.notify()
-    return record.exec_root
+    return log.exec_root
 
 
-def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> None:
+def restore_settled_steps(state: CockpitState, log: RunLog, workspace: Path) -> None:
     """After replaying an attached run, load from the DB what the replay lacks.
 
     A resume keeps the `run_id` but opens a new daemon bus, so the replay only
     covers events since the resume. Only settled phases with no replayed entries
     are filled in, so a never-resumed run is unchanged.
     """
-    record = run_store.load_run(run_id)
-    if record is None:
-        return
-    ended = {step.step_id for step in record.steps if step.has_ended}
+    ended = {step.step_id for step in log.steps if step.has_ended}
     logged = {entry.phase_id for entry in state.entries if entry.phase_id}
     missing = ended - logged
     if not missing:
         return
     restored = [
         entry
-        for entry in _load_entries(run_id, state.phases, placeholder=False)
+        for entry in _load_entries(log, state.phases, placeholder=False)
         if entry.phase_id in missing
     ]
     for entry in restored:
@@ -116,26 +111,23 @@ def restore_settled_steps(state: CockpitState, run_id: str, workspace: Path) -> 
     known = {artifact.path for artifact in state.artifacts}
     state.artifacts = [
         artifact
-        for artifact in _load_artifacts(run_id, Path(record.exec_root or workspace))
+        for artifact in _load_artifacts(log, Path(log.exec_root or workspace))
         if artifact.phase_id in missing and artifact.path not in known
     ] + state.artifacts
     state.notify()
 
 
-def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
+def stamp_live_elapsed(state: CockpitState, log: RunLog) -> None:
     """Fix timers after rebuilding a run that is **still running**.
 
     Replay re-applies `phase.begin` instantly, so durations would count from
     reattach time. Settled steps use `run_steps`; the running step has its
     `started_at` shifted back by the time already spent so the timer continues.
     """
-    record = run_store.load_run(run_id)
-    if record is None:
-        return
-    _stamp_elapsed(state, run_id)
-    started = {step.step_id: step.started_at for step in record.steps}
-    waiting = {step.step_id: step.waiting_seconds for step in record.steps}
-    carried = {step.step_id: step.carried_seconds for step in record.steps}
+    _stamp_elapsed(state, log)
+    started = {step.step_id: step.started_at for step in log.steps}
+    waiting = {step.step_id: step.waiting_seconds for step in log.steps}
+    carried = {step.step_id: step.carried_seconds for step in log.steps}
     now_wall = datetime.now(UTC)
     now_mono = time.monotonic()
     for phase in state.phases:
@@ -152,16 +144,13 @@ def stamp_live_elapsed(state: CockpitState, run_id: str) -> None:
     state.notify()
 
 
-def _stamp_elapsed(state: CockpitState, run_id: str) -> None:
+def _stamp_elapsed(state: CockpitState, log: RunLog) -> None:
     """Set each step's duration from what was persisted in `run_steps`.
 
     The screen measures time with `time.monotonic()`, which does not survive the
     process; the (0, duration) pair shows the right duration without ticking.
     """
-    record = run_store.load_run(run_id)
-    if record is None:
-        return
-    durations = {step.step_id: step.elapsed_seconds() for step in record.steps}
+    durations = {step.step_id: step.elapsed_seconds for step in log.steps}
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
@@ -182,15 +171,15 @@ def _entry_kind(raw: str) -> LogKind:
 
 
 def _load_entries(
-    run_id: str, phases: list[PhaseItem], *, placeholder: bool = True
+    log: RunLog | None, phases: list[PhaseItem], *, placeholder: bool = True
 ) -> list[LogEntry]:
     entries: list[LogEntry] = []
-    for row in run_store.list_events(run_id):
-        title = row.get("title", "").strip()
-        detail = row.get("detail", "").strip()
+    for event in log.events if log is not None else ():
+        title = event.title.strip()
+        detail = event.detail.strip()
         if not title and not detail:
             continue
-        kind = _entry_kind(row.get("kind", ""))
+        kind = _entry_kind(event.kind)
         entries.append(
             LogEntry(
                 kind=kind,
@@ -198,8 +187,8 @@ def _load_entries(
                 detail=detail,
                 body=detail if kind in _BODY_KINDS else "",
                 entry_id=len(entries) + 1,
-                tool_id=row.get("tool_id", ""),
-                phase_id=row.get("step_id", ""),
+                tool_id=event.tool_id,
+                phase_id=event.step_id,
             )
         )
     if entries or not placeholder:
@@ -216,8 +205,8 @@ def _load_entries(
     ]
 
 
-def _load_artifacts(run_id: str, workspace: Path) -> list[ArtifactItem]:
-    by_step = {entry["path"]: entry["step_id"] for entry in run_store.list_artifacts(run_id)}
+def _load_artifacts(log: RunLog | None, workspace: Path) -> list[ArtifactItem]:
+    by_step = {item.path: item.step_id for item in log.artifacts} if log is not None else {}
     artifacts: list[ArtifactItem] = []
     for path, step_id in by_step.items():
         key = artifact_key(path)

@@ -12,6 +12,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.acp.watched_prompts import WatchedPrompts
 from pulse.domain.control import RUN_STOPPED
@@ -23,7 +25,7 @@ from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
-from tests.conftest import store_step, wait_for_event
+from tests.conftest import served_log, store_step, wait_for_event
 from tests.orchestrator.test_run_context import _ReplayClient
 
 
@@ -150,6 +152,8 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
 
     raw = sqlite3.connect(str(db_path))
     raw.execute("ALTER TABLE run_steps DROP COLUMN waiting_seconds")
+    # A database from before the column also predates the schema version.
+    raw.execute("PRAGMA user_version = 0")
     raw.commit()
     raw.close()
 
@@ -165,6 +169,7 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
     assert record.steps[0].waiting_seconds == 0.0
 
 
+@pytest.mark.usefixtures("in_process_daemon")
 def test_history_duration_discounts_the_wait():
     run = _run_with_step()
     step = run.steps[0]
@@ -176,7 +181,7 @@ def test_history_duration_discounts_the_wait():
 
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.DONE)]
-    _stamp_elapsed(state, run.id)
+    _stamp_elapsed(state, served_log(run.id))
     assert state.phases[0].elapsed_label() == "01:00"
 
 
@@ -466,6 +471,7 @@ def test_the_proxy_still_hides_nothing_from_whoever_asks():
     assert not hasattr(proxy, "select_choice")
 
 
+@pytest.mark.usefixtures("in_process_daemon")
 def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     """A step started 10min ago, worked 2 and has waited 8: a reattach must show
     `02:00` frozen, not `10:00`, which would count the wait as agent work."""
@@ -489,6 +495,6 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
         client=_ReplayClient([]),
     )
     session._dispatch({"type": "run.awaiting", "waiting": True, "since": time.time() - 8 * 60})
-    stamp_live_elapsed(state, run.id)
+    stamp_live_elapsed(state, served_log(run.id))
 
     assert state.phases[0].elapsed_label() == "02:00"

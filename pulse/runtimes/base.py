@@ -7,8 +7,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pulse.domain import ui_text
-
 
 @dataclass(frozen=True)
 class RuntimeCheck:
@@ -142,13 +140,6 @@ class AgentRuntime:
                     RuntimeCheck(name=dependency, status="ok", message=f"Found at {found}")
                 )
         return results
-
-    @property
-    def login_label(self) -> str:
-        """The onboarding action that opens this runtime's own login; empty without one."""
-        if not self.login_command:
-            return ""
-        return ui_text.run_login_label(" ".join(self.login_command))
 
     @property
     def auth_check_name(self) -> str:

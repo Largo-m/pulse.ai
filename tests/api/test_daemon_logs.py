@@ -18,7 +18,7 @@ from pulse.daemon.runs import RunManager, RunState
 from pulse.domain.control import RUN_BLOCKED
 from tests.conftest import make_workflow
 
-SECRET_PROMPT = "deploy with token sk-do-not-log"
+PRIVATE_PROMPT = "refactor the billing module of acme-internal"
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def test_a_run_logs_its_start_and_how_it_ended(monkeypatch, tmp_path, daemon_log
     make_workflow("demo")
     monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **_: RUN_BLOCKED)
     state = RunManager().start_run(
-        workflow_id="demo", prompt=SECRET_PROMPT, workspace=str(tmp_path)
+        workflow_id="demo", prompt=PRIVATE_PROMPT, workspace=str(tmp_path)
     )
     _finished(state)
 
@@ -78,12 +78,12 @@ def test_the_user_prompt_never_reaches_the_log(monkeypatch, tmp_path, daemon_log
     make_workflow("demo")
     monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **_: 0)
     state = RunManager().start_run(
-        workflow_id="demo", prompt=SECRET_PROMPT, workspace=str(tmp_path)
+        workflow_id="demo", prompt=PRIVATE_PROMPT, workspace=str(tmp_path)
     )
     _finished(state)
 
     assert _messages(daemon_log)
-    assert SECRET_PROMPT not in daemon_log.text
+    assert PRIVATE_PROMPT not in daemon_log.text
 
 
 def test_each_step_status_change_is_logged_once(daemon_log) -> None:

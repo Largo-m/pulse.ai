@@ -52,6 +52,15 @@ def _stored_run(workspace: Path, *, done: tuple[str, ...], status: str) -> str:
     return record.id
 
 
+def _store_worktree(path: Path, *, branch: str = "", run_id: str = "run-1") -> None:
+    """The run worked in `path`: the daemon reads that from the stored run, not the screen."""
+    record = run_store.load_run(run_id)
+    assert record is not None
+    record.worktree_path = str(path)
+    record.branch = branch
+    run_store.save(record)
+
+
 def _item(workspace: Path, run_id: str = "run-1") -> HistoryItem:
     item = HistoryCatalog(workspace).get(run_id)
     assert item is not None
@@ -153,10 +162,8 @@ def test_a_worktree_git_cannot_remove_is_kept_with_a_notice(tmp_path):
     _stored_run(tmp_path, done=("plan", "build"), status="completed")
     worktree = tmp_path / "loose-worktree"
     worktree.mkdir()
-    item = _item(tmp_path)
-    item.worktree_path = str(worktree)
-    item.branch = "pulse/demo"
-    detail = HistoryDetailScreen(item, workspace=tmp_path)
+    _store_worktree(worktree, branch="pulse/demo")
+    detail = HistoryDetailScreen(_item(tmp_path), workspace=tmp_path)
 
     async def run() -> None:
         app = _app(detail)
@@ -226,8 +233,8 @@ def test_the_daemon_running_the_run_keeps_its_worktree(tmp_path, monkeypatch):
     _stored_run(tmp_path, done=("plan", "build"), status="completed")
     worktree = tmp_path / "wt"
     worktree.mkdir()
+    _store_worktree(worktree)
     item = _item(tmp_path)
-    item.worktree_path = str(worktree)
     monkeypatch.setattr(history_detail, "active_run_ids", lambda: {item.run_id})
     detail = HistoryDetailScreen(item, workspace=tmp_path)
 

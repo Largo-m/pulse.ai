@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
@@ -29,7 +31,10 @@ from pulse.replies.text_questionnaire import (
 )
 from pulse.store import runs as run_store
 from pulse.tui.hydrate import hydrate_history_item
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, served_log
+
+# The screen reads the stored run through the daemon's route, as the TUI does.
+pytestmark = pytest.mark.usefixtures("in_process_daemon")
 
 
 def _runner(
@@ -76,7 +81,7 @@ def _hydrated(workspace: Path, run_id: str = "run-1"):
         updated_at="2026-09-30T10:00:00+00:00",
         steps=[HistoryStep(id="plan", label="Planejar", status=StepStatus.DONE)],
     )
-    return hydrate_history_item(item, workspace)
+    return hydrate_history_item(item, workspace, served_log(run_id))
 
 
 def test_each_tool_stores_the_kind_the_screen_showed(tmp_path: Path):

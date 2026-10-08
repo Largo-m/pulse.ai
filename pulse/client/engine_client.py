@@ -88,6 +88,16 @@ class EngineClient:
         response.raise_for_status()
         return response.json()
 
+    def put(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self._http().put(path, json=body or {})
+        response.raise_for_status()
+        return response.json()
+
+    def delete(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self._http().delete(path, params=params)
+        response.raise_for_status()
+        return response.json()
+
     def stream_events(self, run_id: str, *, after: int = 0) -> Iterator[dict[str, Any]]:
         path = f"/api/runs/{run_id}/events"
         if after:
@@ -147,7 +157,7 @@ class EngineClient:
             "/api/doctor/acp-probe", params={"workspace": str(workspace), "runtime": runtime}
         )
 
-    def workflows(self) -> list[dict[str, str]]:
+    def workflows(self) -> list[dict[str, Any]]:
         return list(self.get("/api/workflows").get("workflows", []))
 
     def _protocol_ok(self) -> bool:

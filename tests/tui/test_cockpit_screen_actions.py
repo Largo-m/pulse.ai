@@ -178,7 +178,7 @@ def test_stop_cuts_the_run_and_resume_reopens_it_from_where_it_stopped(monkeypat
             assert isinstance(choice, ResumeChoiceScreen)
             summary = str(choice.query_one(".resume-summary").render())
             assert summary == strings.RESUME_STOPPED_AT.format(
-                summary=strings.RUN_SUMMARY.format(current="plan", done=1, total=2)
+                summary=strings.RUN_SUMMARY.format(current="Build", done=1, total=2)
             )
 
             await pilot.press("enter")

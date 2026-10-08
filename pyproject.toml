@@ -123,17 +123,6 @@ name = "TUI and client are thin: they never import the engine"
 type = "forbidden"
 source_modules = ["pulse.tui", "pulse.client"]
 forbidden_modules = ["pulse.orchestrator", "pulse.acp", "pulse.daemon"]
-# Baseline: indirect chains that predate the contract; an entry that stops
-# matching fails the check, so this list can only shrink.
-ignore_imports = [
-    # Settings and onboarding still list models by spawning ACP locally;
-    # the fix is a models route in the daemon.
-    "pulse.config.model_catalog -> pulse.acp.client",
-    # Lazy import inside `model_request`, which only the session runner calls;
-    # the fix is moving model-id parsing out of `acp/`.
-    "pulse.runtimes.base -> pulse.acp.models",
-    "pulse.runtimes.claude -> pulse.acp.models",
-]
 
 [[tool.importlinter.contracts]]
 name = "Domain stays free of UI and web frameworks"
@@ -193,32 +182,21 @@ forbidden_modules = ["pulse.tui"]
 name = "The TUI reaches persistence, config and runtimes only through the daemon"
 type = "forbidden"
 source_modules = ["pulse.tui"]
-forbidden_modules = ["pulse.store", "pulse.config", "pulse.doctor", "pulse.runtimes"]
-# Direct imports only: indirect chains through `history/` are a separate debt.
-allow_indirect_imports = true
-# Baseline (shrink-only, ceiling pinned in tests/architecture/test_import_contracts.py).
+forbidden_modules = [
+    "pulse.store",
+    "pulse.config",
+    "pulse.doctor",
+    "pulse.runtimes",
+    "pulse.vcs",
+    "pulse.mcp",
+    "pulse.api",
+]
+# Indirect chains count too: a screen that reaches SQLite through `history/`
+# or the client is as thick as one that imports it.
 ignore_imports = [
-    # Settings and onboarding write SQLite directly; the fix is routing them
-    # through `/api/config/*` plus agent and model routes in the daemon.
-    "pulse.tui.screens.settings -> pulse.config",
-    "pulse.tui.screens.settings -> pulse.config.global_config",
-    "pulse.tui.screens.settings -> pulse.config.model_catalog",
-    "pulse.tui.screens.settings -> pulse.config.project_config",
-    "pulse.tui.screens.settings -> pulse.doctor.checks",
-    "pulse.tui.screens.settings -> pulse.store.agent_settings",
-    "pulse.tui.screens.settings -> pulse.store.workflow_defs",
-    "pulse.tui.screens.onboarding -> pulse.config",
-    "pulse.tui.screens.onboarding -> pulse.config.global_config",
-    "pulse.tui.screens.onboarding -> pulse.config.model_catalog",
-    "pulse.tui.screens.onboarding -> pulse.doctor.checks",
-    "pulse.tui.screens.onboarding -> pulse.runtimes",
-    "pulse.tui.screens.onboarding -> pulse.store.paths",
-    # Reads of runs and workflow definitions the daemon already serves.
-    "pulse.tui.hydrate -> pulse.store.runs",
-    "pulse.tui.screens.cockpit -> pulse.store.runs",
-    "pulse.tui.screens.home -> pulse.config",
-    "pulse.tui.screens.home -> pulse.config.ready",
-    "pulse.tui.screens.home -> pulse.store.workflow_defs",
+    # Not debt: the `~/.pulse` layout (socket, daemon meta) is where client and
+    # daemon meet, shared by design (AGENTS.md §2.1). It imports nothing.
+    "pulse.client.* -> pulse.store.paths",
 ]
 
 [[tool.importlinter.contracts]]

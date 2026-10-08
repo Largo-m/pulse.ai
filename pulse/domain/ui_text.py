@@ -183,8 +183,3 @@ def waiting_since(held: str) -> str:
 # Error entries the client adds to the run's screen, titled like the TUI's own.
 ERROR_TITLE = "Erro"
 WORKFLOW_FAILED_TITLE = "Workflow falhou"
-
-
-# Onboarding action that opens a runtime's own login.
-def run_login_label(command: str) -> str:
-    return f"Executar `{command}`"

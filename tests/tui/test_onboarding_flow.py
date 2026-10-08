@@ -31,45 +31,55 @@ LOGGED_OUT = CheckResult(name="auth", status="fail", message="not logged in")
 
 
 class _Engine:
-    """The daemon at the HTTP boundary: answers the ACP probe with `probe`."""
+    """The ACP probe at the daemon's boundary: answers with `probe`, records who asked."""
 
     probe: dict[str, object] = {}
     asked: list[dict[str, object]] = []
 
-    def __init__(self, **_kwargs: object) -> None:
-        pass
+    @classmethod
+    def probe_acp_connection(cls, *, command: list[str], cwd: str, **_kwargs: object) -> object:
+        from pulse.acp.client import AcpProbeResult
+        from pulse.runtimes import runtime_for_command
 
-    def ensure_daemon(self) -> None:
-        return None
-
-    def acp_probe(self, *, workspace: Path, runtime: str) -> dict[str, object]:
-        type(self).asked.append({"workspace": workspace, "runtime": runtime})
-        return type(self).probe
-
-    def close(self) -> None:
-        return None
+        cls.asked.append({"workspace": Path(cwd), "runtime": runtime_for_command(command).id})
+        error = cls.probe.get("error")
+        models = cls.probe.get("available_models")
+        return AcpProbeResult(
+            success=bool(cls.probe.get("ok")),
+            message=str(cls.probe.get("message") or ""),
+            error=str(error) if error is not None else None,
+            available_models=[str(model) for model in models] if isinstance(models, list) else [],
+        )
 
 
 class _Env:
-    """Scripted environment: each `run_agent_checks` call pops the next check list."""
+    """Scripted environment: each runtime check pops the next check list.
+
+    The daemon's routes are real (in-process); what they would run on the
+    machine — the runtime's CLI checks, the ACP probe, model listing — and the
+    login the client runs in the terminal are the scripted boundaries.
+    """
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch, checks: list[list[CheckResult]]) -> None:
         self.checks = checks
         self.logins: list[int] = []
         self.login_codes: list[int] = []
         runtime = get_runtime(DEFAULT_RUNTIME_ID)
-        monkeypatch.setattr(onboarding, "run_agent_checks", self._run_checks)
-        monkeypatch.setattr(runtime, "login", self._login)
+        monkeypatch.setattr("pulse.api.settings_routes.run_agent_checks", self._run_checks)
+        monkeypatch.setattr(onboarding, "run_login", self._login)
         monkeypatch.setattr(runtime, "find_binary", lambda: "/opt/bin/agent")
-        monkeypatch.setattr(onboarding, "EngineClient", _Engine)
+        monkeypatch.setattr("pulse.acp.client.probe_acp_connection", _Engine.probe_acp_connection)
         monkeypatch.setattr(_Engine, "probe", {"ok": True, "message": "connected"})
         monkeypatch.setattr(_Engine, "asked", [])
-        monkeypatch.setattr(onboarding, "collect_available_models", lambda *_a, **_k: [])
+        monkeypatch.setattr(
+            "pulse.api.settings_routes.collect_available_models", lambda *_a, **_k: []
+        )
 
     def _run_checks(self, _runtime: str) -> list[CheckResult]:
         return self.checks.pop(0)
 
-    def _login(self) -> int:
+    def _login(self, command: tuple[str, ...]) -> int:
+        assert command == get_runtime(DEFAULT_RUNTIME_ID).login_command
         code = self.login_codes.pop(0)
         self.logins.append(code)
         return code

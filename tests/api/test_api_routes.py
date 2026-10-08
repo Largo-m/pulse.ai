@@ -134,7 +134,9 @@ def test_history_lists_and_searches_the_runs_of_a_project(history_run):
 
     assert [item["run_id"] for item in listed] == ["run-hist"]
     assert listed[0]["prompt"] == "corrigir login"
-    assert listed[0]["steps"] == [{"id": "one", "label": "Um", "status": "pending"}]
+    assert listed[0]["steps"] == [
+        {"id": "one", "label": "Um", "status": "pending", "acp_session_id": ""}
+    ]
     assert [item["run_id"] for item in found] == ["run-hist"]
     assert missed == []
 

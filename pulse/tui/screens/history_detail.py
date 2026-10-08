@@ -7,15 +7,14 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse import vcs
 from pulse.client.active_runs import active_run_ids
-from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
-from pulse.tui import strings
+from pulse.history.run_log import RunLog
+from pulse.tui import engine, strings
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.navigation import pulse_app
-from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen, resume_summary
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
 from pulse.tui.widgets.artifact_pane import (
@@ -52,7 +51,10 @@ class HistoryDetailScreen(Screen[None]):
         self.item = item
         self._workspace = Path(workspace or Path.cwd())
         self._cwd = item.worktree_path or str(self._workspace)
-        self.state = hydrate_history_item(item, Path(self._cwd))
+        self.state = hydrate_history_item(item, Path(self._cwd), _run_log(item.run_id))
+        shape = _workflow_shape(item.workflow_id)
+        if shape is not None:
+            self.state.base_labels = dict(shape.steps)
         self._pending = _pending_run(item)
 
     def compose(self) -> ComposeResult:
@@ -94,15 +96,20 @@ class HistoryDetailScreen(Screen[None]):
         decides when they are done with it. A run the daemon still executes keeps
         it: the agent works there and the daemon would write the path back.
         """
-        path = self.item.worktree_path
-        if not path or not Path(path).exists():
+        if not self.item.worktree_path:
+            return
+        try:
+            worktree = engine.worktree_state(self._workspace, self.item.item_id)
+        except engine.EngineUnavailable as error:
+            self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+            return
+        if worktree is None or not worktree.exists:
             return
         if self.item.run_id in active_run_ids():
             self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
             return
-        dirty = vcs.has_changes(path)
-        detail = [path, strings.WORKTREE_BRANCH.format(branch=self.item.branch or "—")]
-        if dirty:
+        detail = [worktree.path, strings.WORKTREE_BRANCH.format(branch=self.item.branch or "—")]
+        if worktree.dirty:
             detail.append(strings.WORKTREE_DIRTY)
         else:
             detail.append(strings.WORKTREE_CLEAN)
@@ -110,11 +117,14 @@ class HistoryDetailScreen(Screen[None]):
         def _answered(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            catalog = HistoryCatalog(self._workspace)
-            if catalog.remove_worktree(self.item):
-                self.notify(strings.WORKTREE_REMOVED)
-            else:
-                self.notify(strings.WORKTREE_GIT_REFUSED)
+            try:
+                removed = engine.remove_worktree(self._workspace, self.item.item_id)
+            except engine.EngineUnavailable as error:
+                self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+                return
+            # The daemon clears the stored path even when git refused.
+            self.item.worktree_path = ""
+            self.notify(strings.WORKTREE_REMOVED if removed else strings.WORKTREE_GIT_REFUSED)
 
         self.app.push_screen(
             ConfirmScreen(
@@ -255,8 +265,19 @@ def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
     """
     if not item.is_incomplete:
         return None
-    done = sum(1 for step in item.steps if step.settled)
-    current = next((step.label for step in item.steps if not step.settled), "—")
-    return item.run_id, strings.RUN_SUMMARY.format(
-        current=current, done=done, total=len(item.steps)
-    )
+    return item.run_id, resume_summary(item)
+
+
+def _run_log(run_id: str) -> RunLog | None:
+    """The run's persisted log; without the daemon, the steps show without it."""
+    try:
+        return engine.run_log(run_id)
+    except engine.EngineUnavailable:
+        return None
+
+
+def _workflow_shape(workflow_id: str) -> engine.WorkflowShape | None:
+    try:
+        return engine.workflow(workflow_id)
+    except engine.EngineUnavailable:
+        return None

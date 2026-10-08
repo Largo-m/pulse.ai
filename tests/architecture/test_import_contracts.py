@@ -30,9 +30,10 @@ REQUIRED_CONTRACTS = {
 }
 # import-linter fails on a baseline entry that stops matching, but not on a new
 # one; these ceilings make the baselines shrink-only. Lower them as debt is paid.
+# The TUI's one entry is the shared `~/.pulse` layout, a rule rather than debt.
 BASELINE_CEILING = {
-    "TUI and client are thin: they never import the engine": 3,
-    TUI_THROUGH_DAEMON: 18,
+    "TUI and client are thin: they never import the engine": 0,
+    TUI_THROUGH_DAEMON: 1,
     ADAPTERS_APART: 12,
 }
 # Contracts that name every package but a few: import-linter has no wildcard

@@ -23,7 +23,7 @@ from pulse.store import runs as run_store
 from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptBridge, PromptKind
 from pulse.tui.hydrate import stamp_live_elapsed
 from pulse.tui.state import CockpitState
-from tests.conftest import store_run_status, store_step
+from tests.conftest import served_log, store_run_status, store_step
 
 
 class _BlockingClient:
@@ -135,7 +135,7 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
     state.phases[0].status = PhaseStatus.DONE
     state.begin_phase("Dois")
 
-    stamp_live_elapsed(state, "run-live")
+    stamp_live_elapsed(state, served_log("run-live"))
 
     assert state.phases[0].elapsed_label() == "00:30"
     spent = time.monotonic() - state.phases[1].started_at
@@ -180,7 +180,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
     assert state.awaiting_input is True
     assert state.phases[0].display_status() == "awaiting_input"
 
-    stamp_live_elapsed(state, "run-wait")
+    stamp_live_elapsed(state, served_log("run-wait"))
 
     assert state.phases[0].elapsed_label() == "01:00"
     assert state.phases[0].elapsed_label(now=time.monotonic() + 120) == "01:00"

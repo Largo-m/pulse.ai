@@ -7,13 +7,19 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from pulse import __version__
-from pulse.api import config_routes, history_routes, run_routes, system_routes
+from pulse.api import config_routes, history_routes, run_routes, settings_routes, system_routes
 from pulse.api.browser_guard import BrowserGuard
 from pulse.daemon.runs import RunManager
 
 TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
 _log = logging.getLogger(__name__)
-ROUTERS = (system_routes.router, config_routes.router, run_routes.router, history_routes.router)
+ROUTERS = (
+    system_routes.router,
+    config_routes.router,
+    settings_routes.router,
+    run_routes.router,
+    history_routes.router,
+)
 
 
 async def _on_error(request: Request, exc: Exception) -> JSONResponse:

@@ -12,7 +12,7 @@ from pulse.tui.state import LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 
 def test_pulse_app_has_cockpit_theme():
@@ -108,7 +108,7 @@ def test_cockpit_layout_keeps_header_and_body_sizes():
 
         make_workflow("demo", steps=[("a", "A"), ("b", "B"), ("c", "C"), ("d", "D")])
         state = CockpitState()
-        state.configure_workflow("demo")
+        configure_from_db(state, "demo")
 
         class Harness(App[None]):
             CSS = COCKPIT_CSS
@@ -355,7 +355,7 @@ def test_click_on_an_unmounted_sidebar_is_ignored():
 
     make_workflow("demo", steps=[("a", "A")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sidebar = PhaseSidebar(state)
     posted: list = []
     sidebar.post_message = posted.append  # type: ignore[method-assign]
