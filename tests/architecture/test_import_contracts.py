@@ -15,12 +15,13 @@ PYPROJECT = str(Path(__file__).resolve().parents[2] / "pyproject.toml")
 REQUIRED_CONTRACTS = {
     "TUI and client are thin: they never import the engine",
     "Domain stays free of UI and web frameworks",
+    "Domain values and reply parsing need nothing else from Pulse",
     "Only store/db.py loads the factory seed",
 }
 
 
 def test_every_import_contract_is_kept() -> None:
-    """The TUI never runs the engine, the domain never sees a UI, only the store loads the seed.
+    """The TUI never runs the engine, the domain sees neither UI nor I/O, only the store seeds.
 
     On failure, `lint-imports` prints the offending import chain.
     """

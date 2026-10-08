@@ -228,8 +228,29 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "Domain stays free of UI and web frameworks"
 type = "forbidden"
-source_modules = ["pulse.domain", "pulse.orchestrator"]
+source_modules = ["pulse.domain", "pulse.orchestrator", "pulse.replies"]
 forbidden_modules = ["textual", "fastapi", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Domain values and reply parsing need nothing else from Pulse"
+type = "forbidden"
+source_modules = ["pulse.domain", "pulse.replies"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
 
 [[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"

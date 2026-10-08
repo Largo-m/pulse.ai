@@ -166,7 +166,7 @@ Um step tem **um portão só**:
 | `requires_outcome = 0` | ninguém — encerrar o turno basta (comportamento antigo) |
 
 O motor anexa a instrução do protocolo ao prompt sozinho
-([`pulse/orchestrator/prompts.py`](../pulse/orchestrator/prompts.py)): nenhum
+([`pulse/orchestrator/agent_text.py`](../pulse/orchestrator/agent_text.py)): nenhum
 `prompt_template` precisa ser editado. O agente encerra com:
 
 ````text
@@ -190,7 +190,7 @@ permissão. Ele é o que decide se o motor gasta ou não a tentativa de
 auto-resolução.
 
 **Os três degraus**, nesta ordem
-([`pulse/orchestrator/outcome.py`](../pulse/orchestrator/outcome.py)):
+([`pulse/domain/outcome.py`](../pulse/domain/outcome.py)):
 
 1. **O agente pergunta.** Falta um dado que só a pessoa tem? O canal de pergunta
    (`cursor/ask_question`) entrega na tela **sem encerrar o step**. Bloqueio não
@@ -299,7 +299,7 @@ a run sem fim, e o motor não tem como julgar se a próxima volta vale a pena.
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
-([`pulse/prompts/render.py`](../pulse/prompts/render.py)). Chave sem valor é
+([`pulse/orchestrator/render.py`](../pulse/orchestrator/render.py)). Chave sem valor é
 **erro**, não buraco: instrução truncada sairia silenciosa.
 
 | Chave | Conteúdo |
@@ -320,7 +320,7 @@ oferecer. As `item_*` vêm **vazias** fora de um fan-out, e não ausentes: o mes
 ## 3. O que o motor interpreta da resposta do agente
 
 Só o desfecho do questionário de aprovação
-([`pulse/prompts/approval.py`](../pulse/prompts/approval.py)), quando o step tem
+([`pulse/replies/approval.py`](../pulse/replies/approval.py)), quando o step tem
 `requires_approval`:
 
 | Desfecho | O que o Pulse faz |
