@@ -15,13 +15,19 @@ Documentação de arquitetura (camadas, fluxos, glossário): [`ARCHITECTURE.md`]
 CLI (TUI)  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (Cursor | Claude Code)
 ```
 
-- **Engine** (`pulse-engine`): composition root; dono do estado e das definições
-- **CLI** (`pulse`): cliente fino + TUI; fala com o daemon em `~/.pulse/daemon.sock`
+- **Engine** (`pulse-engine`): composition root; dono do estado e das definições.
+  Código em [`pulse/daemon/`](pulse/daemon/) e [`pulse/api/`](pulse/api/).
+- **CLI** (`pulse`): cliente fino, somente TUI Textual. Código em
+  [`pulse/cli.py`](pulse/cli.py), [`pulse/tui/`](pulse/tui/) e
+  [`pulse/client/`](pulse/client/).
+- O daemon expõe a mesma API em dois transportes: Unix Domain Socket
+  `~/.pulse/daemon.sock` (usado pela CLI) e HTTP em `127.0.0.1:8787` (tooling).
 - Contrato: [`contracts/openapi.yaml`](contracts/openapi.yaml)
 
 ```bash
 pulse daemon start|status|stop
-pulse-engine   # foreground
+pulse-engine                  # foreground (= python -m pulse.daemon serve)
+pulse-engine --host 127.0.0.1 --port 8787
 ```
 
 ## Runtimes suportados
@@ -159,7 +165,7 @@ pulse config show --workflow default
 Como o Pulse funciona hoje (código atual):
 
 - [Armazenamento](docs/armazenamento.md) — o que é persistido e onde
-- [Mapa interativo da arquitetura](docs/arquitetura.html) — camadas, modelo e fluxo, clicável
+- [Agentes](docs/agentes.md) — agentes e o loop de execução, passo a passo
 - [Workflows](docs/workflows.md) — workflow como dado: definição, motor e retomada
 - [Logs](docs/logs.md) — ACP bruto vs stream do cockpit
 - [Questions](docs/questions.md) — questionário ` ```text `, `ask_question` e MCP

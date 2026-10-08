@@ -2,10 +2,6 @@
 
 Documento para quem está chegando no projeto (incluindo quem ainda não domina Python).
 
-> **Prefere navegar?** [`docs/arquitetura.html`](docs/arquitetura.html) é o mesmo
-> conteúdo como mapa clicável — camadas, modelo de dados e o fluxo de uma run.
-> Abra o arquivo no navegador.
-
 ## O que é o Pulse
 
 O **Pulse é um orquestrador de agentes de IA**. A responsabilidade dele é uma só:
@@ -708,7 +704,6 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
 
 ## Referências rápidas
 
-- Mapa interativo: [`docs/arquitetura.html`](docs/arquitetura.html)
 - Uso do produto: [`README.md`](README.md)
 - Agentes e o loop de execução, passo a passo: [`docs/agentes.md`](docs/agentes.md)
 - Modelo de workflow: [`docs/workflows.md`](docs/workflows.md)
