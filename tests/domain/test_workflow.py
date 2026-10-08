@@ -80,6 +80,16 @@ def test_every_step_of_the_range_maps_to_the_same_loop():
     assert loops[0] is loops[1] is loops[2]
 
 
+@pytest.mark.parametrize(
+    ("index", "opens", "closes"), [(1, True, False), (2, False, False), (3, False, True)]
+)
+def test_only_the_first_step_opens_and_only_the_last_closes(index, opens, closes):
+    """The opener may close the loop and the closer may ask for a round; nobody in between."""
+    loop = Loop(start=1, end=3, max_rounds=3)
+
+    assert (loop.opens(index), loop.closes(index)) == (opens, closes)
+
+
 def test_the_next_round_counts_on_from_the_rounds_already_run():
     loop = Loop(start=1, end=3, max_rounds=3)
 

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
+from pulse.store.db import connect, default_db_path
 from pulse.store.workflow_defs import (
     delete_workflow,
     get_agent,
@@ -225,8 +226,6 @@ def test_db_seeded_before_the_column_gets_the_task_on_migration(tmp_path: Path):
     """
     import sqlite3
 
-    from pulse.store.db import connect
-
     db_path = tmp_path / "antigo.db"
     connect(db_path).close()
 
@@ -244,7 +243,6 @@ def test_db_seeded_before_the_column_gets_the_task_on_migration(tmp_path: Path):
 
 def test_backfill_does_not_undo_user_edits(tmp_path: Path):
     from pulse.store import factory
-    from pulse.store.db import connect
 
     db_path = tmp_path / "editado.db"
     connection = connect(db_path)
@@ -293,7 +291,6 @@ def test_unattended_loops_do_not_ask_for_approval():
 def test_old_db_drops_the_approval_request_on_open(tmp_path: Path):
     """Existing users keep the old row in the database, and `seed` does not rewrite it."""
     from pulse.store import factory
-    from pulse.store.db import connect
 
     db_path = tmp_path / "antigo.db"
     connection = connect(db_path)
@@ -323,7 +320,6 @@ def test_old_db_drops_the_approval_request_on_open(tmp_path: Path):
 def test_user_rewritten_template_is_not_touched(tmp_path: Path):
     """Without the factory block the row belongs to the user; the migration leaves it alone."""
     from pulse.store import factory
-    from pulse.store.db import connect
 
     db_path = tmp_path / "editado.db"
     connection = connect(db_path)
@@ -352,7 +348,6 @@ def test_seeded_db_gains_the_merge_phase_on_open(tmp_path: Path):
     counts factory ids and fails when the factory gains rows. Without it, new
     factory agents would only reach fresh installs.
     """
-    from pulse.store.db import connect
 
     db_path = tmp_path / "antigo.db"
     connection = connect(db_path)
@@ -488,7 +483,6 @@ def test_a_repeat_rule_survives_a_save_and_a_load():
 
 def test_a_stored_rule_that_cannot_loop_loads_as_no_loop():
     """A hand-edited `repeat_max` below two used to be ignored by the engine; it still is."""
-    from pulse.store.db import connect, default_db_path
 
     save_workflow(_looping_workflow(RepeatRule(back_to="review", max_rounds=3)))
     connection = connect(default_db_path())

@@ -60,6 +60,12 @@ class Loop:
     end: int
     max_rounds: int
 
+    def opens(self, index: int) -> bool:
+        return index == self.start
+
+    def closes(self, index: int) -> bool:
+        return index == self.end
+
     def next_round(self, rounds: int) -> LoopRound | None:
         """The round after `rounds` already run; `None` once the ceiling is reached.
 

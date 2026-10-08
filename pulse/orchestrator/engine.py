@@ -320,7 +320,8 @@ def _execute(
                     run_store.save(run)
                     return RUN_STOPPED
 
-                opens_loop = at in loops and loops[at].start == at
+                loop = loops.get(at)
+                opens_loop = loop is not None and loop.opens(at)
                 exit_code, signal = _run_step(
                     runner=runner,
                     cockpit=cockpit,
@@ -339,14 +340,14 @@ def _execute(
                     run_store.save(run)
                     return exit_code
 
-                if signal == LoopSignal.CLOSE and opens_loop:
-                    index = close_loop(run, definition, loops[at])
+                if signal == LoopSignal.CLOSE and loop is not None and opens_loop:
+                    index = close_loop(run, definition, loop)
                     _sync_steps(runner, run)
                     _notify(runner, f"{record.label}: nada a corrigir — laço encerrado")
                     break
 
-                if signal == LoopSignal.REPEAT and at in loops and loops[at].end == at:
-                    target, message = repeat_loop(run, definition, loops[at], record.label)
+                if signal == LoopSignal.REPEAT and loop is not None and loop.closes(at):
+                    target, message = repeat_loop(run, definition, loop, record.label)
                     _notify(runner, message)
                     if target is not None:
                         index = target
