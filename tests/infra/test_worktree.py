@@ -13,7 +13,7 @@ from pulse.config.project_config import init_project_config, update_project_defa
 from pulse.config.resolved import resolve_config
 from pulse.domain.run import RunRecord, StepRecord
 from pulse.history.catalog import HistoryCatalog
-from pulse.orchestrator.engine import _branch_name, _prepare_workspace
+from pulse.orchestrator.engine import _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
 
@@ -158,7 +158,7 @@ def test_isolation_opens_worktree_and_stores_it(tmp_path: Path) -> None:
 
     assert exec_dir == worktrees_dir() / run.id
     assert exec_dir.is_dir()
-    assert branch == _branch_name(run)
+    assert branch == run.own_branch
     assert vcs.current_branch(exec_dir) == branch
     assert vcs.current_branch(repo) == "main"
 
@@ -246,7 +246,7 @@ def test_project_branch_is_not_reattached(tmp_path: Path) -> None:
     assert resumed.branch == "main"
     target, branch = _prepare_workspace(resumed, repo, Resolved(use_worktree=True))
 
-    assert branch == _branch_name(run)
+    assert branch == run.own_branch
     assert target == worktrees_dir() / run.id
     assert vcs.current_branch(repo) == "main"
 
@@ -279,15 +279,6 @@ def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
     assert one != two
     assert one.is_dir()
     assert two.is_dir()
-
-
-def test_branch_name_sanitizes_the_workflow(tmp_path: Path) -> None:
-    run = RunRecord(
-        id="0123456789abcdef",
-        workflow_id="nova spec/v2",
-        workspace_root=str(tmp_path),
-    )
-    assert _branch_name(run) == "pulse/nova-spec-v2-01234567"
 
 
 def test_project_toggle_reaches_resolved_config(tmp_path: Path) -> None:

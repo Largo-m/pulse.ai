@@ -73,6 +73,8 @@ _INTERRUPTED = frozenset({StepStatus.RUNNING, StepStatus.FAILED, StepStatus.BLOC
 
 
 FAN_OUT_SEPARATOR = ":"
+BRANCH_PREFIX = "pulse/"
+SHORT_ID_CHARS = 8
 
 
 def fan_out_child_id(base_step_id: str, item_id: str) -> str:
@@ -262,6 +264,25 @@ class RunRecord:
         """Where the agent worked: the worktree, or the root when there was none."""
         return self.worktree_path or self.workspace_root
 
+    @property
+    def own_branch(self) -> str:
+        """`pulse/<workflow>-<short run id>`: the branch this run's worktree is created on.
+
+        Uses the workflow id rather than the free-text task to avoid sanitizing it.
+        """
+        slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in self.workflow_id)
+        return f"{BRANCH_PREFIX}{slug.strip('-') or 'run'}-{self.id[:SHORT_ID_CHARS]}"
+
+    @property
+    def owns_branch(self) -> bool:
+        """The recorded branch was created by this run rather than the project's.
+
+        Prevents reattaching e.g. `main` from the user's working tree. Only
+        `own_branch`, with or without the suffix git adds when it is taken, counts.
+        """
+        base = self.own_branch
+        return self.branch == base or self.branch.startswith(f"{base}-")
+
     def step(self, step_id: str) -> StepRecord | None:
         for item in self.steps:
             if item.step_id == step_id:
@@ -436,6 +457,11 @@ class RunRecord:
         if exit_code == 0:
             raise InvalidTransition(f"run {self.id}: a clean exit must go through complete()")
         self.status = RunStatus.for_exit_code(exit_code)
+
+    def crash(self) -> None:
+        """The run broke mid-step: the step that was running and the run both fail."""
+        self.fail_running_steps()
+        self.status = RunStatus.FAILED
 
     def fail_running_steps(self) -> None:
         """Fail the steps a crash left `running`."""

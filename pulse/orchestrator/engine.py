@@ -156,8 +156,7 @@ def run_workflow(
             fallback_model=resolved.model,
         )
     except Exception as error:  # noqa: BLE001
-        run.fail_running_steps()
-        run.end(1)
+        run.crash()
         run_store.save(run)
         if cockpit:
             raise
@@ -223,7 +222,7 @@ def _prepare_workspace(
         return Path(run.worktree_path), run.branch
 
     repo = vcs.repo_root(workspace_root)
-    if repo is not None and _owns_branch(run) and vcs.branch_exists(repo, run.branch):
+    if repo is not None and run.owns_branch and vcs.branch_exists(repo, run.branch):
         target = worktrees_dir() / run.id
         vcs.attach_worktree(repo, target, run.branch)
         run.work_in(worktree_path=str(target), branch=run.branch)
@@ -237,30 +236,10 @@ def _prepare_workspace(
         return workspace_root, branch
 
     target = worktrees_dir() / run.id
-    branch = vcs.add_worktree(repo, target, _branch_name(run))
+    branch = vcs.add_worktree(repo, target, run.own_branch)
     run.work_in(worktree_path=str(target), branch=branch)
     run_store.save(run)
     return target, branch
-
-
-def _branch_name(run: RunRecord) -> str:
-    """`pulse/<workflow>-<short run id>`.
-
-    Uses the workflow name rather than the free-text task to avoid sanitizing it.
-    """
-    slug = "".join(char if char.isalnum() or char in "-_" else "-" for char in run.workflow_id)
-    slug = slug.strip("-") or "run"
-    return f"pulse/{slug}-{run.id[:8]}"
-
-
-def _owns_branch(run: RunRecord) -> bool:
-    """Whether the recorded branch was created by this run rather than the project's.
-
-    Prevents reattaching e.g. `main` from the user's working tree. Only names from
-    `_branch_name`, with or without the `add_worktree` suffix, count.
-    """
-    base = _branch_name(run)
-    return run.branch == base or run.branch.startswith(f"{base}-")
 
 
 def _announce_context(stream: Any | None, exec_dir: Path, branch: str) -> None:

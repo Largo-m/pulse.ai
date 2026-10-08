@@ -370,6 +370,56 @@ def test_a_crash_fails_only_the_running_steps():
     assert (running.status, done.status) == (StepStatus.FAILED, StepStatus.DONE)
 
 
+def test_a_crashed_run_fails_with_its_running_step():
+    """A crash must not leave a step `running` in history, nor the run looking alive."""
+    running = _running("a")
+    done = _running("b")
+    done.deliver()
+    run = _run(done, running)
+
+    run.crash()
+
+    assert (run.status, running.status, done.status) == (
+        RunStatus.FAILED,
+        StepStatus.FAILED,
+        StepStatus.DONE,
+    )
+
+
+def test_own_branch_names_the_workflow_and_the_short_run_id():
+    run = RunRecord(id="0123456789abcdef", workflow_id="nova spec/v2", workspace_root="/tmp")
+
+    assert run.own_branch == "pulse/nova-spec-v2-01234567"
+
+
+def test_a_workflow_id_with_no_safe_character_still_names_a_branch():
+    run = RunRecord(id="0123456789abcdef", workflow_id="///", workspace_root="/tmp")
+
+    assert run.own_branch == "pulse/run-01234567"
+
+
+@pytest.mark.parametrize(
+    ("branch", "owned"),
+    [
+        ("pulse/demo-run-1", True),
+        ("pulse/demo-run-1-2", True),
+        ("main", False),
+        ("", False),
+        ("pulse/demo-run-12", False),
+        ("pulse/other-run-1", False),
+    ],
+)
+def test_a_run_owns_only_the_branch_it_created(branch: str, owned: bool):
+    """Reattaching must never take over a branch of the project, like `main`.
+
+    `add_worktree` may suffix the name (`-2`) when it is taken; that is still ours.
+    """
+    run = _run()
+    run.work_in(worktree_path="", branch=branch)
+
+    assert run.owns_branch is owned
+
+
 def test_unknown_stored_statuses_load_as_pending():
     assert StepStatus.parse("") == StepStatus.PENDING
     assert RunStatus.parse("legacy") == RunStatus.PENDING
