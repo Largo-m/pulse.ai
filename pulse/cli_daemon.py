@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from pulse.client.active_runs import active_runs, describe
+from pulse.client.daemon_process import is_daemon_alive, stop_daemon
 from pulse.client.engine_client import EngineClient
-from pulse.daemon.server import is_daemon_alive, stop_daemon
 from pulse.paths import read_daemon_meta
 
 

@@ -12,9 +12,9 @@ from unittest.mock import MagicMock
 from pulse.client.run_session import EngineRunSession
 from pulse.daemon.adapters import ApiStreamSink
 from pulse.daemon.events import EventBus
-from pulse.daemon.protocol import REPLAY_END
 from pulse.orchestrator.engine import _announce_context
 from pulse.ports import NullStreamSink
+from pulse.protocol import REPLAY_END
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
 from tests.conftest import make_workflow

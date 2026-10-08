@@ -4,6 +4,7 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
@@ -377,7 +378,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
 
 
 def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
-    from pulse.daemon.protocol import REPLAY_END
+    from pulse.protocol import REPLAY_END
 
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
@@ -438,3 +439,43 @@ def test_foreign_host_is_rejected() -> None:
     client = TestClient(create_app(), base_url="http://attacker.example:8787")
     response = client.post("/api/workflows/feature/runs", json={"prompt": "x", "workspace": "/"})
     assert response.status_code == 400
+
+
+def test_acp_probe_tests_the_named_runtime_and_returns_its_models(monkeypatch, tmp_path):
+    """Onboarding probes the runtime the user picked, before any config names it.
+
+    The TUI is a thin client, so the probe and the model list it offers come
+    from this route; probing the configured agent instead would test the wrong CLI.
+    """
+    from pulse.acp.client import AcpProbeResult
+    from pulse.runtimes import get_runtime
+
+    seen: dict[str, object] = {}
+
+    def fake_probe(*, command, cwd, **_kwargs):
+        seen.update(command=command, cwd=cwd)
+        return AcpProbeResult(success=True, message="ok", available_models=["sonnet", "opus"])
+
+    monkeypatch.setattr("pulse.acp.client.probe_acp_connection", fake_probe)
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
+
+    response = client.post(
+        "/api/doctor/acp-probe", params={"workspace": str(tmp_path), "runtime": "claude"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["available_models"] == ["sonnet", "opus"]
+    assert seen == {"command": list(get_runtime("claude").acp_command), "cwd": str(tmp_path)}
+
+
+def test_acp_probe_of_an_unknown_runtime_is_not_found(monkeypatch):
+    """An unknown runtime id does not exist; falling back to the default would probe another CLI."""
+    monkeypatch.setattr(
+        "pulse.acp.client.probe_acp_connection",
+        lambda **_kwargs: pytest.fail("no probe for an unknown runtime"),
+    )
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
+
+    response = client.post("/api/doctor/acp-probe", params={"runtime": "nope"})
+
+    assert response.status_code == 404

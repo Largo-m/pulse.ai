@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import pulse.cli_daemon as cli_daemon
-import pulse.daemon.server as server
+import pulse.client.daemon_process as daemon_process
 import pulse.paths as paths
 from pulse.cli_daemon import run_daemon_command
 
@@ -25,7 +25,7 @@ def test_status_reports_a_live_daemon_with_its_endpoints(monkeypatch, tmp_path: 
     socket_path.touch()
     monkeypatch.setattr(paths, "GLOBAL_DIR", tmp_path)
     monkeypatch.setattr(paths, "DAEMON_META_FILE", tmp_path / "daemon.json")
-    monkeypatch.setattr(server, "DAEMON_SOCKET", socket_path)
+    monkeypatch.setattr(daemon_process, "DAEMON_SOCKET", socket_path)
     # The fake socket file accepts no connections; stub the run listing at the HTTP boundary.
     monkeypatch.setattr(cli_daemon, "active_runs", lambda: [])
     paths.write_daemon_meta(

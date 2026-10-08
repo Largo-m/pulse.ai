@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from pulse.daemon.protocol import ENGINE_PROTOCOL
+from pulse.client.daemon_process import stop_daemon
 from pulse.paths import (
     DAEMON_LOG_FILE,
     DAEMON_SOCKET,
@@ -20,6 +20,7 @@ from pulse.paths import (
     ensure_global_dir,
     read_daemon_meta,
 )
+from pulse.protocol import ENGINE_PROTOCOL
 
 
 class EngineClient:
@@ -68,8 +69,14 @@ class EngineClient:
         response.raise_for_status()
         return response.json()
 
-    def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-        response = self._http().post(path, json=body or {})
+    def post(
+        self,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        response = self._http().post(path, json=body or {}, params=params)
         response.raise_for_status()
         return response.json()
 
@@ -132,6 +139,11 @@ class EngineClient:
     def doctor(self) -> dict[str, Any]:
         return self.get("/api/doctor")
 
+    def acp_probe(self, *, workspace: Path, runtime: str) -> dict[str, Any]:
+        return self.post(
+            "/api/doctor/acp-probe", params={"workspace": str(workspace), "runtime": runtime}
+        )
+
     def workflows(self) -> list[dict[str, str]]:
         return list(self.get("/api/workflows").get("workflows", []))
 
@@ -143,8 +155,6 @@ class EngineClient:
             return False
 
     def _stop_daemon(self) -> None:
-        from pulse.daemon.server import stop_daemon
-
         self.close()
         stop_daemon()
 

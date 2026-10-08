@@ -16,11 +16,12 @@ from pulse.config.global_config import (
 )
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.resolved import resolve_config
-from pulse.daemon.protocol import ENGINE_PROTOCOL
 from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.doctor.checks import run_doctor_checks
 from pulse.history.catalog import HistoryCatalog
 from pulse.paths import safe_cwd
+from pulse.protocol import ENGINE_PROTOCOL
+from pulse.runtimes import find_runtime
 
 TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
 
@@ -125,20 +126,25 @@ def create_app(manager: RunManager | None = None) -> FastAPI:
         }
 
     @app.post("/api/doctor/acp-probe")
-    def acp_probe(workspace: str | None = None) -> dict[str, Any]:
+    def acp_probe(workspace: str | None = None, runtime: str | None = None) -> dict[str, Any]:
         from pulse.acp.client import probe_acp_connection
 
         cwd = workspace or str(safe_cwd())
         ws = Path(workspace).resolve() if workspace else None
-        result = probe_acp_connection(
-            command=list(resolve_config(workspace=ws).acp_command),
-            cwd=cwd,
-        )
+        if runtime is None:
+            command = list(resolve_config(workspace=ws).acp_command)
+        else:
+            selected = find_runtime(runtime)
+            if selected is None:
+                raise HTTPException(status_code=404, detail=f"runtime desconhecido: {runtime}")
+            command = list(selected.acp_command)
+        result = probe_acp_connection(command=command, cwd=cwd)
         return {
             "ok": result.success,
             "message": result.message,
             "error": result.error,
             "response_text": result.response_text,
+            "available_models": result.available_models,
         }
 
     @app.get("/api/config")

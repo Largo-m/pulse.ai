@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from pulse.client.engine_client import EngineClient
-from pulse.daemon.protocol import PING, REPLAY_END
+from pulse.protocol import PING, REPLAY_END
 
 DETACHED = -1
 
