@@ -315,6 +315,7 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
     approval block are updated; user-rewritten templates are left alone. Runs on
     every DB open, so it exits early via `SELECT` before calling `load_agents`.
     """
+    # Only the `?` placeholders are interpolated; every value is bound.
     placeholders = ",".join("?" * len(UNATTENDED_STEPS))
     pending = connection.execute(
         f"""
@@ -341,6 +342,7 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
 
 
 def _count_present(connection: Any, table: str, column: str, ids: tuple[str, ...]) -> int:
+    # `table` and `column` are literals from `is_seeded`, never input.
     placeholders = ",".join("?" * len(ids))
     query = f"SELECT count(*) FROM {table} WHERE {column} IN ({placeholders})"  # noqa: S608
     return int(connection.execute(query, ids).fetchone()[0])
