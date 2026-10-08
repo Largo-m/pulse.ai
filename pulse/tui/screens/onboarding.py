@@ -21,8 +21,8 @@ from pulse.config import (
 )
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models, permission_choices
 from pulse.doctor.checks import run_agent_checks
-from pulse.paths import GLOBAL_CONFIG_FILE
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
+from pulse.store.paths import GLOBAL_CONFIG_FILE
 
 
 class OnboardingScreen(Screen[int]):

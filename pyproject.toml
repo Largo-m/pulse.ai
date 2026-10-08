@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-pulse = "pulse.cli:main"
+pulse = "pulse.cli.main:main"
 pulse-engine = "pulse.daemon.server:main"
 pulse-mcp-ask = "pulse.mcp.ask_stdio:main"
 
@@ -55,8 +55,8 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 # Policy: asserts are how pytest tests, and test functions are not public API.
 "tests/**" = ["S101", "ANN"]
 # Policy: these modules exist to write to the terminal.
-"pulse/cli.py" = ["T201", "BLE001"]  # baseline: BLE001
-"pulse/cli_daemon.py" = ["T201", "BLE001"]  # baseline: BLE001
+"pulse/cli/daemon_command.py" = ["T201", "BLE001"]  # baseline: BLE001
+"pulse/cli/main.py" = ["T201", "BLE001"]  # baseline: BLE001
 "pulse/config/commands.py" = ["T201"]
 "pulse/doctor/report.py" = ["T201"]
 "pulse/orchestrator/cli_output.py" = ["T201"]
@@ -73,6 +73,7 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/daemon/adapters.py" = ["ANN401"]
 "pulse/daemon/events.py" = ["ANN401", "BLE001"]
 "pulse/daemon/runs.py" = ["ANN401", "BLE001", "S101"]
+"pulse/domain/ports.py" = ["ANN401"]
 "pulse/history/events.py" = ["UP042"]
 "pulse/history/models.py" = ["UP042"]
 "pulse/history/prompt_detail.py" = ["ANN401"]
@@ -81,9 +82,8 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/mcp/ask_protocol.py" = ["ANN001", "ANN401"]
 "pulse/mcp/http_bridge.py" = ["ANN001", "ANN401"]
 "pulse/orchestrator/engine.py" = ["ANN401", "T201"]
-"pulse/ports.py" = ["ANN401"]
-"pulse/prompts/permission.py" = ["ANN401"]
-"pulse/runtime/tty.py" = ["ANN401"]
+"pulse/orchestrator/tty.py" = ["ANN401"]
+"pulse/replies/permission.py" = ["ANN401"]
 "pulse/store/agent_settings.py" = ["ANN001"]
 "pulse/store/factory/__init__.py" = ["ANN401"]
 "pulse/store/runs.py" = ["ANN401"]
@@ -100,16 +100,16 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/tui/widgets/log_stream.py" = ["ANN003", "BLE001"]
 "pulse/tui/widgets/phase_sidebar.py" = ["ANN003", "BLE001"]
 "pulse/tui/widgets/prompt_dock.py" = ["ANN003"]
-"tests/test_acp_client.py" = ["S108"]
-"tests/test_api_engine.py" = ["S108"]
-"tests/test_ask_bridge.py" = ["S108"]
-"tests/test_engine_run_session.py" = ["S108"]
-"tests/test_fanout.py" = ["F811"]
-"tests/test_resolved_config.py" = ["S108"]
-"tests/test_run_context.py" = ["S108"]
-"tests/test_run_model.py" = ["S108"]
-"tests/test_run_store.py" = ["S108"]
-"tests/test_session_runner.py" = ["S108"]
+"tests/api/test_api_engine.py" = ["S108"]
+"tests/client/test_engine_run_session.py" = ["S108"]
+"tests/config/test_resolved_config.py" = ["S108"]
+"tests/domain/test_run_model.py" = ["S108"]
+"tests/infra/test_acp_client.py" = ["S108"]
+"tests/infra/test_ask_bridge.py" = ["S108"]
+"tests/infra/test_run_store.py" = ["S108"]
+"tests/infra/test_session_runner.py" = ["S108"]
+"tests/orchestrator/test_fanout.py" = ["F811"]
+"tests/orchestrator/test_run_context.py" = ["S108"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
@@ -228,8 +228,50 @@ ignore_imports = [
 [[tool.importlinter.contracts]]
 name = "Domain stays free of UI and web frameworks"
 type = "forbidden"
-source_modules = ["pulse.domain", "pulse.orchestrator"]
+source_modules = ["pulse.domain", "pulse.orchestrator", "pulse.replies"]
 forbidden_modules = ["textual", "fastapi", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Domain values and reply parsing need nothing else from Pulse"
+type = "forbidden"
+source_modules = ["pulse.domain", "pulse.replies"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI opens the TUI"
+type = "forbidden"
+source_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.domain",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.replies",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.vcs",
+]
+forbidden_modules = ["pulse.tui"]
 
 [[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"

@@ -7,7 +7,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.runcontrol import RUN_BLOCKED, RUN_STOPPED
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,

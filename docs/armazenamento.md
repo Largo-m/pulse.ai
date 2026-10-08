@@ -10,7 +10,7 @@ escreve no workspace — e desse o Pulse guarda só o caminho.
 ```
 
 O layout de `~/.pulse` (banco, socket e meta do daemon, log, worktrees) é
-definido num lugar só: [`pulse/paths.py`](../pulse/paths.py).
+definido num lugar só: [`pulse/store/paths.py`](../pulse/store/paths.py).
 
 Resolução de config: `defaults do código` → tabela `machine` → tabelas
 `project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.

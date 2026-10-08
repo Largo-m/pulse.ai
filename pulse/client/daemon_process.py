@@ -11,7 +11,7 @@ import signal
 import socket
 import time
 
-from pulse.paths import (
+from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,

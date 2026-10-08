@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from pulse.prompts.approval import CANCEL, SKIP
+from pulse.replies.approval import CANCEL, SKIP
 
 CANCELLED = "cancelled"
 _CANCEL_OUTCOMES = frozenset({CANCEL, CANCELLED})

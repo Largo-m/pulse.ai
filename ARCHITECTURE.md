@@ -162,7 +162,7 @@ Três blocos cercados que o próprio Pulse especificou — nunca o conteúdo do 
 agente produziu, nunca um arquivo que ele escreveu.
 
 **1. O questionário de aprovação**
-([`pulse/prompts/approval.py`](pulse/prompts/approval.py)):
+([`pulse/replies/approval.py`](pulse/replies/approval.py)):
 
 | Desfecho | Efeito |
 |----------|--------|
@@ -172,7 +172,7 @@ agente produziu, nunca um arquivo que ele escreveu.
 | `cancel` | step não fechou; cai no menu de retry |
 
 **2. O desfecho do step sem aprovação**
-([`pulse/orchestrator/outcome.py`](pulse/orchestrator/outcome.py)). Um step tem
+([`pulse/domain/outcome.py`](pulse/domain/outcome.py)). Um step tem
 um portão só: onde há aprovação quem atesta a entrega é a pessoa; onde não há, é
 o agente, no bloco `pulse:outcome`:
 
@@ -266,7 +266,7 @@ que já fechou está em `run_steps`, então retomar roda só o que faltou. Quem
 decide é o step, não o status da run — por isso um step que não fecha é gravado
 como `failed` na hora, e nunca fica `running` no banco depois que a run acabou.
 
-Contrato completo: [`pulse/runcontrol.py`](pulse/runcontrol.py).
+Contrato completo: [`pulse/domain/control.py`](pulse/domain/control.py).
 
 ### Esperar o usuário não é pausar a run — mas também não é trabalho do agente
 
@@ -288,7 +288,7 @@ O ponto único onde isso é observado é
 [`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
 `PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
 caminho de pergunta que escape da contagem. O runner não grava nada: avisa a
-porta `UserWaitListener` ([`pulse/ports.py`](pulse/ports.py)), e o motor liga a
+porta `UserWaitListener` ([`pulse/domain/ports.py`](pulse/domain/ports.py)), e o motor liga a
 ela o [`RunWaits`](pulse/orchestrator/waits.py), que aplica a intenção no
 agregado (`run.await_input()` e `run.end_wait(step_id, segundos)`) e salva a
 run inteira. Uma run que terminou com a pergunta aberta (parar) mantém o fim que
@@ -296,7 +296,7 @@ teve — fechar a pergunta não a devolve a `running`.
 
 **O que a política resolve não é pergunta.** `auto_approve`, `deny_writes` e o
 veto a terminal são regra, e regra o Pulse aplica onde a run roda:
-[`decide_permission`](pulse/prompts/permission.py) devolve a resposta e só cai
+[`decide_permission`](pulse/replies/permission.py) devolve a resposta e só cai
 no `None` — que é o que vira pergunta de verdade — quando a política é `ask`,
 ou em `deny_writes` quando o kind não diz se escreve (`execute`, desconhecido).
 Enquanto essa decisão morava só na TUI, uma run com o cockpit fechado parava
@@ -363,7 +363,7 @@ Leitura nunca levanta (sem git no PATH, a sessão só fica sem branch); só
 ### Valores disponíveis no `prompt_template`
 
 `{{chave}}`, e `{{#if chave}}…{{/if}}` para trecho opcional
-([`pulse/prompts/render.py`](pulse/prompts/render.py)). Chave sem valor é
+([`pulse/orchestrator/render.py`](pulse/orchestrator/render.py)). Chave sem valor é
 **erro**, não buraco — instrução truncada sairia silenciosa e ninguém notaria até
 a run sair errada.
 
@@ -387,8 +387,8 @@ não tem nenhum para oferecer.
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/cli.py`](pulse/cli.py) | Lê o comando (`init`, `doctor`, `config`, `daemon`) ou abre a TUI |
-| [`pulse/cli_daemon.py`](pulse/cli_daemon.py) | `pulse daemon start \| stop \| status` |
+| [`pulse/cli/main.py`](pulse/cli/main.py) | Lê o comando (`init`, `doctor`, `config`, `daemon`) ou abre a TUI |
+| [`pulse/cli/daemon_command.py`](pulse/cli/daemon_command.py) | `pulse daemon start \| stop \| status` |
 | [`pulse/__main__.py`](pulse/__main__.py) | Permite `python -m pulse` |
 
 Entry points: `pulse` → CLI, `pulse-engine` → daemon em foreground,
@@ -409,6 +409,7 @@ Só tela e interação. Não executa workflow no próprio processo.
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
 | [`pulse/tui/hydrate.py`](pulse/tui/hydrate.py) | Reconstrói a tela a partir de uma run gravada |
+| [`pulse/tui/brand.py`](pulse/tui/brand.py) | Banner e linha de pulso da home e da CLI |
 
 A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 **mesmo caminho do motor**. Não há mapa de fases na UI.
@@ -421,7 +422,7 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 | [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria (ou **anexa**) → escuta SSE → responde `prompt.request` → devolve exit code |
 | [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
 | [`pulse/client/daemon_process.py`](pulse/client/daemon_process.py) | O processo do daemon visto de fora: está vivo? parar — pelo arquivo de meta, sem importar o servidor |
-| [`pulse/protocol.py`](pulse/protocol.py) | `ENGINE_PROTOCOL` e os eventos de controle do stream; módulo neutro que cliente e daemon leem |
+| [`pulse/client/protocol.py`](pulse/client/protocol.py) | `ENGINE_PROTOCOL` e os eventos de controle do stream; módulo neutro que cliente e daemon leem |
 
 ### 3.4 Engine — daemon (composition root)
 
@@ -438,7 +439,7 @@ meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa
 pasta da Lixeira, onde o macOS nega até `getcwd()` — e toda run nova morria aí,
 antes do primeiro step. Por isso `run_daemon` faz `chdir` para `~/.pulse`, e
 quem ainda precisa perguntar "onde estamos?" usa
-[`safe_cwd`](pulse/paths.py), que cai no mesmo diretório em vez de
+[`safe_cwd`](pulse/store/paths.py), que cai no mesmo diretório em vez de
 levantar. Nada se perde: a run sempre roda com `cwd` explícito — o workspace que
 o cliente mandou, ou o worktree dela.
 
@@ -472,16 +473,22 @@ largar o stream sem a run precisar emitir nada.
 
 ### 3.5 Domínio
 
-Usado pelo Engine. A TUI **não** chama isso direto para executar.
+`domain/` e `replies/` não importam nenhum outro pacote do Pulse: são valores,
+regras e parsers sem I/O. `orchestrator/` usa os dois para executar a run. A
+TUI lê valores do domínio, mas **não** chama o orquestrador para executar.
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/ports.py`](pulse/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
+| [`pulse/domain/run.py`](pulse/domain/run.py) | Agregado da run: `RunRecord`/`StepRecord`, status e transições com guarda, sem I/O |
+| [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object, com os laços (`loops()`, `RepeatRule`, `Loop.next_round`), o protocolo de desfecho e os filhos de fan-out |
+| [`pulse/domain/outcome.py`](pulse/domain/outcome.py) | O bloco `pulse:outcome` e o seu parser estrito |
+| [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
+| [`pulse/domain/ports.py`](pulse/domain/ports.py) | `StreamSink`, `PromptPort` + implementações Null |
+| [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada |
-| [`pulse/orchestrator/prompts.py`](pulse/orchestrator/prompts.py) | Os dois textos que o próprio Pulse escreve |
-| [`pulse/prompts/render.py`](pulse/prompts/render.py) | Engine `{{placeholder}}` |
-| [`pulse/prompts/approval.py`](pulse/prompts/approval.py) | Lê o desfecho do questionário |
-| [`pulse/runcontrol.py`](pulse/runcontrol.py) | Parar uma run, seguro entre threads |
+| [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |
+| [`pulse/orchestrator/agent_text.py`](pulse/orchestrator/agent_text.py) | Os dois textos que o próprio Pulse escreve |
+| [`pulse/orchestrator/render.py`](pulse/orchestrator/render.py) | Engine `{{placeholder}}` |
 
 ### 3.6 ACP e runtimes
 
@@ -499,16 +506,16 @@ enxergá-lo sem mudanças.
 
 | Pasta | Função |
 |-------|--------|
-| [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Definições de workflow, step e agente |
-| [`pulse/domain/run.py`](pulse/domain/run.py) | Agregado da run: `RunRecord`/`StepRecord`, status e transições com guarda, sem I/O |
+| [`pulse/store/workflow_defs.py`](pulse/store/workflow_defs.py) | Persistência das definições de workflow, step e agente |
 | [`pulse/store/runs.py`](pulse/store/runs.py) | Persistência da run, log e artefatos |
+| [`pulse/store/paths.py`](pulse/store/paths.py) | O layout de `~/.pulse`, definido num lugar só |
 | [`pulse/store/db.py`](pulse/store/db.py) | Schema + disparo da semente |
 | [`pulse/store/factory/`](pulse/store/factory/) | Semente: os loops e playbooks de fábrica, lidos uma vez |
 | [`pulse/config/`](pulse/config/) | Config global e por projeto, resolve efetivo, catálogo de models |
 | [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` |
+| [`pulse/history/status_labels.py`](pulse/history/status_labels.py) | Rótulo, cor e ícone de cada status: os mesmos na tela e na busca do histórico |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
-| [`pulse/runtime/`](pulse/runtime/) | `is_interactive`, `is_pulse_ready` (não confundir com `runtimes/`) |
 | [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run |
 
 ---
@@ -566,7 +573,7 @@ do `run.context`: é ele que diz a raiz sobre a qual esses caminhos se abrem.
 
 ```
  1. Usuário: pulse
- 2. cli.py garante o Engine up → abre PulseApp (HomeScreen)
+ 2. cli/main.py garante o Engine up → abre PulseApp (HomeScreen)
  3. Home lista os workflows de `workflow_defs`; usuário escolhe e descreve a tarefa
  4. CockpitScreen monta a sidebar a partir de `workflow_steps` → EngineRunSession
  5. client: POST /api/workflows/{id}/runs
@@ -617,14 +624,17 @@ mesmas perguntas apareceriam duas vezes.
 | Motor sequenciar steps | Motor interpretar o que o agente produziu |
 | Motor ler o desfecho da aprovação | Motor esperar artefato com nome conhecido |
 | Definição vir do banco | Definição vir de arquivo do pacote |
-| `prompts/` parsear respostas | `prompts/` depender de UI |
+| `replies/` parsear respostas | `domain/` ou `replies/` importar outro pacote do Pulse |
 | `store/db.py` carregar `store/factory/` | Qualquer outro módulo importar a semente |
+| `cli/` abrir a TUI; a TUI ler `history/` | Qualquer outro pacote importar `tui/` |
 
-As três regras de import são contratos do import-linter (`[tool.importlinter]`
+As regras de import são contratos do import-linter (`[tool.importlinter]`
 no `pyproject.toml`), verificados por `lint-imports` e por
 `tests/architecture/test_import_contracts.py`. Cadeias indiretas anteriores ao
 contrato ficam em `ignore_imports`, cada uma com o motivo; entrada que deixa de
 existir quebra o check, então a lista só diminui.
+Os contratos que listam "todo pacote menos alguns" são conferidos contra as
+pastas de `pulse/`, então um pacote novo já nasce coberto.
 
 ---
 
@@ -633,7 +643,7 @@ existir quebra o check, então a lista só diminui.
 | Pattern | Onde | Para quê |
 |---------|------|----------|
 | Composition Root | `daemon/` | Só o daemon monta o grafo de serviços |
-| Ports & Adapters | `ports.py` + adapters TUI/API | Domínio independente da UI |
+| Ports & Adapters | `domain/ports.py` + adapters TUI/API | Domínio independente da UI |
 | Facade | `orchestrator/engine.py` | Uma entrada estável: `run_workflow` |
 | Data-driven pipeline | `workflow_defs`/`workflow_steps` | Trocar o pipeline é `INSERT`, não release |
 | Transport parity | UDS + TCP | Mesmo contrato para CLI e clients futuros |
@@ -660,7 +670,9 @@ pytest
 
 Duas invariantes que valem checar depois de mexer no pacote (o
 `tests/architecture/test_factory_seed.py` as verifica no `pytest` e no CI, junto
-com os contratos de import, o OpenAPI, o limite de linhas e os links da doc):
+com os contratos de import, o OpenAPI, o limite de linhas, os links da doc e
+`tests/` espelhando `pulse/` — uma pasta por pacote, com os adapters juntos em
+`tests/infra/`):
 
 ```bash
 # arquivo não-Python só na semente de fábrica

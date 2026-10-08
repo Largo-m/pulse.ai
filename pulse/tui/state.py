@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from pulse.domain.control import RUN_STOPPED
 from pulse.history.events import (
     ArtifactItem,
     LogEntry,
@@ -15,7 +16,6 @@ from pulse.history.events import (
     workflow_label,
     workflow_steps,
 )
-from pulse.runcontrol import RUN_STOPPED
 from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
 
 Listener = Callable[[], None]

@@ -12,7 +12,8 @@ from typing import Any
 import httpx
 
 from pulse.client.daemon_process import stop_daemon
-from pulse.paths import (
+from pulse.client.protocol import ENGINE_PROTOCOL
+from pulse.store.paths import (
     DAEMON_LOG_FILE,
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
@@ -20,7 +21,6 @@ from pulse.paths import (
     ensure_global_dir,
     read_daemon_meta,
 )
-from pulse.protocol import ENGINE_PROTOCOL
 
 
 class EngineClient:

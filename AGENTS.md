@@ -38,28 +38,34 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 
 | Layer | Packages | May depend on | Must NOT depend on |
 |---|---|---|---|
-| Entry | `cli.py`, `cli_daemon.py`, `__main__.py` | `client/`, `tui/`, `config/`, `doctor/` | `orchestrator/` to execute runs |
-| UI | `tui/` | `client/`, `ports.py`, `history/` (read) | `orchestrator/`, `acp/` to execute |
-| Client | `client/` | HTTP contract only | domain internals |
+| Entry | `cli/`, `__main__.py` | `client/`, `tui/`, `config/`, `doctor/` | `orchestrator/` to execute runs |
+| UI | `tui/` | `client/`, `domain/`, `replies/`, `history/` (read) | `orchestrator/`, `acp/` to execute |
+| Client | `client/` | HTTP contract only (`client/protocol.py`) | domain internals |
 | Composition root | `daemon/`, `api/` | everything | — |
-| Domain | `orchestrator/`, `prompts/`, `ports.py`, `runcontrol.py` | `store/`, `config/`, `acp/` via ports | Textual, FastAPI, widgets |
-| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | stdlib, third-party libs | `tui/` |
+| Domain | `domain/` (run, workflow, outcome, control, ports), `replies/` | nothing else in `pulse/` | any other package, Textual, FastAPI |
+| Orchestration | `orchestrator/` | `domain/`, `replies/`, `store/`, `config/`, `acp/` via ports | Textual, FastAPI, widgets |
+| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, stdlib, third-party libs | `tui/` |
+
+The package root holds only `__init__.py` and `__main__.py`; every other module
+lives in the package of its layer.
 
 - **The daemon is the single source of truth** for runs, effective config and
   state. Only `daemon/` wires the service graph.
 - **The TUI is a thin client**: it talks to `/api/*`, never runs a workflow in
   its own process. `tui/` and `client/` never import `orchestrator/`, `acp/` or
-  `daemon/`; shared constants go to a neutral module (`runcontrol.py`,
-  `protocol.py`, `paths.py`). The import-linter contracts in `pyproject.toml`
-  enforce this; their `ignore_imports` baseline only shrinks.
+  `daemon/`; what both sides share lives in `domain/` (`domain/control.py`) or
+  with its owner (`client/protocol.py`, `store/paths.py`). The import-linter
+  contracts in `pyproject.toml` enforce this; their `ignore_imports` baseline
+  only shrinks. Only `cli/` imports `tui/`: what a screen and a non-UI package
+  both need (status labels) lives with the non-UI owner.
 - **Ports & Adapters**: the domain depends on `StreamSink` / `PromptPort`
-  ([`pulse/ports.py`](pulse/ports.py)), not on Textual or HTTP. New I/O needs a
-  port first, then adapters (TUI, API, `Null*`).
+  ([`pulse/domain/ports.py`](pulse/domain/ports.py)), not on Textual or HTTP.
+  New I/O needs a port first, then adapters (TUI, API, `Null*`).
 - **One contract, two transports**: the same `/api/*` routes over UDS and TCP.
   Any route change updates [`contracts/openapi.yaml`](contracts/openapi.yaml)
   (enforced by `tests/architecture/test_openapi_contract.py`). Breaking changes to the
   client↔daemon protocol bump `ENGINE_PROTOCOL` in
-  [`pulse/protocol.py`](pulse/protocol.py).
+  [`pulse/client/protocol.py`](pulse/client/protocol.py).
 
 ### 2.2 Data-driven invariants (never break)
 
@@ -85,7 +91,7 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 6. **Nothing on disk except artifacts** (and per-run git worktrees under
    `~/.pulse/worktrees/`). Config and state go to SQLite; for artifacts Pulse
    stores only the path, relative to where the run worked.
-7. **A missing template key is an error, not a blank** (`prompts/render.py`).
+7. **A missing template key is an error, not a blank** (`orchestrator/render.py`).
 8. **One ACP session per step.** The next step receives only
    `{{previous_summary}}`, never the previous context.
 9. **Policy is not a question.** Decisions resolved by `permission_policy` are
@@ -117,9 +123,9 @@ evidence of need.
 
 ## 3. Design and domain modeling
 
-Apply tactical DDD where there is real domain logic (`orchestrator/`,
-`prompts/`, `runcontrol.py`, `history/`, `config/resolved.py`) — not in DTOs,
-routes or adapters.
+Apply tactical DDD where there is real domain logic (`domain/`, `orchestrator/`,
+`replies/`, `history/`, `config/resolved.py`) — not in DTOs, routes or
+adapters.
 
 - **Behavior with data.** Prefer methods that express intent
   (`outcome.delivered`, `control.checkpoint()`) over setter chains or services
@@ -164,7 +170,7 @@ never **what** the next line does. Delete on sight:
 - `TODO` without owner or issue link.
 
 Good docstrings state the contract and the reason, like the ones in
-`tests/test_outcome_block.py`.
+`tests/domain/test_outcome_block.py`.
 
 ### 4.3 Structure
 
@@ -206,9 +212,12 @@ pass.
 
 ## 5. Testing
 
-Tests live in `tests/`, run with `pytest`. `tests/conftest.py` isolates the
-database per test (`PULSE_DB` → `tmp_path`) and offers `make_workflow(...)` to
-seed workflows — tests seed their own data; don't depend on the factory seed.
+Tests live in `tests/`, run with `pytest`, in one folder per package of
+`pulse/` (the adapters `acp`, `runtimes`, `store`, `vcs` and `mcp` share
+`tests/infra/`; `daemon/` is tested in `tests/api/`). `tests/conftest.py`
+isolates the database per test (`PULSE_DB` → `tmp_path`) and offers
+`make_workflow(...)` to seed workflows — tests seed their own data; don't
+depend on the factory seed.
 
 ### 5.1 Rules
 
@@ -232,7 +241,7 @@ seed workflows — tests seed their own data; don't depend on the factory seed.
 - **Cover error paths**, not just invalid input: inject the downstream failure
   (runtime missing, ACP error, git failure, closed stream) and assert how the
   run degrades (step status, event, exit code).
-- **Concurrency** (`daemon/runs.py`, `runcontrol.py`, event bus, prompt
+- **Concurrency** (`daemon/runs.py`, `domain/control.py`, event bus, prompt
   correlator): drive shared state from several threads released together and
   assert the promised invariant (no lost update, at-most-once).
 - **Validators/parsers/sanitizers** (`outcome`, approval, questionnaire,
@@ -243,9 +252,9 @@ seed workflows — tests seed their own data; don't depend on the factory seed.
   (`test_text_without_the_block_is_not_a_delivery`); the docstring says why the
   behavior matters.
 - **Architecture invariants are tests.** They live in `tests/architecture/`:
-  factory seed, OpenAPI contract, import contracts, file size, markdown links
-  and modules cited in `ARCHITECTURE.md`. Keep them, and extend them when
-  adding a rule.
+  factory seed, OpenAPI contract, import contracts, file size, markdown links,
+  modules cited in `ARCHITECTURE.md` and `tests/` mirroring `pulse/`. Keep
+  them, and extend them when adding a rule.
 - No `skip`, `xfail` or weakened assertions to make CI green.
 
 ### 5.2 Before finishing
@@ -253,7 +262,7 @@ seed workflows — tests seed their own data; don't depend on the factory seed.
 ```bash
 pip install -e ".[dev]" && pre-commit install   # once per clone
 
-pytest tests/test_<area>.py  # nearest tests first while iterating
+pytest tests/<package>/      # nearest tests first while iterating
 pytest --cov                 # whole suite + coverage floor, must be green
 ruff check . && ruff format --check .
 mypy

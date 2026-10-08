@@ -10,7 +10,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from pulse.status_labels import status_color, status_icon, status_label
+from pulse.history.status_labels import status_color, status_icon, status_label
 from pulse.tui.state import NAV_PHASE, CockpitState, PhaseItem, PhaseStatus
 
 
