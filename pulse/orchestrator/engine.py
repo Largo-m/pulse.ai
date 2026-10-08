@@ -11,7 +11,6 @@ Pulse forwards, which allows switching runtimes between steps and redoing one st
 
 from __future__ import annotations
 
-import sys
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -23,7 +22,7 @@ from pulse.config import ResolvedConfig, resolve_config
 from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
-from pulse.domain.ports import NullPromptPort, NullStreamSink
+from pulse.domain.ports import NullPromptPort, NullStreamSink, PromptPort, StreamSink
 from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator.agent_text import (
@@ -33,15 +32,9 @@ from pulse.orchestrator.agent_text import (
     guidance_block,
     outcome_protocol,
 )
-from pulse.orchestrator.cli_output import (
-    print_workflow_banner,
-    print_workflow_error,
-    print_workflow_result,
-)
 from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
 from pulse.orchestrator.loops import close_loop, repeat_loop
 from pulse.orchestrator.render import TemplateError, render
-from pulse.orchestrator.tty import is_cockpit_stream, is_interactive
 from pulse.orchestrator.turn import MenuChoice, TurnResult
 from pulse.orchestrator.waits import RunWaits
 from pulse.replies.approval import format_summary
@@ -56,7 +49,6 @@ _POLICIES: dict[str, PermissionPolicy] = {
     "auto_approve": "auto_approve",
     "deny_writes": "deny_writes",
 }
-_NEVER_INTERRUPTED = RunControl()
 
 
 class UnknownWorkflow(ValueError):
@@ -68,40 +60,27 @@ def run_workflow(
     workflow_id: str,
     user_prompt: str,
     workspace: Path | None = None,
-    stream: Any | None = None,
-    prompt_handler: Any | None = None,
-    render_header: bool = True,
+    stream: StreamSink | None = None,
+    prompt_handler: PromptPort | None = None,
     resume_run_id: str | None = None,
     control: RunControl | None = None,
     run_id: str | None = None,
 ) -> int:
-    cockpit = is_cockpit_stream(stream)
-    if not cockpit and not is_interactive():
-        print("[pulse] Workflow requer terminal interativo ou cliente Engine.", file=sys.stderr)
-        return 1
-
+    stream = stream or NullStreamSink()
     definition = get_workflow(workflow_id)
     if definition is None:
         raise UnknownWorkflow(f"workflow desconhecido: {workflow_id}")
     if not definition.steps:
-        message = f"workflow `{workflow_id}` não tem step nenhum"
-        if cockpit:
-            raise UnknownWorkflow(message)
-        print(f"[pulse] {message}", file=sys.stderr)
-        return 1
+        raise UnknownWorkflow(f"workflow `{workflow_id}` não tem step nenhum")
 
     resolved = resolve_config(workspace=workspace, workflow=workflow_id)
     runtime = get_runtime(resolved.agent_name)
     blocking = check_runtime_ready(runtime.id)
     if blocking is not None:
-        message = (
+        raise RuntimeError(
             f"Runtime `{runtime.id}` indisponível: {blocking.message}. "
             f"{blocking.detail or ''}".strip()
         )
-        if cockpit:
-            raise RuntimeError(message)
-        print(f"[pulse] {message}", file=sys.stderr)
-        return 1
 
     workspace_root = resolved.workspace_dir
     run = _resolve_run(
@@ -115,30 +94,17 @@ def run_workflow(
     try:
         exec_dir, branch = _prepare_workspace(run, workspace_root, resolved)
     except vcs.GitError as error:
-        message = f"Não consegui abrir o worktree desta run: {error}"
-        if cockpit:
-            raise RuntimeError(message) from error
-        print(f"[pulse] {message}", file=sys.stderr)
-        return 1
+        raise RuntimeError(f"Não consegui abrir o worktree desta run: {error}") from error
 
-    _announce_context(stream, exec_dir, branch)
-
-    if render_header and not cockpit:
-        lines = [
-            f"Workspace: {exec_dir}",
-            f"Run: {run.id}",
-            f"Steps: {len(run.steps)}",
-            f"Tarefa: {run.user_prompt.strip() or '—'}",
-        ]
-        if branch:
-            lines.insert(1, f"Branch: {branch}")
-        print_workflow_banner(title=definition.label, lines=lines)
+    # Must precede the first `phase.begin`: the artifact pane uses it to know
+    # which folder to watch.
+    stream.set_context(cwd=str(exec_dir), branch=branch)
 
     runner = AcpSessionRunner(
         resolved.acp_command,
         cwd=str(exec_dir),
         permission_policy=resolved.permission_policy,
-        stream=stream or NullStreamSink(),
+        stream=stream,
         prompt_handler=prompt_handler or NullPromptPort(),
         runtime=runtime,
         control=control,
@@ -148,20 +114,17 @@ def run_workflow(
     try:
         return _execute(
             runner=runner,
-            cockpit=cockpit,
             definition=definition,
             run=run,
             workspace=workspace_root,
             exec_dir=exec_dir,
             fallback_model=resolved.model,
         )
-    except Exception as error:  # noqa: BLE001
+    # The run is the boundary: record the crash on it, then let the caller report it.
+    except Exception:  # noqa: BLE001
         run.crash()
         run_store.save(run)
-        if cockpit:
-            raise
-        print_workflow_error(f"Falha na sessão ACP: {error}")
-        return 1
+        raise
 
 
 def _resolve_run(
@@ -242,21 +205,9 @@ def _prepare_workspace(
     return target, branch
 
 
-def _announce_context(stream: Any | None, exec_dir: Path, branch: str) -> None:
-    """Tell the UI where the run works, before any step starts.
-
-    Must precede the first `phase.begin`: the artifact pane uses it to know which
-    folder to watch.
-    """
-    set_context = getattr(stream, "set_context", None) if stream is not None else None
-    if callable(set_context):
-        set_context(cwd=str(exec_dir), branch=branch)
-
-
 def _execute(
     *,
     runner: AcpSessionRunner,
-    cockpit: bool,
     definition: WorkflowDef,
     run: RunRecord,
     workspace: Path,
@@ -303,7 +254,6 @@ def _execute(
                 opens_loop = loop is not None and loop.opens(at)
                 exit_code, signal = _run_step(
                     runner=runner,
-                    cockpit=cockpit,
                     run=run,
                     step=step,
                     record=record,
@@ -336,8 +286,7 @@ def _execute(
         run.retire_steps_outside({step.step_id for step in definition.steps})
         run.complete()
         run_store.save(run)
-        if not cockpit:
-            print_workflow_result(f"✓ {definition.label} concluído")
+        _sync_steps(runner, run)
         return 0
     finally:
         runner.close()
@@ -346,7 +295,6 @@ def _execute(
 def _run_step(
     *,
     runner: AcpSessionRunner,
-    cockpit: bool,
     run: RunRecord,
     step: StepDef,
     record: StepRecord,
@@ -361,7 +309,6 @@ def _run_step(
     while True:
         signal, reason = _attempt_step(
             runner=runner,
-            cockpit=cockpit,
             run=run,
             step=step,
             record=record,
@@ -412,7 +359,6 @@ def _run_step(
 def _attempt_step(
     *,
     runner: AcpSessionRunner,
-    cockpit: bool,
     run: RunRecord,
     step: StepDef,
     record: StepRecord,
@@ -483,12 +429,10 @@ def _attempt_step(
     if turn.skipped:
         record.skip()
         run_store.save(run)
-        if not cockpit:
-            print_workflow_result(f"⏭  {record.label} pulado")
         return None, ""
 
     if may_close and not turn.approved and parse_outcome(turn.summary).closes:
-        return _settle(run, record, cockpit, LoopSignal.CLOSE)
+        return _settle(run, record, LoopSignal.CLOSE)
 
     if step.requires_approval and not turn.approved:
         _fail(run, record)
@@ -507,19 +451,17 @@ def _attempt_step(
             return _block(run, record, _blocked_reason(declared))
         repeats = step.repeat is not None and declared.repeats
         if may_close and declared.closes:
-            return _settle(run, record, cockpit, LoopSignal.CLOSE)
+            return _settle(run, record, LoopSignal.CLOSE)
 
-    return _settle(run, record, cockpit, LoopSignal.REPEAT if repeats else None)
+    return _settle(run, record, LoopSignal.REPEAT if repeats else None)
 
 
 def _settle(
-    run: RunRecord, record: StepRecord, cockpit: bool, signal: LoopSignal | None
+    run: RunRecord, record: StepRecord, signal: LoopSignal | None
 ) -> tuple[LoopSignal | None, str]:
     """Record the step as delivered and pass the agent's loop signal on."""
     record.deliver()
     run_store.save(run)
-    if not cockpit:
-        print_workflow_result(f"✓ {record.label}")
     return signal, ""
 
 
@@ -691,16 +633,15 @@ def _choose(
 ) -> tuple[MenuChoice, str]:
     """Ask the user and return `(choice, guidance)`.
 
-    "Outro" lets the user write what the agent should do. With nobody to ask
-    (CLI, closed cockpit, daemon run), the answer is always stop.
+    "Outro" lets the user write what the agent should do. With nobody to ask,
+    the answer is stop, and the reason is left on the stream for whoever reads it.
     """
-    handler = getattr(runner, "_prompt_handler", None)
-    select = getattr(handler, "select_choice", None)
     prompt = reason.strip() or "O step não foi concluído."
-    if not callable(select):
-        _notify(runner, f"{title}: {prompt}")
+    choice = runner.prompts.select_choice(prompt, choices, title=title)
+    if choice is None:
+        if not _control(runner).interrupted:
+            _notify(runner, f"{title}: {prompt}")
         return MenuChoice.STOP, ""
-    choice = select(prompt, choices, title=title)
     if choice == MenuChoice.GUIDANCE:
         guidance = _ask_guidance(runner, title)
         if guidance:
@@ -726,34 +667,24 @@ def _revive_session(runner: AcpSessionRunner) -> None:
 
     Retrying on a dead session would just fail again.
     """
-    ensure = getattr(runner, "ensure_process", None)
-    if not callable(ensure):
-        return
     try:
-        if ensure():
+        if runner.ensure_process():
             _notify(runner, "Sessão do agente reiniciada")
     except (RuntimeError, TimeoutError, OSError) as error:
         _notify(runner, f"Não consegui reiniciar a sessão do agente: {error}")
 
 
 def _ask_guidance(runner: AcpSessionRunner, title: str) -> str:
-    handler = getattr(runner, "_prompt_handler", None)
-    ask_text = getattr(handler, "ask_text", None)
-    if not callable(ask_text):
-        return ""
-    answer = ask_text("O que o agente deve fazer nesta nova tentativa?", title=title)
+    answer = runner.prompts.ask_text("O que o agente deve fazer nesta nova tentativa?", title=title)
     return str(answer or "").strip()
 
 
 def _control(runner: AcpSessionRunner) -> RunControl:
-    return getattr(runner, "control", None) or _NEVER_INTERRUPTED
+    return runner.control
 
 
 def _notify(runner: AcpSessionRunner, message: str) -> None:
-    stream = getattr(runner, "_stream", None)
-    info = getattr(stream, "info", None) if stream is not None else None
-    if callable(info):
-        info(message)
+    runner.stream.info(message)
 
 
 def _sync_steps(runner: AcpSessionRunner, run: RunRecord) -> None:
@@ -761,12 +692,8 @@ def _sync_steps(runner: AcpSessionRunner, run: RunRecord) -> None:
 
     The list is sent because fan-out changes it mid-run.
     """
-    stream = getattr(runner, "_stream", None)
-    apply = getattr(stream, "apply_phase_statuses", None) if stream is not None else None
-    if not callable(apply):
-        return
     grouped = run.step_ids_by_status()
-    apply(
+    runner.stream.apply_phase_statuses(
         steps=[
             {"id": item.step_id, "label": item.label, "rounds": item.rounds} for item in run.steps
         ],

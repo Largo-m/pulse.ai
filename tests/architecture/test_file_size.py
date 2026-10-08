@@ -14,7 +14,7 @@ LINE_LIMIT = 1000  # Phase 8 lowers it to 700.
 # Files over the limit when it landed, each capped at its current size. Entries
 # only shrink or leave this map: split the file, then lower or delete its line.
 OVERSIZED = {
-    "tests/orchestrator/test_engine_steps.py": 1447,
+    "tests/orchestrator/test_engine_steps.py": 1405,
 }
 
 

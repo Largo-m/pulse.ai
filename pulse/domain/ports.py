@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
+from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
 JsonObject: TypeAlias = dict[str, object]
 """An ACP JSON-RPC payload. Its shape belongs to the runtime, so adapters narrow it at the edge."""
 
 Choice = TypeVar("Choice")
+
+
+class StepRow(TypedDict):
+    """One step as the panel lists it; fan-out changes the list mid-run."""
+
+    id: str
+    label: str
+    rounds: int
 
 
 class Questionnaire(Protocol):
@@ -21,6 +29,12 @@ class Questionnaire(Protocol):
 
 @runtime_checkable
 class StreamSink(Protocol):
+    """Where a run shows its progress: the cockpit over SSE, or a plain console.
+
+    The engine calls every method unconditionally; an adapter with nothing to
+    show for one implements it as a no-op instead of leaving it out.
+    """
+
     def handle_update(self, params: JsonObject) -> None: ...
 
     def begin_phase(self, title: str) -> None: ...
@@ -38,6 +52,22 @@ class StreamSink(Protocol):
     def end_user_wait(self) -> None: ...
 
     def set_context(self, *, cwd: str, branch: str) -> None: ...
+
+    def set_session_id(self, session_id: str) -> None: ...
+
+    def info(self, title: str) -> None: ...
+
+    def error(self, title: str, reason: str = "") -> None: ...
+
+    def apply_phase_statuses(
+        self,
+        *,
+        steps: Sequence[StepRow] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
+    ) -> None: ...
 
 
 @runtime_checkable
@@ -60,6 +90,14 @@ class PromptPort(Protocol):
 
     def ask_text(self, prompt: str, *, title: str = "") -> str | None: ...
 
+    def select_choice(
+        self,
+        prompt: str,
+        choices: list[tuple[str, Choice]],
+        *,
+        title: str = "",
+    ) -> Choice | None: ...
+
 
 @runtime_checkable
 class UserWaitListener(Protocol):
@@ -73,7 +111,6 @@ class UserWaitListener(Protocol):
 class NullStreamSink:
     def __init__(self) -> None:
         self._agent_text = ""
-        self.cockpit = False
 
     def handle_update(self, params: JsonObject) -> None:
         update = params.get("update", {})
@@ -115,7 +152,7 @@ class NullStreamSink:
     def apply_phase_statuses(
         self,
         *,
-        steps: Sequence[dict[str, str]] = (),
+        steps: Sequence[StepRow] = (),
         done_ids: Sequence[str] = (),
         skipped_ids: Sequence[str] = (),
         failed_ids: Sequence[str] = (),

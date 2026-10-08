@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from typing import Any
 
 from pulse.daemon.events import EventBus, PromptCorrelator
+from pulse.domain.ports import StepRow
 from pulse.replies.permission import decide_permission
 from pulse.replies.text_questionnaire import parse_text_questionnaire, serialize_questionnaire
 
@@ -12,7 +14,6 @@ class ApiStreamSink:
     def __init__(self, bus: EventBus) -> None:
         self._bus = bus
         self._agent_text = ""
-        self.cockpit = True
 
     def handle_update(self, params: dict[str, Any]) -> None:
         update = params.get("update", {})
@@ -54,8 +55,25 @@ class ApiStreamSink:
     def error(self, title: str, reason: str = "") -> None:
         self._bus.publish({"type": "phase.error", "title": title, "reason": reason})
 
-    def apply_phase_statuses(self, **kwargs: Any) -> None:
-        self._bus.publish({"type": "phases.sync", **kwargs})
+    def apply_phase_statuses(
+        self,
+        *,
+        steps: Sequence[StepRow] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
+    ) -> None:
+        self._bus.publish(
+            {
+                "type": "phases.sync",
+                "steps": list(steps),
+                "done_ids": list(done_ids),
+                "skipped_ids": list(skipped_ids),
+                "failed_ids": list(failed_ids),
+                "blocked_ids": list(blocked_ids),
+            }
+        )
 
     def set_session_id(self, session_id: str) -> None:
         self._bus.publish({"type": "session.id", "session_id": session_id})

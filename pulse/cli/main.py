@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from pulse import __version__
 from pulse.cli.daemon_command import run_daemon_command
@@ -8,7 +9,6 @@ from pulse.client.engine_client import EngineClient
 from pulse.config import global_config_exists
 from pulse.config.commands import run_config_command
 from pulse.doctor import run_doctor
-from pulse.orchestrator.tty import is_interactive
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 
 
@@ -78,6 +78,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _is_interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
 def _print_plain_welcome() -> None:
     print(BANNER.strip("\n"))
     print(PULSE_LINE)
@@ -131,7 +135,7 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "daemon":
         return run_daemon_command(args.daemon_action)
 
-    if not is_interactive():
+    if not _is_interactive():
         _print_plain_welcome()
         return 0
 

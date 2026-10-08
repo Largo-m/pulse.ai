@@ -242,16 +242,18 @@ Uma função pública: [`run_workflow`](../pulse/orchestrator/engine.py). Nenhum
 ```
 run_workflow(workflow_id, user_prompt, workspace, stream, prompt_handler, control)
   │
-  ├─ 1. is_cockpit_stream / is_interactive   sem terminal e sem Engine → erro
-  ├─ 2. get_workflow(id)                     None → UnknownWorkflow (API: 404)
-  ├─ 3. definição sem steps                  → erro explícito
-  ├─ 4. resolve_config(workflow=id)          runtime, model, policy, workspace
-  ├─ 5. check_runtime_ready(runtime.id)      só `fail` bloqueia; `warn` passa
-  ├─ 6. _resolve_run(...)                    cria ou retoma a run
-  └─ 7. AcpSessionRunner(...)  +  bind_run(run.id)
+  ├─ 1. get_workflow(id)                     None → UnknownWorkflow (API: 404)
+  ├─ 2. definição sem steps                  → erro explícito
+  ├─ 3. resolve_config(workflow=id)          runtime, model, policy, workspace
+  ├─ 4. check_runtime_ready(runtime.id)      só `fail` bloqueia; `warn` passa
+  ├─ 5. _resolve_run(...)                    cria ou retoma a run
+  └─ 6. AcpSessionRunner(...)  +  bind_run(run.id)
 ```
 
-O passo 6 tem dois modos:
+Toda recusa do pré-voo é exceção para quem chamou: o motor não sabe se há um
+terminal ou uma tela do outro lado, e quem mostra a recusa é o adapter.
+
+O passo 5 tem dois modos:
 
 | Chamada | Efeito |
 | --- | --- |

@@ -25,7 +25,7 @@ class _FakeStream:
 class _FakeRunner:
     def __init__(self, control: RunControl) -> None:
         self.control = control
-        self._stream = _FakeStream()
+        self.stream = _FakeStream()
 
 
 def _run(tmp_path) -> tuple[RunRecord, StepRecord]:
@@ -54,7 +54,7 @@ def test_stop_returns_the_cut_step_to_pending(tmp_path):
     assert step.status == StepStatus.PENDING
     reloaded = run_store.load_run(record.id)
     assert reloaded.step("one").status == StepStatus.PENDING
-    assert runner._stream.messages == ["Run parada em Um"]
+    assert runner.stream.messages == ["Run parada em Um"]
 
 
 def test_settled_step_is_not_reopened_by_stop(tmp_path):

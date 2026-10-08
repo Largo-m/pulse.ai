@@ -7,7 +7,7 @@ import time
 import uuid
 from collections.abc import Callable
 from queue import Empty, Queue
-from typing import Any
+from typing import Any, cast
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
 from pulse.acp.models import resolve_model_display_name
@@ -17,6 +17,8 @@ from pulse.domain.ports import (
     NullPromptPort,
     NullStreamSink,
     NullUserWaitListener,
+    PromptPort,
+    StreamSink,
     UserWaitListener,
 )
 from pulse.mcp.config import pulse_ask_mcp_server
@@ -108,8 +110,8 @@ class AcpSessionRunner(RunEventRecorder):
         cwd: str,
         permission_policy: PermissionPolicy = "ask",
         timeout_seconds: float = 600.0,
-        stream: Any | None = None,
-        prompt_handler: Any | None = None,
+        stream: StreamSink | None = None,
+        prompt_handler: PromptPort | None = None,
         enable_mcp_ask: bool = True,
         pulse_agent: str | None = None,
         runtime: AgentRuntime | None = None,
@@ -122,7 +124,7 @@ class AcpSessionRunner(RunEventRecorder):
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
         self._hung = False
-        self._stream = stream or NullStreamSink()
+        self._stream: StreamSink = stream or NullStreamSink()
         self._prompt_handler = _WatchedPrompts(
             prompt_handler or NullPromptPort(),
             on_enter=self._begin_user_wait,
@@ -163,7 +165,7 @@ class AcpSessionRunner(RunEventRecorder):
             return
         self._wait_started = time.monotonic()
         self._tell_waits(self._waits.user_wait_began)
-        self._notify_stream("begin_user_wait")
+        self._stream.begin_user_wait()
 
     def _end_user_wait(self) -> None:
         """Question answered (or dismissed): the step clock resumes."""
@@ -174,7 +176,7 @@ class AcpSessionRunner(RunEventRecorder):
         started, self._wait_started = self._wait_started, None
         seconds = time.monotonic() - started if started is not None else 0.0
         self._tell_waits(lambda: self._waits.user_wait_ended(self._phase_id, seconds))
-        self._notify_stream("end_user_wait")
+        self._stream.end_user_wait()
 
     def _tell_waits(self, notify: Callable[[], None]) -> None:
         """Called inside the prompt handler, so a failure goes to the run log, not up."""
@@ -187,11 +189,6 @@ class AcpSessionRunner(RunEventRecorder):
                 title="Espera não registrada",
                 detail=f"{type(error).__name__}: {error}",
             )
-
-    def _notify_stream(self, method: str) -> None:
-        handler = getattr(self._stream, method, None)
-        if callable(handler):
-            handler()
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self.start()
@@ -634,6 +631,15 @@ class AcpSessionRunner(RunEventRecorder):
         """Stop control for this run, checked by the engine at cut points."""
         return self._control
 
+    @property
+    def stream(self) -> StreamSink:
+        return self._stream
+
+    @property
+    def prompts(self) -> PromptPort:
+        """The prompt port as the engine must use it: every question it asks is a user wait."""
+        return cast(PromptPort, self._prompt_handler)
+
     def set_permission_policy(self, policy: PermissionPolicy) -> None:
         self._permission_policy = policy
 
@@ -647,8 +653,7 @@ class AcpSessionRunner(RunEventRecorder):
         self._tool_labeled.clear()
         self._session_id = str(session_id)
         self.last_session_id = self._session_id
-        if hasattr(self._stream, "set_session_id"):
-            self._stream.set_session_id(self._session_id)
+        self._stream.set_session_id(self._session_id)
         try:
             from pulse.store.sessions import persist_runtime_session
 

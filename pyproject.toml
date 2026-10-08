@@ -60,7 +60,7 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/cli/main.py" = ["T201", "BLE001"]  # baseline: BLE001
 "pulse/config/commands.py" = ["T201"]
 "pulse/doctor/report.py" = ["T201"]
-"pulse/orchestrator/cli_output.py" = ["T201"]
+"pulse/cli/console_sink.py" = ["T201"]
 
 # Baseline: findings that predate the quality gates, one entry per file.
 # Phase 7 zeroes this list; never add to it — fix the code or add a justified noqa.
@@ -82,8 +82,7 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT"]
 "pulse/mcp/ask_bridge.py" = ["ANN001", "S108"]
 "pulse/mcp/ask_protocol.py" = ["ANN001", "ANN401"]
 "pulse/mcp/http_bridge.py" = ["ANN001", "ANN401"]
-"pulse/orchestrator/engine.py" = ["ANN401", "T201"]
-"pulse/orchestrator/tty.py" = ["ANN401"]
+"pulse/orchestrator/engine.py" = ["ANN401"]
 "pulse/replies/permission.py" = ["ANN401"]
 "pulse/store/agent_settings.py" = ["ANN001"]
 "pulse/store/factory/__init__.py" = ["ANN401"]

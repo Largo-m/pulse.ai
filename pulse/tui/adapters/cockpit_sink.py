@@ -54,8 +54,6 @@ def _tool_failed(update: dict[str, Any]) -> bool:
 
 
 class CockpitSink:
-    cockpit = True
-
     def __init__(
         self,
         state: CockpitState,

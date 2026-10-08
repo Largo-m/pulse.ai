@@ -219,7 +219,6 @@ class RunManager:
                 workspace=Path(state.workspace) if state.workspace else None,
                 stream=stream,
                 prompt_handler=prompt_handler,
-                render_header=False,
                 resume_run_id=state.resume_run_id,
                 control=state.control,
                 run_id=state.id,

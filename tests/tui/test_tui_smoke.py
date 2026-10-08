@@ -31,7 +31,6 @@ def test_cockpit_screen_initial_state():
     assert len(screen.state.phases) == 4
     assert all(phase.status == PhaseStatus.PENDING for phase in screen.state.phases)
     assert screen.workflow_id == "demo"
-    assert screen.sink.cockpit is True
     assert screen.state.entries == []
 
 

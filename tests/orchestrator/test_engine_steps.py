@@ -9,6 +9,7 @@ import pytest
 
 from pulse.domain import run as run_model
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
+from pulse.domain.ports import NullPromptPort, NullStreamSink
 from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
@@ -16,10 +17,9 @@ from pulse.store import runs as run_store
 from tests.conftest import make_workflow, store_step
 
 
-class _Stream:
-    cockpit = True
-
+class _Stream(NullStreamSink):
     def __init__(self) -> None:
+        super().__init__()
         self.phases: list[str] = []
         self.messages: list[str] = []
         self.statuses: list[dict] = []
@@ -59,7 +59,7 @@ class _Runner:
 
     def __init__(self, results: list[dict], *, control: RunControl | None = None) -> None:
         self._results = list(results)
-        self.prompts: list[str] = []
+        self.sent: list[str] = []
         self.agents: list[str] = []
         self.control = control or RunControl()
         self.last_session_id = "sess-1"
@@ -67,6 +67,14 @@ class _Runner:
         self._prompt_handler = _Prompt()
         self.closed = False
         self.revivals = 0
+
+    @property
+    def stream(self) -> _Stream:
+        return self._stream
+
+    @property
+    def prompts(self) -> _Prompt:
+        return self._prompt_handler
 
     def bind_run(self, run_id: str, waits: object = None) -> None:
         self.run_id = run_id
@@ -87,7 +95,7 @@ class _Runner:
         self.agents.append(agent_id)
 
     def run_isolated_phase(self, *, initial_prompt: str, **_kwargs) -> dict:
-        self.prompts.append(initial_prompt)
+        self.sent.append(initial_prompt)
         return self._next({"approved": True})
 
     def run_isolated_prompt(self, *, prompt_text: str, build_continuation=None, **_kwargs) -> dict:
@@ -96,7 +104,7 @@ class _Runner:
         Without this, the agent's chance to unblock itself would not be exercised
         by any test: the engine only offers it through this callback.
         """
-        self.prompts.append(prompt_text)
+        self.sent.append(prompt_text)
         result = self._next({"stopReason": "end_turn"})
         parts = [str(result.get("phaseSummary", ""))]
         turn = 0
@@ -104,7 +112,7 @@ class _Runner:
             follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
             if not follow_up:
                 break
-            self.prompts.append(follow_up)
+            self.sent.append(follow_up)
             result = self._next({"stopReason": "end_turn"})
             parts.append(str(result.get("phaseSummary", "")))
             result["phaseSummary"] = "\n\n".join(part for part in parts if part)
@@ -134,7 +142,6 @@ def wired(monkeypatch, tmp_path: Path):
         model = "auto"
         agent_name = "cursor"
 
-    monkeypatch.setattr(engine, "is_interactive", lambda: False)
     monkeypatch.setattr(engine, "check_runtime_ready", lambda _runtime: None)
     monkeypatch.setattr(engine, "resolve_config", lambda **_kwargs: Resolved())
     return Resolved
@@ -178,7 +185,6 @@ def test_steps_run_in_order_and_each_one_is_recorded(wired, monkeypatch, tmp_pat
         user_prompt="fazer algo",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -206,10 +212,9 @@ def test_the_prompt_template_is_rendered_with_run_values(wired, monkeypatch, tmp
         user_prompt="corrigir login",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
-    assert runner.prompts == [f"tarefa: corrigir login em {tmp_path} (step one)"]
+    assert runner.sent == [f"tarefa: corrigir login em {tmp_path} (step one)"]
 
 
 def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path: Path):
@@ -226,11 +231,10 @@ def test_a_step_sees_what_the_previous_one_produced(wired, monkeypatch, tmp_path
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
-    assert runner.prompts[0] == "siga"
-    assert runner.prompts[1] == "antes: escrevi o planosiga"
+    assert runner.sent[0] == "siga"
+    assert runner.sent[1] == "antes: escrevi o planosiga"
 
 
 @pytest.mark.parametrize(
@@ -261,11 +265,10 @@ def test_a_step_sees_how_the_previous_one_closed(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
-    assert runner.prompts[0] == "anterior: "
-    assert runner.prompts[1] == f"anterior: {expected}"
+    assert runner.sent[0] == "anterior: "
+    assert runner.sent[1] == f"anterior: {expected}"
 
 
 def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path: Path):
@@ -279,7 +282,6 @@ def test_a_step_that_is_not_approved_stops_the_run(wired, monkeypatch, tmp_path:
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 1
@@ -299,11 +301,10 @@ def test_retry_runs_the_same_step_again(wired, monkeypatch, tmp_path: Path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert len(runner.prompts) == 2
+    assert len(runner.sent) == 2
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
@@ -325,7 +326,6 @@ def test_a_timeout_offers_retry_instead_of_killing_the_run(wired, monkeypatch, t
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -349,7 +349,6 @@ def test_a_dead_session_that_the_user_gives_up_on_fails_the_step(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 1
@@ -369,7 +368,6 @@ def test_skip_settles_the_step_without_failing_the_run(wired, monkeypatch, tmp_p
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -390,7 +388,6 @@ def test_a_step_without_approval_closes_when_the_agent_declares_the_outcome(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -420,7 +417,6 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_BLOCKED
@@ -441,7 +437,6 @@ def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch,
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_BLOCKED
@@ -449,7 +444,7 @@ def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch,
     assert runner._prompt_handler.prompts == ["falta a credencial do banco"], (
         "the reason the agent declared is what the user reads"
     )
-    assert len(runner.prompts) == 1, "`needs: user` does not spend a self-resolution turn"
+    assert len(runner.sent) == 1, "`needs: user` does not spend a self-resolution turn"
     record = run_store.list_runs(tmp_path)[0]
     assert [step.status for step in record.steps] == ["blocked", "pending"]
 
@@ -471,14 +466,13 @@ def test_a_blocked_step_gets_one_shot_at_unblocking_itself(wired, monkeypatch, t
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
     assert runner._prompt_handler.asked == [], "nobody was interrupted"
-    assert len(runner.prompts) == 2
-    assert "Bloqueio declarado" in runner.prompts[1]
-    assert "o arquivo de config não existe" in runner.prompts[1]
+    assert len(runner.sent) == 2
+    assert "Bloqueio declarado" in runner.sent[1]
+    assert "o arquivo de config não existe" in runner.sent[1]
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
@@ -495,11 +489,10 @@ def test_the_agent_gets_only_one_shot_before_the_person_is_called(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_BLOCKED
-    assert len(runner.prompts) == 2, "two attempts, not a ping-pong"
+    assert len(runner.sent) == 2, "two attempts, not a ping-pong"
     assert runner._prompt_handler.prompts == ["continua faltando X"]
 
 
@@ -520,12 +513,11 @@ def test_a_forgotten_outcome_block_is_asked_for_before_it_becomes_a_block(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
     assert runner._prompt_handler.asked == []
-    assert "Desfecho do step" in runner.prompts[1]
+    assert "Desfecho do step" in runner.sent[1]
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
@@ -541,7 +533,6 @@ def test_skipping_a_blocked_step_records_it_as_skipped_not_done(wired, monkeypat
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -576,12 +567,11 @@ def test_a_step_that_did_not_deliver_does_not_feed_the_next_one(wired, monkeypat
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert "não consegui migrar o schema" not in runner.prompts[2]
-    assert runner.prompts[2].startswith("antes: escrevi o plano")
+    assert "não consegui migrar o schema" not in runner.sent[2]
+    assert runner.sent[2].startswith("antes: escrevi o plano")
 
 
 def test_requires_outcome_off_brings_the_old_behaviour_back(wired, monkeypatch, tmp_path: Path):
@@ -595,11 +585,10 @@ def test_requires_outcome_off_brings_the_old_behaviour_back(wired, monkeypatch, 
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert runner.prompts == ["x"], "without the protocol, the prompt stays as the author wrote it"
+    assert runner.sent == ["x"], "without the protocol, the prompt stays as the author wrote it"
     assert run_store.list_runs(tmp_path)[0].step("one").status == "done"
 
 
@@ -614,20 +603,19 @@ def test_an_approval_step_keeps_the_person_as_the_only_gate(wired, monkeypatch, 
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert runner.prompts == ["x"], "no outcome request where approval already exists"
+    assert runner.sent == ["x"], "no outcome request where approval already exists"
 
 
 def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
     wired, monkeypatch, tmp_path: Path
 ):
-    """CLI, closed cockpit, daemon run: the safe default is to stop."""
+    """The Null prompt port answers nothing: the safe default is to stop, saying why."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
     runner = _Runner([_blocked("falta acesso", needs="user")])
-    runner._prompt_handler = object()
+    runner._prompt_handler = NullPromptPort()
     _install(monkeypatch, runner)
 
     code = run_workflow(
@@ -635,12 +623,12 @@ def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_BLOCKED
     record = run_store.list_runs(tmp_path)[0]
     assert [step.status for step in record.steps] == ["blocked", "pending"]
+    assert "Um está bloqueado: falta acesso" in runner._stream.messages
 
 
 def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_path: Path):
@@ -653,7 +641,6 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
         user_prompt="x",
         stream=first._stream,
         prompt_handler=first._prompt_handler,
-        render_header=False,
     )
     run_id = run_store.list_runs(tmp_path)[0].id
 
@@ -664,12 +651,11 @@ def test_resuming_picks_up_at_the_first_unfinished_step(wired, monkeypatch, tmp_
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    assert len(second.prompts) == 1, "the already-finished step does not run again"
+    assert len(second.sent) == 1, "the already-finished step does not run again"
     assert len(run_store.list_runs(tmp_path)) == 1, "resuming does not create another run"
 
 
@@ -689,7 +675,6 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
         user_prompt="x",
         stream=first._stream,
         prompt_handler=first._prompt_handler,
-        render_header=False,
     )
     run_id = run_store.list_runs(tmp_path)[0].id
     make_workflow("demo", steps=[("one", "Um"), ("three", "Três")])
@@ -701,7 +686,6 @@ def test_resuming_after_a_step_left_the_workflow_still_completes_the_run(
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
@@ -731,7 +715,6 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
         user_prompt="x",
         stream=first._stream,
         prompt_handler=first._prompt_handler,
-        render_header=False,
     )
     crashed = run_store.list_runs(tmp_path)[0]
     two = crashed.step("two")
@@ -746,7 +729,6 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=crashed.id,
     )
 
@@ -757,7 +739,7 @@ def test_resuming_after_a_crash_reruns_the_step_it_left_running(wired, monkeypat
         "new": "done",
         "two": "done",
     }
-    assert len(second.prompts) == 2, "the new step and the interrupted one run; `one` does not"
+    assert len(second.sent) == 2, "the new step and the interrupted one run; `one` does not"
 
 
 def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Path):
@@ -778,7 +760,6 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
         user_prompt="x",
         stream=first._stream,
         prompt_handler=first._prompt_handler,
-        render_header=False,
     )
     run_id = run_store.list_runs(tmp_path)[0].id
 
@@ -789,12 +770,11 @@ def test_resume_is_the_only_way_back_into_a_run(wired, monkeypatch, tmp_path: Pa
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    assert second.prompts == [], "everything was already done: nothing runs again"
+    assert second.sent == [], "everything was already done: nothing runs again"
 
 
 def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_path: Path):
@@ -817,7 +797,6 @@ def test_stopping_between_steps_ends_the_run_as_stopped(wired, monkeypatch, tmp_
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
         control=control,
     )
 
@@ -842,11 +821,10 @@ def test_a_broken_template_fails_the_step_instead_of_prompting_a_hole(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 1
-    assert runner.prompts == []
+    assert runner.sent == []
 
 
 def test_an_unexpected_error_also_offers_retry(wired, monkeypatch, tmp_path: Path):
@@ -866,7 +844,6 @@ def test_an_unexpected_error_also_offers_retry(wired, monkeypatch, tmp_path: Pat
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -891,7 +868,6 @@ def test_a_step_that_failed_is_never_left_as_running(wired, monkeypatch, tmp_pat
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -915,7 +891,7 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
     original = runner.run_isolated_phase
 
     def stop_during_second(**kwargs):
-        if len(runner.prompts) == 1:
+        if len(runner.sent) == 1:
             control.stop()
         return original(**kwargs)
 
@@ -926,7 +902,6 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
         control=control,
     )
 
@@ -945,12 +920,11 @@ def test_stopping_inside_a_step_leaves_it_pending_and_resume_only_redoes_it(
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    assert len(second.prompts) == 2, (
+    assert len(second.sent) == 2, (
         "only the two pending steps run; the closed one does not come back"
     )
     record = run_store.load_run(run_id)
@@ -983,7 +957,6 @@ def test_a_step_can_send_the_run_back_to_repeat_the_stretch(wired, monkeypatch, 
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -1010,7 +983,6 @@ def test_without_a_request_the_loop_runs_only_once(wired, monkeypatch, tmp_path)
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1034,7 +1006,6 @@ def test_the_round_cap_ends_the_loop(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -1073,11 +1044,10 @@ def test_the_loop_ends_on_its_opener_never_on_its_closer(wired, monkeypatch, tmp
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert len(runner.prompts) == 5
+    assert len(runner.sent) == 5
     assert len(runner._results) == 1
     record = run_store.list_runs(tmp_path)[0]
     assert record.step("review").rounds == 3
@@ -1111,7 +1081,6 @@ def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
             user_prompt="x",
             stream=first._stream,
             prompt_handler=first._prompt_handler,
-            render_header=False,
         )
         == RUN_STOPPED
     )
@@ -1125,12 +1094,11 @@ def test_the_cap_counts_recorded_rounds_on_resume(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=second._stream,
         prompt_handler=second._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    assert len(second.prompts) == 2
+    assert len(second.sent) == 2
     assert len(second._results) == 1
     assert run_store.load_run(run_id).step("review").rounds == 3
 
@@ -1159,7 +1127,6 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1197,11 +1164,10 @@ def test_clean_review_ends_the_loop_without_asking_approval(wired, monkeypatch, 
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert len(runner.prompts) == 2, "review and the step after the loop; fix does not run"
+    assert len(runner.sent) == 2, "review and the step after the loop; fix does not run"
     record = run_store.list_runs(tmp_path)[0]
     assert record.status == "completed"
     assert [step.status for step in record.steps] == ["done", "skipped", "done"]
@@ -1224,11 +1190,10 @@ def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, mon
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
-    assert len(runner.prompts) == 3
+    assert len(runner.sent) == 3
     record = run_store.list_runs(tmp_path)[0]
     assert record.step("review").rounds == 2
     assert [step.status for step in record.steps] == ["done", "done"]
@@ -1245,7 +1210,6 @@ def test_only_the_loop_opener_can_waive_approval(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1271,7 +1235,6 @@ def test_repeat_request_is_ignored_where_the_workflow_declared_no_loop(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1294,7 +1257,6 @@ def test_steps_after_the_loop_do_not_count_rounds(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1339,7 +1301,6 @@ def test_loop_rounds_stay_under_the_same_step(wired, monkeypatch, tmp_path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -1381,7 +1342,6 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 1
@@ -1412,7 +1372,6 @@ def test_stopping_while_the_blocked_menu_is_open_stops_the_run(wired, monkeypatc
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_STOPPED
@@ -1440,7 +1399,6 @@ def test_stopping_while_typing_guidance_does_not_reopen_the_menu(
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_STOPPED

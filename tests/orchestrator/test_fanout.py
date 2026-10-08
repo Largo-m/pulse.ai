@@ -83,7 +83,6 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
         user_prompt="exportar csv",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -93,8 +92,8 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
         ("run:T1", "Criar o endpoint", "done"),
         ("run:T2", "Montar o CSV", "done"),
     ]
-    assert runner.prompts[1].endswith("| T1 1/2")
-    assert runner.prompts[2].endswith("| T2 2/2")
+    assert runner.sent[1].endswith("| T1 1/2")
+    assert runner.sent[2].endswith("| T2 2/2")
 
 
 def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path: Path):
@@ -112,7 +111,6 @@ def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path:
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     last = runner._stream.statuses[-1]
@@ -135,7 +133,6 @@ def test_a_step_that_declares_nothing_still_runs_once(wired, monkeypatch, tmp_pa
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 0
@@ -159,7 +156,6 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
             user_prompt="x",
             stream=failing._stream,
             prompt_handler=failing._prompt_handler,
-            render_header=False,
         )
         != 0
     )
@@ -172,12 +168,11 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
         user_prompt="x",
         stream=resumed._stream,
         prompt_handler=resumed._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
     assert code == 0
-    assert len(resumed.prompts) == 1
+    assert len(resumed.sent) == 1
     record = run_store.load_run(run_id)
     assert record is not None
     assert [(step.step_id, step.status) for step in record.steps] == [
@@ -205,7 +200,6 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     record = run_store.list_runs(tmp_path)[0]
@@ -239,7 +233,6 @@ def test_every_item_is_recorded_before_the_first_one_runs(wired, monkeypatch, tm
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == 1
@@ -277,7 +270,6 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
         user_prompt="x",
         stream=first._stream,
         prompt_handler=first._prompt_handler,
-        render_header=False,
     )
     run_id = run_store.list_runs(tmp_path)[0].id
 
@@ -288,7 +280,6 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
         user_prompt="x",
         stream=resumed._stream,
         prompt_handler=resumed._prompt_handler,
-        render_header=False,
         resume_run_id=run_id,
     )
 
@@ -329,7 +320,6 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         user_prompt="x",
         stream=runner._stream,
         prompt_handler=runner._prompt_handler,
-        render_header=False,
     )
 
     assert code == RUN_BLOCKED
@@ -340,7 +330,7 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         ("run:T2", "blocked"),
         ("run:T3", "pending"),
     ]
-    assert len(runner.prompts) == 3, "T3 never opened a session"
+    assert len(runner.sent) == 3, "T3 never opened a session"
     assert runner._stream.statuses[-1]["blocked_ids"] == ["run:T2"]
 
 

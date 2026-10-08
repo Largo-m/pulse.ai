@@ -9,15 +9,22 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from pulse.client.protocol import REPLAY_END
 from pulse.client.run_session import EngineRunSession
 from pulse.daemon.adapters import ApiStreamSink
 from pulse.daemon.events import EventBus
-from pulse.domain.ports import NullStreamSink
-from pulse.orchestrator.engine import _announce_context
+from pulse.orchestrator.engine import run_workflow
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
 from tests.conftest import make_workflow
+from tests.orchestrator.test_engine_steps import (  # noqa: F401
+    _approved,
+    _install,
+    _Runner,
+    wired,
+)
 
 
 class _ReplayClient:
@@ -52,17 +59,31 @@ def test_daemon_sink_publishes_the_context():
     assert {"type": "run.context", "cwd": "/tmp/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
 
 
-def test_engine_announces_before_any_step(tmp_path: Path):
+@pytest.mark.usefixtures("wired")
+def test_engine_announces_the_context_before_any_step(monkeypatch, tmp_path: Path):
     """The artifacts panel depends on this to know where to look for files."""
-    stream = MagicMock()
-    _announce_context(stream, tmp_path / "wt", "pulse/demo-abc")
-    stream.set_context.assert_called_once_with(cwd=str(tmp_path / "wt"), branch="pulse/demo-abc")
+    make_workflow("demo", steps=[("one", "Um")])
+    runner = _Runner([_approved()])
+    calls: list[str] = []
+    runner._stream.set_context = lambda *, cwd, branch: calls.append(f"context:{cwd}")
+    runner._stream.begin_phase = lambda title: calls.append(f"phase:{title}")
+    runner.run_isolated_phase = _beginning_a_phase(runner)
+    _install(monkeypatch, runner)
+
+    run_workflow(workflow_id="demo", user_prompt="x", stream=runner.stream)
+
+    assert calls == [f"context:{tmp_path}", "phase:Um"]
 
 
-def test_stream_without_set_context_does_not_break():
-    """CLI and tests pass sinks that know nothing about branches."""
-    _announce_context(NullStreamSink(), Path("/tmp"), "main")
-    _announce_context(None, Path("/tmp"), "main")
+def _beginning_a_phase(runner: _Runner):
+    """The real runner opens a phase on the stream before the agent's first turn."""
+    original = runner.run_isolated_phase
+
+    def run(*, phase_label: str, **kwargs):
+        runner.stream.begin_phase(phase_label)
+        return original(phase_label=phase_label, **kwargs)
+
+    return run
 
 
 def test_client_forwards_the_context_to_the_sink():
