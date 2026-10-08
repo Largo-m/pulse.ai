@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIRS = ("pulse", "tests")
 LINE_LIMIT = 1000  # Phase 8 lowers it to 700.
-# Files over the limit when it landed, each capped at its size then. Entries
-# only leave this map: split the file, then delete its line.
+# Files over the limit when it landed, each capped at its current size. Entries
+# only shrink or leave this map: split the file, then lower or delete its line.
 OVERSIZED = {
     "tests/orchestrator/test_engine_steps.py": 1447,
 }
@@ -37,12 +37,16 @@ def test_no_file_crosses_line_limit() -> None:
     assert too_long == {}
 
 
-def test_an_oversized_file_never_grows() -> None:
-    """The exception is a debt to pay, not a licence to keep adding to the file."""
-    counts = _line_counts()
-    grown = {path: counts.get(path) for path, cap in OVERSIZED.items() if counts.get(path, 0) > cap}
+def test_an_oversized_file_is_capped_at_its_current_size() -> None:
+    """The exception is a debt to pay, not a licence to keep adding to the file.
 
-    assert grown == {}
+    A cap above the current size would let a trimmed file grow back unnoticed,
+    so shrinking the file means lowering its cap in the same change.
+    """
+    counts = _line_counts()
+    drifted = {path: counts.get(path) for path, cap in OVERSIZED.items() if counts.get(path) != cap}
+
+    assert drifted == {}
 
 
 def test_the_exception_list_only_shrinks() -> None:
