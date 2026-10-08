@@ -17,7 +17,8 @@ SKIP_DIRS = {
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 # A reviewed finding carries the ruff/bandit code of the same check, so one
-# justified `# noqa: S608` silences both tools; `# nosec` silences any rule.
+# justified `# noqa: S608` silences both tools. Bare `# nosec` is not honored:
+# ruff ignores it, so it would silence this tool alone with no code or reason.
 SUPPRESSION_CODES = {
     "py.eval-exec": {"S102", "S307"},
     "py.compile": {"S102"},
@@ -37,7 +38,6 @@ SUPPRESSION_CODES = {
     "py.assert-security": {"S101"},
 }
 _NOQA = re.compile(r"#\s*noqa:\s*([A-Z0-9,\s]+)")
-_NOSEC = re.compile(r"#\s*nosec\b")
 
 
 @dataclass
@@ -186,8 +186,6 @@ class SecurityVisitor(ast.NodeVisitor):
         last = getattr(node, "end_lineno", None) or first
         codes = SUPPRESSION_CODES.get(rule_id, set())
         for text in self.lines[max(first - 1, 0):last]:
-            if _NOSEC.search(text):
-                return True
             match = _NOQA.search(text)
             if match and codes & set(re.findall(r"[A-Z]+[0-9]+", match.group(1))):
                 return True
@@ -328,21 +326,21 @@ class SecurityVisitor(ast.NodeVisitor):
         if last in ("execute", "executemany", "executescript") and node.args:
             arg0 = node.args[0]
             if isinstance(arg0, ast.JoinedStr):
-                self._add(node, "py.sql-injection", "CWE-89",
+                self._add(arg0, "py.sql-injection", "CWE-89",
                           "SQL query built with an f-string — use "
                           "parameterized queries.", "high")
             elif isinstance(arg0, ast.BinOp) and isinstance(arg0.op, ast.Add):
-                self._add(node, "py.sql-injection", "CWE-89",
+                self._add(arg0, "py.sql-injection", "CWE-89",
                           "SQL query built with string concatenation — use "
                           "parameterized queries.", "high")
             elif (isinstance(arg0, ast.Call)
                   and isinstance(arg0.func, ast.Attribute)
                   and arg0.func.attr == "format"):
-                self._add(node, "py.sql-injection", "CWE-89",
+                self._add(arg0, "py.sql-injection", "CWE-89",
                           "SQL query built with str.format() — use "
                           "parameterized queries.", "high")
             elif isinstance(arg0, ast.BinOp) and isinstance(arg0.op, ast.Mod):
-                self._add(node, "py.sql-injection", "CWE-89",
+                self._add(arg0, "py.sql-injection", "CWE-89",
                           "SQL query built with %-formatting — use "
                           "parameterized queries.", "high")
 

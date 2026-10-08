@@ -318,5 +318,18 @@ def test_noqa_for_another_check_does_not_suppress():
     assert "py.sql-injection" in ids(src)
 
 
-def test_nosec_suppresses_any_rule():
-    assert "py.eval-exec" not in ids("eval(user_input)  # nosec")
+def test_noqa_on_another_argument_does_not_hide_the_query():
+    src = (
+        'conn.execute(\n'
+        '    f"SELECT * FROM t WHERE id = {x}",\n'
+        '    timeout=lookup(),  # noqa: S608\n'
+        ')'
+    )
+    assert "py.sql-injection" in ids(src)
+
+
+def test_bare_nosec_does_not_suppress():
+    """Ruff ignores `# nosec`, so it would silence this tool alone, with no code or reason."""
+    assert "py.eval-exec" in ids("eval(user_input)  # nosec")
+    src = 'conn.execute(\n    f"SELECT * FROM t WHERE id = {x}",\n    timeout=lookup(),  # nosec\n)'
+    assert "py.sql-injection" in ids(src)
