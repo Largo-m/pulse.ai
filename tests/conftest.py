@@ -3,6 +3,9 @@ from pathlib import Path
 import pytest
 from hypothesis import settings
 
+from pulse.client.protocol import PING
+from pulse.daemon.events import EventBus
+from pulse.domain.ports import JsonObject
 from pulse.domain.run import RunStatus, StepRecord
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
@@ -83,3 +86,18 @@ def store_run_status(run_id: str, status: str) -> None:
     assert record is not None, run_id
     record.status = RunStatus(status)
     run_store.save(record)
+
+
+def wait_for_event(bus: EventBus, event_type: str, *, timeout: float = 5.0) -> JsonObject:
+    """The first `event_type` on a run's bus, replayed or live.
+
+    Waiting on the bus instead of polling state with `sleep` makes the test wake
+    exactly when the daemon says so. A heartbeat means `timeout` seconds passed
+    in silence, which is a failure here, not a reason to keep waiting.
+    """
+    for event in bus.subscribe(poll=timeout):
+        if event["type"] == event_type:
+            return event
+        if event["type"] == PING:
+            raise AssertionError(f"no {event_type} within {timeout}s")
+    raise AssertionError(f"the bus closed before {event_type}")

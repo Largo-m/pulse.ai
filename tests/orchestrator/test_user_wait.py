@@ -22,7 +22,7 @@ from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
-from tests.conftest import store_step
+from tests.conftest import store_step, wait_for_event
 from tests.orchestrator.test_run_context import _ReplayClient
 
 
@@ -251,12 +251,10 @@ def test_a_permission_that_needs_a_person_still_waits():
     """Under `ask`, asking is the point, so it still waits."""
     from concurrent.futures import ThreadPoolExecutor
 
-    port, correlator, _bus = _port_and_bus()
+    port, correlator, bus = _port_and_bus()
     with ThreadPoolExecutor(max_workers=1) as pool:
         asking = pool.submit(port.respond_to_permission, _permission(), policy="ask")
-        deadline = time.monotonic() + 2
-        while not correlator.pending() and time.monotonic() < deadline:
-            time.sleep(0.01)
+        wait_for_event(bus, "prompt.request")
         pending = correlator.pending()
         assert len(pending) == 1
         correlator.answer(

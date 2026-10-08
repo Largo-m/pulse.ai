@@ -123,9 +123,10 @@ class PromptBridge:
                     pending.append(request.future)
         return pending
 
-    def poll(self) -> PromptRequest | None:
+    def poll(self, timeout: float | None = None) -> PromptRequest | None:
+        """The next queued question; with `timeout`, wait up to that long for one."""
         try:
-            return self._queue.get_nowait()
+            return self._queue.get(block=timeout is not None, timeout=timeout)
         except Empty:
             return None
 

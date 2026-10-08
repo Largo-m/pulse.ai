@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from pulse.replies.acp_payloads import QuestionAnswer, QuestionOption
@@ -310,12 +308,9 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
 
     kinds: list[PromptKind] = []
     replies = ["B", "trocar a seção de cache"]
-    deadline = time.monotonic() + 5
-    while len(kinds) < 2 and time.monotonic() < deadline:
-        request = bridge.poll()
-        if request is None:
-            time.sleep(0.01)
-            continue
+    while len(kinds) < 2:
+        request = bridge.poll(timeout=5)
+        assert request is not None, f"no question after {kinds}"
         kinds.append(request.kind)
         request.future.set_result(replies[len(kinds) - 1])
 

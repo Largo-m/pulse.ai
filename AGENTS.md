@@ -238,7 +238,9 @@ depend on the factory seed.
 - **Deterministic**: no live network, no real agent CLI, no wall-clock
   assumptions, no `sleep` for synchronization (use events/conditions or an
   injected clock), no order dependence, no leaked env/global state (use
-  `monkeypatch`).
+  `monkeypatch`). `pytest-randomly` shuffles the order on every run and CI runs
+  the suite three times; `tests/architecture/test_no_sleep_in_tests.py` rejects
+  a `sleep` call anywhere in `tests/`.
 - **Strong oracles**: assert the fields the behavior is about. A sole
   `assert result` / `is not None` / "not empty" is not a test. Derive expected
   values independently of the code under test.
@@ -275,7 +277,7 @@ lint-imports                 # import contracts with the offending chains (also 
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
-plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
+the suite three more times in random order, plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
 must be green to merge. Complexity (`C901`, at most 10 per function) is part of
 `ruff check`, and `vulture` blocks too: split a function or delete dead code
 instead of suppressing them.

@@ -34,6 +34,20 @@ jobs:
       # The floor lives in [tool.coverage.report] fail_under.
       - run: pytest --cov --cov-report=term
 
+  random-order:
+    name: pytest in random order (3 runs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # pytest-randomly shuffles the order with a new seed per run and prints it
+      # in the header; rerun a failure with `pytest -p randomly --randomly-seed=<seed>`.
+      - run: for attempt in 1 2 3; do pytest -p no:cacheprovider || exit 1; done
+
   lint:
     name: lint and types
     runs-on: ubuntu-latest

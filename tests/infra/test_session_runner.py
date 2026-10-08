@@ -1,5 +1,4 @@
 import json
-import time
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -75,7 +74,6 @@ def test_session_runner_handles_ask_question_request():
             prompt_handler=FakePrompt(),
         )
         runner.start()
-        time.sleep(0.05)
         runner.initialize()
         runner.new_session("/workspace/repo")
         result = runner.prompt("sess-1", "setup")
