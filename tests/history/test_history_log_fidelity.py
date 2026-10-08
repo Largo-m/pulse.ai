@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.events import LogKind
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
 from pulse.replies.ask_question import build_ask_question_answers
@@ -26,7 +27,6 @@ from pulse.replies.text_questionnaire import (
     parse_text_questionnaire,
 )
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
 from tests.conftest import make_workflow
 

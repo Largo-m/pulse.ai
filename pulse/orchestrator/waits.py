@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import threading
 
+from pulse.domain.run import RunRecord
 from pulse.store import runs as run_store
 
 
 class RunWaits:
     """[pulse.domain.ports.UserWaitListener] pausing the run and charging the wait to the step."""
 
-    def __init__(self, run: run_store.RunRecord) -> None:
+    def __init__(self, run: RunRecord) -> None:
         self._run = run
         self._lock = threading.Lock()
 

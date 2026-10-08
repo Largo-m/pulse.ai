@@ -7,12 +7,13 @@ field. This module applies that decision to the run and persists it.
 
 from __future__ import annotations
 
+from pulse.domain.run import RunRecord
 from pulse.domain.workflow import Loop, WorkflowDef
 from pulse.store import runs as run_store
 
 
 def repeat_loop(
-    run: run_store.RunRecord, definition: WorkflowDef, loop: Loop, label: str
+    run: RunRecord, definition: WorkflowDef, loop: Loop, label: str
 ) -> tuple[int | None, str]:
     """Handle a request for another round: `(index to jump back to, notice)`.
 
@@ -37,7 +38,7 @@ def repeat_loop(
     return loop.start, f"{label} pediu a {following.number}ª rodada — a última: só {who} roda"
 
 
-def close_loop(run: run_store.RunRecord, definition: WorkflowDef, loop: Loop) -> int:
+def close_loop(run: RunRecord, definition: WorkflowDef, loop: Loop) -> int:
     """Settle the rest of the range without running it; return the index to continue from.
 
     Steps that ran in an earlier round become `done`; steps that never ran become `skipped`.

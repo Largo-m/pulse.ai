@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import restore_run
 from pulse.tui.state import CockpitState, PhaseStatus
 from tests.conftest import make_workflow, store_step

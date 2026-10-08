@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.orchestrator import engine
+from pulse.domain.control import RUN_BLOCKED
 from pulse.orchestrator.engine import run_workflow
 from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
 from pulse.store import runs as run_store
@@ -332,7 +332,7 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
         render_header=False,
     )
 
-    assert code == engine.RUN_BLOCKED
+    assert code == RUN_BLOCKED
     record = run_store.list_runs(tmp_path)[0]
     assert [(step.step_id, step.status) for step in record.steps] == [
         ("plan", "done"),

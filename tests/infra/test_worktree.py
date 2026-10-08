@@ -11,11 +11,11 @@ import pytest
 from pulse import vcs
 from pulse.config.project_config import init_project_config, update_project_defaults
 from pulse.config.resolved import resolve_config
+from pulse.domain.run import RunRecord, StepRecord
 from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _branch_name, _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
-from pulse.store.runs import StepRecord
 
 pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
@@ -40,7 +40,7 @@ def make_repo(path: Path) -> Path:
     return path
 
 
-def make_run(workspace: Path, *, run_id: str = "run-1") -> run_store.RunRecord:
+def make_run(workspace: Path, *, run_id: str = "run-1") -> RunRecord:
     return run_store.create_run(
         run_id=run_id,
         workflow_id="demo",
@@ -282,7 +282,7 @@ def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
 
 
 def test_branch_name_sanitizes_the_workflow(tmp_path: Path) -> None:
-    run = run_store.RunRecord(
+    run = RunRecord(
         id="0123456789abcdef",
         workflow_id="nova spec/v2",
         workspace_root=str(tmp_path),

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from pulse.domain.control import RUN_STOPPED, RunControl
+from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.orchestrator.engine import _release_step
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.state import CockpitState
 from tests.conftest import make_workflow, store_step
 
@@ -28,7 +28,7 @@ class _FakeRunner:
         self._stream = _FakeStream()
 
 
-def _run(tmp_path) -> tuple[run_store.RunRecord, StepRecord]:
+def _run(tmp_path) -> tuple[RunRecord, StepRecord]:
     record = run_store.create_run(
         run_id="run-1",
         workflow_id="demo",

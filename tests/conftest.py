@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
+from pulse.domain.run import RunStatus, StepRecord
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
-from pulse.store.runs import RunStatus, StepRecord
 from pulse.store.workflow_defs import save_agent, save_workflow
 
 

@@ -11,10 +11,10 @@ from typing import Any
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.domain.control import RunControl
+from pulse.domain.run import RunStatus
 from pulse.orchestrator.engine import run_workflow
 from pulse.store import runs as run_store
 from pulse.store.paths import safe_cwd
-from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow, list_workflows
 
 FINISHED_TTL = 15 * 60.0

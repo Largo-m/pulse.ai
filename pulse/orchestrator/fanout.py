@@ -10,9 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from pulse.domain.run import RunRecord, StepRecord, fan_out_child_id
 from pulse.domain.workflow import StepDef
-from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, fan_out_child_id
 
 BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
 ITEM = re.compile(r"^[ \t>*-]*([^\s:—–-][^:—–]*?)[ \t]*[:—–-][ \t]*(\S.*)$")
@@ -52,7 +51,7 @@ def parse_items(text: str) -> tuple[Item, ...]:
 
 
 def expand(
-    run: run_store.RunRecord, step: StepDef, previous_summary: str
+    run: RunRecord, step: StepDef, previous_summary: str
 ) -> list[tuple[StepDef, Item | None]]:
     """Expand a definition step into the steps the run will actually execute.
 

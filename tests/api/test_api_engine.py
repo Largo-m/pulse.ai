@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
 from pulse.domain.control import RUN_STOPPED
+from pulse.domain.run import StepRecord
 
 
 def test_status_and_workflows():
@@ -191,7 +192,6 @@ def test_control_endpoints_404_for_unknown_run():
 
 def test_history_delete_endpoint(tmp_path: Path):
     from pulse.store import runs as run_store
-    from pulse.store.runs import StepRecord
 
     run_store.create_run(
         run_id="run-api",

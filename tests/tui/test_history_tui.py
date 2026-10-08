@@ -7,9 +7,9 @@ import pytest
 
 pytest.importorskip("textual")
 
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus

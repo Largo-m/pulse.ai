@@ -12,10 +12,10 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pulse.domain.run import StepStatus
 from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
-from pulse.store.runs import StepStatus
 from pulse.tui.artifacts import artifact_has_content, artifact_key
 from pulse.tui.state import CockpitState
 

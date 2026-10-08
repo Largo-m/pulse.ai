@@ -14,16 +14,16 @@ from pathlib import Path
 
 from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
 from pulse.domain.control import RUN_STOPPED
+from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
 from pulse.history.events import PhaseItem, PhaseStatus
 from pulse.orchestrator.waits import RunWaits
 from pulse.store import runs as run_store
-from pulse.store.runs import RunStatus, StepRecord, StepStatus
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
 from tests.conftest import store_step
 
 
-def _run_with_step(step_id: str = "one") -> run_store.RunRecord:
+def _run_with_step(step_id: str = "one") -> RunRecord:
     return run_store.create_run(
         run_id="run-1",
         workflow_id="demo",
@@ -355,7 +355,7 @@ class _StatusProbe(_Port):
         return "ok"
 
 
-def _bound(run: run_store.RunRecord, port: _Port) -> AcpSessionRunner:
+def _bound(run: RunRecord, port: _Port) -> AcpSessionRunner:
     runner = _runner(_Sink(), port)
     runner.bind_run(run.id, RunWaits(run))
     runner._phase_id = run.steps[0].step_id

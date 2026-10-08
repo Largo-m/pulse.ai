@@ -11,11 +11,11 @@ pytest.importorskip("textual")
 
 from pulse import vcs
 from pulse.config.project_config import update_project_defaults
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.orchestrator.engine import _prepare_workspace
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.screens.settings import SettingsScreen

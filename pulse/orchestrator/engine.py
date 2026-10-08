@@ -24,6 +24,7 @@ from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.domain.ports import NullPromptPort, NullStreamSink
+from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator.agent_text import (
     build_continuation_prompt,
@@ -48,7 +49,6 @@ from pulse.replies.permission import PermissionPolicy
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.paths import worktrees_dir
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.store.workflow_defs import get_agent, get_workflow
 
 _POLICIES: dict[str, PermissionPolicy] = {
@@ -172,7 +172,7 @@ def _resolve_run(
     *,
     resume_run_id: str | None,
     run_id: str | None = None,
-) -> run_store.RunRecord:
+) -> RunRecord:
     """The run in the DB. `run_id` lets the caller name it.
 
     The daemon passes its own id so the API and SQLite share one run id.
@@ -201,7 +201,7 @@ def _resolve_run(
 
 
 def _prepare_workspace(
-    run: run_store.RunRecord,
+    run: RunRecord,
     workspace_root: Path,
     resolved: ResolvedConfig,
 ) -> tuple[Path, str]:
@@ -243,7 +243,7 @@ def _prepare_workspace(
     return target, branch
 
 
-def _branch_name(run: run_store.RunRecord) -> str:
+def _branch_name(run: RunRecord) -> str:
     """`pulse/<workflow>-<short run id>`.
 
     Uses the workflow name rather than the free-text task to avoid sanitizing it.
@@ -253,7 +253,7 @@ def _branch_name(run: run_store.RunRecord) -> str:
     return f"pulse/{slug}-{run.id[:8]}"
 
 
-def _owns_branch(run: run_store.RunRecord) -> bool:
+def _owns_branch(run: RunRecord) -> bool:
     """Whether the recorded branch was created by this run rather than the project's.
 
     Prevents reattaching e.g. `main` from the user's working tree. Only names from
@@ -279,7 +279,7 @@ def _execute(
     runner: AcpSessionRunner,
     cockpit: bool,
     definition: WorkflowDef,
-    run: run_store.RunRecord,
+    run: RunRecord,
     workspace: Path,
     exec_dir: Path,
     fallback_model: str | None,
@@ -368,7 +368,7 @@ def _run_step(
     *,
     runner: AcpSessionRunner,
     cockpit: bool,
-    run: run_store.RunRecord,
+    run: RunRecord,
     step: StepDef,
     record: StepRecord,
     workspace: Path,
@@ -434,7 +434,7 @@ def _attempt_step(
     *,
     runner: AcpSessionRunner,
     cockpit: bool,
-    run: run_store.RunRecord,
+    run: RunRecord,
     step: StepDef,
     record: StepRecord,
     workspace: Path,
@@ -534,7 +534,7 @@ def _attempt_step(
 
 
 def _settle(
-    run: run_store.RunRecord, record: StepRecord, cockpit: bool, signal: LoopSignal | None
+    run: RunRecord, record: StepRecord, cockpit: bool, signal: LoopSignal | None
 ) -> tuple[LoopSignal | None, str]:
     """Record the step as delivered and pass the agent's loop signal on."""
     record.deliver()
@@ -578,27 +578,25 @@ def _blocked_reason(declared: Outcome) -> str:
     return declared.reason or "o agente declarou bloqueio sem dizer o motivo"
 
 
-def _block(
-    run: run_store.RunRecord, record: StepRecord, reason: str
-) -> tuple[LoopSignal | None, str]:
+def _block(run: RunRecord, record: StepRecord, reason: str) -> tuple[LoopSignal | None, str]:
     """Record the step as blocked: it ran, did not crash, did not deliver."""
     record.block()
     run_store.save(run)
     return None, reason
 
 
-def _close_after_menu(run: run_store.RunRecord, record: StepRecord) -> None:
+def _close_after_menu(run: RunRecord, record: StepRecord) -> None:
     record.close_after_wait()
     run_store.save(run)
 
 
-def _fail(run: run_store.RunRecord, record: StepRecord) -> None:
+def _fail(run: RunRecord, record: StepRecord) -> None:
     record.fail()
     run_store.save(run)
 
 
 def _context(
-    run: run_store.RunRecord,
+    run: RunRecord,
     step: StepDef,
     exec_dir: Path,
     item: Item | None = None,
@@ -659,7 +657,7 @@ def _activate_agent(
 def _release_step(
     runner: AcpSessionRunner,
     *,
-    run: run_store.RunRecord,
+    run: RunRecord,
     record: StepRecord,
     label: str,
 ) -> None:
@@ -779,7 +777,7 @@ def _notify(runner: AcpSessionRunner, message: str) -> None:
         info(message)
 
 
-def _sync_steps(runner: AcpSessionRunner, run: run_store.RunRecord) -> None:
+def _sync_steps(runner: AcpSessionRunner, run: RunRecord) -> None:
     """Mirror `run_steps` to the panel, including the full step list.
 
     The list is sent because fan-out changes it mid-run.

@@ -7,8 +7,8 @@ runtime reported, and that is what the pane and history show.
 from __future__ import annotations
 
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.domain.run import StepRecord
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
 
 
 def _runner(run_id: str = "run-1", step_id: str = "one") -> AcpSessionRunner:

@@ -16,9 +16,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from pulse.client.run_session import DETACHED, EngineRunSession
+from pulse.domain.run import StepRecord
 from pulse.history.events import PhaseStatus
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
 from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptBridge, PromptKind
 from pulse.tui.hydrate import stamp_live_elapsed
 from pulse.tui.state import CockpitState

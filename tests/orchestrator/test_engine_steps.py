@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from pulse.domain import run as run_model
-from pulse.domain.control import RUN_STOPPED, RunControl
+from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED, RunControl
 from pulse.domain.run import RunStatus, StepStatus
 from pulse.orchestrator import engine
 from pulse.orchestrator.engine import run_workflow
@@ -423,7 +423,7 @@ def test_ending_the_turn_is_no_longer_enough_for_a_step_to_count_as_done(
         render_header=False,
     )
 
-    assert code == engine.RUN_BLOCKED
+    assert code == RUN_BLOCKED
     record = run_store.list_runs(tmp_path)[0]
     assert record.step("one").status == "blocked"
     assert record.step("two").status == "pending", "the cascade stops at the blocked step"
@@ -444,7 +444,7 @@ def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch,
         render_header=False,
     )
 
-    assert code == engine.RUN_BLOCKED
+    assert code == RUN_BLOCKED
     assert runner._prompt_handler.asked == ["Um está bloqueado"]
     assert runner._prompt_handler.prompts == ["falta a credencial do banco"], (
         "the reason the agent declared is what the user reads"
@@ -498,7 +498,7 @@ def test_the_agent_gets_only_one_shot_before_the_person_is_called(
         render_header=False,
     )
 
-    assert code == engine.RUN_BLOCKED
+    assert code == RUN_BLOCKED
     assert len(runner.prompts) == 2, "two attempts, not a ping-pong"
     assert runner._prompt_handler.prompts == ["continua faltando X"]
 
@@ -638,7 +638,7 @@ def test_with_nobody_to_ask_a_blocked_run_stops_instead_of_going_on(
         render_header=False,
     )
 
-    assert code == engine.RUN_BLOCKED
+    assert code == RUN_BLOCKED
     record = run_store.list_runs(tmp_path)[0]
     assert [step.status for step in record.steps] == ["blocked", "pending"]
 

@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pulse.domain.run import RunRecord, StepRecord
 from pulse.history.events import LogEntry, LogKind
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord
 from pulse.tui.hydrate import restore_settled_steps
 from pulse.tui.state import CockpitState
 from tests.conftest import store_step
 
 
-def _resumed_run(tmp_path: Path) -> run_store.RunRecord:
+def _resumed_run(tmp_path: Path) -> RunRecord:
     record = run_store.create_run(
         run_id="run-r",
         workflow_id="demo",
