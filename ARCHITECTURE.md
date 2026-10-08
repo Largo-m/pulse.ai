@@ -448,13 +448,23 @@ A sidebar é montada por `configure_workflow(id)`, que lê `workflow_steps` pelo
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); recusa `--host` fora de loopback; ancora o cwd em `~/.pulse` |
-| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas. `run_engine` monta as portas do motor |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); recusa `--host` fora de loopback; ancora o cwd em `~/.pulse`; no SIGTERM para as runs antes de sair (`GracefulServer`) |
+| [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas, parar todas no desligamento (`shutdown`). `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
 | [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
 | [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, workflows/runs/prompts, histórico; `deps.py` entrega o `RunManager` |
+
+**Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
+mesmo caminho do cancelamento — a run grava `RUN_STOPPED`, o step volta a
+pendente (retomável) e o motor fecha a sessão, o que encerra o processo ACP — e
+espera até `SHUTDOWN_GRACE_SECONDS` (`domain/control.py`). Runs novas recebem
+`503` a partir daí. Só então o Uvicorn sai: o shutdown dele espera as conexões
+abertas, e o stream SSE de um cliente anexado só termina quando o barramento da
+run fecha. Run que não parou no prazo vai para o log do daemon pelo id; um
+segundo sinal força a saída. `pulse daemon stop` espera esse prazo e mais um
+pouco.
 
 O daemon **não** usa o diretório de quem o iniciou. Ele sobe destacado e ficaria
 meses com esse cwd herdado; apagar o projeto de origem o deixaria parado numa

@@ -11,6 +11,7 @@ import signal
 import socket
 import time
 
+from pulse.domain.control import SHUTDOWN_GRACE_SECONDS
 from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
@@ -42,11 +43,16 @@ def is_daemon_alive() -> bool:
         return False
 
 
-def stop_daemon(timeout: float = 5.0) -> bool:
+# The daemon stops its runs before exiting; past its own grace it is stuck.
+STOP_TIMEOUT_SECONDS = SHUTDOWN_GRACE_SECONDS + 5.0
+
+
+def stop_daemon(timeout: float = STOP_TIMEOUT_SECONDS) -> bool:
     """SIGTERM the daemon from the meta file and wait for it to exit. `False` = still alive.
 
     The meta is only cleared once the process exits; clearing it earlier would
-    orphan a daemon still holding the port.
+    orphan a daemon still holding the port. An idle daemon exits at once; one
+    with runs first stops them (`RunManager.shutdown`).
     """
     meta = read_daemon_meta() or {}
     pid = meta.get("pid")

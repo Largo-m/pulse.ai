@@ -17,6 +17,10 @@ from collections.abc import Callable
 RUN_STOPPED = 130
 RUN_BLOCKED = 131
 
+# How long the daemon waits, on SIGTERM, for its runs to stop. It covers the
+# agent's cancel grace plus closing its process; `stop_daemon` waits a bit longer.
+SHUTDOWN_GRACE_SECONDS = 30.0
+
 STOPPED = "stopped"
 
 

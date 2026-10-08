@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import contextlib
 import ipaddress
+import logging
 import os
 import signal
 import socket
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from types import FrameType
 
 import uvicorn
 
 from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
+from pulse.domain.control import SHUTDOWN_GRACE_SECONDS
 from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
@@ -27,6 +31,7 @@ USAGE_ERROR = 2
 LOCALHOST = "localhost"
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
+_log = logging.getLogger(__name__)
 
 
 def _anchor_cwd() -> None:
@@ -66,6 +71,32 @@ def bind_private_socket(path: Path) -> socket.socket:
     return server
 
 
+class GracefulServer(uvicorn.Server):
+    """Runs `before_exit` on the first SIGTERM/SIGINT, then lets uvicorn shut down.
+
+    uvicorn replaces the process's signal handlers while it serves, and its
+    shutdown waits for open connections: an attached client's SSE stream only
+    ends when its run's bus closes. So the runs must stop first, or the daemon
+    either hangs or exits leaving them `running`. A second signal while
+    stopping keeps uvicorn's meaning: force the exit.
+    """
+
+    def __init__(self, config: uvicorn.Config, *, before_exit: Callable[[], None]) -> None:
+        super().__init__(config)
+        self._before_exit = before_exit
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        if not self.should_exit:
+            self._before_exit()
+        super().handle_exit(sig, frame)
+
+
+def stop_runs(manager: RunManager, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> None:
+    left = manager.shutdown(grace=grace)
+    if left:
+        _log.warning("shutdown: runs still running after the grace period: %s", ", ".join(left))
+
+
 def run_daemon(
     *,
     host: str = DEFAULT_HTTP_HOST,
@@ -92,7 +123,7 @@ def run_daemon(
     signal.signal(signal.SIGTERM, _cleanup)
     signal.signal(signal.SIGINT, _cleanup)
 
-    server_tcp = uvicorn.Server(config_tcp)
+    server_tcp = GracefulServer(config_tcp, before_exit=lambda: stop_runs(manager))
     server_uds = uvicorn.Server(config_uds)
     uds_thread = threading.Thread(
         target=server_uds.run, kwargs={"sockets": [uds_socket]}, name="pulse-uds", daemon=True

@@ -80,6 +80,8 @@ paths:
           description: Unknown workflow id
         "409":
           description: That run is already executing
+        "503":
+          description: The daemon is shutting down and starts no new run
   /api/runs:
     get:
       summary: Runs the engine holds in memory, active ones first
