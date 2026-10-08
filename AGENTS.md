@@ -72,7 +72,8 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
      --include="*.py" pulse/ | grep -v "^pulse/store/factory/"
    ```
 
-   Both must print nothing.
+   Both must print nothing. `tests/test_package_invariants.py` enforces the
+   same in `pytest` and CI.
 2. **No `if workflow_id == ...`** (or step/agent id) anywhere in the engine or UI.
    Behavior comes from columns in `workflow_steps` / `agent_defs`.
 3. **Unknown id does not exist.** No fallback catalogs: `get_workflow` returns
@@ -245,9 +246,25 @@ seed workflows — tests seed their own data; don't depend on the factory seed.
 ### 5.2 Before finishing
 
 ```bash
-pytest                       # whole suite, must be green
+pip install -e ".[dev]" && pre-commit install   # once per clone
+
 pytest tests/test_<area>.py  # nearest tests first while iterating
+pytest --cov                 # whole suite + coverage floor, must be green
+ruff check . && ruff format --check .
+mypy
 ```
+
+CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
+plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
+must be green to merge. Complexity (`C901`) and `vulture` run as advisory
+steps: they report, never block.
+
+- **Coverage floor** is `fail_under` in `pyproject.toml`. Each phase raises
+  it; never lower it.
+- **Baseline exceptions** (ruff `per-file-ignores` and mypy `overrides` marked
+  *Baseline* in `pyproject.toml`) are debt that predates the gates. Never add
+  to them; fix the code or add a justified `noqa` (§4.5). Remove an entry as
+  soon as its file is clean.
 
 Report: which tests changed, the commands run, the results, and remaining gaps.
 Never claim tests pass without running them.

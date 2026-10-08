@@ -649,7 +649,8 @@ pulse-engine           # daemon em foreground
 pytest
 ```
 
-Duas invariantes que valem checar depois de mexer no pacote:
+Duas invariantes que valem checar depois de mexer no pacote (o
+`tests/test_package_invariants.py` as verifica no `pytest` e no CI):
 
 ```bash
 # arquivo não-Python só na semente de fábrica
