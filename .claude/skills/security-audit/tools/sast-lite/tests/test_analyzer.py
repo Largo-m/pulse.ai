@@ -306,3 +306,17 @@ def test_httpx_explicitly_disabled_timeout_flagged(call):
 ])
 def test_httpx_defaults_finite_timeout_and_skips_unknown_kwargs(call):
     assert "py.request-no-timeout" not in ids(f"import httpx\n{call}")
+
+
+def test_matching_noqa_code_suppresses_a_reviewed_finding():
+    src = 'conn.execute(\n    f"UPDATE t SET {col} = ?",  # noqa: S608 - col from an allowlist\n    (v,),\n)'
+    assert "py.sql-injection" not in ids(src)
+
+
+def test_noqa_for_another_check_does_not_suppress():
+    src = 'conn.execute(f"SELECT * FROM t WHERE id = {x}")  # noqa: S603'
+    assert "py.sql-injection" in ids(src)
+
+
+def test_nosec_suppresses_any_rule():
+    assert "py.eval-exec" not in ids("eval(user_input)  # nosec")

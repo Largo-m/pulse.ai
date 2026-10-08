@@ -4,6 +4,7 @@ import argparse
 import ast
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, asdict
 from typing import Iterable, Iterator
@@ -14,6 +15,29 @@ SKIP_DIRS = {
 }
 
 SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+# A reviewed finding carries the ruff/bandit code of the same check, so one
+# justified `# noqa: S608` silences both tools; `# nosec` silences any rule.
+SUPPRESSION_CODES = {
+    "py.eval-exec": {"S102", "S307"},
+    "py.compile": {"S102"},
+    "py.os-system": {"S605"},
+    "py.subprocess-shell": {"S602"},
+    "py.insecure-deserialization": {"S301"},
+    "py.yaml-load": {"S506"},
+    "py.weak-hash": {"S324"},
+    "py.tls-verify-disabled": {"S501"},
+    "py.request-no-timeout": {"S113"},
+    "py.insecure-temp": {"S306"},
+    "py.flask-debug": {"S201"},
+    "py.jinja-autoescape": {"S701"},
+    "py.sql-injection": {"S608"},
+    "py.hardcoded-secret": {"S105", "S106", "S107"},
+    "py.insecure-random": {"S311"},
+    "py.assert-security": {"S101"},
+}
+_NOQA = re.compile(r"#\s*noqa:\s*([A-Z0-9,\s]+)")
+_NOSEC = re.compile(r"#\s*nosec\b")
 
 
 @dataclass
@@ -157,7 +181,21 @@ class SecurityVisitor(ast.NodeVisitor):
             return head in self.httpx_aliases and name in ("Client", "AsyncClient")
         return False
 
+    def _suppressed(self, node: ast.AST, rule_id: str) -> bool:
+        first = getattr(node, "lineno", 0)
+        last = getattr(node, "end_lineno", None) or first
+        codes = SUPPRESSION_CODES.get(rule_id, set())
+        for text in self.lines[max(first - 1, 0):last]:
+            if _NOSEC.search(text):
+                return True
+            match = _NOQA.search(text)
+            if match and codes & set(re.findall(r"[A-Z]+[0-9]+", match.group(1))):
+                return True
+        return False
+
     def _add(self, node: ast.AST, rule_id: str, cwe: str, msg: str, sev: str):
+        if self._suppressed(node, rule_id):
+            return
         line = getattr(node, "lineno", 0)
         col = getattr(node, "col_offset", 0)
         snippet = self.lines[line - 1].strip() if 0 < line <= len(self.lines) else ""
