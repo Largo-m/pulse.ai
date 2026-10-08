@@ -20,7 +20,9 @@ from pulse.domain.control import RUN_STOPPED
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
 from pulse.history.events import PhaseItem, PhaseStatus
+from pulse.history.session_log import RecordedSessionLog
 from pulse.orchestrator.waits import RunWaits
+from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from pulse.tui.hydrate import _stamp_elapsed
@@ -209,6 +211,8 @@ def _port_and_bus():
         cwd=str(Path.cwd()),
         stream=ApiStreamSink(bus),
         prompt_handler=ApiPromptPort(correlator),
+        runtime=get_runtime("cursor"),
+        session_log=RecordedSessionLog(),
     )
     return runner._prompt_handler, correlator, bus
 
@@ -328,7 +332,14 @@ class _Port:
 
 
 def _runner(sink: _Sink, port: _Port) -> AcpSessionRunner:
-    return AcpSessionRunner(["echo"], cwd=str(Path.cwd()), stream=sink, prompt_handler=port)
+    return AcpSessionRunner(
+        ["echo"],
+        cwd=str(Path.cwd()),
+        stream=sink,
+        prompt_handler=port,
+        runtime=get_runtime("cursor"),
+        session_log=RecordedSessionLog(),
+    )
 
 
 def test_every_question_opens_and_closes_exactly_one_wait():
@@ -365,7 +376,7 @@ class _StatusProbe(_Port):
 def _bound(run: RunRecord, port: _Port) -> AcpSessionRunner:
     runner = _runner(_Sink(), port)
     runner.bind_run(run.id, RunWaits(run, SqliteRunRepository()))
-    runner._phase_id = run.steps[0].step_id
+    runner._enter_phase(run.steps[0].step_id)
     return runner
 
 

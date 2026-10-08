@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import subprocess
 import threading
 import time
@@ -16,9 +15,7 @@ from pulse.acp.capabilities import (
     PULSE_CLIENT_CAPABILITIES,
     PULSE_CLIENT_INFO,
 )
-from pulse.acp.models import resolve_model_display_name
 from pulse.acp.reply_clock import ReplyClock
-from pulse.acp.run_events import RunEventRecorder
 from pulse.acp.step_turns import StepTurns
 from pulse.acp.watched_prompts import WatchedPrompts
 from pulse.domain import ui_text
@@ -27,39 +24,50 @@ from pulse.domain.ports import (
     AgentProfile,
     JsonObject,
     NullPromptPort,
+    NullSessionLog,
     NullStreamSink,
     NullUserWaitListener,
     PromptPort,
+    QuestionChannel,
+    RuntimeDialect,
+    SessionLog,
     StreamSink,
     UserWaitListener,
 )
-from pulse.mcp.config import pulse_ask_mcp_server
-from pulse.mcp.http_bridge import AskQuestionHttpServer
 from pulse.replies.permission import PermissionPolicy, parse_policy
+from pulse.replies.session_models import resolve_model_display_name
 from pulse.replies.text_questionnaire import parse_text_questionnaire
-from pulse.runtimes import AgentRuntime, runtime_for_command
 
 CLOSE_TIMEOUT_SECONDS = 10.0
 
 
-class AcpSessionRunner(StepTurns, RunEventRecorder):
+class AcpSessionRunner(StepTurns):
+    """One agent process speaking ACP for a run, one session per step.
+
+    What differs per runtime (`runtime`), where mid-turn questions arrive
+    (`questions`) and where the run log goes (`session_log`) are handed in by
+    the daemon; without a channel the agent gets no `AskQuestion` tool, and
+    without a log nothing is recorded.
+    """
+
     def __init__(
         self,
         command: list[str],
         *,
         cwd: str,
+        runtime: RuntimeDialect,
         permission_policy: PermissionPolicy = "ask",
         timeout_seconds: float = 600.0,
         stream: StreamSink | None = None,
         prompt_handler: PromptPort | None = None,
-        enable_mcp_ask: bool = True,
+        questions: QuestionChannel | None = None,
+        session_log: SessionLog | None = None,
         pulse_agent: str | None = None,
-        runtime: AgentRuntime | None = None,
         control: RunControl | None = None,
     ) -> None:
         self._command = command
         self._control = control or RunControl()
-        self._runtime = runtime or runtime_for_command(command)
+        self._runtime = runtime
         self._cwd = cwd
         self._permission_policy = permission_policy
         self._timeout_seconds = timeout_seconds
@@ -73,12 +81,13 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
                 prompt_handler or NullPromptPort(),
                 on_enter=self._begin_user_wait,
                 on_exit=self._end_user_wait,
-                on_answer=self._record_prompt_qa,
+                on_answer=self._record_dialog,
             ),
         )
-        self._enable_mcp_ask = enable_mcp_ask
+        self._questions = questions
+        self._log: SessionLog = session_log or NullSessionLog()
+        self._mcp: list[JsonObject] = []
         self._pulse_agent = pulse_agent
-        self._ask_bridge: AskQuestionHttpServer | None = None
         self._process: subprocess.Popen[str] | None = None
         self._responses: dict[int, dict[str, Any]] = {}
         self._response_queue: Queue[int] = Queue()
@@ -86,13 +95,8 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
         self._next_id = 1
         self._session_id: str | None = None
         self.last_session_id = ""
-        self._bound_run_id = ""
         self._waits: UserWaitListener = NullUserWaitListener()
         self._phase_id = ""
-        self._text_buffer: list[str] = []
-        self._tool_payloads: dict[str, JsonObject] = {}
-        self._tool_kinds: dict[str, str] = {}
-        self._tool_labeled: set[str] = set()
         self._run_id = str(uuid.uuid4())
         self._auth_methods: list[str] = []
         self.ask_question_count = 0
@@ -129,11 +133,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
             notify()
         # The user's answer must reach the agent even if the wait is not recorded.
         except Exception as error:  # noqa: BLE001
-            self._save_event(
-                kind="Info",
-                title="User wait not recorded",
-                detail=f"{type(error).__name__}: {error}",
-            )
+            self._log.notice("User wait not recorded", f"{type(error).__name__}: {error}")
 
     def run_prompt(self, prompt_text: str) -> dict[str, Any]:
         self.start()
@@ -152,12 +152,8 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
             self.close()
 
     def start(self) -> None:
-        if self._enable_mcp_ask:
-            self._ask_bridge = AskQuestionHttpServer(
-                prompt_handler=self._prompt_handler,
-                on_question=self._record_ask_question,
-            )
-            self._ask_bridge.start()
+        if self._questions is not None:
+            self._mcp = self._questions.open(self._prompt_handler, self._record_ask_question)
 
         # argv list from the user's effective config, never from agent output.
         self._process = subprocess.Popen(  # noqa: S603
@@ -200,9 +196,9 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
         return True
 
     def close(self) -> None:
-        if self._ask_bridge is not None:
-            self._ask_bridge.close()
-            self._ask_bridge = None
+        if self._questions is not None:
+            self._questions.close()
+        self._mcp = []
 
         if self._process is None:
             return
@@ -247,7 +243,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
                 session_id = params.get("sessionId")
                 if self._session_id is None or session_id is None or session_id == self._session_id:
                     self._stream.handle_update(params)
-                    self._record_run_event(params)
+                    self._log.update(params)
                 continue
 
             message_id = message.get("id")
@@ -279,11 +275,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
         # Any failure answering the agent becomes a JSON-RPC error reply: the
         # agent is waiting on this id, and the read loop must keep running.
         except Exception as error:  # noqa: BLE001
-            self._save_event(
-                kind="Info",
-                title="Agent request failed",
-                detail=f"{method}: {type(error).__name__}: {error}",
-            )
+            self._log.notice("Agent request failed", f"{method}: {type(error).__name__}: {error}")
             error_payload = {
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -431,7 +423,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
     def new_session(self, cwd: str, *, workflow: str = "") -> dict[str, Any]:
         params: dict[str, Any] = {
             "cwd": cwd,
-            "mcpServers": self._mcp_servers(),
+            "mcpServers": list(self._mcp),
             "_meta": {
                 "pulse": {
                     "runId": self._run_id,
@@ -443,7 +435,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
 
     def bind_run(self, run_id: str, waits: UserWaitListener | None = None) -> None:
         """Bind the runner to a run so log, artifacts and user waits are recorded on it."""
-        self._bound_run_id = run_id
+        self._log.bind_run(run_id)
         self._waits = waits or NullUserWaitListener()
 
     @property
@@ -461,27 +453,37 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
         self._permission_policy = parse_policy(profile.permission_policy)
 
     def _activate_session(self, session_id: str) -> None:
-        self._tool_payloads.clear()
-        self._tool_kinds.clear()
-        self._tool_labeled.clear()
         self._session_id = str(session_id)
         self.last_session_id = self._session_id
         self._stream.set_session_id(self._session_id)
-        from pulse.store.sessions import persist_runtime_session
+        self._log.enter_session(
+            self._session_id,
+            pulse_session_id=self._run_id,
+            cwd=self._cwd,
+            agent_id=self._pulse_agent,
+        )
 
-        try:
-            persist_runtime_session(
-                self._cwd,
-                pulse_session_id=self._run_id,
-                acp_session_id=self._session_id,
-                agent_id=self._pulse_agent,
-            )
-        except (sqlite3.Error, OSError) as error:
-            self._save_event(
-                kind="Info",
-                title="Runtime session not recorded",
-                detail=f"{type(error).__name__}: {error}",
-            )
+    def _enter_phase(self, phase_id: str) -> None:
+        self._phase_id = phase_id
+        self._log.enter_step(phase_id)
+
+    def _begin_phase(self, label: str) -> None:
+        """Open the phase on screen and leave the same marker in the recorded log.
+
+        Without it, history would merge consecutive turns into a single block.
+        """
+        self._log.flush()
+        self._stream.begin_phase(label)
+        self._log.phase(label)
+
+    def _record_dialog(
+        self,
+        name: str,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
+        result: object,
+    ) -> None:
+        self._log.dialog(name, args, kwargs, result)
 
     def close_session(self) -> None:
         if self._session_id is None:
@@ -516,12 +518,7 @@ class AcpSessionRunner(StepTurns, RunEventRecorder):
                 },
             )
         finally:
-            self._flush_text()
-
-    def _mcp_servers(self) -> list[dict[str, Any]]:
-        if not self._enable_mcp_ask or self._ask_bridge is None:
-            return []
-        return [pulse_ask_mcp_server(url=self._ask_bridge.url)]
+            self._log.flush()
 
     def _run_text_questionnaire(self, phase1_text: str) -> str | None:
         questionnaire = parse_text_questionnaire(phase1_text)

@@ -9,7 +9,7 @@ from queue import Empty, Queue
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
-from pulse.acp.models import extract_model_labels
+from pulse.replies.session_models import extract_model_labels
 
 
 @dataclass

@@ -34,7 +34,7 @@ REQUIRED_CONTRACTS = {
 BASELINE_CEILING = {
     "TUI and client are thin: they never import the engine": 0,
     TUI_THROUGH_DAEMON: 1,
-    ADAPTERS_APART: 12,
+    ADAPTERS_APART: 0,
 }
 # Contracts that name every package but a few: import-linter has no wildcard
 # for "the rest of pulse", so the list goes stale when a package is added.

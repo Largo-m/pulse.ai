@@ -212,27 +212,6 @@ forbidden_modules = [
     "pulse.store",
     "pulse.vcs",
 ]
-allow_indirect_imports = true
-# Baseline (shrink-only, ceiling pinned in tests/architecture/test_import_contracts.py).
-ignore_imports = [
-    # The ACP session persists events and sessions itself; the fix is writing
-    # them through `RunRepository` / `StreamSink` in `daemon/adapters.py`.
-    "pulse.acp.run_events -> pulse.history.events",
-    "pulse.acp.run_events -> pulse.history.prompt_detail",
-    "pulse.acp.run_events -> pulse.history.tool_detail",
-    "pulse.acp.run_events -> pulse.store.runs",
-    "pulse.acp.session_runner -> pulse.store.sessions",
-    # The session hosts the ask-question bridge and picks the runtime's argv.
-    "pulse.acp.session_runner -> pulse.mcp.config",
-    "pulse.acp.session_runner -> pulse.mcp.http_bridge",
-    "pulse.acp.session_runner -> pulse.runtimes",
-    # Model-id parsing is split between `acp/` and `runtimes/` (a cycle); the
-    # fix is moving it into the `AgentRuntime` classes.
-    "pulse.acp.models -> pulse.runtimes.claude",
-    "pulse.runtimes.base -> pulse.acp.models",
-    "pulse.runtimes.claude -> pulse.acp.models",
-    "pulse.store.sessions -> pulse.config.project_config",
-]
 
 [[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"

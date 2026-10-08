@@ -554,13 +554,20 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Adapter de `AgentSession`: processo do agente, JSON-RPC, sessões, prompts |
+| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Adapter de `AgentSession`: processo do agente, JSON-RPC, sessões, prompts. Recebe do daemon, por porta, o dialeto do runtime (`RuntimeDialect`), a ponte de perguntas (`QuestionChannel`) e o log da run (`SessionLog`) |
 | [`pulse/acp/step_turns.py`](pulse/acp/step_turns.py) | Os turnos de um step na sua sessão: questionário de aprovação e continuações |
 | [`pulse/acp/reply_clock.py`](pulse/acp/reply_clock.py) | Prazo de resposta de cada request: silêncio em `session/prompt`, fixo nos demais |
 | [`pulse/acp/watched_prompts.py`](pulse/acp/watched_prompts.py) | Proxy do `PromptPort`: aplica a política de permissão e mede a espera do usuário |
-| [`pulse/acp/run_events.py`](pulse/acp/run_events.py) | Log da run e artefatos gravados no SQLite |
 | [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
-| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude` |
+| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude`; cada um é um `RuntimeDialect` |
+| [`pulse/replies/session_models.py`](pulse/replies/session_models.py) | O catálogo de modelos da resposta ao `session/new` (ACP puro e o dialeto do Claude), lido igual pelo runner e pelos runtimes |
+| [`pulse/mcp/channel.py`](pulse/mcp/channel.py) | `McpQuestionChannel`: a ponte MCP `AskQuestion` como `QuestionChannel` |
+| [`pulse/history/session_log.py`](pulse/history/session_log.py) | `RecordedSessionLog`: o `SessionLog` que grava `run_events`, `run_artifacts` e o ponteiro de sessão |
+
+Os adapters não se importam entre si: `acp/` conhece só as portas, e quem liga
+runtime, ponte MCP e log a cada run é `daemon/runs.py`. O contrato "Adapters
+depend on the domain, not on each other" vale também para cadeias indiretas e
+não tem exceção.
 
 Adicionar um agente novo é escrever um módulo com a subclasse de `AgentRuntime` e
 registrá-lo em `RUNTIMES`. Config, doctor, onboarding e session runner passam a
@@ -623,8 +630,8 @@ O Pulse **não gera arquivo nenhum**. O agente escreve onde o `prompt_template` 
 step mandar.
 
 A descoberta é pelos **tool-calls do ACP**: um `write`/`edit`/`create` faz o
-`AcpSessionRunner` gravar o caminho em `run_artifacts`
-([`_record_artifacts`](pulse/acp/run_events.py)). O caminho vem de
+log da sessão gravar o caminho em `run_artifacts`
+([`RecordedSessionLog`](pulse/history/session_log.py)). O caminho vem de
 `locations[].path` ou do `rawInput` — cada runtime reporta de um jeito.
 
 Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
@@ -641,8 +648,8 @@ do `run.context`: é ele que diz a raiz sobre a qual esses caminhos se abrem.
 ```
  1. Usuário: pulse
  2. cli/main.py garante o Engine up → abre PulseApp (HomeScreen)
- 3. Home lista os workflows de `workflow_defs`; usuário escolhe e descreve a tarefa
- 4. CockpitScreen monta a sidebar a partir de `workflow_steps` → EngineRunSession
+ 3. Home lista os workflows (GET /api/workflows); usuário escolhe e descreve a tarefa
+ 4. CockpitScreen monta a sidebar com a forma servida pelo daemon → EngineRunSession
  5. client: POST /api/workflows/{id}/runs
  6. daemon/runs.py abre uma thread → orchestrator/engine.py
  7. Cria a run (`runs` + `run_steps`) e entra no laço de steps
@@ -664,7 +671,7 @@ Reabrir uma run **encerrada** pelo histórico usa as mesmas tabelas: `run_steps`
 runtime nem varrer pasta.
 
 O que vai para `run_events` é o **mesmo rótulo** que a tela ao vivo mostra:
-`acp/session_runner.py` acumula os updates de cada tool-call e passa por
+`history/session_log.py` acumula os updates de cada tool-call e passa por
 `history/tool_detail.build_tool_labels` antes de gravar, então o tipo (`Read`,
 `Shell`, `Write`…), o alvo e o detalhe são os da sessão viva — e o caminho do
 artefato é gravado relativo ao workspace, que é como o painel o abre.

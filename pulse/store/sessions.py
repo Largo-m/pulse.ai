@@ -4,7 +4,6 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pulse.config.project_config import load_project_config
 from pulse.store.db import connect, default_db_path
 
 
@@ -54,11 +53,9 @@ def set_acp_session_id(
 
 
 def persist_runtime_session(
-    cwd: str, *, pulse_session_id: str, acp_session_id: str, agent_id: str | None
+    project_id: str, *, pulse_session_id: str, acp_session_id: str, agent_id: str | None
 ) -> None:
-    project = load_project_config(Path(cwd))
-    if project is None:
-        return
+    """Point the Pulse session at the runtime's; the caller resolved the project."""
     connection = connect(default_db_path())
     try:
         already = connection.execute(
@@ -79,7 +76,7 @@ def persist_runtime_session(
                   id, project_id, workflow_id, agent_id, acp_session_id, status, started_at
                 ) VALUES (?, ?, NULL, ?, ?, 'running', ?)
                 """,
-                (pulse_session_id, project.project_id, agent_id, acp_session_id, now),
+                (pulse_session_id, project_id, agent_id, acp_session_id, now),
             )
         elif not row["acp_session_id"]:
             connection.execute(
@@ -94,7 +91,7 @@ def persist_runtime_session(
                   id, project_id, workflow_id, agent_id, acp_session_id, status, started_at
                 ) VALUES (?, ?, NULL, ?, ?, 'running', ?)
                 """,
-                (str(uuid.uuid4()), project.project_id, agent_id, acp_session_id, now),
+                (str(uuid.uuid4()), project_id, agent_id, acp_session_id, now),
             )
         connection.commit()
     finally:

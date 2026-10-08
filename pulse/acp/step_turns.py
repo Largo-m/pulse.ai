@@ -27,13 +27,14 @@ class _SessionHost(Protocol):
     """What the turns need from the runner they are mixed into."""
 
     _cwd: str
-    _phase_id: str
     _stream: StreamSink
     ask_question_count: int
 
     def new_session(self, cwd: str, *, workflow: str = "") -> dict[str, Any]: ...
 
     def _activate_session(self, session_id: str) -> None: ...
+
+    def _enter_phase(self, phase_id: str) -> None: ...
 
     def apply_model(self, session: dict[str, Any], preferred_model: str | None) -> None: ...
 
@@ -62,7 +63,7 @@ class StepTurns:
         phase_id: str = "",
     ) -> dict[str, Any]:
         if phase_id:
-            self._phase_id = phase_id
+            self._enter_phase(phase_id)
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:
@@ -158,7 +159,7 @@ class StepTurns:
         or empty to stop. Continuing in the same session preserves the agent's context.
         """
         if phase_id:
-            self._phase_id = phase_id
+            self._enter_phase(phase_id)
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:

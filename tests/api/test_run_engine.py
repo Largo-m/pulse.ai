@@ -85,3 +85,27 @@ def test_the_engine_gets_the_production_adapters(monkeypatch, tmp_path: Path):
     assert seen["definition"].id == "demo"
     assert seen["control"] is control
     assert (seen["run_id"], seen["use_worktree"]) == ("run-1", False)
+
+
+@pytest.mark.usefixtures("ready")
+def test_the_agent_session_gets_the_production_log_channel_and_runtime(monkeypatch, tmp_path: Path):
+    """`acp/` only knows the ports; without this wiring a run would record no history."""
+    from pulse.history.session_log import RecordedSessionLog
+    from pulse.mcp.channel import McpQuestionChannel
+    from pulse.runtimes import RUNTIMES
+
+    make_workflow("demo", steps=[("one", "Um")])
+    built: dict = {}
+
+    def recording_runner(*args, **kwargs):
+        built.update(kwargs)
+        return AcpSessionRunner(*args, **kwargs)
+
+    monkeypatch.setattr(runs_module, "AcpSessionRunner", recording_runner)
+    monkeypatch.setattr(runs_module, "run_workflow", lambda **_kwargs: 0)
+
+    _start(tmp_path)
+
+    assert isinstance(built["session_log"], RecordedSessionLog)
+    assert isinstance(built["questions"], McpQuestionChannel)
+    assert built["runtime"] in RUNTIMES.values()

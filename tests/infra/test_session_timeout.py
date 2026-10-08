@@ -18,6 +18,7 @@ import pytest
 
 from pulse.acp import reply_clock, session_runner
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.runtimes import get_runtime
 
 
 class SimulatedTime:
@@ -81,7 +82,9 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> SimulatedTime:
 
 def _runner(clock: SimulatedTime, timeout: float) -> AcpSessionRunner:
     """Process-less runner: just enough to exercise `_request`."""
-    runner = AcpSessionRunner(["fake-agent"], cwd="/repo", timeout_seconds=timeout)
+    runner = AcpSessionRunner(
+        ["fake-agent"], cwd="/repo", timeout_seconds=timeout, runtime=get_runtime("cursor")
+    )
     runner._send = lambda _payload: None  # type: ignore[method-assign]
     runner._session_id = "sess-1"
     runner._response_queue = SimulatedQueue(clock)  # type: ignore[assignment]

@@ -23,7 +23,9 @@ from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain import ui_text
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import StepRecord
+from pulse.history.session_log import RecordedSessionLog
 from pulse.replies.text_questionnaire import TextQuestionnaire, format_questionnaire_answers
+from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 from tests.fakes import RecordingStream
@@ -199,7 +201,8 @@ def connect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
             timeout_seconds=5,
             stream=stream,
             prompt_handler=sheet,
-            enable_mcp_ask=False,
+            runtime=get_runtime("cursor"),
+            session_log=RecordedSessionLog(),
         )
         runner.start()
         runner.initialize()

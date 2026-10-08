@@ -7,6 +7,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from pulse.domain.ports import ModelRequest
+from pulse.replies.session_models import resolve_model_id
+
 
 @dataclass(frozen=True)
 class RuntimeCheck:
@@ -16,19 +19,6 @@ class RuntimeCheck:
     status: str
     message: str
     detail: str | None = None
-
-
-@dataclass(frozen=True)
-class ModelRequest:
-    """JSON-RPC call that applies a model to the session.
-
-    Not every ACP agent implements `session/set_model` (Claude exposes the model
-    as a config option), so each runtime returns the right call.
-    """
-
-    method: str
-    params: dict[str, Any]
-    model_id: str
 
 
 def run_cli(
@@ -236,8 +226,6 @@ class AgentRuntime:
         *,
         session_id: str,
     ) -> ModelRequest | None:
-        from pulse.acp.models import resolve_model_id
-
         model_id = resolve_model_id(session, preferred_model)
         if not model_id:
             return None

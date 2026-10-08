@@ -1,4 +1,4 @@
-from pulse.acp.models import (
+from pulse.replies.session_models import (
     extract_model_labels,
     resolve_interview_model_id,
     resolve_model_display_name,
