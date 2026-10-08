@@ -7,7 +7,6 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, cast
@@ -18,7 +17,10 @@ from pulse.acp.capabilities import (
     PULSE_CLIENT_INFO,
 )
 from pulse.acp.models import resolve_model_display_name
+from pulse.acp.reply_clock import ReplyClock
 from pulse.acp.run_events import RunEventRecorder
+from pulse.acp.step_turns import StepTurns
+from pulse.acp.watched_prompts import WatchedPrompts
 from pulse.domain import ui_text
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
@@ -27,131 +29,20 @@ from pulse.domain.ports import (
     NullPromptPort,
     NullStreamSink,
     NullUserWaitListener,
-    PhaseContinuation,
-    PromptContinuation,
     PromptPort,
     StreamSink,
     UserWaitListener,
 )
 from pulse.mcp.config import pulse_ask_mcp_server
 from pulse.mcp.http_bridge import AskQuestionHttpServer
-from pulse.replies.approval import APPROVE, CANCEL, SKIP, classify_outcome
-from pulse.replies.permission import PermissionPolicy, decide_permission, parse_policy
+from pulse.replies.permission import PermissionPolicy, parse_policy
 from pulse.replies.text_questionnaire import parse_text_questionnaire
 from pulse.runtimes import AgentRuntime, runtime_for_command
 
-# An agent that asks until no doubt is left needs room; the cap only stops an
-# endless question loop, and hitting it sends the step to the retry menu.
-MAX_PHASE_APPROVAL_TURNS = 12
-
-# The work plus one continuation, the agent's chance to unblock itself. An agent
-# that repeats the block after one nudge needs a person; more turns only burn
-# tokens to reach the same menu.
-MAX_PROMPT_TURNS = 2
-
-CANCEL_GRACE_SECONDS = 10.0
 CLOSE_TIMEOUT_SECONDS = 10.0
 
-_IDLE_CLOCK_METHODS = frozenset({"session/prompt"})
 
-
-AnswerRecorder = Callable[[str, tuple[object, ...], dict[str, object], object], None]
-"""Receives each prompt-port call with its result, to record the dialog."""
-
-
-class _WatchedPrompts:
-    """Prompt port proxy that signals when a question is on screen.
-
-    While the user decides, the agent is silent, which the `session/prompt` idle
-    clock would otherwise count as a timeout. Every question passes through here,
-    so it is also where the dialog is recorded to the run log (`on_answer`).
-    """
-
-    def __init__(
-        self,
-        inner: object,
-        *,
-        on_enter: Callable[[], None],
-        on_exit: Callable[[], None],
-        on_answer: AnswerRecorder | None = None,
-    ) -> None:
-        self._inner = inner
-        self._on_enter = on_enter
-        self._on_exit = on_exit
-        self._on_answer = on_answer
-
-    def __getattr__(self, name: str) -> object:
-        attr = getattr(self._inner, name)
-        if not callable(attr):
-            return attr
-
-        def watched(*args: object, **kwargs: object) -> object:
-            if name == "respond_to_permission":
-                decided = _policy_decision(args, kwargs)
-                if decided is not None:
-                    return decided
-            self._on_enter()
-            try:
-                result = attr(*args, **kwargs)
-                self._record(name, args, kwargs, result)
-                return result
-            finally:
-                self._on_exit()
-
-        return watched
-
-    def _record(
-        self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
-    ) -> None:
-        if self._on_answer is not None:
-            self._on_answer(name, args, kwargs, result)
-
-
-@dataclass
-class _ReplyClock:
-    """When a request stops waiting for its reply.
-
-    `session/prompt` measures agent silence (`idle`): the deadline follows the last
-    sign of activity. Other requests keep a fixed deadline. A cancelled turn gets
-    a short grace period instead, so the agent can close it on its own.
-    """
-
-    limit: float
-    idle: bool
-    deadline: float
-    cancelling: bool = False
-
-    def follow(self, activity: float) -> None:
-        if self.idle and not self.cancelling:
-            self.deadline = activity + self.limit
-
-    def expired(self) -> bool:
-        return time.monotonic() >= self.deadline
-
-    def remaining(self) -> float:
-        return max(0.0, self.deadline - time.monotonic())
-
-    def start_cancel(self) -> None:
-        self.cancelling = True
-        self.deadline = time.monotonic() + CANCEL_GRACE_SECONDS
-
-
-def _policy_decision(args: tuple[object, ...], kwargs: dict[str, object]) -> dict[str, Any] | None:
-    """Answer to `respond_to_permission(params, *, policy, allow_terminal)` decided by policy alone.
-
-    `None` means only a person can decide."""
-    params = args[0] if args else kwargs.get("params")
-    if not isinstance(params, dict):
-        return None
-    policy = kwargs.get("policy", "ask")
-    return decide_permission(
-        params,
-        policy=parse_policy(policy) if isinstance(policy, str) else "ask",
-        allow_terminal=bool(kwargs.get("allow_terminal", False)),
-    )
-
-
-class AcpSessionRunner(RunEventRecorder):
+class AcpSessionRunner(StepTurns, RunEventRecorder):
     def __init__(
         self,
         command: list[str],
@@ -178,7 +69,7 @@ class AcpSessionRunner(RunEventRecorder):
         # for whatever the wrapped port implements.
         self._prompt_handler = cast(
             PromptPort,
-            _WatchedPrompts(
+            WatchedPrompts(
                 prompt_handler or NullPromptPort(),
                 on_enter=self._begin_user_wait,
                 on_exit=self._end_user_wait,
@@ -259,152 +150,6 @@ class AcpSessionRunner(RunEventRecorder):
         finally:
             self._stream.finish()
             self.close()
-
-    def run_isolated_phase(
-        self,
-        *,
-        workflow: str,
-        phase_label: str,
-        initial_prompt: str,
-        preferred_model: str | None = None,
-        build_continuation: PhaseContinuation | None = None,
-        phase_id: str = "",
-    ) -> dict[str, Any]:
-        if phase_id:
-            self._phase_id = phase_id
-        session = self.new_session(self._cwd, workflow=workflow)
-        session_id = session.get("sessionId")
-        if not session_id:
-            raise RuntimeError("ACP session returned no sessionId")
-        active_session = str(session_id)
-        self._activate_session(active_session)
-
-        self.apply_model(session, preferred_model)
-
-        self.apply_mode(session, execute=False)
-        next_prompt = initial_prompt
-        phase_summary = ""
-        answers_text = ""
-        approved = False
-        outcome = "unknown"
-        phase_result: dict[str, Any] = {}
-
-        try:
-            for turn in range(MAX_PHASE_APPROVAL_TURNS):
-                self._begin_phase(
-                    ui_text.continuation_label(phase_label, turn + 1) if turn else phase_label
-                )
-                self._stream.reset_capture()
-                phase_result = self.prompt(active_session, next_prompt)
-                if phase_result.get("stopReason") == "cancelled":
-                    phase_result["approved"] = False
-                    phase_result["outcome"] = "cancelled"
-                    phase_result["phaseSummary"] = phase_summary
-                    return phase_result
-
-                phase_summary = self._stream.agent_text()
-                answers = self._run_text_questionnaire(phase_summary)
-                if answers is None:
-                    return {
-                        "stopReason": "cancelled",
-                        "phaseStopReason": phase_result.get("stopReason"),
-                        "askQuestionCount": self.ask_question_count,
-                        "approved": False,
-                        "outcome": "cancelled",
-                        "phaseSummary": phase_summary,
-                    }
-
-                answers_text = answers
-                if not answers_text.strip():
-                    break
-
-                outcome = classify_outcome(answers_text)
-                if outcome == APPROVE:
-                    approved = True
-                    break
-                if outcome in {CANCEL, SKIP}:
-                    return {
-                        "stopReason": phase_result.get("stopReason", "end_turn"),
-                        "phaseStopReason": phase_result.get("stopReason"),
-                        "askQuestionCount": self.ask_question_count,
-                        "approved": False,
-                        "outcome": outcome,
-                        "phaseSummary": phase_summary,
-                    }
-
-                if build_continuation is None:
-                    break
-                next_prompt = build_continuation(
-                    phase_summary=phase_summary,
-                    questionnaire_answers=answers_text,
-                    outcome=outcome,
-                )
-
-            phase_result["approved"] = approved
-            phase_result["outcome"] = outcome
-            phase_result["phaseSummary"] = phase_summary
-            phase_result["approvalAnswers"] = answers_text
-            phase_result["askQuestionCount"] = self.ask_question_count
-            return phase_result
-        finally:
-            self.close_session()
-
-    def run_isolated_prompt(
-        self,
-        *,
-        workflow: str,
-        phase_label: str,
-        prompt_text: str,
-        preferred_model: str | None = None,
-        agent_mode: bool = True,
-        phase_id: str = "",
-        build_continuation: PromptContinuation | None = None,
-        max_turns: int = MAX_PROMPT_TURNS,
-    ) -> dict[str, Any]:
-        """Run the step in its own session, allowing continuation turns.
-
-        `build_continuation` receives the turn result and returns the next prompt,
-        or empty to stop. Continuing in the same session preserves the agent's context.
-        """
-        if phase_id:
-            self._phase_id = phase_id
-        session = self.new_session(self._cwd, workflow=workflow)
-        session_id = session.get("sessionId")
-        if not session_id:
-            raise RuntimeError("ACP session returned no sessionId")
-        active_session = str(session_id)
-        self._activate_session(active_session)
-
-        self.apply_model(session, preferred_model)
-
-        self.apply_mode(session, execute=agent_mode)
-
-        next_prompt = prompt_text
-        parts: list[str] = []
-        result: dict[str, Any] = {}
-        try:
-            for turn in range(max(1, max_turns)):
-                if turn:
-                    self._begin_phase(ui_text.continuation_label(phase_label, turn + 1))
-                else:
-                    self._begin_phase(phase_label)
-                self._stream.reset_capture()
-                result = self.prompt(active_session, next_prompt)
-                text = self._stream.agent_text().strip()
-                if text:
-                    parts.append(text)
-                result["phaseSummary"] = "\n\n".join(parts)
-                result["askQuestionCount"] = self.ask_question_count
-                result["turns"] = turn + 1
-                if build_continuation is None or result.get("stopReason") == "cancelled":
-                    break
-                follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
-                if not follow_up:
-                    break
-                next_prompt = follow_up
-            return result
-        finally:
-            self.close_session()
 
     def start(self) -> None:
         if self._enable_mcp_ask:
@@ -571,9 +316,7 @@ class AcpSessionRunner(RunEventRecorder):
 
         limit = self._timeout_seconds if timeout is None else timeout
         self._activity = time.monotonic()
-        clock = _ReplyClock(
-            limit=limit, idle=method in _IDLE_CLOCK_METHODS, deadline=self._activity + limit
-        )
+        clock = ReplyClock.for_request(method, limit, self._activity)
         response = self._await_response(request_id, method, clock)
         if response is None:
             if clock.cancelling:
@@ -587,7 +330,7 @@ class AcpSessionRunner(RunEventRecorder):
         return response.get("result", {})
 
     def _await_response(
-        self, request_id: int, method: str, clock: _ReplyClock
+        self, request_id: int, method: str, clock: ReplyClock
     ) -> dict[str, Any] | None:
         """The reply to `request_id`, or `None` once the clock runs out."""
         while True:
@@ -603,7 +346,7 @@ class AcpSessionRunner(RunEventRecorder):
             if response is not None:
                 return response
 
-    def _cancel_if_interrupted(self, method: str, clock: _ReplyClock) -> None:
+    def _cancel_if_interrupted(self, method: str, clock: ReplyClock) -> None:
         """A stop cuts the turn in flight, once; protocol requests always finish."""
         if clock.cancelling or method != "session/prompt" or not self._control.interrupted:
             return

@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.domain.control import RunControl
-from pulse.orchestrator.engine import EnginePorts, run_workflow
+from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.wiring import EnginePorts
 from pulse.store.workflow_defs import get_workflow
 from tests.fakes import (
     FakeAgentSession,

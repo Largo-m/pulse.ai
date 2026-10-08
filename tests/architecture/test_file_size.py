@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIRS = ("pulse", "tests")
-LINE_LIMIT = 1000  # Phase 8 lowers it to 700.
+LINE_LIMIT = 700
 # Files over the limit when it landed, each capped at its current size. Entries
 # only shrink or leave this map: split the file, then lower or delete its line.
 OVERSIZED: dict[str, int] = {}

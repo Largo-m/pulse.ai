@@ -301,7 +301,7 @@ ela continua viva, com a sessão ACP aberta, só que **parada**. Enquanto isso:
   `pulse daemon status` imprime.
 
 O ponto único onde isso é observado é
-[`_WatchedPrompts`](pulse/acp/session_runner.py), o proxy que embrulha o
+[`WatchedPrompts`](pulse/acp/watched_prompts.py), o proxy que embrulha o
 `PromptPort`: toda pergunta — do ACP ou do motor — passa por ele, então não há
 caminho de pergunta que escape da contagem. O runner não grava nada: avisa a
 porta `UserWaitListener` ([`pulse/domain/ports.py`](pulse/domain/ports.py)), e o motor liga a
@@ -424,6 +424,7 @@ Só tela e interação. Não executa workflow no próprio processo.
 | [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor |
 | [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe |
 | [`pulse/tui/state.py`](pulse/tui/state.py) | `CockpitState` — estado visual, só memória |
+| [`pulse/tui/artifact_tab.py`](pulse/tui/artifact_tab.py) | A aba de artefatos do cockpit: lista, seleção e painel (mixin de `CockpitState`) |
 | [`pulse/tui/strings.py`](pulse/tui/strings.py) | Todo texto visível da TUI, em português, num só módulo |
 | [`pulse/tui/adapters/cockpit_sink.py`](pulse/tui/adapters/cockpit_sink.py) | Eventos do Engine → atualiza a tela |
 | [`pulse/tui/adapters/prompt_bridge.py`](pulse/tui/adapters/prompt_bridge.py) | Perguntas/aprovações na TUI |
@@ -514,6 +515,8 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/domain/ports.py`](pulse/domain/ports.py) | As portas do motor — `StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace` — e as implementações Null |
 | [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário; [`acp_payloads.py`](pulse/replies/acp_payloads.py) converte o JSON do agente em value objects tipados na fronteira (`mypy --strict`, sem `Any`) |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada, sobre `EnginePorts` |
+| [`pulse/orchestrator/wiring.py`](pulse/orchestrator/wiring.py) | `EnginePorts` e o que todo step de uma run compartilha |
+| [`pulse/orchestrator/menus.py`](pulse/orchestrator/menus.py) | O que a pessoa decide quando um step não fecha: refazer, orientar, pular ou parar |
 | [`pulse/orchestrator/worktree.py`](pulse/orchestrator/worktree.py) | Onde a run trabalha: raiz ou worktree próprio |
 | [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |
 | [`pulse/orchestrator/agent_text.py`](pulse/orchestrator/agent_text.py) | Os dois textos que o próprio Pulse escreve |
@@ -523,7 +526,11 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Adapter de `AgentSession`: processo do agente, sessões, prompts, updates, artefatos |
+| [`pulse/acp/session_runner.py`](pulse/acp/session_runner.py) | Adapter de `AgentSession`: processo do agente, JSON-RPC, sessões, prompts |
+| [`pulse/acp/step_turns.py`](pulse/acp/step_turns.py) | Os turnos de um step na sua sessão: questionário de aprovação e continuações |
+| [`pulse/acp/reply_clock.py`](pulse/acp/reply_clock.py) | Prazo de resposta de cada request: silêncio em `session/prompt`, fixo nos demais |
+| [`pulse/acp/watched_prompts.py`](pulse/acp/watched_prompts.py) | Proxy do `PromptPort`: aplica a política de permissão e mede a espera do usuário |
+| [`pulse/acp/run_events.py`](pulse/acp/run_events.py) | Log da run e artefatos gravados no SQLite |
 | [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
 | [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude` |
 
@@ -586,7 +593,7 @@ step mandar.
 
 A descoberta é pelos **tool-calls do ACP**: um `write`/`edit`/`create` faz o
 `AcpSessionRunner` gravar o caminho em `run_artifacts`
-([`_record_artifacts`](pulse/acp/session_runner.py)). O caminho vem de
+([`_record_artifacts`](pulse/acp/run_events.py)). O caminho vem de
 `locations[].path` ou do `rawInput` — cada runtime reporta de um jeito.
 
 Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
@@ -633,7 +640,7 @@ artefato é gravado relativo ao workspace, que é como o painel o abre.
 
 O **diálogo** segue junto: toda pergunta feita à pessoa — `AskQuestion`,
 questionário, aprovação de fase, permissão, menu de retry — atravessa o proxy
-`_WatchedPrompts` do `session_runner`, e de lá vai para `run_events` como o par
+`WatchedPrompts` (`acp/watched_prompts.py`), e de lá vai para `run_events` como o par
 `Pergunta`/`Você` que a tela desenha, com o texto montado por
 `history/prompt_detail.build_prompt_qa`. Quem grava é o daemon, não a TUI: a tela
 só desenha, e duas janelas anexadas na mesma run gravariam a mesma resposta duas

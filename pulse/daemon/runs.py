@@ -17,7 +17,8 @@ from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import RunControl
 from pulse.domain.ports import PromptPort, StreamSink
 from pulse.domain.run import RunStatus
-from pulse.orchestrator.engine import EnginePorts, run_workflow
+from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.wiring import EnginePorts
 from pulse.replies.permission import parse_policy
 from pulse.store import runs as run_store
 from pulse.store.paths import safe_cwd, worktrees_dir

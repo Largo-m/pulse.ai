@@ -458,7 +458,7 @@ Bloqueio é o último recurso, não o jeito de pedir informação.
 | `cancel` / não aprovado / `stopReason` ruim | — | cai no menu de retry |
 | `status: blocked` (ou sem bloco) | `blocked` | cai no menu de bloqueio |
 
-O menu de falha ([`_offer_retry`](../pulse/orchestrator/engine.py)):
+O menu de falha ([`_offer_retry`](../pulse/orchestrator/menus.py)):
 
 ```
 Refazer                      → nova tentativa, mesmo prompt
@@ -466,7 +466,7 @@ Outro — dizer o que fazer    → ask_text() → guidance_block() no prompt seg
 Parar                        → status FAILED, run encerra com exit 1
 ```
 
-O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/engine.py)) tem uma
+O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/menus.py)) tem uma
 opção a mais, porque bloqueio costuma ser legítimo e às vezes a resposta certa é
 seguir sem aquele step:
 

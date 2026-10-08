@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pulse.acp import session_runner
+from pulse.acp import reply_clock, session_runner
 from pulse.acp.session_runner import AcpSessionRunner
 
 
@@ -73,7 +73,9 @@ class SimulatedQueue:
 @pytest.fixture
 def clock(monkeypatch: pytest.MonkeyPatch) -> SimulatedTime:
     simulated = SimulatedTime()
-    monkeypatch.setattr(session_runner, "time", SimpleNamespace(monotonic=simulated.monotonic))
+    fake_time = SimpleNamespace(monotonic=simulated.monotonic)
+    for module in (session_runner, reply_clock):
+        monkeypatch.setattr(module, "time", fake_time)
     return simulated
 
 

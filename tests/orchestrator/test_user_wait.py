@@ -12,7 +12,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
+from pulse.acp.session_runner import AcpSessionRunner
+from pulse.acp.watched_prompts import WatchedPrompts
 from pulse.domain.control import RUN_STOPPED
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
@@ -460,7 +461,7 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
 
 def test_the_proxy_still_hides_nothing_from_whoever_asks():
     """The proxy forwards, it does not invent: a method the port lacks stays missing."""
-    proxy = _WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
+    proxy = WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
 
     assert not hasattr(proxy, "select_choice")
 
