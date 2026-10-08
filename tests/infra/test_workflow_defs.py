@@ -114,7 +114,7 @@ def test_domain_markdown_lives_only_in_the_factory_seed():
     The engine must not know phases by name. A `.md` read once into the database
     is fine; one read at run time would reintroduce that coupling.
     """
-    package = Path(__file__).resolve().parent.parent / "pulse"
+    package = Path(__file__).resolve().parents[2] / "pulse"
     seed_dir = package / "store" / "factory"
     leftovers = [
         path.relative_to(package)

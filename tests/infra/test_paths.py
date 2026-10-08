@@ -12,7 +12,7 @@ def test_the_state_dir_is_named_in_a_single_module():
     Every layer must read the location from `pulse/store/paths.py`; a second literal
     would let the daemon write its socket where the client never looks.
     """
-    package = Path(__file__).resolve().parent.parent / "pulse"
+    package = Path(__file__).resolve().parents[2] / "pulse"
     definers = sorted(
         path.relative_to(package)
         for path in package.rglob("*.py")

@@ -9,7 +9,7 @@ from pulse.orchestrator.engine import run_workflow
 from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
-from tests.test_engine_steps import (  # noqa: F401
+from tests.orchestrator.test_engine_steps import (  # noqa: F401
     _approved,
     _blocked,
     _delivered,

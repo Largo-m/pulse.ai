@@ -23,7 +23,7 @@ from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from tests.conftest import make_workflow
-from tests.test_worktree import make_repo
+from tests.infra.test_worktree import make_repo
 
 git_only = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
 
