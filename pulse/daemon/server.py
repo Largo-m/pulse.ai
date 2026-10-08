@@ -15,6 +15,7 @@ from types import FrameType
 import uvicorn
 
 from pulse.api.app import create_app
+from pulse.daemon.logs import configure_logging
 from pulse.daemon.runs import RunManager
 from pulse.domain.control import SHUTDOWN_GRACE_SECONDS
 from pulse.store.paths import (
@@ -105,6 +106,7 @@ def run_daemon(
 ) -> None:
     ensure_global_dir()
     _anchor_cwd()
+    configure_logging()
     sock = socket_path or DAEMON_SOCKET
     manager = RunManager()
     app = create_app(manager)
@@ -115,6 +117,7 @@ def run_daemon(
     tcp_socket = config_tcp.bind_socket()
     uds_socket = bind_private_socket(sock)
     write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock)
+    _log.info("daemon.started pid=%d http=%s:%d socket=%s", pid, host, port, sock)
 
     def _cleanup(*_args: object) -> None:
         clear_daemon_meta(pid)
@@ -134,6 +137,7 @@ def run_daemon(
     finally:
         server_uds.should_exit = True
         clear_daemon_meta(pid)
+        _log.info("daemon.stopped pid=%d", pid)
 
 
 def is_loopback(host: str) -> bool:

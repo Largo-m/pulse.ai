@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
-import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +28,7 @@ from pulse.vcs.workspace import GitWorkspace
 
 FINISHED_TTL = 15 * 60.0
 FINISHED_KEEP = 10
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -306,6 +307,7 @@ class RunManager:
 
     @staticmethod
     def _stop(state: RunState) -> None:
+        _log.info("run.cancel_requested run_id=%s", state.id)
         state.correlator.cancel_all()
         state.control.stop()
         state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
@@ -319,8 +321,14 @@ class RunManager:
         return False
 
     def _execute(self, state: RunState) -> None:
-        stream = ApiStreamSink(state.bus)
+        stream = ApiStreamSink(state.bus, run_id=state.id)
         prompt_handler = ApiPromptPort(state.correlator)
+        _log.info(
+            "run.started run_id=%s workflow=%s resumed=%s",
+            state.id,
+            state.workflow_id,
+            state.resume_run_id is not None,
+        )
         state.bus.publish(
             {
                 "type": "run.started",
@@ -340,7 +348,7 @@ class RunManager:
                 run_id=state.id,
             )
         except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
-            traceback.print_exc()
+            _log.exception("run.failed run_id=%s workflow=%s", state.id, state.workflow_id)
             state.finish(1)
             state.bus.publish(
                 {
@@ -353,6 +361,13 @@ class RunManager:
             state.bus.close()
             return
         state.finish(exit_code)
+        _log.info(
+            "run.finished run_id=%s status=%s exit_code=%d seconds=%.1f",
+            state.id,
+            state.status,
+            exit_code,
+            (state.finished_at or state.started_at) - state.started_at,
+        )
         state.bus.publish(
             {
                 "type": "run.finished",
