@@ -47,7 +47,7 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 | Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, stdlib, third-party libs | `tui/` |
 
 The package root holds only `__init__.py` and `__main__.py`; every other module
-lives in the package of its layer.
+lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-dominio.md).
 
 - **The daemon is the single source of truth** for runs, effective config and
   state. Only `daemon/` wires the service graph.
