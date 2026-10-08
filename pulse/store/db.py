@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from pulse.store.paths import GLOBAL_DB_FILE
@@ -223,14 +225,83 @@ def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]
     return added
 
 
+@dataclass(frozen=True)
+class Migration:
+    """One schema change, applied once, in order, inside its own transaction.
+
+    `apply` returns the columns it added, so the factory backfill can tell an
+    upgraded database from one that already had them.
+    """
+
+    version: int
+    apply: Callable[[sqlite3.Connection], set[tuple[str, str]]]
+
+
+class SchemaTooNewError(RuntimeError):
+    """The database was migrated by a newer Pulse; this one must not touch it."""
+
+
+# Version 1 is every column added before the schema had a version: databases
+# from then report `user_version = 0` and may hold any subset of them. Append
+# new migrations here and add the change to SCHEMA too, which builds fresh
+# databases at the latest version without replaying history.
+MIGRATIONS: tuple[Migration, ...] = (Migration(version=1, apply=_apply_added_columns),)
+
+
+def schema_version(connection: sqlite3.Connection) -> int:
+    return int(connection.execute("PRAGMA user_version").fetchone()[0])
+
+
+def migrate(
+    connection: sqlite3.Connection, migrations: tuple[Migration, ...] = MIGRATIONS
+) -> set[tuple[str, str]]:
+    """Bring the schema to the latest version and return the columns added.
+
+    A database with no tables is new: SCHEMA already has every change, so it is
+    stamped at the latest version. Each pending migration commits together with
+    its version bump, so a crash halfway leaves the last good version recorded.
+    """
+    latest = migrations[-1].version if migrations else 0
+    is_new = connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is None
+    connection.executescript(SCHEMA)
+    if is_new:
+        _set_version(connection, latest)
+        connection.commit()
+        return set()
+    current = schema_version(connection)
+    if current > latest:
+        raise SchemaTooNewError(
+            f"database schema is version {current}, this Pulse knows up to {latest}"
+        )
+    added: set[tuple[str, str]] = set()
+    for migration in migrations:
+        if migration.version <= current:
+            continue
+        # sqlite3 opens no implicit transaction before DDL, so an `ALTER` would
+        # autocommit and survive a rollback.
+        connection.execute("BEGIN")
+        try:
+            added |= migration.apply(connection)
+            _set_version(connection, migration.version)
+            connection.commit()
+        except sqlite3.Error:
+            connection.rollback()
+            raise
+    return added
+
+
+def _set_version(connection: sqlite3.Connection, version: int) -> None:
+    # PRAGMA takes no bound parameters; `version` is an int from MIGRATIONS.
+    connection.execute(f"PRAGMA user_version = {int(version)}")
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     db_path = path or default_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(db_path))
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.executescript(SCHEMA)
-    added = _apply_added_columns(connection)
+    added = migrate(connection)
     from pulse.store import factory
 
     if not factory.is_seeded(connection):
