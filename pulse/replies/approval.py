@@ -38,8 +38,9 @@ def format_summary(text: str) -> str:
 
 def picked_answers(answers_text: str) -> list[str]:
     result: list[str] = []
-    for line in answers_text.splitlines():
-        if line.strip().startswith("→"):
+    for raw in answers_text.splitlines():
+        line = raw.strip()
+        if line.startswith("→"):
             answer = line.lstrip("→").strip()
             if answer:
                 result.append(answer)
