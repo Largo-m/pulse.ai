@@ -275,7 +275,8 @@ def test_a_permission_that_needs_a_person_still_waits():
 
 def test_waiting_runs_come_oldest_first_and_say_how_long(monkeypatch):
     import pulse.client.active_runs as active_runs_module
-    from pulse.client.active_runs import awaiting_runs, describe, waiting_for
+    from pulse.client.active_runs import awaiting_runs
+    from pulse.history.run_lines import describe, waiting_for
 
     now = 1_000_000.0
     runs = [

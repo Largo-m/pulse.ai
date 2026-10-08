@@ -5,8 +5,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pulse.domain import ui_text
 from pulse.domain.control import RUN_STOPPED
+from pulse.history import log_wording
 from pulse.history.events import (
     ArtifactItem,
     LogEntry,
@@ -107,7 +107,8 @@ class CockpitState(ArtifactTab):
     def total_count(self) -> int:
         return len(self.phases)
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        """`title` names the phase; a later `turn` shows as its continuation."""
         self.finish_assistant()
         matched = self._match_phase(title)
         now = time.monotonic()
@@ -126,7 +127,8 @@ class CockpitState(ArtifactTab):
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
                 self.follow_artifact = True
-        self.surface_title = title.upper()
+        shown = log_wording.continuation_label(title, turn) if turn > 1 else title
+        self.surface_title = shown.upper()
         self.running = True
         self.notify()
 
@@ -593,8 +595,7 @@ class CockpitState(ArtifactTab):
             entry.active = False
 
     def _match_phase(self, title: str) -> PhaseItem | None:
-        lowered = title.lower()
-        base = ui_text.phase_label_of(lowered)
+        base = title.lower()
         exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
@@ -603,7 +604,7 @@ class CockpitState(ArtifactTab):
                         return phase
             return exact[0]
         for phase in self.phases:
-            if phase.id.lower() in lowered or phase.label.lower() in lowered:
+            if phase.id.lower() in base or phase.label.lower() in base:
                 return phase
         pending = [phase for phase in self.phases if phase.status == PhaseStatus.PENDING]
         if pending:

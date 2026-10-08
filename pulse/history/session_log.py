@@ -12,8 +12,8 @@ from contextlib import suppress
 from pathlib import Path
 
 from pulse.config.project_config import load_project_config
-from pulse.domain import ui_text
 from pulse.domain.ports import JsonObject
+from pulse.history import log_wording
 from pulse.history.events import LogKind
 from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
@@ -101,8 +101,9 @@ class RecordedSessionLog:
         self._save(kind=log_kind, title=title, detail=detail, tool_id=tool_id)
         self._record_artifacts(merged, log_kind)
 
-    def phase(self, label: str) -> None:
-        self._save(kind="Info", title=label, detail=label)
+    def phase(self, label: str, *, turn: int = 1) -> None:
+        title = log_wording.continuation_label(label, turn) if turn > 1 else label
+        self._save(kind="Info", title=title, detail=title)
 
     def dialog(
         self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
@@ -125,8 +126,8 @@ class RecordedSessionLog:
             if not question.strip():
                 continue
             self.flush()
-            self._save(kind="Question", title=ui_text.QUESTION_TITLE, detail=question)
-            self._save(kind="Answer", title=ui_text.ANSWER_TITLE, detail=answer)
+            self._save(kind="Question", title=log_wording.QUESTION_TITLE, detail=question)
+            self._save(kind="Answer", title=log_wording.ANSWER_TITLE, detail=answer)
 
     def notice(self, title: str, detail: str) -> None:
         self._save(kind="Info", title=title, detail=detail)
@@ -145,7 +146,7 @@ class RecordedSessionLog:
         if spoken:
             self._save(kind="Assistant", title=spoken[:160], detail=spoken)
         if had_questionnaire:
-            notice = ui_text.QUESTIONNAIRE_NOTICE
+            notice = log_wording.QUESTIONNAIRE_NOTICE
             self._save(kind="Info", title=notice, detail=notice)
 
     def _merge_tool_payload(self, tool_id: str, update: JsonObject) -> JsonObject:

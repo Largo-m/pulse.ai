@@ -175,6 +175,8 @@ class RecordingStream(NullStreamSink):
     def __init__(self) -> None:
         super().__init__()
         self.phases: list[str] = []
+        self.turns: list[int] = []
+        self.models: list[str] = []
         self.messages: list[str] = []
         self.statuses: list[dict] = []
         self.contexts: list[tuple[str, str]] = []
@@ -182,11 +184,15 @@ class RecordingStream(NullStreamSink):
     def set_context(self, *, cwd: str, branch: str) -> None:
         self.contexts.append((cwd, branch))
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
         self.phases.append(title)
+        self.turns.append(turn)
 
     def info(self, title: str) -> None:
         self.messages.append(title)
+
+    def set_model(self, model: str) -> None:
+        self.models.append(model)
 
     def error(self, title: str, reason: str = "") -> None:
         self.messages.append(title)
@@ -232,8 +238,8 @@ class RecordingSessionLog:
     def update(self, params: JsonObject) -> None:
         self.calls.append(("update", (params,)))
 
-    def phase(self, label: str) -> None:
-        self.calls.append(("phase", (label,)))
+    def phase(self, label: str, *, turn: int = 1) -> None:
+        self.calls.append(("phase", (label, turn)))
 
     def dialog(
         self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object

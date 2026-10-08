@@ -15,7 +15,8 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from pulse import __version__
-from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
+from pulse.client.active_runs import active_runs, awaiting_runs
+from pulse.history.run_lines import held_tail, run_line
 from pulse.history.status_labels import status_color, status_icon
 from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE

@@ -20,7 +20,6 @@ import pytest
 
 from pulse.acp import session_runner, step_turns
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.domain import ui_text
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import StepRecord
 from pulse.history.session_log import RecordedSessionLog
@@ -381,7 +380,8 @@ def test_an_adjust_answer_continues_the_same_session_until_approved(connect):
     assert agent.prompts() == ["draft the plan", "continue after adjust"]
     assert len(agent.calls("session/new")) == 1
     assert {params["sessionId"] for params in agent.calls("session/prompt")} == {"sess-1"}
-    assert harness.stream.phases == ["Plan", ui_text.continuation_label("Plan", 2)]
+    assert harness.stream.phases == ["Plan", "Plan"]
+    assert harness.stream.turns == [1, 2], "the second turn is the same phase, continued"
     (call,) = continuations.calls
     assert call["outcome"] == "adjust"
     assert call["summary"] == QUESTIONNAIRE
@@ -484,7 +484,8 @@ def test_a_continuation_adds_a_turn_and_joins_the_summaries(connect):
     assert agent.prompts() == ["build it", "declare your outcome"]
     assert result["phaseSummary"] == "first part\n\nsecond part"
     assert result["turns"] == 2
-    assert harness.stream.phases == ["Build", ui_text.continuation_label("Build", 2)]
+    assert harness.stream.phases == ["Build", "Build"]
+    assert harness.stream.turns == [1, 2]
     assert continuations.calls[0] == {"turn": 0, "summary": "first part"}
 
 

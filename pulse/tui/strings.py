@@ -9,7 +9,8 @@ placeholder names document what each one receives.
 
 from __future__ import annotations
 
-from pulse.domain import ui_text
+from pulse.client.run_session import ERROR_TITLE, WORKFLOW_FAILED_TITLE
+from pulse.history import log_wording
 
 # Shared: actions, answers and hints reused across screens
 BACK = "Voltar"
@@ -20,12 +21,12 @@ REMOVE = "Remover"
 QUIT = "Sair"
 # Dialog and error words the engine also records in the run history: one
 # source, so the live screen and the reopened run never disagree.
-YES = ui_text.ANSWER_YES
-NO = ui_text.ANSWER_NO
-CANCELLED = ui_text.ANSWER_CANCELLED
-QUESTION = ui_text.QUESTION_TITLE
-ANSWER = ui_text.ANSWER_TITLE
-ERROR = ui_text.ERROR_TITLE
+YES = log_wording.ANSWER_YES
+NO = log_wording.ANSWER_NO
+CANCELLED = log_wording.ANSWER_CANCELLED
+QUESTION = log_wording.QUESTION_TITLE
+ANSWER = log_wording.ANSWER_TITLE
+ERROR = ERROR_TITLE
 AGENT = "Agent"
 ENVIRONMENT = "Ambiente"
 HINT_CONFIRM_OR_CANCEL = "Enter confirma · Esc cancela"
@@ -51,7 +52,7 @@ BINDING_UP = "Up"
 BINDING_DOWN = "Down"
 
 # Cockpit: run lifecycle messages in the stream
-WORKFLOW_FAILED = ui_text.WORKFLOW_FAILED_TITLE
+WORKFLOW_FAILED = WORKFLOW_FAILED_TITLE
 WORKFLOW_EXIT_CODE = "O fluxo encerrou com código {code}."
 WORKFLOW_DONE = "Workflow concluído"
 RUN_STOPPED = "Run parada — dá para retomar de onde parou"

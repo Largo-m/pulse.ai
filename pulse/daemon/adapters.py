@@ -33,9 +33,12 @@ class ApiStreamSink:
                 self._agent_text += str(content.get("text", ""))
         self._bus.publish({"type": "session.update", "params": params})
 
-    def begin_phase(self, title: str) -> None:
-        _log.info("phase.begin run_id=%s title=%r", self._run_id, title)
-        self._bus.publish({"type": "phase.begin", "title": title})
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        _log.info("phase.begin run_id=%s title=%r turn=%d", self._run_id, title, turn)
+        self._bus.publish({"type": "phase.begin", "title": title, "turn": turn})
+
+    def set_model(self, model: str) -> None:
+        self._bus.publish({"type": "session.model", "model": model})
 
     def reset_capture(self) -> None:
         self._agent_text = ""

@@ -295,28 +295,17 @@ def test_model_info_sets_header_without_duplicate_entry():
     sink = CockpitSink(state)
     sink.begin_phase("PRD")
     before = len(state.entries)
-    sink.handle_update(
-        {
-            "update": {
-                "sessionUpdate": "session_info_update",
-                "title": "Modelo: Auto",
-            }
-        }
-    )
+
+    sink.set_model("Auto")
+
     assert state.model_label == "Auto"
     assert len(state.entries) == before
-    assert not any(entry.title.startswith("Modelo:") for entry in state.entries)
 
     sink.handle_update(
-        {
-            "update": {
-                "sessionUpdate": "session_info_update",
-                "title": "Project Setup Request",
-            }
-        }
+        {"update": {"sessionUpdate": "session_info_update", "title": "Project Setup Request"}}
     )
+    assert state.model_label == "Auto", "an agent's own session title is not a model"
     assert len(state.entries) == before
-    assert not any(entry.title == "Project Setup Request" for entry in state.entries)
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)

@@ -41,7 +41,13 @@ class StreamSink(Protocol):
 
     def handle_update(self, params: JsonObject) -> None: ...
 
-    def begin_phase(self, title: str) -> None: ...
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        """A phase starts; `turn` above 1 is a later turn of the same phase."""
+        ...
+
+    def set_model(self, model: str) -> None:
+        """The model the agent session runs on, as the agent names it."""
+        ...
 
     def reset_capture(self) -> None: ...
 
@@ -285,7 +291,7 @@ class SessionLog(Protocol):
         """A `session/update` the screen just drew."""
         ...
 
-    def phase(self, label: str) -> None:
+    def phase(self, label: str, *, turn: int = 1) -> None:
         """A phase marker, so history does not merge consecutive turns."""
         ...
 
@@ -361,7 +367,10 @@ class NullStreamSink:
         if isinstance(content, dict) and content.get("type") == "text":
             self._agent_text += str(content.get("text", ""))
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        return None
+
+    def set_model(self, model: str) -> None:
         return None
 
     def reset_capture(self) -> None:
@@ -466,7 +475,7 @@ class NullSessionLog:
     def update(self, params: JsonObject) -> None:
         return None
 
-    def phase(self, label: str) -> None:
+    def phase(self, label: str, *, turn: int = 1) -> None:
         return None
 
     def dialog(

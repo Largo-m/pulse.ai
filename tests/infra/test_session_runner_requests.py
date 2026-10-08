@@ -17,7 +17,6 @@ import pytest
 
 from pulse.acp import reply_clock, session_runner
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.domain import ui_text
 from pulse.domain.control import RunControl
 from pulse.domain.ports import AgentProfile, NullPromptPort
 from pulse.domain.run import StepRecord
@@ -527,8 +526,8 @@ def test_apply_model_announces_the_model_it_set():
             "params": {"sessionId": "sess-1", "modelId": "gpt-5.5"},
         }
     ]
-    titles = [update["update"].get("title") for update in stream.updates]
-    assert titles == [ui_text.model_notice("GPT 5.5")]
+    assert stream.models == ["GPT 5.5"], "the agent's own name for the model, not its id"
+    assert stream.updates == [], "the model is not disguised as a session update"
 
 
 def test_a_rejected_model_is_not_announced_and_does_not_fail_the_session():
@@ -541,7 +540,7 @@ def test_a_rejected_model_is_not_announced_and_does_not_fail_the_session():
 
     runner.apply_model(MODEL_SESSION, "gpt-5.5")
 
-    assert stream.updates == []
+    assert stream.models == []
 
 
 @pytest.mark.parametrize(

@@ -19,8 +19,8 @@ import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain.run import StepRecord, StepStatus
-from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
 from pulse.history.events import LogKind
+from pulse.history.log_wording import QUESTIONNAIRE_NOTICE
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
 from pulse.history.session_log import RecordedSessionLog
 from pulse.replies.acp_payloads import QuestionAnswer

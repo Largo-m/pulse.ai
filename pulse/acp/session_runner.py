@@ -18,7 +18,6 @@ from pulse.acp.capabilities import (
 from pulse.acp.reply_clock import ReplyClock
 from pulse.acp.step_turns import StepTurns
 from pulse.acp.watched_prompts import WatchedPrompts
-from pulse.domain import ui_text
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
     AgentProfile,
@@ -407,7 +406,7 @@ class AcpSessionRunner(StepTurns):
             self._request(request.method, request.params)
         except (RuntimeError, TimeoutError):
             return
-        self._emit_info(ui_text.model_notice(resolve_model_display_name(session, request.model_id)))
+        self._stream.set_model(resolve_model_display_name(session, request.model_id))
 
     def apply_mode(self, session: dict[str, Any], *, execute: bool) -> None:
         if self._session_id is None:
@@ -467,14 +466,14 @@ class AcpSessionRunner(StepTurns):
         self._phase_id = phase_id
         self._log.enter_step(phase_id)
 
-    def _begin_phase(self, label: str) -> None:
+    def _begin_phase(self, label: str, *, turn: int = 1) -> None:
         """Open the phase on screen and leave the same marker in the recorded log.
 
         Without it, history would merge consecutive turns into a single block.
         """
         self._log.flush()
-        self._stream.begin_phase(label)
-        self._log.phase(label)
+        self._stream.begin_phase(label, turn=turn)
+        self._log.phase(label, turn=turn)
 
     def _record_dialog(
         self,
@@ -532,13 +531,3 @@ class AcpSessionRunner(StepTurns):
 
     def _record_ask_question(self) -> None:
         self.ask_question_count += 1
-
-    def _emit_info(self, title: str) -> None:
-        self._stream.handle_update(
-            {
-                "update": {
-                    "sessionUpdate": "session_info_update",
-                    "title": title,
-                }
-            }
-        )

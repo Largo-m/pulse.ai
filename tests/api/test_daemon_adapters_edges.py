@@ -96,6 +96,8 @@ def test_sink_calls_publish_their_events_in_order(monkeypatch: pytest.MonkeyPatc
     sink = ApiStreamSink(bus)
 
     sink.begin_phase("Plan")
+    sink.begin_phase("Plan", turn=2)
+    sink.set_model("GPT 5.5")
     sink.info("note")
     sink.error("Build", "exit 2")
     sink.error("Lint")
@@ -107,7 +109,9 @@ def test_sink_calls_publish_their_events_in_order(monkeypatch: pytest.MonkeyPatc
     sink.finish()
 
     assert _without_seq(_replayed(bus)) == [
-        {"type": "phase.begin", "title": "Plan"},
+        {"type": "phase.begin", "title": "Plan", "turn": 1},
+        {"type": "phase.begin", "title": "Plan", "turn": 2},
+        {"type": "session.model", "model": "GPT 5.5"},
         {"type": "phase.info", "title": "note"},
         {"type": "phase.error", "title": "Build", "reason": "exit 2"},
         {"type": "phase.error", "title": "Lint", "reason": ""},

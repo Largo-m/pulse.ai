@@ -516,6 +516,18 @@ def test_a_task_whose_title_contains_an_earlier_step_id_lights_itself():
     assert state.selected_phase().id == "implement:T1"
     assert [entry.phase_id for entry in state.visible_entries()] == ["implement:T1"]
 
-    state.begin_phase("Regra de destaque (TaskSearch) — continuação (2)")
+    state.begin_phase("Regra de destaque (TaskSearch)", turn=2)
     assert state.phases[1].status == PhaseStatus.RUNNING
     assert state.phases[0].status == PhaseStatus.DONE
+
+
+def test_a_later_turn_runs_on_its_own_step_and_says_it_continues():
+    """The turn arrives as data; the step is found by its label, not by parsing a title."""
+    state = _state("pair", PAIR)
+    state.begin_phase("Planejar")
+
+    state.begin_phase("Planejar", turn=2)
+
+    assert state.phases[0].status == PhaseStatus.RUNNING
+    assert state.phases[1].status == PhaseStatus.PENDING
+    assert state.surface_title == "PLANEJAR — CONTINUAÇÃO (2)"

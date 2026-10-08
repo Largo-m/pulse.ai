@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Literal
 
-from pulse.domain import ui_text
 from pulse.domain.ports import JsonObject
+from pulse.replies import wording
 from pulse.replies.acp_payloads import PermissionOption, PermissionRequest
 from pulse.replies.ask_question import format_option_label
 
@@ -32,8 +32,8 @@ def build_permission_choices(options: Sequence[PermissionOption]) -> list[tuple[
     shown = [option for option in options if option.choice_id]
     if not shown:
         return [
-            ("allow-once", format_option_label(0, ui_text.ALLOW_ONCE)),
-            ("reject-once", format_option_label(1, ui_text.REJECT_ONCE)),
+            ("allow-once", format_option_label(0, wording.ALLOW_ONCE)),
+            ("reject-once", format_option_label(1, wording.REJECT_ONCE)),
         ]
     return [
         (option.choice_id, format_option_label(index, option.label()))
@@ -47,7 +47,7 @@ def permission_prompt_text(request: PermissionRequest) -> str:
         if part and part not in parts:
             parts.append(part)
     if not parts:
-        return ui_text.PERMISSION_PROMPT_FALLBACK
+        return wording.PERMISSION_PROMPT_FALLBACK
     return "\n".join(parts)
 
 

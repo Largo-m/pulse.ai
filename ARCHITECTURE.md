@@ -501,15 +501,23 @@ bridge MCP `AskQuestion` segue a mesma regra
 | Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
 | Runs | `GET /runs` (o que está vivo), `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=N` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
-| History | `GET /history`, `GET /history/{id}` |
+| History | `GET /history`, `GET /history/{id}`, `GET`/`DELETE /history/{id}/worktree`, `GET /runs/{id}/log` |
+| Setup e settings | `GET /setup`, `POST /setup/onboarding`, `GET /runtimes`, `GET /runtimes/{id}/checks`, `GET /models`, `GET /settings`, `PATCH /settings/defaults`, `PATCH /settings/agents/{id}`, `PUT /settings/worktree` |
 
 #### Eventos no SSE
 
 `run.started` · `run.stopped` ·
 `run.cancel_requested` · `run.finished` · `run.context` · `phase.begin` ·
 `phase.info` · `phase.error` · `phases.sync` · `session.update` · `session.id` ·
+`session.model` ·
 `stream.finish` · `stream.finish_question` · `prompt.request` · `prompt.answered` ·
 `stream.replay_end` · `stream.ping`
+
+`phase.begin` traz o `title` do step e o `turn` (1 no primeiro turno, 2 em
+diante quando o step continua na mesma sessão); `session.model` traz o `model`
+com o nome que o agente dá a ele. São campos, não texto montado: a tela compõe
+"— continuação (n)" e o cabeçalho do modelo com as próprias palavras, sem ler de
+volta um título em português (`ENGINE_PROTOCOL` 7).
 
 `run.context` abre a run dizendo onde ela trabalha e em que branch (ver §Onde a
 run trabalha). Vem antes de qualquer `phase.begin` de propósito: é por ele que o
@@ -539,7 +547,6 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/domain/workflow.py`](pulse/domain/workflow.py) | `WorkflowDef`, `StepDef`, `AgentDef` — a definição como value object, com os laços (`loops()`, `RepeatRule`, `Loop.next_round`), o protocolo de desfecho e os filhos de fan-out |
 | [`pulse/domain/outcome.py`](pulse/domain/outcome.py) | O bloco `pulse:outcome` e o seu parser estrito |
 | [`pulse/domain/control.py`](pulse/domain/control.py) | Parar uma run, seguro entre threads; exit codes da run |
-| [`pulse/domain/ui_text.py`](pulse/domain/ui_text.py) | O texto em português que o Pulse compõe fora da TUI para a tela (avisos do motor, menu de step bloqueado, rótulos de diálogo e de status); erros, exceções e logs ficam em inglês no código |
 | [`pulse/domain/ports.py`](pulse/domain/ports.py) | As portas do motor — `StreamSink`, `PromptPort`, `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace` — e as implementações Null |
 | [`pulse/replies/`](pulse/replies/) | Parse das respostas: aprovação, permissão, questionário; [`acp_payloads.py`](pulse/replies/acp_payloads.py) converte o JSON do agente em value objects tipados na fronteira (`mypy --strict`, sem `Any`) |
 | [`pulse/orchestrator/engine.py`](pulse/orchestrator/engine.py) | `run_workflow` — o laço de steps, retry e parada, sobre `EnginePorts` |
@@ -549,6 +556,7 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/orchestrator/loops.py`](pulse/orchestrator/loops.py), [`fanout.py`](pulse/orchestrator/fanout.py) | Aplica na run a rodada ou o fim do laço, e expande o fan-out de itens |
 | [`pulse/orchestrator/agent_text.py`](pulse/orchestrator/agent_text.py) | Os dois textos que o próprio Pulse escreve |
 | [`pulse/orchestrator/render.py`](pulse/orchestrator/render.py) | Engine `{{placeholder}}` |
+| [`pulse/orchestrator/wording.py`](pulse/orchestrator/wording.py) | O que o motor diz ao usuário: avisos da run, menu de step, motivo de não concluir ([ADR 0004](docs/adr/0004-texto-de-tela-mora-com-quem-o-compoe.md)) |
 
 ### 3.6 ACP e runtimes
 
@@ -588,6 +596,8 @@ enxergá-lo sem mudanças.
 | [`pulse/history/`](pulse/history/) | Runs passadas, lidas de `runs`/`run_steps` (no daemon); `HistoryItem` com o codec que cliente e daemon usam |
 | [`pulse/history/run_log.py`](pulse/history/run_log.py) | `RunLog`: a run gravada como o cockpit a reconstrói — tempos dos steps, log e artefatos — com o codec do fio |
 | [`pulse/history/status_labels.py`](pulse/history/status_labels.py) | Rótulo, cor e ícone de cada status: os mesmos na tela e na busca do histórico |
+| [`pulse/history/log_wording.py`](pulse/history/log_wording.py) | As palavras do log da run (bolhas do diálogo, marcador de continuação), gravadas e redesenhadas iguais |
+| [`pulse/history/run_lines.py`](pulse/history/run_lines.py) | A linha de uma run viva, igual na Home e em `pulse daemon status` |
 | [`pulse/doctor/`](pulse/doctor/) | Checks de binário/auth/ambiente |
 | [`pulse/mcp/`](pulse/mcp/) | Ponte MCP AskQuestion |
 | [`pulse/vcs/`](pulse/vcs/) | O git que o Pulse fala: branch atual e worktree por run; `GitWorkspace` é o adapter de `Workspace` |

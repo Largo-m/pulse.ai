@@ -219,6 +219,27 @@ type = "protected"
 protected_modules = ["pulse.store.factory"]
 allowed_importers = ["pulse.store.db"]
 
+# Screen copy lives with the layer that composes it (docs/adr/0004): no shared
+# text module every layer imports, and each one read only by its owner and the
+# screens that draw the same words.
+[[tool.importlinter.contracts]]
+name = "Engine wording is the engine's own"
+type = "protected"
+protected_modules = ["pulse.orchestrator.wording"]
+allowed_importers = ["pulse.orchestrator"]
+
+[[tool.importlinter.contracts]]
+name = "Run log wording belongs to history and the screens that redraw it"
+type = "protected"
+protected_modules = ["pulse.history.log_wording"]
+allowed_importers = ["pulse.history", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Question wording belongs to the reply builders and the screens that ask"
+type = "protected"
+protected_modules = ["pulse.replies.wording"]
+allowed_importers = ["pulse.replies", "pulse.history", "pulse.tui"]
+
 # Mutation testing of the parsers that read agent text (AGENTS.md §5.1, §6.1):
 # `mutmut run`, `mutmut export-cicd-stats`, then `python scripts/mutation_gate.py --min 80`.
 [tool.mutmut]

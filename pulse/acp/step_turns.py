@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from pulse.domain import ui_text
 from pulse.domain.ports import PhaseContinuation, PromptContinuation, StreamSink
 from pulse.replies.approval import ApprovalOutcome, classify_outcome
 
@@ -44,7 +43,7 @@ class _SessionHost(Protocol):
 
     def close_session(self) -> None: ...
 
-    def _begin_phase(self, label: str) -> None: ...
+    def _begin_phase(self, label: str, *, turn: int = 1) -> None: ...
 
     def _run_text_questionnaire(self, phase1_text: str) -> str | None: ...
 
@@ -83,9 +82,7 @@ class StepTurns:
 
         try:
             for turn in range(MAX_PHASE_APPROVAL_TURNS):
-                self._begin_phase(
-                    ui_text.continuation_label(phase_label, turn + 1) if turn else phase_label
-                )
+                self._begin_phase(phase_label, turn=turn + 1)
                 self._stream.reset_capture()
                 phase_result = self.prompt(active_session, next_prompt)
                 if phase_result.get("stopReason") == "cancelled":
@@ -176,10 +173,7 @@ class StepTurns:
         result: dict[str, Any] = {}
         try:
             for turn in range(max(1, max_turns)):
-                if turn:
-                    self._begin_phase(ui_text.continuation_label(phase_label, turn + 1))
-                else:
-                    self._begin_phase(phase_label)
+                self._begin_phase(phase_label, turn=turn + 1)
                 self._stream.reset_capture()
                 result = self.prompt(active_session, next_prompt)
                 text = self._stream.agent_text().strip()

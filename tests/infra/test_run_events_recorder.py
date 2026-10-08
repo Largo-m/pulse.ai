@@ -13,9 +13,9 @@ from typing import Any
 import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.domain import ui_text
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import StepRecord
+from pulse.history import log_wording
 from pulse.history.session_log import RecordedSessionLog
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
@@ -248,13 +248,14 @@ def test_a_new_phase_flushes_the_speech_before_its_marker(runner, log):
     """Without the marker, history would merge consecutive turns into one block."""
     log.update(_chunk("first turn talk"))
 
-    runner._begin_phase("Plan — 2")
+    runner._begin_phase("Plan", turn=2)
 
+    marker = log_wording.continuation_label("Plan", 2)
     assert _events() == [
         ("Assistant", "first turn talk", "first turn talk"),
-        ("Info", "Plan — 2", "Plan — 2"),
+        ("Info", marker, marker),
     ]
-    assert runner._stream.phases == ["Plan — 2"]
+    assert (runner._stream.phases, runner._stream.turns) == (["Plan"], [2])
 
 
 def test_speech_with_a_questionnaire_logs_the_speech_and_a_notice(log):
@@ -264,7 +265,7 @@ def test_speech_with_a_questionnaire_logs_the_speech_and_a_notice(log):
 
     assert _events() == [
         ("Assistant", "Here is the plan.", "Here is the plan."),
-        ("Info", ui_text.QUESTIONNAIRE_NOTICE, ui_text.QUESTIONNAIRE_NOTICE),
+        ("Info", log_wording.QUESTIONNAIRE_NOTICE, log_wording.QUESTIONNAIRE_NOTICE),
     ]
 
 
@@ -272,7 +273,9 @@ def test_a_questionnaire_alone_logs_only_the_notice(log):
     log.update(_chunk(QUESTIONNAIRE))
     log.flush()
 
-    assert _events() == [("Info", ui_text.QUESTIONNAIRE_NOTICE, ui_text.QUESTIONNAIRE_NOTICE)]
+    assert _events() == [
+        ("Info", log_wording.QUESTIONNAIRE_NOTICE, log_wording.QUESTIONNAIRE_NOTICE)
+    ]
 
 
 def test_a_dialog_with_the_user_is_logged_as_question_and_answer(runner, log):
@@ -283,8 +286,8 @@ def test_a_dialog_with_the_user_is_logged_as_question_and_answer(runner, log):
     assert answer == "start with the signup"
     assert _events() == [
         ("Assistant", "Let me ask.", "Let me ask."),
-        ("Question", ui_text.QUESTION_TITLE, "Where to start?"),
-        ("Answer", ui_text.ANSWER_TITLE, "start with the signup"),
+        ("Question", log_wording.QUESTION_TITLE, "Where to start?"),
+        ("Answer", log_wording.ANSWER_TITLE, "start with the signup"),
     ]
 
 
@@ -297,8 +300,8 @@ def test_blank_questions_are_not_logged(runner, monkeypatch):
     runner.prompts.ask_text("anything")
 
     assert _events() == [
-        ("Question", ui_text.QUESTION_TITLE, "Proceed?"),
-        ("Answer", ui_text.ANSWER_TITLE, "Sim"),
+        ("Question", log_wording.QUESTION_TITLE, "Proceed?"),
+        ("Answer", log_wording.ANSWER_TITLE, "Sim"),
     ]
 
 

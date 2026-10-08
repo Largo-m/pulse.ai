@@ -11,15 +11,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from pulse.domain.ui_text import (
+from pulse.replies.ask_question import OTHER_OPTION_ID
+from pulse.replies.text_questionnaire import parse_text_questionnaire, split_questionnaire_answers
+from pulse.replies.wording import (
     DEFAULT_QUESTIONNAIRE_TITLE,
     FREE_TEXT_ANSWER_PREFIX,
     MULTI_SELECT_HINT,
     OTHER_DESCRIBE_OPTION,
     PLAN_APPROVAL_TITLE,
 )
-from pulse.replies.ask_question import OTHER_OPTION_ID
-from pulse.replies.text_questionnaire import parse_text_questionnaire, split_questionnaire_answers
 from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,

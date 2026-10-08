@@ -27,6 +27,9 @@ REQUIRED_CONTRACTS = {
     "Only store/db.py loads the factory seed",
     TUI_THROUGH_DAEMON,
     ADAPTERS_APART,
+    "Engine wording is the engine's own",
+    "Run log wording belongs to history and the screens that redraw it",
+    "Question wording belongs to the reply builders and the screens that ask",
 }
 # import-linter fails on a baseline entry that stops matching, but not on a new
 # one; these ceilings make the baselines shrink-only. Lower them as debt is paid.
@@ -105,3 +108,13 @@ def test_a_contract_over_the_rest_of_pulse_names_every_package(
 def test_a_contract_baseline_never_grows(name: str, ceiling: int) -> None:
     """A new layering shortcut must be fixed, not appended to `ignore_imports`."""
     assert len(_contracts()[name].get("ignore_imports", [])) <= ceiling
+
+
+def test_the_domain_holds_no_screen_copy_module():
+    """Screen text once lived in `domain/ui_text.py` because every layer may import
+    the domain: a workaround of the layering, not a home (docs/adr/0004)."""
+    copy_like = {"ui_text", "strings", "wording", "copy", "messages", "texts"}
+
+    modules = {path.stem for path in (ROOT / "pulse" / "domain").glob("*.py")}
+
+    assert modules.isdisjoint(copy_like)
