@@ -18,7 +18,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=7.0",
     "httpx>=0.27",
+    "ruff>=0.16",
+    "mypy>=2.0",
+    "vulture>=2.16",
+    "pre-commit>=4.0",
 ]
 
 [project.scripts]
@@ -186,7 +191,12 @@ disable_error_code = ["union-attr"]
 
 [tool.coverage.run]
 source = ["pulse"]
-branch = false
 
 [tool.coverage.report]
-fail_under = 76
+# Measured when the gate landed; each phase raises it, never lowers it.
+fail_under = 76.6
+precision = 2
+
+[tool.vulture]
+paths = ["pulse"]
+min_confidence = 80
