@@ -265,7 +265,8 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     assert listed[0]["awaiting_since"] is not None
 
     state = manager.get(run_id)
-    assert state is not None and state.correlator is not None
+    assert state is not None
+    assert state.correlator is not None
     pending = state.correlator.pending()
     assert len(pending) == 1
     manager.answer_prompt(pending[0].id, "ok")
@@ -307,7 +308,8 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
     assert decided[0]["outcome"]["optionId"] == "reject-once"
 
     state = manager.get(run_id)
-    assert state is not None and state.correlator is not None
+    assert state is not None
+    assert state.correlator is not None
     assert state.correlator.pending() == []
     listed = client.get("/api/runs").json()["runs"]
     assert listed[0]["awaiting_prompt"] is False
@@ -334,7 +336,8 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
     assert asked.wait(timeout=5)
 
     state = manager.get(run_id)
-    assert state is not None and state.correlator is not None
+    assert state is not None
+    assert state.correlator is not None
     deadline = time.monotonic() + 5
     while not state.correlator.pending() and time.monotonic() < deadline:
         time.sleep(0.01)

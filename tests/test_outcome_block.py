@@ -44,7 +44,7 @@ def test_the_last_block_wins():
 
 
 def test_a_status_nobody_recognises_counts_as_blocked():
-    """The engine cannot confirm delivery, and erring on the safe side costs one extra on-screen question."""
+    """The engine cannot confirm delivery; erring on the safe side costs one extra question."""
     outcome = parse_outcome(_block("status: parcialmente feito"))
     assert outcome.status == OutcomeStatus.BLOCKED
     assert not outcome.delivered
@@ -82,10 +82,13 @@ def test_next_is_parsed_into_a_loop_signal_and_unknown_words_are_dropped():
 def test_only_a_delivery_can_steer_the_loop():
     """A blocked step asking for another round would loop on a failure."""
     repeat = parse_outcome(_block("status: done\nnext: repeat"))
-    assert repeat.repeats and not repeat.closes
+    assert repeat.repeats
+    assert not repeat.closes
 
     close = parse_outcome(_block("status: done\nnext: close"))
-    assert close.closes and not close.repeats
+    assert close.closes
+    assert not close.repeats
 
     blocked = parse_outcome(_block("status: blocked\nnext: repeat"))
-    assert not blocked.repeats and not blocked.closes
+    assert not blocked.repeats
+    assert not blocked.closes

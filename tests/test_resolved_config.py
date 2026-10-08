@@ -331,7 +331,7 @@ def test_a_new_project_inherits_the_machine_choice(monkeypatch, tmp_path: Path):
 
 
 def test_the_default_agent_follows_the_machine_policy(monkeypatch, tmp_path: Path):
-    """The hardcoded `ask` on the `default` agent beat the machine config: onboarding changed nothing."""
+    """A hardcoded `ask` on `default` beat the machine config: onboarding changed nothing."""
     machine = _global(permission_policy="auto_approve")
     monkeypatch.setattr(resolved_module, "load_global_config", lambda: machine)
     init_project_config(tmp_path)

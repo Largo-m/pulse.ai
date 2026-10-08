@@ -8,6 +8,8 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
 from pulse.acp.session_runner import AcpSessionRunner
 
 
@@ -65,12 +67,8 @@ def test_a_question_on_screen_does_not_spend_the_agents_clock():
 def test_silence_beyond_the_deadline_still_times_out():
     runner = _runner(0.2)
 
-    try:
+    with pytest.raises(TimeoutError, match="session/prompt"):
         runner._request("session/prompt", {})
-    except TimeoutError as error:
-        assert "session/prompt" in str(error)
-    else:  # pragma: no cover - the test fails first
-        raise AssertionError("overly long silence must exceed the deadline")
 
 
 def test_a_short_request_keeps_the_total_deadline():
@@ -97,12 +95,8 @@ def test_a_dead_process_ends_the_wait_right_away():
     runner._process = _Dead()  # type: ignore[assignment]
 
     started = time.monotonic()
-    try:
+    with pytest.raises(RuntimeError, match="encerrou"):
         runner._request("session/close", {"sessionId": "sess-1"})
-    except RuntimeError as error:
-        assert "encerrou" in str(error)
-    else:  # pragma: no cover - the test fails first
-        raise AssertionError("a dead process must interrupt the wait")
     assert time.monotonic() - started < 5.0
 
 

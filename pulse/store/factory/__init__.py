@@ -227,7 +227,8 @@ def seed(connection: Any) -> None:
     agents.append(("default", "Agente", "", ""))
     connection.executemany(
         """
-        INSERT OR IGNORE INTO agent_defs (id, label, runtime, model, permission_policy, instructions)
+        INSERT OR IGNORE INTO agent_defs
+            (id, label, runtime, model, permission_policy, instructions)
         VALUES (?, ?, '', '', ?, ?)
         """,
         agents,
@@ -282,7 +283,8 @@ def inherit_policy_on_default_agent(connection: Any) -> None:
     `_resolve_pulse_agent`. Idempotent: after the first open no row matches.
     """
     connection.execute(
-        "UPDATE agent_defs SET permission_policy = '' WHERE id = 'default' AND permission_policy = 'ask'"
+        "UPDATE agent_defs SET permission_policy = '' "
+        "WHERE id = 'default' AND permission_policy = 'ask'"
     )
 
 

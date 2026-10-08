@@ -156,7 +156,8 @@ class EngineClient:
         except OSError:
             stderr = subprocess.DEVNULL
         try:
-            subprocess.Popen(
+            # argv is this interpreter plus a fixed module path; no user input.
+            subprocess.Popen(  # noqa: S603
                 cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=stderr,

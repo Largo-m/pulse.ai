@@ -36,7 +36,8 @@ def run_cli(
 ) -> subprocess.CompletedProcess[str] | None:
     """Run a CLI capturing its output; None when the binary fails or hangs."""
     try:
-        return subprocess.run(
+        # argv list built by the runtime class, not from user or agent text.
+        return subprocess.run(  # noqa: S603
             command,
             capture_output=True,
             text=True,
@@ -188,7 +189,8 @@ class AgentRuntime:
         if not self.login_command:
             return 1
         try:
-            return subprocess.run(list(self.login_command), check=False).returncode
+            # login_command is a class constant of the runtime; interactive, so no timeout.
+            return subprocess.run(list(self.login_command), check=False).returncode  # noqa: S603
         except OSError:
             return 1
 

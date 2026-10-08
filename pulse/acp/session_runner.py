@@ -356,7 +356,8 @@ class AcpSessionRunner(RunEventRecorder):
             )
             self._ask_bridge.start()
 
-        self._process = subprocess.Popen(
+        # argv list from the user's effective config, never from agent output.
+        self._process = subprocess.Popen(  # noqa: S603
             self._command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,

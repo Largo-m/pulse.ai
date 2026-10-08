@@ -109,7 +109,7 @@ class CockpitState:
         matched = self._match_phase(title)
         now = time.monotonic()
         matched_index = self.phases.index(matched) if matched is not None else None
-        for index, phase in enumerate(self.phases):
+        for phase in self.phases:
             if matched is not None and phase is matched:
                 continue
             if phase.status == PhaseStatus.RUNNING:
@@ -142,7 +142,7 @@ class CockpitState:
             or PhaseItem(id=str(step["id"]), label=str(step.get("label", "")))
             for step in steps
         ]
-        for phase, step in zip(self.phases, steps):
+        for phase, step in zip(self.phases, steps, strict=True):
             phase.label = str(step.get("label", "")) or phase.label
             phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
         if selected is not None:

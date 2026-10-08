@@ -232,6 +232,6 @@ def test_runtime_for_command_ignores_the_pinned_version():
 
 
 def test_runtime_for_command_matches_the_executable_not_a_substring():
-    """`agent` (Cursor) is inside `claude-agent-acp`: substring matching picked the wrong runtime."""
+    """`agent` (Cursor) is inside `claude-agent-acp`: substring matching picked the wrong one."""
     assert runtime_for_command(["/usr/local/bin/agent", "acp"]).id == "cursor"
     assert runtime_for_command(["/usr/local/bin/claude"]).id == "claude"

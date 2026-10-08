@@ -20,13 +20,14 @@ class _StubHandler:
 
 def _post(url, payload):
     data = json.dumps(payload).encode("utf-8")
-    request = urllib.request.Request(
+    # The URL is the bridge this test just started on localhost.
+    request = urllib.request.Request(  # noqa: S310
         url,
         data=data,
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=5) as response:
+    with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
         status = response.status
         body = response.read().decode("utf-8")
     return status, body

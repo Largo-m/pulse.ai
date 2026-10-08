@@ -23,8 +23,13 @@ pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on P
 def make_repo(path: Path) -> Path:
     """Repository with one commit: `worktree add` needs a real HEAD."""
     path.mkdir(parents=True, exist_ok=True)
-    run = lambda *args: subprocess.run(  # noqa: E731
-        ["git", *args], cwd=path, check=True, capture_output=True, text=True
+    # Fixed git argv against a temp repo; git comes from PATH like in production.
+    run = lambda *args: subprocess.run(  # noqa: E731, S603 - one-line helper local to this setup
+        ["git", *args],  # noqa: S607
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     run("init", "-q", "-b", "main")
     run("config", "user.email", "pulse@example.com")
@@ -184,7 +189,7 @@ def test_resume_reuses_the_run_worktree(tmp_path: Path) -> None:
 def commit_in(path: Path, name: str) -> None:
     (path / name).write_text("trabalho de um step\n", encoding="utf-8")
     for args in (["add", name], ["commit", "-q", "-m", name]):
-        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)
+        subprocess.run(["git", *args], cwd=path, check=True, capture_output=True)  # noqa: S603, S607 - fixed git argv on a temp repo
 
 
 def test_worktree_removed_from_history_reopens_run_branch(tmp_path: Path) -> None:
@@ -252,7 +257,12 @@ def test_deleted_run_branch_opens_another(tmp_path: Path) -> None:
     run = make_run(repo)
     first, branch = _prepare_workspace(run, repo, Resolved(use_worktree=True))
     vcs.remove_worktree(repo, first)
-    subprocess.run(["git", "branch", "-D", branch], cwd=repo, check=True, capture_output=True)
+    subprocess.run(  # noqa: S603 - fixed git argv on a temp repo
+        ["git", "branch", "-D", branch],  # noqa: S607
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
 
     resumed = run_store.load_run(run.id)
     assert resumed is not None
@@ -267,7 +277,8 @@ def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
     one, _ = _prepare_workspace(make_run(repo, run_id="run-a"), repo, Resolved(True))
     two, _ = _prepare_workspace(make_run(repo, run_id="run-b"), repo, Resolved(True))
     assert one != two
-    assert one.is_dir() and two.is_dir()
+    assert one.is_dir()
+    assert two.is_dir()
 
 
 def test_branch_name_sanitizes_the_workflow(tmp_path: Path) -> None:

@@ -83,7 +83,8 @@ def persist_runtime_session(
             )
         elif not row["acp_session_id"]:
             connection.execute(
-                "UPDATE agent_sessions SET acp_session_id = ?, agent_id = COALESCE(?, agent_id) WHERE id = ?",
+                "UPDATE agent_sessions SET acp_session_id = ?, agent_id = COALESCE(?, agent_id) "
+                "WHERE id = ?",
                 (acp_session_id, agent_id, pulse_session_id),
             )
         else:

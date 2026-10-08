@@ -463,11 +463,8 @@ def test_the_proxy_still_hides_nothing_from_whoever_asks():
     """The engine's `_choose` probes the port for `select_choice`; ports without it
     must still report that it is missing."""
     proxy = _WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
-    try:
-        proxy.select_choice
-    except AttributeError:
-        return
-    raise AssertionError("the proxy invented a method the port does not have")
+
+    assert not hasattr(proxy, "select_choice")
 
 
 def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():

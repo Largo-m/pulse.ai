@@ -1166,7 +1166,8 @@ def test_round_time_adds_up_instead_of_resetting(wired, monkeypatch, tmp_path):
     review = record.step("review")
     assert review.rounds == 2
     assert review.carried_seconds > 0
-    assert review.started_at and review.ended_at
+    assert review.started_at
+    assert review.ended_at
     assert review.elapsed_seconds() > review.carried_seconds
 
 
@@ -1385,7 +1386,8 @@ def test_the_wait_in_the_retry_menu_stays_inside_the_step_window(
 
     assert code == 1
     step = run_store.list_runs(tmp_path)[0].step("one")
-    assert stamped_before_menu and stamped_before_menu[0]
+    assert stamped_before_menu
+    assert stamped_before_menu[0]
     assert step.ended_at - stamped_before_menu[0] == timedelta(minutes=10)
 
 

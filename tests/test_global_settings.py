@@ -84,7 +84,8 @@ def test_saving_global_reaches_the_agent_used_by_the_run(tmp_path: Path):
     screen._save_global(field="model", value="opus[1m]")
 
     project = load_project_config(tmp_path)
-    assert project is not None and project.model == "opus[1m]"
+    assert project is not None
+    assert project.model == "opus[1m]"
     assert resolve_config(tmp_path, pulse_agent="default").model == "opus[1m]"
     assert calls == ["back"]
 

@@ -65,7 +65,9 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
         "demo",
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
-        prompt_template="{{user_prompt}}{{#if item_id}} | {{item_id}} {{item_index}}/{{item_total}}{{/if}}",
+        prompt_template=(
+            "{{user_prompt}}{{#if item_id}} | {{item_id}} {{item_index}}/{{item_total}}{{/if}}"
+        ),
     )
     runner = _Runner(
         [

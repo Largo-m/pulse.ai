@@ -214,7 +214,9 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     first = state.upsert_artifact("docs/PROJECT.md", ready=False)
     second = state.upsert_artifact("docs/ROADMAP.md", ready=True, has_content=True)
     third = state.upsert_artifact("docs/STATE.md", ready=True, has_content=True)
-    assert first is not None and second is not None and third is not None
+    assert first is not None
+    assert second is not None
+    assert third is not None
     assert [item.path for item in state.artifacts] == [
         "docs/PROJECT.md",
         "docs/ROADMAP.md",
