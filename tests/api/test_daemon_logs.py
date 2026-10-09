@@ -7,10 +7,12 @@ but a bare traceback, with no way to tell which run it belonged to.
 from __future__ import annotations
 
 import io
+import itertools
 import logging
 
 import pytest
 
+from pulse.client.protocol import REPLAY_END
 from pulse.daemon.adapters import ApiStreamSink
 from pulse.daemon.events import EventBus
 from pulse.daemon.logs import LOGGER, configure_logging
@@ -19,6 +21,7 @@ from pulse.domain.control import RUN_BLOCKED
 from tests.conftest import make_workflow
 
 PRIVATE_PROMPT = "refactor the billing module of acme-internal"
+AGENT_LABEL = "migrate /srv/acme/billing with key sk-live-123"
 
 
 @pytest.fixture
@@ -99,6 +102,21 @@ def test_each_step_status_change_is_logged_once(daemon_log) -> None:
         "step.status run_id=r1 step=build status=blocked",
         "step.status run_id=r1 step=build status=done",
     ]
+
+
+def test_a_phase_title_reaches_the_screen_but_not_the_log(daemon_log) -> None:
+    """A fan-out step is titled with the label the previous agent wrote (AGENTS.md §6.1)."""
+    bus = EventBus()
+    sink = ApiStreamSink(bus, run_id="r1")
+
+    sink.begin_phase(AGENT_LABEL, turn=2)
+
+    assert [line for line in _messages(daemon_log) if line.startswith("phase.begin")] == [
+        "phase.begin run_id=r1 turn=2"
+    ]
+    assert AGENT_LABEL not in daemon_log.text
+    replay = itertools.takewhile(lambda event: event["type"] != REPLAY_END, bus.subscribe())
+    assert [event["title"] for event in replay if event["type"] == "phase.begin"] == [AGENT_LABEL]
 
 
 def test_waiting_on_the_user_is_logged_with_the_run(daemon_log) -> None:

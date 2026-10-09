@@ -26,7 +26,7 @@ Uma linha por fato, com o nome do evento SSE que ela espelha e sempre o
 
 ```
 2026-10-08 14:02:11,301 INFO pulse.daemon.runs run.started run_id=3f… workflow=new-issue resumed=False
-2026-10-08 14:02:11,410 INFO pulse.daemon.adapters phase.begin run_id=3f… title='PRD'
+2026-10-08 14:02:11,410 INFO pulse.daemon.adapters phase.begin run_id=3f… turn=1
 2026-10-08 14:03:40,022 INFO pulse.daemon.adapters run.awaiting run_id=3f… waiting=True
 2026-10-08 14:05:02,877 INFO pulse.daemon.adapters step.status run_id=3f… step=prd status=done
 2026-10-08 14:09:13,550 INFO pulse.daemon.runs run.finished run_id=3f… status=done exit_code=0 seconds=422.2

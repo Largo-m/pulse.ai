@@ -34,7 +34,8 @@ class ApiStreamSink:
         self._bus.publish({"type": "session.update", "params": params})
 
     def begin_phase(self, title: str, *, turn: int = 1) -> None:
-        _log.info("phase.begin run_id=%s title=%r turn=%d", self._run_id, title, turn)
+        # No title: a fan-out step is titled with agent text, which stays out of the log.
+        _log.info("phase.begin run_id=%s turn=%d", self._run_id, turn)
         self._bus.publish({"type": "phase.begin", "title": title, "turn": turn})
 
     def set_model(self, model: str) -> None:
