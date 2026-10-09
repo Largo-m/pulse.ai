@@ -79,4 +79,3 @@ class CodexRuntime(AgentRuntime):
     @property
     def auth_hint(self) -> str:
         return "Run `codex login` or set CODEX_API_KEY / OPENAI_API_KEY"
-
