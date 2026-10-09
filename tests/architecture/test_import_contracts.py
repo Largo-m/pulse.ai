@@ -34,7 +34,8 @@ REQUIRED_CONTRACTS = {
     "Question wording belongs to the reply builders and the screens that ask",
 }
 # import-linter fails on a baseline entry that stops matching, but not on a new
-# one; these ceilings make the baselines shrink-only. Lower them as debt is paid.
+# one; these ceilings make the baselines shrink-only, and a contract not listed
+# has a ceiling of 0. Lower them as debt is paid.
 # The TUI's one entry is the shared `~/.pulse` layout, and history's six are the
 # catalog's and session log's own edges to the database: rules rather than debt.
 BASELINE_CEILING = {
@@ -108,10 +109,15 @@ def test_a_contract_over_the_rest_of_pulse_names_every_package(
     assert listed == packages - exempt
 
 
-@pytest.mark.parametrize(("name", "ceiling"), sorted(BASELINE_CEILING.items()))
-def test_a_contract_baseline_never_grows(name: str, ceiling: int) -> None:
+@pytest.mark.parametrize("name", sorted(_contracts()))
+def test_a_contract_baseline_never_grows(name: str) -> None:
     """A new layering shortcut must be fixed, not appended to `ignore_imports`."""
-    assert len(_contracts()[name].get("ignore_imports", [])) <= ceiling
+    assert len(_contracts()[name].get("ignore_imports", [])) <= BASELINE_CEILING.get(name, 0)
+
+
+def test_every_baseline_ceiling_names_a_contract() -> None:
+    """A ceiling left behind by a renamed contract would cap nothing."""
+    assert set(BASELINE_CEILING) <= set(_contracts())
 
 
 def test_the_domain_holds_no_screen_copy_module():
