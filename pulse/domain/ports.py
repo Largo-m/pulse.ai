@@ -458,6 +458,16 @@ class NullPromptPort:
         return None
 
 
+class NullQuestionChannel:
+    """No one to ask mid-turn (a probe, a test): the agent gets no MCP server."""
+
+    def open(self, prompts: PromptPort, on_question: Callable[[], None]) -> list[JsonObject]:
+        return []
+
+    def close(self) -> None:
+        return None
+
+
 class NullSessionLog:
     """No run bound (a probe, a test): nothing is recorded."""
 

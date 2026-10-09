@@ -23,6 +23,7 @@ from pulse.domain.ports import (
     AgentProfile,
     JsonObject,
     NullPromptPort,
+    NullQuestionChannel,
     NullSessionLog,
     NullStreamSink,
     NullUserWaitListener,
@@ -83,7 +84,7 @@ class AcpSessionRunner(StepTurns):
                 on_answer=self._record_dialog,
             ),
         )
-        self._questions = questions
+        self._questions: QuestionChannel = questions or NullQuestionChannel()
         self._log: SessionLog = session_log or NullSessionLog()
         self._mcp: list[JsonObject] = []
         self._pulse_agent = pulse_agent
@@ -151,8 +152,7 @@ class AcpSessionRunner(StepTurns):
             self.close()
 
     def start(self) -> None:
-        if self._questions is not None:
-            self._mcp = self._questions.open(self._prompt_handler, self._record_ask_question)
+        self._mcp = self._questions.open(self._prompt_handler, self._record_ask_question)
 
         # argv list from the user's effective config, never from agent output.
         self._process = subprocess.Popen(  # noqa: S603
@@ -195,8 +195,7 @@ class AcpSessionRunner(StepTurns):
         return True
 
     def close(self) -> None:
-        if self._questions is not None:
-            self._questions.close()
+        self._questions.close()
         self._mcp = []
 
         if self._process is None:
