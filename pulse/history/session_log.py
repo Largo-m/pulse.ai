@@ -23,6 +23,7 @@ from pulse.store.sessions import persist_runtime_session
 
 _PATH_KEYS = ("path", "file_path", "target_file", "filePath", "abs_path")
 _WRITE_KINDS = frozenset({"edit", "write", "create"})
+_WRITE_LOG_KINDS = frozenset({LogKind.WRITE, LogKind.EDIT})
 _TOOL_UPDATES = frozenset({"tool_call", "tool_call_update", "tool_result"})
 
 
@@ -41,7 +42,7 @@ class RecordedSessionLog:
         self._cwd = ""
         self._text: list[str] = []
         self._tool_payloads: dict[str, JsonObject] = {}
-        self._tool_kinds: dict[str, str] = {}
+        self._tool_kinds: dict[str, LogKind] = {}
         self._tool_labeled: set[str] = set()
 
     def bind_run(self, run_id: str) -> None:
@@ -108,7 +109,7 @@ class RecordedSessionLog:
 
     def phase(self, label: str, *, turn: int = 1) -> None:
         title = log_wording.phase_title(label, turn)
-        self._save(kind="Info", title=title, detail=title)
+        self._save(kind=LogKind.INFO, title=title, detail=title)
 
     def dialog(
         self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
@@ -131,11 +132,11 @@ class RecordedSessionLog:
             if not question.strip():
                 continue
             self.flush()
-            self._save(kind="Question", title=log_wording.QUESTION_TITLE, detail=question)
-            self._save(kind="Answer", title=log_wording.ANSWER_TITLE, detail=answer)
+            self._save(kind=LogKind.QUESTION, title=log_wording.QUESTION_TITLE, detail=question)
+            self._save(kind=LogKind.ANSWER, title=log_wording.ANSWER_TITLE, detail=answer)
 
     def notice(self, title: str, detail: str) -> None:
-        self._save(kind="Info", title=title, detail=detail)
+        self._save(kind=LogKind.INFO, title=title, detail=detail)
 
     def flush(self) -> None:
         """Flush the agent's accumulated speech into a single log row.
@@ -149,10 +150,10 @@ class RecordedSessionLog:
             return
         spoken, had_questionnaire = strip_questionnaire_block(text)
         if spoken:
-            self._save(kind="Assistant", title=spoken[:160], detail=spoken)
+            self._save(kind=LogKind.ASSISTANT, title=spoken[:160], detail=spoken)
         if had_questionnaire:
             notice = log_wording.QUESTIONNAIRE_NOTICE
-            self._save(kind="Info", title=notice, detail=notice)
+            self._save(kind=LogKind.INFO, title=notice, detail=notice)
 
     def _merge_tool_payload(self, tool_id: str, update: JsonObject) -> JsonObject:
         if not tool_id:
@@ -161,35 +162,33 @@ class RecordedSessionLog:
         self._tool_payloads[tool_id] = merged
         return merged
 
-    def _tool_labels(self, tool_id: str, update: JsonObject) -> tuple[str, str, str]:
+    def _tool_labels(self, tool_id: str, update: JsonObject) -> tuple[LogKind, str, str]:
         """(kind, title, detail) of a tool call, as the live screen builds them.
 
         Labeling is incidental: any failure falls back to the raw ACP `title`
         instead of breaking the run.
         """
         try:
-            previous = self._tool_kinds.get(tool_id)
-            fallback = LogKind(previous) if previous else None
             log_kind, title, detail = build_tool_labels(
-                update, cwd=self._cwd, fallback_kind=fallback
+                update, cwd=self._cwd, fallback_kind=self._tool_kinds.get(tool_id)
             )
             if tool_id and log_kind != LogKind.TOOL:
-                self._tool_kinds[tool_id] = log_kind.value
-            return log_kind.value, title, detail
+                self._tool_kinds[tool_id] = log_kind
+            return log_kind, title, detail
         # The classifier walks an untrusted agent payload inside the ACP read
         # loop; a shape it does not expect must not end the session.
         except Exception as error:  # noqa: BLE001
             self.notice("Tool call not labeled", f"{type(error).__name__}: {error}")
-            return "Tool", _fallback_title(update), _fallback_detail(update)
+            return LogKind.TOOL, _fallback_title(update), _fallback_detail(update)
 
-    def _record_artifacts(self, update: JsonObject, log_kind: str = "") -> None:
+    def _record_artifacts(self, update: JsonObject, log_kind: LogKind | None = None) -> None:
         """Record the files the tool call wrote.
 
         The ACP `kind` is not always sent, so the `build_tool_labels`
         classification (the same one the live artifacts tab uses) also counts.
         """
         writes = str(update.get("kind") or "").lower() in _WRITE_KINDS
-        if not writes and log_kind not in {"Write", "Edit"}:
+        if not writes and log_kind not in _WRITE_LOG_KINDS:
             return
         for path in self._artifact_paths(update):
             try:
@@ -223,7 +222,7 @@ class RecordedSessionLog:
                     break
         return list(dict.fromkeys(found))
 
-    def _save(self, *, kind: str, title: str, detail: str, tool_id: str = "") -> None:
+    def _save(self, *, kind: LogKind, title: str, detail: str, tool_id: str = "") -> None:
         if not self._run_id:
             return
         # The run log is the record of last resort: with the database failing
