@@ -106,9 +106,8 @@ class RunAggregate(RuleBasedStateMachine):
         return self.run.steps[pick % len(self.run.steps)]
 
     def _ids(self, picks: list[int]) -> list[str]:
-        """Distinct step ids, as the engine passes a definition range."""
-        picked = [step.step_id for pick in picks if (step := self._pick(pick)) is not None]
-        return list(dict.fromkeys(picked))
+        """Step ids as picked, repeats included: the aggregate must not rely on the caller."""
+        return [step.step_id for pick in picks if (step := self._pick(pick)) is not None]
 
     def _attempt(self, action: Callable[[], object], *, legal: bool) -> None:
         """Run `action`; when illegal it must raise and change nothing at all."""

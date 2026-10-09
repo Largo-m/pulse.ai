@@ -451,7 +451,9 @@ class RunRecord:
             item.retire()
 
     def _records(self, step_ids: list[str]) -> list[StepRecord]:
-        return [record for step_id in step_ids if (record := self.step(step_id)) is not None]
+        """Each listed step once: a repeated id must not change its step twice."""
+        unique = dict.fromkeys(step_ids)
+        return [record for step_id in unique if (record := self.step(step_id)) is not None]
 
     def _require_none_running(self, records: list[StepRecord], action: str) -> None:
         """Checked before any step changes, so a refused change leaves the run as it was.

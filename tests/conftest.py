@@ -14,9 +14,9 @@ from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
 from pulse.store.workflow_defs import get_workflow, save_agent, save_workflow
 
-# Property tests replay the same examples on every run and every machine
-# (AGENTS.md §5.1): a failure seen locally is the one CI sees, and no example
-# database is left on disk.
+# Property tests replay the same examples for a given Hypothesis and Python version
+# (AGENTS.md §5.1): a failure reproduces on the CI job with the same versions,
+# and no example database is left on disk.
 settings.register_profile("pulse", derandomize=True, database=None)
 settings.load_profile("pulse")
 

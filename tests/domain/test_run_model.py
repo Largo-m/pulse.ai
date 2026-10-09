@@ -409,6 +409,20 @@ def test_a_refused_change_to_several_steps_changes_none_of_them(change):
     assert (idle.status, idle.rounds, idle.ended_at) == (StepStatus.PENDING, 1, None)
 
 
+def test_a_loop_over_a_repeated_step_id_changes_that_step_once():
+    """A step listed twice is still one step: one more round, one settlement, no refusal.
+
+    Otherwise closing settles it and then refuses the second copy, leaving the change half-applied.
+    """
+    reopened = StepRecord(step_id="loop")
+    _run(reopened).reopen_loop(["loop", "loop"], opener_id="loop")
+    closed = StepRecord(step_id="loop")
+    _run(closed).close_loop(["loop", "loop"], opener_id="other")
+
+    assert (reopened.status, reopened.rounds) == (StepStatus.PENDING, 2)
+    assert closed.status == StepStatus.SKIPPED
+
+
 def test_own_branch_names_the_workflow_and_the_short_run_id():
     run = RunRecord(id="0123456789abcdef", workflow_id="nova spec/v2", workspace_root="/repo")
 
