@@ -105,6 +105,22 @@ def test_an_older_pulse_refuses_a_database_a_newer_one_migrated(tmp_path: Path) 
         connect(path)
 
 
+def test_an_older_pulse_leaves_a_newer_database_untouched(tmp_path: Path) -> None:
+    """Refusing after writing is too late: a table the newer schema dropped comes back."""
+    path = tmp_path / "future.db"
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("DROP TABLE run_events")
+        connection.execute(f"PRAGMA user_version = {LATEST + 1}")
+
+    with pytest.raises(SchemaTooNewError):
+        connect(path)
+
+    with _raw(path) as connection:
+        tables = {str(row["name"]) for row in connection.execute("SELECT name FROM sqlite_master")}
+        assert "run_events" not in tables
+
+
 def test_versions_are_strictly_increasing() -> None:
     versions = [migration.version for migration in MIGRATIONS]
 

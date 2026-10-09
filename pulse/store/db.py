@@ -262,17 +262,17 @@ def migrate(
     its version bump, so a crash halfway leaves the last good version recorded.
     """
     latest = migrations[-1].version if migrations else 0
+    current = schema_version(connection)
+    if current > latest:
+        raise SchemaTooNewError(
+            f"database schema is version {current}, this Pulse knows up to {latest}"
+        )
     is_new = connection.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is None
     connection.executescript(SCHEMA)
     if is_new:
         _set_version(connection, latest)
         connection.commit()
         return set()
-    current = schema_version(connection)
-    if current > latest:
-        raise SchemaTooNewError(
-            f"database schema is version {current}, this Pulse knows up to {latest}"
-        )
     added: set[tuple[str, str]] = set()
     for migration in migrations:
         if migration.version <= current:
