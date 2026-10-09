@@ -1,7 +1,6 @@
 """The MCP `AskQuestion` bridge as the session runner sees it: a `QuestionChannel`.
 
-The runner used to build the HTTP bridge itself; now the daemon hands it this
-adapter, so `acp/` knows only the port.
+The daemon hands this adapter to the runner, so `acp/` knows only the port.
 """
 
 from __future__ import annotations

@@ -1,8 +1,7 @@
 """What the settings screen shows and changes for a project, decided in the daemon.
 
-The screen used to compute effective values and write SQLite itself; now it
-asks `/api/settings`, and these functions are the only place that knows how a
-project default, a machine default and an agent's own setting combine.
+The screen asks `/api/settings`, and these functions are the only place that
+knows how a project default, a machine default and an agent's own setting combine.
 """
 
 from __future__ import annotations

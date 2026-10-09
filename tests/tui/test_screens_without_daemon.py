@@ -43,7 +43,7 @@ def _run(screen, check) -> None:
             def on_mount(self) -> None:
                 self.push_screen(screen)
 
-            def notify(self, message: str, **_kwargs: object) -> None:  # type: ignore[override]  # records instead of toasting
+            def notify(self, message: str, **_kwargs: object) -> None:
                 self.notes.append(message)
 
         app = Harness()
