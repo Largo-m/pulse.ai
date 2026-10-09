@@ -14,6 +14,7 @@ from pulse.tui.screens.cockpit import CockpitScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.prompt_dock import PromptDock
+from tests.tui.conftest import wait_until
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
@@ -189,7 +190,7 @@ def test_cockpit_poll_opens_prompt_dock_not_modal(monkeypatch, tmp_path):
             assert isinstance(screen, CockpitScreen)
             future: Future[object | None] = Future()
             screen.bridge._queue.put(_select_request(future))
-            await pilot.pause(0.25)
+            await wait_until(pilot, lambda: any(d.is_mounted for d in screen.query(PromptDock)))
             log = screen.query_one(LogStream)
             assert log.query_one(PromptDock).is_mounted
             assert not any(isinstance(item, ModalScreen) for item in app.screen_stack)

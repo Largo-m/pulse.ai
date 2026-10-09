@@ -11,6 +11,7 @@ from pulse.config.project_config import init_project_config, load_project_config
 from pulse.store.agent_settings import upsert_agent_settings
 from pulse.tui.screens.settings import SettingsScreen
 from pulse.tui.theme import COCKPIT_CSS
+from tests.tui.conftest import wait_until
 
 
 def test_settings_shows_saved_model_after_select(tmp_path: Path):
@@ -90,11 +91,13 @@ def test_settings_model_picker_uses_runtime(tmp_path: Path, monkeypatch: pytest.
             screen._workflow_id = "default"
             screen._show_workflow_fields()
             screen._load_models()
-            for _ in range(20):
-                await pilot.pause(0.05)
-                labels = [str(opt.prompt) for opt in screen.query_one(OptionList)._options]
-                if any(label.startswith("claude-opus") for label in labels):
-                    break
+            await wait_until(
+                pilot,
+                lambda: any(
+                    str(opt.prompt).startswith("claude-opus")
+                    for opt in screen.query_one(OptionList)._options
+                ),
+            )
             labels = [str(opt.prompt) for opt in screen.query_one(OptionList)._options]
             assert seen["runtime"] == "claude"
             assert any("claude-opus-4.8" in label for label in labels)

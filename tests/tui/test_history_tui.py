@@ -17,6 +17,7 @@ from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
 from tests.conftest import make_workflow, store_run_status, store_step
+from tests.tui.conftest import wait_until
 
 
 def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
@@ -307,10 +308,7 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
             before = screen._items["run-live"].status
 
             store_run_status("run-live", "completed")
-            for _ in range(40):
-                await pilot.pause(0.05)
-                if screen._items["run-live"].status != before:
-                    break
+            await wait_until(pilot, lambda: screen._items["run-live"].status != before)
 
             assert screen._items["run-live"].status != before
             assert options.get_option_at_index(options.highlighted).id == "run-old"

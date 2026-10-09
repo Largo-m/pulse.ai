@@ -32,6 +32,7 @@ from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 from pulse.tui.widgets.prompt_dock import PromptDock
 from tests.conftest import make_workflow, store_step
+from tests.tui.conftest import wait_until
 
 STEPS = [("plan", "Plan"), ("build", "Build")]
 WAIT = 5.0
@@ -99,15 +100,6 @@ def _app(cockpit: CockpitScreen):
     return Harness()
 
 
-async def _until(pilot, predicate: Callable[[], bool]) -> None:
-    """Let the screen's timers run until `predicate` holds; fail instead of hanging."""
-    for _ in range(250):
-        if predicate():
-            return
-        await pilot.pause(0.02)
-    raise AssertionError("condition not reached")
-
-
 async def _wait_thread(event: threading.Event) -> None:
     assert await asyncio.to_thread(event.wait, WAIT)
 
@@ -154,7 +146,7 @@ def test_stop_cuts_the_run_and_resume_reopens_it_from_where_it_stopped(monkeypat
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: bool(sessions.instances))
+            await wait_until(pilot, lambda: bool(sessions.instances))
             session = sessions.instances[0]
             await _wait_thread(session.started)
             assert cockpit.check_action("stop_run", ()) is True
@@ -199,7 +191,7 @@ def test_a_failed_run_explains_the_exit_code_and_back_keeps_the_cockpit(monkeypa
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: isinstance(app.screen, ResumeChoiceScreen))
+            await wait_until(pilot, lambda: isinstance(app.screen, ResumeChoiceScreen))
 
             assert [
                 (entry.title, entry.detail)
@@ -226,7 +218,7 @@ def test_a_completed_run_reports_done_and_offers_nothing(monkeypatch, tmp_path):
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
+            await wait_until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
             assert cockpit.state.exit_code == 0
             assert app.screen is cockpit
 
@@ -249,7 +241,7 @@ def test_a_blocked_resumed_run_without_pending_steps_offers_no_resume(monkeypatc
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: strings.RUN_BLOCKED in _titles(cockpit, LogKind.INFO))
+            await wait_until(pilot, lambda: strings.RUN_BLOCKED in _titles(cockpit, LogKind.INFO))
             await pilot.pause()
             assert app.screen is cockpit
             assert cockpit.state.exit_code == RUN_BLOCKED
@@ -278,10 +270,10 @@ def test_attach_follows_the_worktree_and_leaving_detaches_without_finishing(monk
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(140, 40)) as pilot:
-            await _until(pilot, lambda: bool(sessions.instances))
+            await wait_until(pilot, lambda: bool(sessions.instances))
             session = sessions.instances[0]
             await _wait_thread(session.started)
-            await _until(pilot, lambda: cockpit.query_one(ArtifactPane)._cwd == str(worktree))
+            await wait_until(pilot, lambda: cockpit.query_one(ArtifactPane)._cwd == str(worktree))
 
             assert session.calls[0] == ("attach", run_id)
             assert cockpit.state.branch_label == "feat/x"
@@ -339,7 +331,7 @@ def test_artifact_keys_open_browse_and_close_the_pane(monkeypatch, tmp_path):
     async def run() -> None:
         app = _app(cockpit)
         async with app.run_test(size=(160, 40)) as pilot:
-            await _until(pilot, lambda: bool(sessions.instances))
+            await wait_until(pilot, lambda: bool(sessions.instances))
             await _wait_thread(sessions.instances[0].started)
             state = cockpit.state
             assert cockpit.check_action("toggle_artifact_pane", ()) is False
@@ -465,10 +457,10 @@ async def _answer_the_open_question(pilot, cockpit: CockpitScreen, answers: list
     from textual.widgets import OptionList
 
     app = pilot.app
-    await _until(pilot, lambda: bool(cockpit.query(PromptDock)))
+    await wait_until(pilot, lambda: bool(cockpit.query(PromptDock)))
     # A key pressed before the dock holds focus goes to the cockpit and is lost.
     dock = cockpit.query_one(PromptDock)
-    await _until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
+    await wait_until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
     state = cockpit.state
 
     assert state.selected_artifact_path == "spec.md"
@@ -483,10 +475,10 @@ async def _answer_the_open_question(pilot, cockpit: CockpitScreen, answers: list
 
     # Moving focus_target may have taken focus off the dock; hand it back first.
     dock.focus_inner()
-    await _until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
+    await wait_until(pilot, lambda: any(options.has_focus for options in dock.query(OptionList)))
     await pilot.press("a")
     await app.workers.wait_for_complete()
-    await _until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
+    await wait_until(pilot, lambda: strings.WORKFLOW_DONE in _titles(cockpit, LogKind.INFO))
 
     assert answers == ["yes"]
     assert list(cockpit.query(PromptDock)) == []

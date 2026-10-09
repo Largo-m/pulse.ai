@@ -32,6 +32,8 @@ def _sleep_names(tree: ast.AST) -> tuple[set[str], set[str]]:
 
 def _is_sleep(node: ast.Call, modules: set[str], functions: set[str]) -> bool:
     target = node.func
+    if isinstance(target, ast.Attribute) and target.attr == "pause":
+        return bool(node.args or node.keywords)
     if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
         return target.attr == "sleep" and target.value.id in modules
     return isinstance(target, ast.Name) and target.id in functions
@@ -64,6 +66,13 @@ def test_the_check_recognises_a_sleep():
     assert _sleeps("from time import sleep\nsleep(1)\n") == [2]
     assert _sleeps("async def wait():\n    await asyncio.sleep(0)\n") == [2]
     assert _sleeps("# time.sleep(1) is banned\nevent.wait(1)\n") == []
+
+
+def test_the_check_recognises_a_pause_with_a_delay():
+    """Textual's `pilot.pause(delay)` is `asyncio.sleep(delay)`; `pause()` waits for idle."""
+    assert _sleeps("await pilot.pause(0.25)\n") == [1]
+    assert _sleeps("await pilot.pause(delay=0.1)\n") == [1]
+    assert _sleeps("await pilot.pause()\n") == []
 
 
 def test_the_check_sees_through_aliases():
