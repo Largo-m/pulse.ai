@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -65,8 +66,9 @@ def write_daemon_meta(
 ) -> None:
     """Record where the daemon listens and the token its TCP listener demands.
 
-    Created `0600` and re-tightened if an older daemon left it wider: whoever
-    reads the token can drive runs over TCP (ADR 0005).
+    Whoever reads the token can drive runs over TCP (ADR 0005), so each write is
+    a new `0600` file renamed over the old one: an older daemon left it `0644`,
+    and tightening that inode would not revoke a descriptor already open on it.
     """
     ensure_global_dir()
     payload = {
@@ -76,10 +78,15 @@ def write_daemon_meta(
         "socket": str(socket_path),
         "token": token,
     }
-    descriptor = os.open(DAEMON_META_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, META_MODE)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as meta:
-        os.fchmod(meta.fileno(), META_MODE)
-        meta.write(json.dumps(payload, indent=2) + "\n")
+    descriptor, staged = tempfile.mkstemp(dir=DAEMON_META_FILE.parent, prefix=".daemon-")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as meta:
+            os.fchmod(meta.fileno(), META_MODE)
+            meta.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(staged, DAEMON_META_FILE)
+    except OSError:
+        Path(staged).unlink(missing_ok=True)
+        raise
 
 
 def read_daemon_meta() -> dict[str, Any] | None:

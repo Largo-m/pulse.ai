@@ -36,9 +36,10 @@ kernel recusa o `connect` de outro usuário. O TCP não tem nada equivalente.
 
 1. **Um token por daemon.** Ao subir, o daemon gera
    `secrets.token_urlsafe(32)` e o grava em `~/.pulse/daemon.json` junto com
-   pid, host e porta. O arquivo é criado `0600` e, se um daemon antigo o
-   deixou mais aberto, é apertado de novo (`write_daemon_meta`). Ler o token
-   exige o mesmo que conectar no socket: ser o dono de `~/.pulse`.
+   pid, host e porta. Cada gravação cria um arquivo novo `0600` e o renomeia
+   sobre o anterior (`write_daemon_meta`): um daemon antigo deixava o meta
+   `0644`, e apertar o mesmo inode não revoga um descritor já aberto nele.
+   Ler o token exige o mesmo que conectar no socket: ser o dono de `~/.pulse`.
 2. **Só o TCP cobra.** [`TokenGuard`](../../pulse/api/token_guard.py) (ASGI
    puro, por fora de tudo) envolve só o app do listener TCP
    (`listener_configs` em `pulse/daemon/server.py`). Sem

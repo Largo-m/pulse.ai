@@ -5,6 +5,8 @@ import secrets
 import stat
 from pathlib import Path
 
+import pytest
+
 import pulse.store.paths as paths
 
 
@@ -75,3 +77,34 @@ def test_rewriting_a_world_readable_meta_makes_it_private(monkeypatch, tmp_path:
 
     assert stat.S_IMODE(meta.stat().st_mode) == 0o600
     assert paths.read_daemon_meta()["token"] == token
+
+
+def test_a_reader_opened_on_the_old_meta_never_sees_the_new_token(monkeypatch, tmp_path: Path):
+    """Tightening the mode does not revoke a descriptor another user opened while it was 0644."""
+    _point_at(monkeypatch, tmp_path)
+    meta = tmp_path / "daemon.json"
+    meta.write_text("{}", encoding="utf-8")
+    meta.chmod(0o644)
+    token = secrets.token_urlsafe()
+
+    with meta.open(encoding="utf-8") as opened_before:
+        _write(tmp_path, token=token)
+        seen = opened_before.read()
+
+    assert seen == "{}"
+    assert paths.read_daemon_meta()["token"] == token
+
+
+def test_a_failed_write_leaves_no_staged_copy_of_the_token(monkeypatch, tmp_path: Path):
+    """The staged file holds the token too; a failed rename must not strand it in ~/.pulse."""
+    _point_at(monkeypatch, tmp_path)
+
+    def refuse(*_args: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(paths.os, "replace", refuse)
+
+    with pytest.raises(OSError, match="disk full"):
+        _write(tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
