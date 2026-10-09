@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, get_args
+from typing import Literal, assert_never, get_args
 
 from pulse import vcs
 from pulse.config.global_config import load_global_config
@@ -131,12 +131,15 @@ def set_project_default(workspace: Path, field: AgentField, value: str) -> None:
     A point-in-time write, not a layer: a later per-agent change applies only
     to that agent.
     """
-    if field == "runtime":
-        update_project_defaults(workspace, agent=value)
-    elif field == "model":
-        update_project_defaults(workspace, model=value)
-    else:
-        update_project_defaults(workspace, permission_policy=value)
+    match field:
+        case "runtime":
+            update_project_defaults(workspace, agent=value)
+        case "model":
+            update_project_defaults(workspace, model=value)
+        case "permission_policy":
+            update_project_defaults(workspace, permission_policy=value)
+        case _:
+            assert_never(field)
     project = load_project_config(workspace)
     if project is None:
         return
@@ -153,12 +156,15 @@ def set_agent_field(workspace: Path, agent_id: str, field: AgentField, value: st
     project = load_project_config(workspace)
     if project is None:
         return
-    if field == "runtime":
-        upsert_agent_settings(project.project_id, agent_id, runtime=value)
-    elif field == "model":
-        upsert_agent_settings(project.project_id, agent_id, model=value)
-    else:
-        upsert_agent_settings(project.project_id, agent_id, permission_policy=value)
+    match field:
+        case "runtime":
+            upsert_agent_settings(project.project_id, agent_id, runtime=value)
+        case "model":
+            upsert_agent_settings(project.project_id, agent_id, model=value)
+        case "permission_policy":
+            upsert_agent_settings(project.project_id, agent_id, permission_policy=value)
+        case _:
+            assert_never(field)
 
 
 def set_worktree(workspace: Path, *, enabled: bool) -> None:

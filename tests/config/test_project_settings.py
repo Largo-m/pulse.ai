@@ -7,11 +7,15 @@ order of precedence is pinned here.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 from pulse.config.global_config import mark_onboarding_complete
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.project_settings import (
     FALLBACK_MODEL,
+    AgentField,
     AgentFields,
     agent_fields,
     effective_defaults,
@@ -93,3 +97,22 @@ def test_the_settings_list_every_agent_and_the_worktree_switch(tmp_path: Path) -
     project = load_project_config(tmp_path)
     assert project is not None
     assert settings.use_worktree is project.use_worktree is False
+
+
+def test_a_field_the_settings_do_not_know_is_refused_not_written_as_the_policy(
+    tmp_path: Path,
+) -> None:
+    """A new field with no column of its own must fail loudly, not land in another one."""
+    init_project_config(tmp_path)
+    agent = list_agents()[0]
+    unknown = cast(AgentField, "budget")
+
+    with pytest.raises(AssertionError):
+        set_project_default(tmp_path, unknown, "deny_writes")
+    with pytest.raises(AssertionError):
+        set_agent_field(tmp_path, agent.id, unknown, "deny_writes")
+
+    assert effective_defaults(tmp_path).permission_policy == DEFAULT_PERMISSION_POLICY
+    fields = agent_fields(tmp_path, agent.id)
+    assert fields is not None
+    assert fields.permission_policy == DEFAULT_PERMISSION_POLICY
