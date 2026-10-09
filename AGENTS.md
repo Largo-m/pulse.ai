@@ -45,6 +45,7 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 | Domain | `domain/` (run, workflow, outcome, control, ports), `replies/` | nothing else in `pulse/` | any other package, Textual, FastAPI |
 | Orchestration | `orchestrator/` | `domain/`, `replies/`; everything else through the ports in `domain/ports.py` | `acp/`, `store/`, `vcs/`, `doctor/` (even indirectly), Textual, FastAPI |
 | Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, `replies/`, stdlib, third-party libs | `tui/`, each other (even indirectly) |
+| History | `history/` | `domain/`, `replies/`; only `catalog.py` (`store/`, `vcs/`) and `session_log.py` (`store/`, `config/`) touch the database | every other package, even indirectly |
 
 The package root holds only `__init__.py` and `__main__.py`; every other module
 lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-dominio.md).

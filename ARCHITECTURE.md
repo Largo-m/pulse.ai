@@ -712,6 +712,7 @@ mesmas perguntas apareceriam duas vezes.
 |------|----------|
 | TUI chamar `pulse/client/` | TUI ou `client/` importar `orchestrator/`, `acp/` ou `daemon/` |
 | TUI ler os modelos puros de `history/` | TUI alcançar `store/`, `config/`, `doctor/`, `runtimes/`, `vcs/` — nem por cadeia indireta |
+| `history/catalog.py` e `history/session_log.py` tocarem o banco | Outro módulo de `history/` importar `store/`, `config/` ou `vcs/` |
 | Daemon montar `acp/`, `store/`, `vcs/`, `config/` como portas do motor | Motor (`orchestrator/`) importar `acp/`, `store/`, `vcs/` ou `doctor/` |
 | Motor falar com o mundo pelas portas de `domain/ports.py` | Domínio importar Textual / widgets |
 | Motor sequenciar steps | Motor interpretar o que o agente produziu |
@@ -728,6 +729,8 @@ em `ignore_imports`, cada uma com o motivo; entrada que deixa de existir quebra
 o check e um teto por contrato impede entrada nova, então a lista só diminui. A
 TUI e o cliente não têm dívida: a única entrada do contrato da TUI é o layout de
 `~/.pulse` (`store/paths.py`), ponto de encontro de cliente e daemon por desenho.
+As seis de `history/` também são regra: as arestas do catálogo e do log de
+sessão até o banco, as únicas do pacote que a TUI lê pelos modelos puros.
 Os contratos que listam "todo pacote menos alguns" são conferidos contra as
 pastas de `pulse/`, então um pacote novo já nasce coberto.
 

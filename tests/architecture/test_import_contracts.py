@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PYPROJECT = str(ROOT / "pyproject.toml")
 TUI_THROUGH_DAEMON = "The TUI reaches persistence, config and runtimes only through the daemon"
 ADAPTERS_APART = "Adapters depend on the domain, not on each other"
+HISTORY_DATABASE = "History reaches the database only through its catalog and session log"
 REQUIRED_CONTRACTS = {
     "TUI and client are thin: they never import the engine",
     "Domain stays free of UI and web frameworks",
@@ -27,17 +28,20 @@ REQUIRED_CONTRACTS = {
     "Only store/db.py loads the factory seed",
     TUI_THROUGH_DAEMON,
     ADAPTERS_APART,
+    HISTORY_DATABASE,
     "Engine wording is the engine's own",
     "Run log wording belongs to history and the screens that redraw it",
     "Question wording belongs to the reply builders and the screens that ask",
 }
 # import-linter fails on a baseline entry that stops matching, but not on a new
 # one; these ceilings make the baselines shrink-only. Lower them as debt is paid.
-# The TUI's one entry is the shared `~/.pulse` layout, a rule rather than debt.
+# The TUI's one entry is the shared `~/.pulse` layout, and history's six are the
+# catalog's and session log's own edges to the database: rules rather than debt.
 BASELINE_CEILING = {
     "TUI and client are thin: they never import the engine": 0,
     TUI_THROUGH_DAEMON: 1,
     ADAPTERS_APART: 0,
+    HISTORY_DATABASE: 6,
 }
 # Contracts that name every package but a few: import-linter has no wildcard
 # for "the rest of pulse", so the list goes stale when a package is added.

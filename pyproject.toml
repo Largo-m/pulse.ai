@@ -213,6 +213,36 @@ forbidden_modules = [
     "pulse.vcs",
 ]
 
+# `history/` holds both the pure models the TUI may read and the two daemon-side
+# modules that touch the database; only those two may, and through these edges.
+[[tool.importlinter.contracts]]
+name = "History reaches the database only through its catalog and session log"
+type = "forbidden"
+source_modules = ["pulse.history"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
+ignore_imports = [
+    "pulse.history.catalog -> pulse.store.runs",
+    "pulse.history.catalog -> pulse.store.workflow_defs",
+    "pulse.history.catalog -> pulse.vcs",
+    "pulse.history.session_log -> pulse.config.project_config",
+    "pulse.history.session_log -> pulse.store.runs",
+    "pulse.history.session_log -> pulse.store.sessions",
+]
+
 [[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"
 type = "protected"
