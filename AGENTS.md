@@ -216,7 +216,8 @@ Good docstrings state the contract and the reason, like the ones in
 
 Every `# noqa`, `# type: ignore` or `pytest.mark.skip` needs a rule code and a
 justification on the same line or the line above. A naked suppression is a
-defect. Never add `--no-verify`, `|| true`, or CI-only branches to make a check
+defect; `tests/architecture/test_suppressions_carry_a_reason.py` rejects one.
+Never add `--no-verify`, `|| true`, or CI-only branches to make a check
 pass.
 
 ---
@@ -265,8 +266,9 @@ depend on the factory seed.
   (`test_text_without_the_block_is_not_a_delivery`); the docstring says why the
   behavior matters.
 - **Architecture invariants are tests.** They live in `tests/architecture/`:
-  factory seed, OpenAPI contract, import contracts, file size, markdown links,
-  modules cited in `ARCHITECTURE.md` and `tests/` mirroring `pulse/`. Keep
+  factory seed, OpenAPI contract, import contracts, file size, suppression
+  reasons, markdown links, modules cited in `ARCHITECTURE.md` and `tests/`
+  mirroring `pulse/`. Keep
   them, and extend them when adding a rule.
 - No `skip`, `xfail` or weakened assertions to make CI green.
 

@@ -267,7 +267,7 @@ def test_click_on_an_unmounted_pane_selects_nothing():
 
     pane = ArtifactPane(CockpitState())
     posted: list = []
-    pane.post_message = posted.append  # type: ignore[method-assign]
+    pane.post_message = posted.append  # type: ignore[method-assign]  # records the message
 
     pane.on_click(Click(pane, 1, 1, 0, 0, 1, False, False, False, screen_x=1, screen_y=1))
 

@@ -166,7 +166,7 @@ def _read(runner: AcpSessionRunner, lines: list[dict[str, Any] | str]) -> FakePr
 def _offline(runner: AcpSessionRunner) -> list[dict[str, Any]]:
     """Process-less runner: records what it sends; replies are queued by the test."""
     sent: list[dict[str, Any]] = []
-    runner._send = sent.append  # type: ignore[method-assign]
+    runner._send = sent.append  # type: ignore[method-assign]  # records instead of writing
     return sent
 
 
@@ -623,7 +623,7 @@ def test_a_cancel_that_cannot_be_sent_still_ends_the_turn_as_cancelled(monkeypat
             raise OSError("broken pipe")
         sent.append(payload["method"])
 
-    runner._send = send  # type: ignore[method-assign]
+    runner._send = send  # type: ignore[method-assign]  # a pipe that breaks on cancel
 
     assert runner._request("session/prompt", {}) == {"stopReason": "cancelled"}
     assert sent == ["session/prompt"]

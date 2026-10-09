@@ -68,7 +68,7 @@ def apply_setting_to_all_agents(
                 (project_id, agent_id),
             )
             connection.execute(
-                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ? AND agent_id = ?",  # noqa: S608
+                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ? AND agent_id = ?",  # noqa: S608  # `field` passed GLOBAL_FIELDS
                 (value, project_id, agent_id),
             )
         connection.commit()

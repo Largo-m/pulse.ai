@@ -176,7 +176,7 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
         fake_app = _App()
 
         @property
-        def app(self):  # type: ignore[override]
+        def app(self):  # type: ignore[override]  # stands in for the running App
             return self.fake_app
 
     screen = _Screen("demo", "x")
@@ -184,8 +184,8 @@ def test_leaving_the_cockpit_does_not_cancel_the_run():
     screen._session = session
     screen.state.running = True
     used: list[str] = []
-    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
-    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]  # records the call
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]  # records the call
 
     screen.action_back_to_menu()
 
@@ -218,7 +218,7 @@ def test_leaving_before_the_first_step_still_detaches():
         fake_app = _App()
 
         @property
-        def app(self):  # type: ignore[override]
+        def app(self):  # type: ignore[override]  # stands in for the running App
             return self.fake_app
 
     screen = _Screen("demo", "x")
@@ -226,8 +226,8 @@ def test_leaving_before_the_first_step_still_detaches():
     screen._session = session
     assert screen.state.running is False
     used: list[str] = []
-    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]
-    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]
+    screen.bridge.abandon = lambda: used.append("abandon")  # type: ignore[method-assign]  # records the call
+    screen.bridge.close = lambda: used.append("close")  # type: ignore[method-assign]  # records the call
 
     screen.action_back_to_menu()
 
@@ -268,7 +268,7 @@ def _worker_screen(fake_app: _ThreadApp) -> CockpitScreen:
 
     class _Screen(CockpitScreen):
         @property
-        def app(self):  # type: ignore[override]
+        def app(self):  # type: ignore[override]  # stands in for the running App
             return fake_app
 
     return _Screen("demo", "x")
@@ -358,7 +358,7 @@ def test_click_on_an_unmounted_sidebar_is_ignored():
     configure_from_db(state, "demo")
     sidebar = PhaseSidebar(state)
     posted: list = []
-    sidebar.post_message = posted.append  # type: ignore[method-assign]
+    sidebar.post_message = posted.append  # type: ignore[method-assign]  # records the message
 
     sidebar.on_click(Click(sidebar, 1, 1, 0, 0, 1, False, False, False, screen_x=1, screen_y=1))
 

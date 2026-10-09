@@ -321,7 +321,7 @@ def drop_approval_from_unattended_steps(connection: sqlite3.Connection) -> None:
         f"""
         SELECT count(*) FROM workflow_steps
          WHERE step_id IN ({placeholders}) AND instr(prompt_template, ?) > 0
-        """,  # noqa: S608
+        """,  # noqa: S608  # only `?` placeholders are interpolated
         (*(step_id for _workflow_id, step_id in UNATTENDED_STEPS), APPROVAL_MARK),
     ).fetchone()[0]
     if not pending:

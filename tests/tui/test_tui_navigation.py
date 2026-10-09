@@ -448,7 +448,7 @@ def test_home_opens_the_waiting_session_live(monkeypatch):
         fake_app = _App()
 
         @property
-        def app(self):  # type: ignore[override]
+        def app(self):  # type: ignore[override]  # stands in for the running App
             return self.fake_app
 
     screen = _Screen()
@@ -495,7 +495,7 @@ def test_history_reopens_a_live_run_in_the_cockpit(monkeypatch, tmp_path):
         fake_app = _App()
 
         @property
-        def app(self):  # type: ignore[override]
+        def app(self):  # type: ignore[override]  # stands in for the running App
             return self.fake_app
 
     screen = _Screen(workspace=tmp_path)

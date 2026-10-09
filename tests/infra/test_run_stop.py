@@ -14,7 +14,7 @@ def _runner(control: RunControl) -> tuple[AcpSessionRunner, list[dict]]:
         ["fake-agent"], cwd="/repo", control=control, runtime=get_runtime("cursor")
     )
     sent: list[dict] = []
-    runner._send = sent.append  # type: ignore[method-assign]
+    runner._send = sent.append  # type: ignore[method-assign]  # records instead of writing
     runner._session_id = "sess-1"
     return runner, sent
 

@@ -31,7 +31,7 @@ def _post(url, payload):
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310 - http on loopback, the bridge under test
         status = response.status
         body = response.read().decode("utf-8")
     return status, body

@@ -85,9 +85,9 @@ def _runner(clock: SimulatedTime, timeout: float) -> AcpSessionRunner:
     runner = AcpSessionRunner(
         ["fake-agent"], cwd="/repo", timeout_seconds=timeout, runtime=get_runtime("cursor")
     )
-    runner._send = lambda _payload: None  # type: ignore[method-assign]
+    runner._send = lambda _payload: None  # type: ignore[method-assign]  # nothing to write to
     runner._session_id = "sess-1"
-    runner._response_queue = SimulatedQueue(clock)  # type: ignore[assignment]
+    runner._response_queue = SimulatedQueue(clock)  # type: ignore[assignment]  # replies on the fake clock
     return runner
 
 
@@ -154,7 +154,7 @@ def test_a_dead_process_ends_the_wait_right_away(clock):
             return 1
 
     runner = _runner(clock, 600.0)
-    runner._process = _Dead()  # type: ignore[assignment]
+    runner._process = _Dead()  # type: ignore[assignment]  # duck-typed Popen
 
     with pytest.raises(RuntimeError, match="^the agent process exited during `session/close`$"):
         runner._request("session/close", {"sessionId": "sess-1"})
@@ -179,15 +179,15 @@ def test_retry_after_a_timeout_restarts_a_process_that_is_alive_but_mute(clock):
             return None
 
     runner = _runner(clock, 0.2)
-    runner._process = _Alive()  # type: ignore[assignment]
+    runner._process = _Alive()  # type: ignore[assignment]  # duck-typed Popen
     with pytest.raises(TimeoutError):
         runner._request("session/prompt", {})
 
     restarted: list[str] = []
-    runner.close = lambda: restarted.append("close")  # type: ignore[method-assign]
-    runner.start = lambda: restarted.append("start")  # type: ignore[method-assign]
-    runner.initialize = lambda: restarted.append("initialize")  # type: ignore[method-assign]
-    runner.authenticate = lambda: restarted.append("authenticate")  # type: ignore[method-assign]
+    runner.close = lambda: restarted.append("close")  # type: ignore[method-assign]  # records the restart
+    runner.start = lambda: restarted.append("start")  # type: ignore[method-assign]  # records the restart
+    runner.initialize = lambda: restarted.append("initialize")  # type: ignore[method-assign]  # records the restart
+    runner.authenticate = lambda: restarted.append("authenticate")  # type: ignore[method-assign]  # records the restart
 
     assert runner.revive() is True
     assert restarted == ["close", "start", "initialize", "authenticate"]
