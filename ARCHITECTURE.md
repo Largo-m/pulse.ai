@@ -412,7 +412,6 @@ não tem nenhum para oferecer.
 |---------|--------|
 | [`pulse/cli/main.py`](pulse/cli/main.py) | Lê o comando (`init`, `doctor`, `config`, `daemon`) ou abre a TUI |
 | [`pulse/cli/daemon_command.py`](pulse/cli/daemon_command.py) | `pulse daemon start \| stop \| status` |
-| [`pulse/cli/console_sink.py`](pulse/cli/console_sink.py) | `ConsoleStreamSink`: o progresso de uma run num terminal sem TUI |
 | [`pulse/__main__.py`](pulse/__main__.py) | Permite `python -m pulse` |
 
 Entry points: `pulse` → CLI, `pulse-engine` → daemon em foreground,

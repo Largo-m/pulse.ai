@@ -22,7 +22,6 @@ POLICY_IGNORES = {
     "pulse/cli/main.py": ["T201"],
     "pulse/config/commands.py": ["T201"],
     "pulse/doctor/report.py": ["T201"],
-    "pulse/cli/console_sink.py": ["T201"],
 }
 MAX_COMPLEXITY = 10
 

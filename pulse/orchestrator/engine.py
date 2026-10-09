@@ -16,6 +16,7 @@ Pulse forwards, which allows switching runtimes between steps and redoing one st
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from pulse.domain.control import RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
@@ -63,8 +64,9 @@ def run_workflow(
 ) -> int:
     """Run the workflow to its end and return the run's exit code.
 
-    A refusal before the first step (no step, no worktree) raises for the caller;
-    a crash mid-run is recorded on the run, then raised.
+    A workflow with no step raises before any run is stored; once the run is
+    stored, any failure (a worktree that will not open, a crash mid-run) is
+    recorded on it, then raised.
     """
     if not definition.steps:
         raise EmptyWorkflow(f"workflow `{definition.id}` has no steps")
@@ -78,25 +80,30 @@ def run_workflow(
     )
 
     try:
-        exec_dir, branch = prepare_workspace(
-            run, ports.workspace, ports.runs, use_worktree=use_worktree
-        )
-    except WorkspaceError as error:
-        raise RuntimeError(f"could not open the worktree for this run: {error}") from error
-
-    # Must precede the first `phase.begin`: the artifact pane uses it to know
-    # which folder to watch.
-    ports.stream.set_context(cwd=str(exec_dir), branch=branch)
-    ports.session.bind_run(run.id, RunWaits(run, ports.runs))
-    wiring = Wiring(ports=ports, control=control or RunControl(), exec_dir=exec_dir)
-
-    try:
+        exec_dir = _open_workspace(run, ports, use_worktree=use_worktree)
+        ports.session.bind_run(run.id, RunWaits(run, ports.runs))
+        wiring = Wiring(ports=ports, control=control or RunControl(), exec_dir=exec_dir)
         return _execute(wiring, definition=definition, run=run)
-    # The run is the boundary: record the crash on it, then let the caller report it.
+    # The run is stored, so it is the boundary: record the crash on it, then let
+    # the caller report it.
     except Exception:  # noqa: BLE001
         run.crash()
         ports.runs.save(run)
         raise
+
+
+def _open_workspace(run: RunRecord, ports: EnginePorts, *, use_worktree: bool) -> Path:
+    """Where the agent works, announced to the stream before any step begins."""
+    try:
+        exec_dir, branch = prepare_workspace(
+            run, ports.workspace, ports.runs, use_worktree=use_worktree
+        )
+    except WorkspaceError as error:
+        raise WorkspaceError(f"could not open the worktree for this run: {error}") from error
+    # Must precede the first `phase.begin`: the artifact pane uses it to know
+    # which folder to watch.
+    ports.stream.set_context(cwd=str(exec_dir), branch=branch)
+    return exec_dir
 
 
 def _resolve_run(

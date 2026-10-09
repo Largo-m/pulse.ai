@@ -62,7 +62,6 @@ select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT", "C90"]
 "pulse/cli/main.py" = ["T201"]
 "pulse/config/commands.py" = ["T201"]
 "pulse/doctor/report.py" = ["T201"]
-"pulse/cli/console_sink.py" = ["T201"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

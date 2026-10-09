@@ -38,11 +38,23 @@ def test_a_worktree_that_will_not_open_stops_the_run_before_the_agent(tmp_path: 
     harness.workspace = _WorktreeThatWillNotOpen(tmp_path, repo=True)
     session = FakeAgentSession([])
 
-    with pytest.raises(RuntimeError, match="^could not open the worktree for this run: disco"):
+    with pytest.raises(WorkspaceError, match="^could not open the worktree for this run: disco"):
         harness.run(session, workflow_id="demo", user_prompt="x", use_worktree=True)
 
     assert session.opened_in is None
     assert session.stream.contexts == []
+
+
+def test_a_worktree_that_will_not_open_fails_the_stored_run(tmp_path: Path):
+    """The run is stored before its worktree opens; left `running`, history would show it live."""
+    make_workflow("demo")
+    harness = EngineHarness(tmp_path)
+    harness.workspace = _WorktreeThatWillNotOpen(tmp_path, repo=True)
+
+    with pytest.raises(WorkspaceError):
+        harness.run(FakeAgentSession([]), workflow_id="demo", user_prompt="x", use_worktree=True)
+
+    assert harness.runs.only().status == "failed"
 
 
 def test_the_session_opens_where_the_run_works(tmp_path: Path):

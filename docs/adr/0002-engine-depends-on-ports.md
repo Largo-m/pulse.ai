@@ -67,7 +67,7 @@ As portas moram em [`pulse/domain/ports.py`](../../pulse/domain/ports.py):
 
 | Porta | O que o motor pede | Adapter de produção | Fake |
 |---|---|---|---|
-| `StreamSink` | mostrar o progresso da run | `ApiStreamSink` (`daemon/`), `ConsoleStreamSink` (`cli/`) | `NullStreamSink` |
+| `StreamSink` | mostrar o progresso da run | `ApiStreamSink` (`daemon/`) | `NullStreamSink` |
 | `PromptPort` | perguntar à pessoa | `ApiPromptPort` (`daemon/`) | `NullPromptPort` |
 | `RunRepository` | criar, carregar e gravar a run; listar artefatos | `SqliteRunRepository` (`store/`) | `InMemoryRunRepository` (testes) |
 | `AgentSession` | abrir o agente, rodar um step, reviver | `AcpSessionRunner` (`acp/`) | `FakeAgentSession` (testes) |
@@ -78,8 +78,8 @@ As portas moram em [`pulse/domain/ports.py`](../../pulse/domain/ports.py):
   `set_session_id` entram no `Protocol`, e o motor chama sem `getattr`. O
   atributo `cockpit` some: o motor não tem mais dois modos. Falha de preparo
   (worktree que não abre, workflow sem step) sempre vira exceção para quem
-  chamou; o que um terminal imprime é decisão do adapter de console, que
-  desenha o progresso a partir dos mesmos eventos que o cockpit recebe.
+  chamou. Um terminal sem TUI, quando existir, será outro adapter de
+  `StreamSink`, desenhando a partir dos mesmos eventos que o cockpit recebe.
 - **`AgentProfiles` é a sexta porta**, não prevista no plano: a resolução do
   model e da política por step lia `config/` e `store/`, e sem ela o motor
   continuaria preso aos dois.
