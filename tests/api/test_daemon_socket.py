@@ -69,8 +69,30 @@ def test_a_stale_socket_from_a_dead_daemon_is_replaced(socket_dir: Path):
         assert _mode(path) == 0o600
 
 
-def test_a_socket_that_cannot_be_bound_raises_instead_of_leaking(socket_dir: Path):
-    with pytest.raises(FileNotFoundError):
-        bind_private_socket(socket_dir / "missing" / "daemon.sock")
+def test_a_socket_that_cannot_be_bound_raises_instead_of_leaking(
+    socket_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The umask is process-wide: left at the socket's, every later file is private too.
 
+    The bind's socket is closed, or its descriptor stays open for the daemon's life.
+    """
+    opened: list[socket.socket] = []
+
+    class Recorded(socket.socket):
+        def __init__(self, *args: object) -> None:
+            super().__init__(*args)  # type: ignore[arg-type]  # forwards socket's own args
+            opened.append(self)
+
+    monkeypatch.setattr(socket, "socket", Recorded)
+    caller_umask = 0o022
+    previous = os.umask(caller_umask)
+    try:
+        with pytest.raises(FileNotFoundError):
+            bind_private_socket(socket_dir / "missing" / "daemon.sock")
+        restored = os.umask(previous)
+    finally:
+        os.umask(previous)
+
+    assert restored == caller_umask
+    assert [sock.fileno() for sock in opened] == [-1]
     assert os.listdir(socket_dir) == []
