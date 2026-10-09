@@ -4,6 +4,8 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -163,6 +165,8 @@ class RunManager:
         self._runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
         self._closing = False
+        # Runs a history change is removing; a resume must not start on them.
+        self._held: set[str] = set()
 
     def list_workflows(self) -> list[dict[str, Any]]:
         return [
@@ -202,8 +206,7 @@ class RunManager:
         with self._lock:
             if self._closing:
                 raise DaemonShuttingDown("the daemon is shutting down")
-            existing = self._runs.get(run_id)
-            if existing is not None and existing.is_active():
+            if self._busy(run_id):
                 raise RunAlreadyActive(f"run is already running: {run_id}")
             self._runs[run_id] = state
         thread = threading.Thread(
@@ -214,6 +217,26 @@ class RunManager:
         )
         thread.start()
         return state
+
+    @contextmanager
+    def idle(self, run_id: str) -> Iterator[None]:
+        """Hold a run that is not executing, so no resume starts until the block ends.
+
+        Raises `RunAlreadyActive` when the run executes or another change holds it.
+        """
+        with self._lock:
+            if self._busy(run_id):
+                raise RunAlreadyActive(f"run is in use: {run_id}")
+            self._held.add(run_id)
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._held.discard(run_id)
+
+    def _busy(self, run_id: str) -> bool:
+        existing = self._runs.get(run_id)
+        return run_id in self._held or (existing is not None and existing.is_active())
 
     def get(self, run_id: str) -> RunState | None:
         with self._lock:

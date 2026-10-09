@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from pulse import vcs
 from pulse.api.deps import Runs, project_root
+from pulse.daemon.runs import RunAlreadyActive
 from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
@@ -43,8 +46,8 @@ def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
 def delete_history_item(item_id: str, runs: Runs, workspace: str | None = None) -> dict[str, Any]:
     """A run the daemon still executes stays: its agent works in the worktree that goes too."""
     catalog, item = _known_item(item_id, workspace)
-    _refuse_executing(runs, item)
-    catalog.delete(item_id)
+    with _idle(runs, item):
+        catalog.delete(item_id)
     return {"ok": True}
 
 
@@ -54,9 +57,14 @@ def _executing(runs: Runs, run_id: str) -> bool:
     return state is not None and state.is_active()
 
 
-def _refuse_executing(runs: Runs, item: HistoryItem) -> None:
-    if _executing(runs, item.run_id):
-        raise HTTPException(status_code=WORKTREE_IN_USE, detail="run is active")
+@contextmanager
+def _idle(runs: Runs, item: HistoryItem) -> Iterator[None]:
+    """No resume starts while the run's rows or worktree go away."""
+    try:
+        with runs.idle(item.run_id):
+            yield
+    except RunAlreadyActive as error:
+        raise HTTPException(status_code=WORKTREE_IN_USE, detail="run is active") from error
 
 
 @router.get("/api/history/{item_id}/worktree")
@@ -80,8 +88,8 @@ def remove_worktree(item_id: str, runs: Runs, workspace: str | None = None) -> d
     A run the daemon still executes keeps it: its agent works there.
     """
     catalog, item = _known_item(item_id, workspace)
-    _refuse_executing(runs, item)
-    return {"removed": catalog.remove_worktree(item)}
+    with _idle(runs, item):
+        return {"removed": catalog.remove_worktree(item)}
 
 
 @router.get("/api/runs/{run_id}/log")

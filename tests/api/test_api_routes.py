@@ -16,8 +16,9 @@ from fastapi.testclient import TestClient
 from pulse.api.app import create_app
 from pulse.config.global_config import GlobalConfig, load_global_config, save_global_config
 from pulse.config.project_config import init_project_config, update_project_defaults
-from pulse.daemon.runs import RunManager
+from pulse.daemon.runs import RunAlreadyActive, RunManager
 from pulse.domain.run import StepRecord
+from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 
@@ -225,6 +226,51 @@ def test_a_run_the_daemon_executes_is_not_deleted_from_history(history_run, monk
     assert (refused.status_code, refused.json()) == (409, {"detail": "run is active"})
     assert worktree.exists()
     assert run_store.load_run("run-hist") is not None
+
+
+def test_a_resume_arriving_mid_delete_is_refused(history_run, monkeypatch):
+    """Two windows: one deletes the run while the other resumes it.
+
+    The active-run check and the delete are one step for the daemon, so the
+    resume cannot start on a row and a worktree that are going away.
+    """
+    make_workflow("default")
+    deleting = threading.Event()
+    release = threading.Event()
+
+    def slow_delete(_catalog: HistoryCatalog, _item_id: str) -> bool:
+        deleting.set()
+        release.wait(5)
+        return True
+
+    monkeypatch.setattr(HistoryCatalog, "delete", slow_delete)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **_kwargs: 0)
+    manager = RunManager()
+    client = _client(manager)
+    params = {"workspace": str(history_run)}
+    item_id = client.get("/api/history", params=params).json()["items"][0]["id"]
+    responses: list[int] = []
+    deleter = threading.Thread(
+        target=lambda: responses.append(
+            client.delete(f"/api/history/{item_id}", params=params).status_code
+        )
+    )
+    deleter.start()
+    assert deleting.wait(5)
+    try:
+        with pytest.raises(RunAlreadyActive):
+            manager.start_run(
+                workflow_id="default",
+                prompt="x",
+                workspace=str(history_run),
+                resume_run_id="run-hist",
+            )
+    finally:
+        release.set()
+        deleter.join(5)
+
+    assert responses == [200]
+    assert manager.get("run-hist") is None
 
 
 def test_answering_an_unknown_prompt_is_not_found():
