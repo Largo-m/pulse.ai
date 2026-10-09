@@ -145,7 +145,7 @@ _option_lists = st.lists(st.tuples(_word, _permission_kinds), max_size=5)
 def test_a_terminal_is_never_allowed_unless_the_step_allows_it(
     kind: str, options: list[tuple[str, str]], policy: PermissionPolicy
 ) -> None:
-    """Shell access is vetoed under every policy; only `allow_terminal` lifts the veto."""
+    """A kind naming a terminal or shell is vetoed under any policy unless `allow_terminal`."""
     decided = decide_permission(_permission_params(kind, options), policy=policy)
 
     assert decided is not None
@@ -155,6 +155,27 @@ def test_a_terminal_is_never_allowed_unless_the_step_allows_it(
         option_id for option_id, option_kind in options if option_kind.startswith("reject")
     }
     assert outcome["optionId"] in rejecting | {"reject-once"}
+
+
+@given(_option_lists, st.sampled_from(_POLICIES))
+def test_execute_runs_alone_only_under_auto_approve(
+    options: list[tuple[str, str]], policy: PermissionPolicy
+) -> None:
+    """`execute` is the agent's own shell (Claude's Bash), not a terminal Pulse runs.
+
+    Only `auto_approve` lets it run unasked; `ask` and `deny_writes` leave it to
+    a person, since only whoever reads the command knows whether it writes.
+    """
+    decided = decide_permission(_permission_params("execute", options), policy=policy)
+
+    if policy != "auto_approve":
+        assert decided is None
+        return
+    assert decided is not None
+    outcome = decided["outcome"]
+    assert isinstance(outcome, dict)
+    allowing = {option_id for option_id, option_kind in options if option_kind.startswith("allow")}
+    assert outcome["optionId"] in allowing | {"allow-once"}
 
 
 @given(_word, _option_lists)

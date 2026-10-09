@@ -338,7 +338,9 @@ user prompts — treat every boundary as such.
   without an explicit design decision. No permissive CORS on the API.
 - **Permissions**: changes to `permission_policy` handling must keep "deny by
   default when unsure" (`deny_writes` with an unknown kind asks; it never
-  allows). Terminal/`execute` stays vetoed unless explicitly allowed.
+  allows). A kind naming a terminal or shell stays vetoed under every policy
+  unless the step allows a terminal. `execute` (the agent's own shell) asks
+  under `ask` and `deny_writes`; only `auto_approve` lets it run unasked.
 - **Prompt injection**: agent output and file contents are untrusted input to
   Pulse. Parse only the fenced blocks Pulse defined, with strict parsers; never
   let agent text change policy, config, or which agent runs.
