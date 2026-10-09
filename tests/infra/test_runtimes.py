@@ -85,6 +85,30 @@ def test_claude_uses_its_own_mode_ids():
     assert claude.resolve_mode(CLAUDE_SESSION, execute=True) == "default"
 
 
+CODEX_SESSION = {
+    "modes": {
+        "currentModeId": "agent",
+        "availableModes": [
+            {"id": "read-only"},
+            {"id": "workspace-write"},
+            {"id": "agent"},
+            {"id": "agent-full-access"},
+        ],
+    },
+}
+
+
+def test_codex_approval_turn_writes_in_the_workspace():
+    """The approval turn is the one that writes the artifact.
+
+    `read-only` is a readOnly sandbox with no network, so it must not be the
+    mode of that turn.
+    """
+    codex = get_runtime("codex")
+    assert codex.resolve_mode(CODEX_SESSION, execute=False) == "workspace-write"
+    assert codex.resolve_mode(CODEX_SESSION, execute=True) == "workspace-write"
+
+
 def test_claude_never_uses_plan_mode():
     """A step that "only plans" is usually the one that writes the artifact.
 

@@ -24,7 +24,7 @@ class CodexRuntime(AgentRuntime):
     auth_method_label = "codex_login"
     install_hint = "Install the Codex CLI and Node.js/npm for the ACP adapter."
     login_command = ("codex", "login")
-    interview_modes = ("read-only", "workspace-write", "agent")
+    interview_modes = ("workspace-write", "agent", "read-only")
     execute_modes = ("workspace-write", "agent", "read-only")
 
     def check_auth(self) -> RuntimeCheck:
