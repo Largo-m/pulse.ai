@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +15,12 @@ from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from pulse import __version__
-from pulse.client.active_runs import active_runs, awaiting_runs, held_tail, run_line
-from pulse.config import global_config_exists
-from pulse.config.ready import is_pulse_ready
+from pulse.client.active_runs import active_runs, awaiting_runs
+from pulse.history.run_lines import held_tail, run_line
 from pulse.history.status_labels import status_color, status_icon
-from pulse.store.workflow_defs import list_workflows
-from pulse.tui import strings
+from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.tui.screens.navigation import pulse_app
 
 
 def _home_brand() -> str:
@@ -34,16 +34,26 @@ def _home_brand() -> str:
 _HOME_BRAND = _home_brand()
 
 
-def _session_workflows() -> list:
+def _session_workflows() -> list[engine.WorkflowShape]:
     """Workflows offered by the new-session menu: the pipelines, sorted by label.
 
     The generic loop (`is_default`) is hidden from this menu only; it remains
-    available in the database and the daemon API.
+    available in the database and the daemon API. A daemon that stopped
+    answering leaves the menu empty rather than closing the app.
     """
-    return sorted(
-        (item for item in list_workflows() if not item.is_default),
-        key=lambda item: item.label,
-    )
+    try:
+        listed = engine.workflows()
+    except engine.EngineError:
+        return []
+    return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
+
+
+def _setup() -> engine.SetupState | engine.EngineError:
+    """Where the first run stands, or why the daemon could not say."""
+    try:
+        return engine.setup_state(Path.cwd())
+    except engine.EngineError as error:
+        return error
 
 
 ROOT = "root"
@@ -166,11 +176,12 @@ class HomeScreen(Screen[None]):
         options = self.query_one("#home-options", OptionList)
         options.clear_options()
         hint = self.query_one(".home-hint", Static)
-        if not global_config_exists():
-            self._view = ROOT
-            options.add_option(Option(strings.HOME_SETUP, id="init"))
-            options.add_option(Option(strings.QUIT, id="exit"))
-            hint.update(strings.HOME_ROOT_HINT)
+        setup = _setup()
+        if isinstance(setup, engine.EngineError):
+            self._offer_setup(options, hint, setup)
+            return
+        if not setup.configured:
+            self._offer_setup(options, hint, None)
             return
         if self._view == ALERTS:
             for run in self._alerts:
@@ -183,7 +194,7 @@ class HomeScreen(Screen[None]):
         if self._view == SESSION:
             workflows = _session_workflows()
             self._descriptions = {
-                item.id: " → ".join(step.label for step in item.steps) for item in workflows
+                item.id: " → ".join(label for _step_id, label in item.steps) for item in workflows
             }
             self._default_prompts = {
                 item.id: item.default_prompt for item in workflows if item.default_prompt
@@ -196,7 +207,7 @@ class HomeScreen(Screen[None]):
             options.add_option(Option(strings.BACK_ARROW, id="back"))
             self._update_hint(workflows[0].id if workflows else None)
             return
-        if is_pulse_ready():
+        if setup.ready:
             if self._alerts:
                 count = len(self._alerts)
                 label = (
@@ -213,51 +224,80 @@ class HomeScreen(Screen[None]):
         options.add_option(Option(strings.QUIT, id="exit"))
         hint.update(strings.HOME_ROOT_HINT)
 
+    def _offer_setup(
+        self, options: OptionList, hint: Static, failure: engine.EngineError | None
+    ) -> None:
+        self._view = ROOT
+        # Screens never start the daemon themselves, so Home is where it comes back.
+        if isinstance(failure, engine.EngineUnavailable):
+            options.add_option(Option(strings.HOME_START_ENGINE, id="start_engine"))
+        options.add_option(Option(strings.HOME_SETUP, id="init"))
+        options.add_option(Option(strings.QUIT, id="exit"))
+        hint.update(failure.describe() if failure is not None else strings.HOME_ROOT_HINT)
+
     @on(OptionList.OptionSelected, "#home-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
-        option_id = event.option_id
-        if option_id is None:
+        if event.option_id is None:
             return
-        action = str(option_id)
-        if action == "exit":
-            self.action_quit_app()
+        action, _, argument = str(event.option_id).partition(":")
+        route = self._option_routes().get(action)
+        if route is not None:
+            route(argument)
+
+    def _option_routes(self) -> dict[str, Callable[[str], None]]:
+        """What each menu option does; `attach:` and `workflow:` carry an id."""
+        return {
+            "exit": lambda _: self.action_quit_app(),
+            "init": lambda _: pulse_app(self).open_onboarding(),
+            "start_engine": lambda _: self._start_engine(),
+            "settings": lambda _: pulse_app(self).open_settings(),
+            "history": lambda _: pulse_app(self).open_history(),
+            "session": lambda _: self._show_view(SESSION),
+            "alerts": lambda _: self._show_view(ALERTS),
+            "attach": self._open_waiting_run,
+            "back": lambda _: self.action_back(),
+            "workflow": self._choose_workflow,
+        }
+
+    def _start_engine(self) -> None:
+        self.query_one(".home-hint", Static).update(strings.HOME_ENGINE_STARTING)
+        # Its own group: the alert poll is `exclusive` too and would cancel it.
+        self.run_worker(self._bring_engine_up, group="engine", exclusive=True, thread=True)
+
+    def _bring_engine_up(self) -> None:
+        try:
+            engine.start_daemon()
+        except engine.EngineError as error:
+            failure: engine.EngineError | None = error
+        else:
+            failure = None
+        # The app already exited while the daemon was starting.
+        with contextlib.suppress(RuntimeError):
+            self.app.call_from_thread(self._engine_started, failure)
+
+    def _engine_started(self, failure: engine.EngineError | None) -> None:
+        if not self.is_mounted:
             return
-        if action == "init":
-            self.app.open_onboarding()
+        self._refresh_options()
+        if failure is not None:
+            self.query_one(".home-hint", Static).update(failure.describe())
+
+    def _show_view(self, view: str) -> None:
+        self._view = view
+        self._refresh_options()
+        self.query_one("#home-options", OptionList).focus()
+
+    def _choose_workflow(self, workflow_id: str) -> None:
+        """Start right away when the workflow has a default prompt; otherwise ask for one."""
+        default_prompt = self._default_prompts.get(workflow_id, "")
+        if default_prompt:
+            pulse_app(self).open_cockpit(workflow_id, default_prompt)
             return
-        if action == "settings":
-            self.app.open_settings()
-            return
-        if action == "history":
-            self.app.open_history()
-            return
-        if action == "session":
-            self._view = SESSION
-            self._refresh_options()
-            self.query_one("#home-options", OptionList).focus()
-            return
-        if action == "alerts":
-            self._view = ALERTS
-            self._refresh_options()
-            self.query_one("#home-options", OptionList).focus()
-            return
-        if action.startswith("attach:"):
-            self._open_waiting_run(action.split(":", 1)[1])
-            return
-        if action == "back":
-            self.action_back()
-            return
-        if action.startswith("workflow:"):
-            workflow_id = action.split(":", 1)[1]
-            default_prompt = self._default_prompts.get(workflow_id, "")
-            if default_prompt:
-                self.app.open_cockpit(workflow_id, default_prompt)
-                return
-            self._pending_workflow = workflow_id
-            prompt_input = self.query_one("#workflow-prompt", Input)
-            prompt_input.display = True
-            prompt_input.focus()
-            prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
+        self._pending_workflow = workflow_id
+        prompt_input = self.query_one("#workflow-prompt", Input)
+        prompt_input.display = True
+        prompt_input.focus()
+        prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -269,7 +309,7 @@ class HomeScreen(Screen[None]):
         if run is None:
             return
         workspace = str(run.get("workspace") or "").strip()
-        self.app.open_cockpit(
+        pulse_app(self).open_cockpit(
             str(run.get("workflow_id") or ""),
             str(run.get("prompt") or ""),
             attach_run_id=run_id,
@@ -285,11 +325,8 @@ class HomeScreen(Screen[None]):
             self._pending_workflow = None
             self.query_one("#home-options", OptionList).focus()
             return
-        if self._view == ROOT:
-            return
-        self._view = ROOT
-        self._refresh_options()
-        self.query_one("#home-options", OptionList).focus()
+        if self._view != ROOT:
+            self._show_view(ROOT)
 
     @on(Input.Submitted, "#workflow-prompt")
     def on_prompt_submitted(self, event: Input.Submitted) -> None:
@@ -300,7 +337,7 @@ class HomeScreen(Screen[None]):
         self._pending_workflow = None
         if not workflow_id or not text:
             return
-        self.app.open_cockpit(workflow_id, text)
+        pulse_app(self).open_cockpit(workflow_id, text)
 
     def action_quit_app(self) -> None:
         """Quit the CLI without stopping runs, which live in the engine process.

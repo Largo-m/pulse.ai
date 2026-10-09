@@ -9,7 +9,7 @@ from queue import Empty, Queue
 from typing import Any
 
 from pulse.acp.capabilities import PULSE_CLIENT_CAPABILITIES, PULSE_CLIENT_INFO
-from pulse.acp.models import extract_model_labels
+from pulse.replies.session_models import extract_model_labels
 
 
 @dataclass
@@ -26,9 +26,11 @@ class AcpClient:
         self,
         command: list[str],
         *,
+        cwd: str,
         timeout_seconds: float = 60.0,
     ) -> None:
         self._command = command
+        self._cwd = cwd
         self._timeout_seconds = timeout_seconds
         self._process: subprocess.Popen[str] | None = None
         self._responses: dict[int, dict[str, Any]] = {}
@@ -41,9 +43,10 @@ class AcpClient:
         # argv list from the user's effective config, never from agent output.
         self._process = subprocess.Popen(  # noqa: S603
             self._command,
+            cwd=self._cwd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             bufsize=1,
         )
@@ -109,8 +112,8 @@ class AcpClient:
 
         response = self._responses.pop(response_id, {})
         if "error" in response:
-            error = response["error"]
-            raise RuntimeError(error.get("message", "unknown ACP error"))
+            failure = response["error"]
+            raise RuntimeError(failure.get("message", "unknown ACP error"))
         return response.get("result", {})
 
     def initialize(self) -> dict[str, Any]:
@@ -156,7 +159,7 @@ def fetch_acp_available_models(
     timeout_seconds: float = 30.0,
 ) -> list[str]:
     acp_command = command or ["agent", "acp"]
-    client = AcpClient(acp_command, timeout_seconds=timeout_seconds)
+    client = AcpClient(acp_command, cwd=cwd, timeout_seconds=timeout_seconds)
     try:
         client.start()
         client.initialize()
@@ -181,7 +184,7 @@ def probe_acp_connection(
     on_status: Callable[[str], None] | None = None,
 ) -> AcpProbeResult:
     acp_command = command or ["agent", "acp"]
-    client = AcpClient(acp_command, timeout_seconds=timeout_seconds)
+    client = AcpClient(acp_command, cwd=cwd, timeout_seconds=timeout_seconds)
 
     def status(message: str) -> None:
         if on_status:

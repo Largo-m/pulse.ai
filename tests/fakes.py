@@ -14,6 +14,7 @@ from pathlib import Path
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
     AgentProfile,
+    JsonObject,
     NullPromptPort,
     NullStreamSink,
     PromptPort,
@@ -174,6 +175,8 @@ class RecordingStream(NullStreamSink):
     def __init__(self) -> None:
         super().__init__()
         self.phases: list[str] = []
+        self.turns: list[int] = []
+        self.models: list[str] = []
         self.messages: list[str] = []
         self.statuses: list[dict] = []
         self.contexts: list[tuple[str, str]] = []
@@ -181,11 +184,15 @@ class RecordingStream(NullStreamSink):
     def set_context(self, *, cwd: str, branch: str) -> None:
         self.contexts.append((cwd, branch))
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
         self.phases.append(title)
+        self.turns.append(turn)
 
     def info(self, title: str) -> None:
         self.messages.append(title)
+
+    def set_model(self, model: str) -> None:
+        self.models.append(model)
 
     def error(self, title: str, reason: str = "") -> None:
         self.messages.append(title)
@@ -209,6 +216,65 @@ class ScriptedPrompts(NullPromptPort):
 
     def ask_text(self, prompt, *, title=""):
         return ""
+
+
+class RecordingSessionLog:
+    """[pulse.domain.ports.SessionLog] keeping every call the runner made, in order."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+    def bind_run(self, run_id: str) -> None:
+        self.calls.append(("bind_run", (run_id,)))
+
+    def enter_step(self, step_id: str) -> None:
+        self.calls.append(("enter_step", (step_id,)))
+
+    def enter_session(
+        self, session_id: str, *, pulse_session_id: str, cwd: str, agent_id: str | None
+    ) -> None:
+        self.calls.append(("enter_session", (session_id, cwd, agent_id)))
+
+    def update(self, params: JsonObject) -> None:
+        self.calls.append(("update", (params,)))
+
+    def phase(self, label: str, *, turn: int = 1) -> None:
+        self.calls.append(("phase", (label, turn)))
+
+    def dialog(
+        self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
+    ) -> None:
+        self.calls.append(("dialog", (name, result)))
+
+    def notice(self, title: str, detail: str) -> None:
+        self.calls.append(("notice", (title, detail)))
+
+    def flush(self) -> None:
+        self.calls.append(("flush", ()))
+
+    def named(self, name: str) -> list[tuple[object, ...]]:
+        return [args for call, args in self.calls if call == name]
+
+
+class FakeQuestionChannel:
+    """[pulse.domain.ports.QuestionChannel] that hands out a fixed MCP server entry."""
+
+    SERVER: JsonObject = {"type": "http", "name": "fake-ask", "url": "http://127.0.0.1:1/mcp"}
+
+    def __init__(self) -> None:
+        self.opened = 0
+        self.closed = 0
+        self.prompts: PromptPort | None = None
+        self.on_question: Callable[[], None] | None = None
+
+    def open(self, prompts: PromptPort, on_question: Callable[[], None]) -> list[JsonObject]:
+        self.opened += 1
+        self.prompts = prompts
+        self.on_question = on_question
+        return [dict(self.SERVER)]
+
+    def close(self) -> None:
+        self.closed += 1
 
 
 Turn = dict | BaseException

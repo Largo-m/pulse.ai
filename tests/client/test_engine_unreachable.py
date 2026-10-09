@@ -138,7 +138,7 @@ class _Stream:
     def __init__(self, on_phase: Callable[[], None]) -> None:
         self._on_phase = on_phase
 
-    def begin_phase(self, _title: str) -> None:
+    def begin_phase(self, _title: str, *, turn: int = 1) -> None:
         self._on_phase()
 
 

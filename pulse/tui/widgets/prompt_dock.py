@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from textual import events, on
 from textual.app import ComposeResult
@@ -11,6 +12,11 @@ from textual.widgets.option_list import Option
 
 from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 
 class PromptDock(Widget):
@@ -23,13 +29,13 @@ class PromptDock(Widget):
         self,
         request: PromptRequest,
         on_result: Callable[[object | None], None],
-        **kwargs,
+        **kwargs: Unpack[WidgetOptions],
     ) -> None:
         super().__init__(**kwargs)
         self._request = request
-        self._on_result = on_result
+        self._on_result: Callable[[object | None], None] | None = on_result
         self._selected_multi: set[str] = set()
-        self._closed = False
+        self._answered = False
 
     def compose(self) -> ComposeResult:
         yield Static(self._request.title or strings.PROMPT_DEFAULT_TITLE, classes="prompt-title")
@@ -164,9 +170,9 @@ class PromptDock(Widget):
         self._finish(None)
 
     def _finish(self, result: object | None) -> None:
-        if self._closed:
+        if self._answered:
             return
-        self._closed = True
+        self._answered = True
         callback = self._on_result
         self._on_result = None
         if callback is not None:

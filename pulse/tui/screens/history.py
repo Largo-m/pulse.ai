@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import sqlite3
 from pathlib import Path
 
 from rich.text import Text
@@ -14,12 +13,12 @@ from textual.widgets import Footer, Input, OptionList, Static
 from textual.widgets.option_list import Option
 
 from pulse.client.active_runs import active_run_ids
-from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import LIVE_STATUSES, HistoryItem
 from pulse.history.status_labels import LABEL_WIDTH, status_color
-from pulse.tui import strings
+from pulse.tui import engine, strings
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
+from pulse.tui.screens.navigation import pulse_app
 
 REFRESH_SECONDS = 2.0
 
@@ -38,7 +37,6 @@ class HistoryListScreen(Screen[None]):
     def __init__(self, workspace: Path | None = None) -> None:
         super().__init__()
         self._workspace = workspace or Path.cwd()
-        self._catalog = HistoryCatalog(self._workspace)
         self._query = ""
         self._items: dict[str, HistoryItem] = {}
 
@@ -66,9 +64,9 @@ class HistoryListScreen(Screen[None]):
     def _fetch(self) -> None:
         query = self._query
         try:
-            items = self._catalog.search(query)
-        except sqlite3.Error:
-            # A busy or locked database skips this poll; the next one retries.
+            items = engine.history(self._workspace, query)
+        except engine.EngineError:
+            # A busy daemon skips this poll; the next one retries.
             return
         # The app already exited while the poll was in flight.
         with contextlib.suppress(RuntimeError):
@@ -78,7 +76,12 @@ class HistoryListScreen(Screen[None]):
         return strings.HISTORY_HINT
 
     def _refresh(self) -> None:
-        self._apply(self._catalog.search(self._query), self._query, force=True)
+        try:
+            items = engine.history(self._workspace, self._query)
+        except engine.EngineError as error:
+            self.notify(error.describe())
+            items = []
+        self._apply(items, self._query, force=True)
 
     def _apply(self, items: list[HistoryItem], query: str, *, force: bool = False) -> None:
         """Show `items` in the list, redrawing only when a row changed.
@@ -130,7 +133,7 @@ class HistoryListScreen(Screen[None]):
         if item is None:
             return
         if item.status in LIVE_STATUSES and item.run_id in active_run_ids():
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 item.workflow_id,
                 item.prompt,
                 attach_run_id=item.run_id,
@@ -145,7 +148,7 @@ class HistoryListScreen(Screen[None]):
     def action_focus_search(self) -> None:
         self.query_one("#history-search", Input).focus()
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "delete_run":
             return self._highlighted() is not None
         return True
@@ -158,7 +161,14 @@ class HistoryListScreen(Screen[None]):
         def _answered(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            removed = self._catalog.delete(item.item_id)
+            try:
+                removed = engine.delete_history_item(self._workspace, item.item_id)
+            except engine.RunInUse:
+                self.notify(strings.HISTORY_RUN_IN_USE)
+                return
+            except engine.EngineError as error:
+                self.notify(error.describe())
+                return
             self._refresh()
             self.query_one("#history-options", OptionList).focus()
             if removed:
@@ -191,8 +201,9 @@ class HistoryListScreen(Screen[None]):
 def _delete_warning(item: HistoryItem) -> str:
     """Describe what deletion removes, plus a warning when the run looks live.
 
-    Live runs are deliberately not blocked: a run stuck as running after its
-    process died must still be removable.
+    The screen does not block live-looking runs: one stuck as running after
+    its process died must stay removable. Only the daemon knows which runs it
+    still executes, and it refuses those.
     """
     lines = [
         item.title,

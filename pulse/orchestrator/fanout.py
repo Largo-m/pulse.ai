@@ -10,10 +10,11 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from pulse.domain.outcome import last_fenced_block
 from pulse.domain.run import RunRecord, StepRecord, fan_out_child_id
 from pulse.domain.workflow import StepDef
 
-BLOCK = re.compile(r"```pulse:items[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+ITEMS_TAG = "items"
 ITEM = re.compile(r"^[ \t>*-]*([^\s:—–-][^:—–]*?)[ \t]*[:—–-][ \t]*(\S.*)$")
 
 MAX_ITEMS = 40
@@ -31,12 +32,12 @@ def parse_items(text: str) -> tuple[Item, ...]:
 
     The last block wins because the agent may re-present an adjusted list.
     """
-    matches = BLOCK.findall(text or "")
-    if not matches:
+    body = last_fenced_block(text or "", ITEMS_TAG)
+    if body is None:
         return ()
     items: list[Item] = []
     seen: set[str] = set()
-    for line in matches[-1].splitlines():
+    for line in body.splitlines():
         match = ITEM.match(line.strip())
         if match is None:
             continue

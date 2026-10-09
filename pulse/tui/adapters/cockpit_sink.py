@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
-from pulse.domain import ui_text
-from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
+from pulse.domain.ports import StepRow
+from pulse.history.log_wording import QUESTIONNAIRE_NOTICE, phase_title
 from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
@@ -23,6 +24,7 @@ from pulse.tui.state import CockpitState, LogKind
 _TOOL_KINDS = frozenset({"tool_call", "tool_call_update", "tool_result"})
 _SETUP_READY = re.compile(r"SETUP_READY\s*", re.IGNORECASE)
 _COUNT_ONLY_RE = re.compile(r"^\d+\s+files?$", re.IGNORECASE)
+_PLACEHOLDER_TITLE = "…"
 
 NotifyFn = Callable[[], None]
 ContextFn = Callable[[str], None]
@@ -54,6 +56,36 @@ def _tool_failed(update: dict[str, Any]) -> bool:
     return False
 
 
+@dataclass(frozen=True)
+class _ToolView:
+    """How one tool call reads in the log, before it is shown or refreshed."""
+
+    log_kind: LogKind
+    target: str
+    detail: str
+    done: bool
+
+    @property
+    def placeholder(self) -> bool:
+        return _is_placeholder(self.target, self.detail)
+
+    @property
+    def pending(self) -> bool:
+        return not self.done or self.placeholder
+
+    @property
+    def waiting_for_args(self) -> bool:
+        return self.placeholder and not self.done
+
+    @property
+    def display_title(self) -> str:
+        return _PLACEHOLDER_TITLE if self.placeholder else self.target
+
+    @property
+    def display_detail(self) -> str:
+        return "" if self.placeholder else self.detail
+
+
 class CockpitSink:
     def __init__(
         self,
@@ -78,6 +110,11 @@ class CockpitSink:
         self._tool_payloads: dict[str, dict[str, Any]] = {}
         self._store = CursorStoreIndex(session_id)
         self._pending_session_phase = False
+        self._update_handlers: dict[str, Callable[[dict[str, Any]], None]] = {
+            "agent_message_chunk": self._on_message_chunk,
+            "agent_thought_chunk": self._on_thought_chunk,
+            **dict.fromkeys(_TOOL_KINDS, self._handle_tool),
+        }
 
     def set_cwd(self, cwd: str | None) -> None:
         self._cwd = cwd
@@ -124,68 +161,61 @@ class CockpitSink:
         update = params.get("update", params)
         if not isinstance(update, dict):
             return
-        kind = update.get("sessionUpdate")
+        handler = self._update_handlers.get(str(update.get("sessionUpdate")))
+        if handler is not None:
+            handler(update)
 
-        if kind == "agent_message_chunk":
-            content = update.get("content", {})
-            if content.get("type") == "text":
-                text = str(content.get("text", ""))
-                if text:
-                    self._agent_text += text
-                    self._maybe_enter_questionnaire_mode()
-                    if self._questionnaire_mode:
-                        self._announce_questionnaire_once()
-                        return
-                    visible = _SETUP_READY.sub("", text)
-                    changed = self._backfill_vague_entries()
-                    if not visible:
-                        if changed:
-                            self._emit()
-                        return
-                    self._state.append_assistant(visible)
-                    self._streaming_message = True
-                    self._emit()
+    def _on_message_chunk(self, update: dict[str, Any]) -> None:
+        content = update.get("content", {})
+        if content.get("type") != "text":
             return
+        text = str(content.get("text", ""))
+        if text:
+            self._absorb_agent_text(text)
 
-        if kind == "agent_thought_chunk":
-            if self._backfill_vague_entries():
-                self._emit()
+    def _absorb_agent_text(self, text: str) -> None:
+        self._agent_text += text
+        self._maybe_enter_questionnaire_mode()
+        if self._questionnaire_mode:
+            self._announce_questionnaire_once()
             return
+        visible = _SETUP_READY.sub("", text)
+        changed = self._backfill_vague_entries()
+        if visible:
+            self._state.append_assistant(visible)
+            self._streaming_message = True
+        if visible or changed:
+            self._emit()
 
-        if kind in _TOOL_KINDS:
-            self._handle_tool(update, kind=str(kind))
-            return
+    def _on_thought_chunk(self, update: dict[str, Any]) -> None:
+        if self._backfill_vague_entries():
+            self._emit()
 
-        if kind == "session_info_update":
-            title = update.get("title")
-            if title:
-                self._finish_message_line()
-                model = ui_text.model_of_notice(str(title))
-                if model:
-                    self._state.set_model(model)
-                    self._backfill_vague_entries()
-                    self._emit()
-            return
+    def set_model(self, model: str) -> None:
+        self._finish_message_line()
+        self._state.set_model(model)
+        self._backfill_vague_entries()
+        self._emit()
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
         self.finish()
         self._visible_tool_ids.clear()
         self._tool_payloads.clear()
-        self._state.begin_phase(title)
+        self._state.begin_phase(title, turn=turn)
         if self._pending_session_phase and self._state.acp_sessions:
             self._state.acp_sessions[-1]["phase_id"] = self._state._entry_phase_id()
             self._pending_session_phase = False
-        self._state.add_info(title)
+        self._state.add_info(phase_title(title, turn))
         self._emit()
 
     def apply_phase_statuses(
         self,
         *,
-        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
-        done_ids: list[str] | tuple[str, ...] = (),
-        skipped_ids: list[str] | tuple[str, ...] = (),
-        failed_ids: list[str] | tuple[str, ...] = (),
-        blocked_ids: list[str] | tuple[str, ...] = (),
+        steps: Sequence[StepRow] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
     ) -> None:
         self._state.apply_phase_statuses(
             steps=steps,
@@ -312,99 +342,102 @@ class CockpitSink:
             changed = True
         return changed
 
-    def _handle_tool(self, update: dict[str, Any], *, kind: str) -> None:
+    def _handle_tool(self, update: dict[str, Any]) -> None:
+        kind = str(update.get("sessionUpdate"))
+        announced = kind == "tool_call"
         tool_id = str(update.get("toolCallId") or "")
-        force_store = kind in {"tool_call_update", "tool_result"}
-        if tool_id:
-            previous = self._tool_payloads.get(tool_id, {})
-            merged = merge_tool_update(previous, update)
-            merged = self._enrich_from_store(merged, tool_id, force=force_store)
-            self._tool_payloads[tool_id] = merged
-        else:
-            merged = update
-
-        existing_kind = None
-        if tool_id:
-            for entry in self._state.entries:
-                if entry.tool_id == tool_id:
-                    existing_kind = entry.kind
-                    break
-
+        merged = self._remember_tool_payload(update, tool_id, force_store=not announced)
+        existing_kind = self._entry_kind(tool_id)
         log_kind, target, detail = build_tool_labels(
             merged,
             cwd=self._cwd,
             fallback_kind=existing_kind,
         )
-        placeholder = _is_placeholder(target, detail)
-        done = _tool_done(merged) or kind == "tool_result"
-        pending = not done or placeholder
-        display_title = "…" if placeholder else target
-        display_detail = "" if placeholder else detail
+        view = _ToolView(
+            log_kind=log_kind,
+            target=target,
+            detail=detail,
+            done=_tool_done(merged) or kind == "tool_result",
+        )
         changed = False
-
-        if kind == "tool_call":
-            if tool_id and tool_id in self._visible_tool_ids:
-                if self._backfill_vague_entries():
-                    self._emit()
-                return
-            if tool_id:
-                self._visible_tool_ids.add(tool_id)
-            self._finish_message_line()
-            self._state.add_tool_entry(
-                log_kind,
-                display_title,
-                display_detail,
-                tool_id=tool_id,
-                pending=True,
+        if tool_id in self._visible_tool_ids:
+            # A repeated announcement, or an update still without arguments,
+            # can only be improved by the late store lookup in the backfill.
+            if not announced and not view.waiting_for_args:
+                changed = self._refresh_tool_entry(
+                    tool_id, merged, view, kind=existing_kind or view.log_kind
+                )
+        elif announced or not view.waiting_for_args:
+            self._show_tool_entry(
+                tool_id, merged, view, pending=True if announced else view.pending
             )
-            self._record_tool_metrics(merged, log_kind, target, ready=False)
             changed = True
-        elif kind in {"tool_call_update", "tool_result"}:
-            if tool_id and tool_id in self._visible_tool_ids:
-                if placeholder and not done:
-                    if self._backfill_vague_entries():
-                        changed = True
-                    if changed:
-                        self._emit()
-                    return
-                updated = self._state.update_tool_entry(
-                    tool_id,
-                    kind=existing_kind or log_kind,
-                    title=display_title if not placeholder else None,
-                    detail=display_detail if not placeholder else None,
-                    pending=pending,
-                )
-                if updated is not None:
-                    self._record_tool_metrics(
-                        merged,
-                        existing_kind or log_kind,
-                        target,
-                        ready=not pending,
-                    )
-                    changed = True
-            elif not placeholder or done:
-                if tool_id:
-                    self._visible_tool_ids.add(tool_id)
-                self._finish_message_line()
-                self._state.add_tool_entry(
-                    log_kind,
-                    display_title,
-                    display_detail,
-                    tool_id=tool_id,
-                    pending=pending,
-                )
-                self._record_tool_metrics(
-                    merged,
-                    log_kind,
-                    target,
-                    ready=not pending,
-                )
-                changed = True
-
         if self._backfill_vague_entries():
             changed = True
         if changed:
             self._emit()
+
+    def _remember_tool_payload(
+        self,
+        update: dict[str, Any],
+        tool_id: str,
+        *,
+        force_store: bool,
+    ) -> dict[str, Any]:
+        if not tool_id:
+            return update
+        merged = merge_tool_update(self._tool_payloads.get(tool_id, {}), update)
+        merged = self._enrich_from_store(merged, tool_id, force=force_store)
+        self._tool_payloads[tool_id] = merged
+        return merged
+
+    def _entry_kind(self, tool_id: str) -> LogKind | None:
+        if not tool_id:
+            return None
+        return next(
+            (entry.kind for entry in self._state.entries if entry.tool_id == tool_id),
+            None,
+        )
+
+    def _refresh_tool_entry(
+        self,
+        tool_id: str,
+        merged: dict[str, Any],
+        view: _ToolView,
+        *,
+        kind: LogKind,
+    ) -> bool:
+        updated = self._state.update_tool_entry(
+            tool_id,
+            kind=kind,
+            title=None if view.placeholder else view.target,
+            detail=None if view.placeholder else view.detail,
+            pending=view.pending,
+        )
+        if updated is None:
+            return False
+        self._record_tool_metrics(merged, kind, view.target, ready=not view.pending)
+        return True
+
+    def _show_tool_entry(
+        self,
+        tool_id: str,
+        merged: dict[str, Any],
+        view: _ToolView,
+        *,
+        pending: bool,
+    ) -> None:
+        if tool_id:
+            self._visible_tool_ids.add(tool_id)
+        self._finish_message_line()
+        self._state.add_tool_entry(
+            view.log_kind,
+            view.display_title,
+            view.display_detail,
+            tool_id=tool_id,
+            pending=pending,
+        )
+        self._record_tool_metrics(merged, view.log_kind, view.target, ready=not pending)
 
     def _record_tool_metrics(
         self,

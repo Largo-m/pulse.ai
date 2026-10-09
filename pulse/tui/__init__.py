@@ -3,7 +3,7 @@ from __future__ import annotations
 __all__ = ["PulseApp", "run_pulse_app"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name in {"PulseApp", "run_pulse_app"}:
         from pulse.tui.app import PulseApp, run_pulse_app
 

@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Mapping, Sequence
 
-from pulse.domain import ui_text
+from pulse.domain.ports import JsonObject
+from pulse.replies import wording
+from pulse.replies.acp_payloads import (
+    Question,
+    QuestionAnswer,
+    QuestionnaireMeta,
+    QuestionOption,
+    truthy_text,
+)
 
 OTHER_OPTION_ID = "__other__"
 _OPTION_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -29,53 +37,22 @@ _OTHER_LABEL = re.compile(
 )
 
 
-def parse_ask_question_params(params: dict[str, Any]) -> list[dict[str, Any]]:
-    questions = params.get("questions", [])
-    if not isinstance(questions, list):
-        return []
-    return [question for question in questions if isinstance(question, dict)]
-
-
-def parse_questionnaire_meta(params: dict[str, Any]) -> dict[str, Any]:
-    title = str(params.get("title", "")).strip()
-    total_raw = params.get("totalQuestions", params.get("total_questions"))
-    index_raw = params.get("questionIndex", params.get("question_index"))
-    total = int(total_raw) if isinstance(total_raw, int) and total_raw > 0 else None
-    index = int(index_raw) if isinstance(index_raw, int) and index_raw > 0 else None
-    return {"title": title, "total": total, "index": index}
-
-
 def resolve_question_progress(
     *,
-    question: dict[str, Any],
+    question: Question,
     position: int,
     batch_size: int,
-    meta: dict[str, Any],
+    meta: QuestionnaireMeta,
 ) -> tuple[int | None, int | None]:
-    index = meta.get("index")
-    total = meta.get("total")
-    if isinstance(index, int) and index > 0:
-        resolved_index = index
-    elif batch_size > 1:
-        resolved_index = position
-    else:
-        resolved_index = None
+    """`(index, total)` for the dock title; `(None, None)` hides the counter.
 
-    if isinstance(total, int) and total > 0:
-        resolved_total = total
-    elif batch_size > 1:
-        resolved_total = batch_size
-    else:
-        resolved_total = None
-
-    question_index = question.get("index", question.get("questionIndex"))
-    question_total = question.get("totalQuestions", question.get("total_questions"))
-    if isinstance(question_index, int) and question_index > 0:
-        resolved_index = question_index
-    if isinstance(question_total, int) and question_total > 0:
-        resolved_total = question_total
-
-    return resolved_index, resolved_total
+    The question's own counters win over the questionnaire's, which win over
+    the position in a batch; a lone question with no counters shows none.
+    """
+    in_batch = batch_size > 1
+    index = question.index or meta.index or (position if in_batch else None)
+    total = question.total or meta.total or (batch_size if in_batch else None)
+    return index, total
 
 
 def format_option_label(index: int, label: str) -> str:
@@ -111,7 +88,7 @@ def is_approval_prompt(prompt: str) -> bool:
 
 
 def is_free_text_answer(answer: str) -> bool:
-    return answer.strip().lower().startswith(ui_text.FREE_TEXT_ANSWER_PREFIX.strip().lower())
+    return answer.strip().lower().startswith(wording.FREE_TEXT_ANSWER_PREFIX.strip().lower())
 
 
 def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
@@ -135,7 +112,7 @@ def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
 
 
 def build_question_choices(
-    options: list[Any],
+    options: Sequence[QuestionOption],
     *,
     prompt: str = "",
 ) -> list[tuple[str, str]]:
@@ -145,35 +122,18 @@ def build_question_choices(
     the live screen did.
     """
     choices: list[tuple[str, str]] = []
-    has_other = False
-    option_index = 0
-    option_labels: list[str] = []
-
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        option_id = str(option.get("id", option.get("label", "")))
-        label = str(option.get("label", option_id))
-        option_labels.append(label)
-        if is_other_option(option_id, label):
-            has_other = True
-            option_id = OTHER_OPTION_ID
-            label = format_option_label(option_index, ui_text.OTHER_DESCRIBE_OPTION)
-            option_index += 1
+    for index, option in enumerate(options):
+        if is_other_option(option.id, option.label):
+            choices.append(
+                (OTHER_OPTION_ID, format_option_label(index, wording.OTHER_DESCRIBE_OPTION))
+            )
         else:
-            label = format_option_label(option_index, label)
-            option_index += 1
-        choices.append((option_id, label))
+            choices.append((option.id, format_option_label(index, option.label)))
 
-    if (
-        choices
-        and not has_other
-        and should_add_other_option(
-            prompt=prompt,
-            option_labels=option_labels,
-        )
-    ):
-        other_label = format_option_label(option_index, ui_text.OTHER_DESCRIBE_OPTION)
+    has_other = any(option_id == OTHER_OPTION_ID for option_id, _ in choices)
+    labels = [option.label for option in options]
+    if choices and not has_other and should_add_other_option(prompt=prompt, option_labels=labels):
+        other_label = format_option_label(len(choices), wording.OTHER_DESCRIBE_OPTION)
         choices.append((OTHER_OPTION_ID, other_label))
 
     return choices
@@ -181,17 +141,17 @@ def build_question_choices(
 
 def multi_select_prompt(prompt: str) -> str:
     """The multi-select question text as the dock shows it."""
-    return f"{prompt}\n{ui_text.MULTI_SELECT_HINT}"
+    return f"{prompt}\n{wording.MULTI_SELECT_HINT}"
 
 
 PLAN_PREVIEW_CHARS = 1200
 
 
-def plan_prompt_text(params: dict[str, Any]) -> str:
+def plan_prompt_text(params: Mapping[str, object]) -> str:
     """Body of the plan approval dock (`cursor/create_plan`)."""
-    name = str(params.get("name") or ui_text.PLAN_FALLBACK_NAME).strip()
-    overview = str(params.get("overview") or "").strip()
-    plan = str(params.get("plan") or "").strip()
+    name = truthy_text(params.get("name") or wording.PLAN_FALLBACK_NAME).strip()
+    overview = truthy_text(params.get("overview")).strip()
+    plan = truthy_text(params.get("plan")).strip()
     body = name
     if overview:
         body = f"{body}\n{overview}"
@@ -200,23 +160,14 @@ def plan_prompt_text(params: dict[str, Any]) -> str:
     return body
 
 
-def build_ask_question_answer(
-    question_id: str,
-    selected_option_ids: list[str],
-) -> dict[str, Any]:
-    return build_ask_question_answers(
-        [{"questionId": question_id, "selectedOptionIds": selected_option_ids}]
-    )
-
-
-def build_ask_question_answers(answers: list[dict[str, Any]]) -> dict[str, Any]:
+def build_ask_question_answers(answers: Sequence[QuestionAnswer]) -> JsonObject:
     return {
         "outcome": {
             "outcome": "answered",
-            "answers": answers,
+            "answers": [answer.to_wire() for answer in answers],
         }
     }
 
 
-def build_ask_question_cancelled() -> dict[str, Any]:
+def build_ask_question_cancelled() -> JsonObject:
     return {"outcome": {"outcome": "cancelled"}}

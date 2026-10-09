@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pulse.domain import ui_text
 from pulse.domain.control import RUN_STOPPED
+from pulse.history import log_wording
 from pulse.history.events import (
     ArtifactItem,
     LogEntry,
     LogKind,
     PhaseItem,
     PhaseStatus,
-    workflow_label,
-    workflow_steps,
 )
 from pulse.tui import strings
-from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
+from pulse.tui.artifact_tab import ArtifactTab
 
 Listener = Callable[[], None]
 _FOCUS_CYCLE = ("phases", "stream", "artifact")
@@ -33,7 +31,7 @@ def progress_bar(done: int, total: int, width: int = 10) -> str:
 
 
 @dataclass
-class CockpitState:
+class CockpitState(ArtifactTab):
     workflow_id: str = ""
     workflow_label: str = ""
     surface_title: str = strings.STREAM_DEFAULT_SURFACE
@@ -59,8 +57,7 @@ class CockpitState:
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
     _follow_live: bool = True
-    _base_labels: dict[str, str] = field(default_factory=dict, repr=False)
-    _base_labels_for: str = field(default="", repr=False)
+    base_labels: dict[str, str] = field(default_factory=dict, repr=False)
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -73,12 +70,18 @@ class CockpitState:
         for listener in list(self._listeners):
             listener()
 
-    def configure_workflow(self, workflow_id: str) -> None:
+    def configure_workflow(
+        self, workflow_id: str, *, label: str = "", steps: Sequence[tuple[str, str]] = ()
+    ) -> None:
+        """Start a run of `workflow_id`; `steps` draws the sidebar before the run reports them.
+
+        An unknown shape (no `steps`) leaves the sidebar empty: it fills in as
+        steps start.
+        """
         self.workflow_id = workflow_id
-        self.workflow_label = workflow_label(workflow_id)
-        self.phases = [
-            PhaseItem(id=step_id, label=label) for step_id, label in workflow_steps(workflow_id)
-        ]
+        self.workflow_label = (label or workflow_id).upper()
+        self.base_labels = dict(steps)
+        self.phases = [PhaseItem(id=step_id, label=name) for step_id, name in steps]
         self.selected_phase_index = 0
         self.entries = []
         self.artifacts = []
@@ -104,7 +107,8 @@ class CockpitState:
     def total_count(self) -> int:
         return len(self.phases)
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        """`title` names the phase; a later `turn` shows as its continuation."""
         self.finish_assistant()
         matched = self._match_phase(title)
         now = time.monotonic()
@@ -123,11 +127,11 @@ class CockpitState:
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
                 self.follow_artifact = True
-        self.surface_title = title.upper()
+        self.surface_title = log_wording.phase_title(title, turn).upper()
         self.running = True
         self.notify()
 
-    def sync_phases(self, steps: list[dict[str, str]] | tuple[dict[str, str], ...]) -> None:
+    def sync_phases(self, steps: Sequence[Mapping[str, object]]) -> None:
         """Rebuild the phase list from what the engine is actually running.
 
         The list changes mid-run (a fan-out step becomes N steps). Existing
@@ -144,7 +148,8 @@ class CockpitState:
         ]
         for phase, step in zip(self.phases, steps, strict=True):
             phase.label = str(step.get("label", "")) or phase.label
-            phase.rounds = max(1, int(step.get("rounds", phase.rounds) or 1))
+            rounds = step.get("rounds", phase.rounds)
+            phase.rounds = max(1, rounds or 1) if isinstance(rounds, int) else phase.rounds
         if selected is not None:
             for index, phase in enumerate(self.phases):
                 if phase.id == selected.id:
@@ -158,11 +163,11 @@ class CockpitState:
     def apply_phase_statuses(
         self,
         *,
-        steps: list[dict[str, str]] | tuple[dict[str, str], ...] = (),
-        done_ids: list[str] | tuple[str, ...] = (),
-        skipped_ids: list[str] | tuple[str, ...] = (),
-        failed_ids: list[str] | tuple[str, ...] = (),
-        blocked_ids: list[str] | tuple[str, ...] = (),
+        steps: Sequence[Mapping[str, object]] = (),
+        done_ids: Sequence[str] = (),
+        skipped_ids: Sequence[str] = (),
+        failed_ids: Sequence[str] = (),
+        blocked_ids: Sequence[str] = (),
     ) -> None:
         self.sync_phases(steps)
         done = set(done_ids)
@@ -172,17 +177,11 @@ class CockpitState:
         now = time.monotonic()
         for phase in self.phases:
             if phase.id in blocked:
-                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.BLOCKED
+                phase.end_as(PhaseStatus.BLOCKED, now)
             elif phase.id in failed:
-                if phase.status == PhaseStatus.RUNNING and phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.FAILED
+                phase.end_as(PhaseStatus.FAILED, now)
             elif phase.id in skipped:
-                if phase.status == PhaseStatus.RUNNING:
-                    phase.ended_at = now if phase.started_at is not None else phase.ended_at
-                phase.status = PhaseStatus.SKIPPED
+                phase.end_as(PhaseStatus.SKIPPED, now)
             elif phase.id in done and phase.status != PhaseStatus.RUNNING:
                 phase.status = PhaseStatus.DONE
         self.notify()
@@ -223,9 +222,7 @@ class CockpitState:
         for phase in self.phases:
             phase.end_waiting(now)
             if phase.status == PhaseStatus.RUNNING:
-                if phase.started_at is not None:
-                    phase.ended_at = now
-                phase.status = PhaseStatus.FAILED
+                phase.end_as(PhaseStatus.FAILED, now)
         self.notify()
 
     def mark_stopped(self) -> None:
@@ -237,13 +234,10 @@ class CockpitState:
         self.stopped = True
         self.awaiting_input = False
         for item in self.phases:
-            item.awaiting_since = None
-            if item.status != PhaseStatus.RUNNING:
-                continue
-            item.status = PhaseStatus.PENDING
-            item.started_at = None
-            item.ended_at = None
-            item.waiting_total = 0.0
+            if item.status == PhaseStatus.RUNNING:
+                item.restart()
+            else:
+                item.awaiting_since = None
         self.notify()
 
     def mark_finished(self, exit_code: int = 0) -> None:
@@ -474,10 +468,7 @@ class CockpitState:
         Fan-out replaces the parent step with N children, so the parent's name
         only exists in the workflow definition.
         """
-        if self._base_labels_for != self.workflow_id:
-            self._base_labels_for = self.workflow_id
-            self._base_labels = dict(workflow_steps(self.workflow_id)) if self.workflow_id else {}
-        return self._base_labels.get(step_id, "")
+        return self.base_labels.get(step_id, "")
 
     def phase_groups(self) -> list[tuple[str, list[tuple[int, PhaseItem]]]]:
         """Phases in order, with fan-out children grouped under their parent.
@@ -541,133 +532,6 @@ class CockpitState:
                 self.selected_artifact_path = visible[-1].path
         self.notify()
 
-    def upsert_artifact(
-        self,
-        path: str,
-        *,
-        ready: bool,
-        has_content: bool = False,
-    ) -> ArtifactItem | None:
-        key = artifact_key(path)
-        if not key:
-            return None
-        phase_id = self._entry_phase_id()
-        for item in self.artifacts:
-            if item.path != key:
-                continue
-            item.ready = ready
-            item.has_content = item.has_content or has_content
-            if not item.phase_id:
-                item.phase_id = phase_id
-            if self.follow_artifact:
-                self.selected_artifact_path = item.path
-            self.notify()
-            return item
-        item = ArtifactItem(
-            path=key,
-            phase_id=phase_id,
-            ready=ready,
-            has_content=has_content,
-        )
-        self.artifacts.append(item)
-        if self.follow_artifact or not self.selected_artifact_path:
-            self.selected_artifact_path = item.path
-        self.notify()
-        return item
-
-    def visible_artifacts(self) -> list[ArtifactItem]:
-        phase = self.selected_phase()
-        if phase is None:
-            return list(self.artifacts)
-        pid = phase.id
-        return [item for item in self.artifacts if item.phase_id == pid]
-
-    def displayable_artifacts(self) -> list[ArtifactItem]:
-        """Artifacts of the selected phase that actually have content to show."""
-        return [item for item in self.visible_artifacts() if item.has_content]
-
-    def phase_has_artifacts(self) -> bool:
-        return bool(self.displayable_artifacts())
-
-    def selected_artifact(self) -> ArtifactItem | None:
-        visible = self.visible_artifacts()
-        if not visible:
-            return None
-        for item in visible:
-            if item.path == self.selected_artifact_path:
-                return item
-        return visible[-1]
-
-    def select_artifact(self, path: str) -> None:
-        key = artifact_key(path)
-        for item in self.artifacts:
-            if item.path != key:
-                continue
-            self.selected_artifact_path = item.path
-            self.follow_artifact = False
-            self.notify()
-            return
-
-    def move_artifact(self, delta: int) -> None:
-        visible = self.visible_artifacts()
-        if not visible:
-            return
-        paths = [item.path for item in visible]
-        selected = self.selected_artifact()
-        current = selected.path if selected is not None else paths[0]
-        try:
-            index = paths.index(current)
-        except ValueError:
-            index = 0
-        index = max(0, min(index + delta, len(paths) - 1))
-        self.selected_artifact_path = paths[index]
-        self.follow_artifact = False
-        self.notify()
-
-    def toggle_artifact_pane(self) -> None:
-        self.artifact_pane_open = not self.artifact_pane_open
-        if not self.artifact_pane_open and self.focus_target == "artifact":
-            self.focus_target = "stream"
-        self.notify()
-
-    def close_artifact_pane(self) -> None:
-        if not self.artifact_pane_open:
-            return
-        self.artifact_pane_open = False
-        if self.focus_target == "artifact":
-            self.focus_target = "stream"
-        self.notify()
-
-    def open_artifact_pane(self) -> None:
-        if self.artifact_pane_open:
-            return
-        self.artifact_pane_open = True
-        self.notify()
-
-    def select_artifact_from_prompt(self, text: str) -> bool:
-        """Point the artifact tab at the artifact the question cites.
-
-        Selection only; opening is left to the user (`a` key) so the stream stays
-        visible while the agent asks for a decision. A question citing no artifact
-        changes nothing, so `follow_artifact` stays on.
-        """
-        keys = artifact_paths_in_text(text, [item.path for item in self.artifacts])
-        candidates = [item for item in self.artifacts if item.has_content]
-        matched: ArtifactItem | None = None
-        for key in keys:
-            for item in candidates:
-                if item.path == key or item.path.endswith(key) or key.endswith(item.path):
-                    matched = item
-                    break
-            if matched is not None:
-                break
-        if matched is None:
-            return False
-        self.selected_artifact_path = matched.path
-        self.follow_artifact = False
-        self.notify()
-        return True
-
     def toggle_focus(self) -> None:
         if not self.artifact_pane_open:
             if self.focus_target == "artifact":
@@ -730,8 +594,7 @@ class CockpitState:
             entry.active = False
 
     def _match_phase(self, title: str) -> PhaseItem | None:
-        lowered = title.lower()
-        base = ui_text.phase_label_of(lowered)
+        base = title.lower()
         exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
@@ -740,7 +603,7 @@ class CockpitState:
                         return phase
             return exact[0]
         for phase in self.phases:
-            if phase.id.lower() in lowered or phase.label.lower() in lowered:
+            if phase.id.lower() in base or phase.label.lower() in base:
                 return phase
         pending = [phase for phase in self.phases if phase.status == PhaseStatus.PENDING]
         if pending:

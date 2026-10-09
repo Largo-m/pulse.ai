@@ -15,11 +15,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.domain.ports import NullRuntimeDialect
 from pulse.domain.run import StepRecord, StepStatus
-from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
 from pulse.history.events import LogKind
+from pulse.history.log_wording import QUESTIONNAIRE_NOTICE
 from pulse.history.models import HistoryItem, HistoryStatus, HistoryStep
+from pulse.history.session_log import RecordedSessionLog
+from pulse.replies.acp_payloads import QuestionAnswer
 from pulse.replies.ask_question import build_ask_question_answers
 from pulse.replies.permission import permission_selected
 from pulse.replies.text_questionnaire import (
@@ -28,7 +33,10 @@ from pulse.replies.text_questionnaire import (
 )
 from pulse.store import runs as run_store
 from pulse.tui.hydrate import hydrate_history_item
-from tests.conftest import make_workflow
+from tests.conftest import make_workflow, served_log
+
+# The screen reads the stored run through the daemon's route, as the TUI does.
+pytestmark = pytest.mark.usefixtures("in_process_daemon")
 
 
 def _runner(
@@ -37,14 +45,17 @@ def _runner(
     step_id: str = "plan",
     port: object | None = None,
 ) -> AcpSessionRunner:
+    log = RecordedSessionLog(project_root=workspace)
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd=str(workspace),
-        enable_mcp_ask=False,
         prompt_handler=port,
+        runtime=NullRuntimeDialect(),
+        session_log=log,
     )
     runner.bind_run(run_id)
-    runner._phase_id = step_id
+    runner._enter_phase(step_id)
+    log.enter_session("sess-1", pulse_session_id="pulse-1", cwd=str(workspace), agent_id=None)
     return runner
 
 
@@ -75,17 +86,17 @@ def _hydrated(workspace: Path, run_id: str = "run-1"):
         updated_at="2026-09-30T10:00:00+00:00",
         steps=[HistoryStep(id="plan", label="Planejar", status=StepStatus.DONE)],
     )
-    return hydrate_history_item(item, workspace)
+    return hydrate_history_item(item, workspace, served_log(run_id))
 
 
 def test_each_tool_stores_the_kind_the_screen_showed(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
-    runner._record_run_event(
+    runner._log.update(
         _update(title="Read File", kind="read", rawInput={"path": str(tmp_path / "a.py")})
     )
-    runner._record_run_event(
+    runner._log.update(
         {
             "update": {
                 "sessionUpdate": "tool_call",
@@ -107,7 +118,7 @@ def test_each_tool_stores_the_kind_the_screen_showed(tmp_path: Path):
 def test_history_reopens_with_kinds_instead_of_generic_tool(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
-    runner._record_run_event(
+    runner._log.update(
         _update(title="Read File", kind="read", rawInput={"path": str(tmp_path / "a.py")})
     )
 
@@ -121,8 +132,8 @@ def test_agent_speech_comes_back_whole_in_the_bubble(tmp_path: Path):
     runner = _runner(tmp_path, run_id)
     speech = "linha um. " * 400
 
-    runner._text_buffer.append(speech)
-    runner._flush_text()
+    _speak(runner, speech)
+    runner._log.flush()
 
     state = _hydrated(tmp_path, run_id)
     entry = state.entries[0]
@@ -145,10 +156,10 @@ def test_a_late_update_does_not_erase_the_tool_label(tmp_path: Path):
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
-    runner._record_run_event(
+    runner._log.update(
         _update(title="Write File", kind="write", rawInput={"path": str(tmp_path / "PRD.md")})
     )
-    runner._record_run_event(
+    runner._log.update(
         {
             "update": {
                 "sessionUpdate": "tool_call_update",
@@ -180,7 +191,7 @@ def test_the_agent_question_and_the_answer_stay_in_the_log(tmp_path: Path):
 
     class _Port:
         def respond_to_ask_question(self, params):
-            return build_ask_question_answers([{"questionId": "q1", "selectedOptionIds": ["B"]}])
+            return build_ask_question_answers([QuestionAnswer("q1", ("B",))])
 
     runner = _runner(tmp_path, run_id, port=_Port())
     runner._prompt_handler.respond_to_ask_question(
@@ -210,7 +221,7 @@ def test_free_text_written_in_other_goes_into_the_answer(tmp_path: Path):
     class _Port:
         def respond_to_ask_question(self, params):
             return build_ask_question_answers(
-                [{"questionId": "q1", "selectedOptionIds": ["B::Falta o acesso ao banco"]}]
+                [QuestionAnswer("q1", ("B::Falta o acesso ao banco",))]
             )
 
     runner = _runner(tmp_path, run_id, port=_Port())
@@ -341,14 +352,15 @@ def test_the_questionnaire_block_does_not_come_back_as_agent_speech(tmp_path: Pa
     run_id = _run(tmp_path)
     runner = _runner(tmp_path, run_id)
 
-    runner._text_buffer.append(
+    _speak(
+        runner,
         "Antes de começar preciso entender o escopo.\n\n"
         "Preciso de algumas informações antes de continuar.\n"
         "1. O que você está construindo?\n"
         "A) Produto\n"
-        "B) Biblioteca\n"
+        "B) Biblioteca\n",
     )
-    runner._flush_text()
+    runner._log.flush()
 
     events = [(event["kind"], event["title"]) for event in run_store.list_events(run_id)]
     assert events == [
@@ -363,10 +375,11 @@ def test_code_fence_before_the_questionnaire_stays_in_the_speech(tmp_path: Path)
     runner = _runner(tmp_path, run_id)
     tree = "Estrutura atual:\n```\npulse/\n  store/\n```"
 
-    runner._text_buffer.append(
-        f"{tree}\nPreciso de algumas informações:\n1. Qual banco usar?\nA) Postgres\nB) SQLite\n"
+    _speak(
+        runner,
+        f"{tree}\nPreciso de algumas informações:\n1. Qual banco usar?\nA) Postgres\nB) SQLite\n",
     )
-    runner._flush_text()
+    runner._log.flush()
 
     events = [(event["kind"], event["detail"]) for event in run_store.list_events(run_id)]
     assert [kind for kind, _detail in events] == ["Assistant", "Info"]
@@ -381,7 +394,7 @@ def test_dialogue_that_could_not_be_built_leaves_a_trace(tmp_path: Path, monkeyp
     def _broken(*_args):
         raise ValueError("payload estranho")
 
-    monkeypatch.setattr("pulse.acp.run_events.build_prompt_qa", _broken)
+    monkeypatch.setattr("pulse.history.session_log.build_prompt_qa", _broken)
 
     class _Port:
         def ask_text(self, prompt, *, title=""):
@@ -421,7 +434,7 @@ def test_artifact_comes_from_the_tool_even_without_acp_kind(tmp_path: Path):
     runner = _runner(tmp_path, run_id)
     (tmp_path / "PRD.md").write_text("# PRD\n", encoding="utf-8")
 
-    runner._record_run_event(
+    runner._log.update(
         _update(title="Write", toolName="write_file", rawInput={"path": str(tmp_path / "PRD.md")})
     )
 
@@ -430,3 +443,15 @@ def test_artifact_comes_from_the_tool_even_without_acp_kind(tmp_path: Path):
     state = _hydrated(tmp_path, run_id)
     assert [(item.path, item.has_content) for item in state.artifacts] == [("PRD.md", True)]
     assert state.phase_has_artifacts(), "the tab must open for the run artifact"
+
+
+def _speak(runner: AcpSessionRunner, text: str) -> None:
+    """The agent's speech as the session streams it."""
+    runner._log.update(
+        {
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": text},
+            }
+        }
+    )

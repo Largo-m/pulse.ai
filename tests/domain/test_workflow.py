@@ -54,6 +54,23 @@ def test_a_repeat_rule_that_could_not_loop_cannot_be_built(back_to, max_rounds):
         RepeatRule(back_to=back_to, max_rounds=max_rounds)
 
 
+@pytest.mark.parametrize(
+    ("start", "end", "max_rounds"),
+    [(2, 2, 3), (3, 1, 3), (-1, 2, 3), (0, 2, 1)],
+    ids=["single-step", "backwards", "negative-start", "one-round"],
+)
+def test_a_loop_that_could_not_repeat_a_range_cannot_be_built(start, end, max_rounds):
+    """`next_round` and `rest` assume `start < end`; an empty range would reopen nothing."""
+    with pytest.raises(ValueError, match="loop spans"):
+        Loop(start=start, end=end, max_rounds=max_rounds)
+
+
+def test_the_smallest_loop_is_two_steps_and_two_rounds():
+    loop = Loop(start=0, end=1, max_rounds=2)
+
+    assert (loop.opens(0), loop.closes(1)) == (True, True)
+
+
 def test_a_range_crossing_another_is_ignored():
     """c goes back to a, d goes back to b: the second range used to overwrite the first."""
     loops = _workflow(("a", ""), ("b", ""), ("c", "a"), ("d", "b")).loops()

@@ -1,12 +1,22 @@
+import tempfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from pulse.mcp.ask_bridge import AskQuestionBridgeServer, request_ask_question_via_socket
 
 
-def test_ask_bridge_socket_roundtrip():
-    socket_path = Path(f"/tmp/pulse-ask-test-{threading.get_ident()}.sock")
+@pytest.fixture
+def socket_path() -> Iterator[Path]:
+    """A short private directory: `tmp_path` can exceed the AF_UNIX path limit on macOS."""
+    with tempfile.TemporaryDirectory(prefix="pulse-ask-") as directory:
+        yield Path(directory) / "ask.sock"
+
+
+def test_ask_bridge_socket_roundtrip(socket_path: Path):
     handler = MagicMock()
     handler.respond_to_ask_question.return_value = {
         "outcome": {
@@ -37,8 +47,7 @@ def test_ask_bridge_socket_roundtrip():
     handler.respond_to_ask_question.assert_called_once()
 
 
-def test_ask_bridge_handles_concurrent_connections():
-    socket_path = Path(f"/tmp/pulse-ask-conc-{threading.get_ident()}.sock")
+def test_ask_bridge_handles_concurrent_connections(socket_path: Path):
     handler = MagicMock()
     handler.respond_to_ask_question.return_value = {
         "outcome": {"outcome": "answered", "answers": []}

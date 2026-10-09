@@ -7,9 +7,9 @@ field. This module applies that decision to the run; the engine saves it.
 
 from __future__ import annotations
 
-from pulse.domain import ui_text
 from pulse.domain.run import RunRecord
 from pulse.domain.workflow import Loop, WorkflowDef
+from pulse.orchestrator import wording
 
 
 def repeat_loop(
@@ -25,14 +25,14 @@ def repeat_loop(
     opener = run.step(opener_id)
     following = loop.next_round(opener.rounds if opener is not None else 1)
     if following is None:
-        return None, ui_text.loop_ceiling_reached(label, loop.max_rounds)
+        return None, wording.loop_ceiling_reached(label, loop.max_rounds)
     run.reopen_loop(
         [definition.steps[index].step_id for index in following.reopens], opener_id=opener_id
     )
     if not following.last:
-        return loop.start, ui_text.loop_round_requested(label, following.number)
-    who = opener.label if opener else ui_text.LOOP_START
-    return loop.start, ui_text.loop_last_round_requested(label, following.number, who)
+        return loop.start, wording.loop_round_requested(label, following.number)
+    who = opener.label if opener else wording.LOOP_START
+    return loop.start, wording.loop_last_round_requested(label, following.number, who)
 
 
 def close_loop(run: RunRecord, definition: WorkflowDef, loop: Loop) -> int:

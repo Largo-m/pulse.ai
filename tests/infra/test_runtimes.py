@@ -1,5 +1,5 @@
-from pulse.acp.models import extract_model_labels
 from pulse.config.agents import default_acp_command, default_global_agents
+from pulse.replies.session_models import extract_model_labels
 from pulse.runtimes import all_runtimes, get_runtime, runtime_for_command
 
 CURSOR_SESSION = {

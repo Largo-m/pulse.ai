@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 pytest.importorskip("textual")
 
 from pulse import vcs
-from pulse.config.project_config import update_project_defaults
+from pulse.config.project_config import load_project_config, update_project_defaults
+from pulse.daemon.runs import RunManager
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
@@ -21,7 +24,7 @@ from pulse.tui.screens.settings import SettingsScreen
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow, served_log
 from tests.infra.test_worktree import make_repo, prepare
 
 git_only = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
@@ -48,7 +51,7 @@ def _run_in(workspace: Path, *, run_id: str = "run-1", branch: str = "", worktre
 def test_stream_meta_shows_model_and_branch():
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.set_model("opus")
     state.set_branch("pulse/demo-abc123")
 
@@ -76,7 +79,7 @@ def test_without_branch_meta_is_unchanged():
     """A project outside git gets no dangling separator after the model."""
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.set_model("opus")
 
     async def run() -> None:
@@ -105,7 +108,9 @@ def test_history_reopens_with_run_branch(tmp_path: Path):
     item = HistoryCatalog(tmp_path).get(run_id)
     assert item is not None
     assert item.branch == "pulse/demo-abc123"
-    assert hydrate_history_item(item, tmp_path).branch_label == "pulse/demo-abc123"
+    assert hydrate_history_item(item, tmp_path, served_log(run_id)).branch_label == (
+        "pulse/demo-abc123"
+    )
 
 
 def test_resume_reopens_with_run_branch(tmp_path: Path):
@@ -113,8 +118,8 @@ def test_resume_reopens_with_run_branch(tmp_path: Path):
 
     run_id = _run_in(tmp_path, branch="pulse/demo-abc123")
     state = CockpitState()
-    state.configure_workflow("demo")
-    exec_root = restore_run(state, run_id, tmp_path)
+    configure_from_db(state, "demo")
+    exec_root = restore_run(state, served_log(run_id), tmp_path)
     assert state.branch_label == "pulse/demo-abc123"
     assert exec_root == str(tmp_path.resolve())
 
@@ -127,8 +132,8 @@ def test_resume_points_to_worktree_before_engine_reports(tmp_path: Path):
     worktree.mkdir()
     run_id = _run_in(tmp_path, branch="pulse/demo-abc", worktree=str(worktree))
     state = CockpitState()
-    state.configure_workflow("demo")
-    assert restore_run(state, run_id, tmp_path) == str(worktree)
+    configure_from_db(state, "demo")
+    assert restore_run(state, served_log(run_id), tmp_path) == str(worktree)
 
 
 @git_only
@@ -270,6 +275,7 @@ def test_removing_the_worktree_never_rewrites_the_steps_of_the_run(
 def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    in_process_daemon: TestClient,
     daemon_runs_it: bool,
     confirmation_offered: bool,
 ):
@@ -278,8 +284,6 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     A run left `running` by a dead process must stay removable, so the daemon
     decides, not the stored status.
     """
-    from pulse.tui.screens import history_detail
-
     repo = make_repo(tmp_path / "repo")
     make_workflow("demo", steps=[("plan", "Planejar")])
     live = run_store.create_run(
@@ -296,8 +300,18 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     run_store.save(live)
     item = HistoryCatalog(repo).get(live.id)
     assert item is not None
-    active = {live.id} if daemon_runs_it else set()
-    monkeypatch.setattr(history_detail, "active_run_ids", lambda: active)
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    manager: RunManager = in_process_daemon.app.state.runs
+    if daemon_runs_it:
+        manager.start_run(
+            workflow_id="demo", prompt="x", workspace=str(repo), resume_run_id=live.id
+        )
 
     async def run() -> None:
         from textual.app import App
@@ -319,7 +333,10 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
             offered = any(isinstance(s, ConfirmScreen) for s in app.screen_stack)
             assert offered is confirmation_offered
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
     assert worktree.exists()
 
 
@@ -336,7 +353,7 @@ def test_detail_reads_artifact_from_inside_worktree(tmp_path: Path):
 
     item = HistoryCatalog(repo).get(run_id)
     assert item is not None
-    state = hydrate_history_item(item, repo)
+    state = hydrate_history_item(item, repo, served_log(run_id))
     assert [artifact.path for artifact in state.artifacts] == ["PLANO.md"]
     assert state.artifacts[0].has_content is True
 
@@ -366,10 +383,10 @@ def test_settings_offers_toggle_in_git_repo(tmp_path: Path):
 
             screen._toggle_worktree()
             await pilot.pause()
-            assert screen._worktree_enabled() is True
+            assert load_project_config(repo).use_worktree is True
             screen._toggle_worktree()
             await pilot.pause()
-            assert screen._worktree_enabled() is False
+            assert load_project_config(repo).use_worktree is False
 
     asyncio.run(run())
 

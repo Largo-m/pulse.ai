@@ -120,10 +120,25 @@ def _doctor_via_engine(*, test_acp: bool) -> int:
         client.close()
 
 
+def _start_engine() -> None:
+    """Start the daemon before any screen: screens read it on the event loop and never start it.
+
+    A failed start is a warning, not an abort; each screen says the engine is unavailable.
+    """
+    client = EngineClient()
+    try:
+        client.ensure_daemon()
+    except (RuntimeError, OSError) as error:
+        print(f"[pulse] Warning: could not start the engine ({error})")
+    finally:
+        client.close()
+
+
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "init":
         from pulse.tui.app import run_onboarding_app
 
+        _start_engine()
         return run_onboarding_app(force=args.force)
     if args.command == "doctor":
         if getattr(args, "local", False):
@@ -141,20 +156,13 @@ def _dispatch(args: argparse.Namespace) -> int:
         _print_plain_welcome()
         return 0
 
+    _start_engine()
     if not global_config_exists():
         from pulse.tui.app import run_onboarding_app
 
         code = run_onboarding_app()
         if code != 0:
             return code
-
-    client = EngineClient()
-    try:
-        client.ensure_daemon()
-    except (RuntimeError, OSError) as error:
-        print(f"[pulse] Warning: could not start the engine ({error})")
-    finally:
-        client.close()
 
     from pulse.tui.app import run_pulse_app
 

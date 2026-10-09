@@ -9,7 +9,8 @@ placeholder names document what each one receives.
 
 from __future__ import annotations
 
-from pulse.domain import ui_text
+from pulse.client.run_session import ERROR_TITLE, WORKFLOW_FAILED_TITLE
+from pulse.history import log_wording
 
 # Shared: actions, answers and hints reused across screens
 BACK = "Voltar"
@@ -20,12 +21,12 @@ REMOVE = "Remover"
 QUIT = "Sair"
 # Dialog and error words the engine also records in the run history: one
 # source, so the live screen and the reopened run never disagree.
-YES = ui_text.ANSWER_YES
-NO = ui_text.ANSWER_NO
-CANCELLED = ui_text.ANSWER_CANCELLED
-QUESTION = ui_text.QUESTION_TITLE
-ANSWER = ui_text.ANSWER_TITLE
-ERROR = ui_text.ERROR_TITLE
+YES = log_wording.ANSWER_YES
+NO = log_wording.ANSWER_NO
+CANCELLED = log_wording.ANSWER_CANCELLED
+QUESTION = log_wording.QUESTION_TITLE
+ANSWER = log_wording.ANSWER_TITLE
+ERROR = ERROR_TITLE
 AGENT = "Agent"
 ENVIRONMENT = "Ambiente"
 HINT_CONFIRM_OR_CANCEL = "Enter confirma · Esc cancela"
@@ -51,7 +52,7 @@ BINDING_UP = "Up"
 BINDING_DOWN = "Down"
 
 # Cockpit: run lifecycle messages in the stream
-WORKFLOW_FAILED = ui_text.WORKFLOW_FAILED_TITLE
+WORKFLOW_FAILED = WORKFLOW_FAILED_TITLE
 WORKFLOW_EXIT_CODE = "O fluxo encerrou com código {code}."
 WORKFLOW_DONE = "Workflow concluído"
 RUN_STOPPED = "Run parada — dá para retomar de onde parou"
@@ -134,6 +135,8 @@ HOME_START_NOW = "Enter inicia agora"
 HOME_DESCRIBE_TASK = "Enter para descrever a tarefa"
 HOME_SESSION_HINT = "{description}\n{keys} · Esc volta"
 HOME_SETUP = "Configurar Pulse"
+HOME_START_ENGINE = "Iniciar a engine"
+HOME_ENGINE_STARTING = "Iniciando a engine…"
 HOME_ANSWER_ONE = "Responder 1 sessão pendente"
 HOME_ANSWER_MANY = "Responder {count} sessões pendentes"
 HOME_NEW_SESSION = "Nova sessão"
@@ -156,6 +159,7 @@ HISTORY_HINT = "/ busca  ·  Enter abre  ·  d remove"
 HISTORY_EMPTY = "Nenhuma run encontrada"
 HISTORY_RUN_REMOVED = "Run removida: {title}"
 HISTORY_RUN_ALREADY_GONE = "Essa run já não estava mais no histórico"
+HISTORY_RUN_IN_USE = "Run mantida no histórico: ela ainda está em andamento"
 HISTORY_REMOVE_DETAIL = (
     "Apaga a run, os logs e a lista de artefatos. Os arquivos no workspace ficam."
 )
@@ -193,9 +197,11 @@ ONBOARD_LOGIN_FAILED = "Login não concluído"
 ONBOARD_TESTING_ACP = "Testando conexão ACP…"
 ONBOARD_ACP_CONNECTION = "Conexão ACP"
 ONBOARD_CONTINUE_ANYWAY = "Continuar mesmo assim"
-ONBOARD_ENGINE_UNAVAILABLE = "Engine indisponível"
-ONBOARD_MODEL = "Modelo preferido"
-ONBOARD_POLICY = "Política de permissões"
+ENGINE_UNAVAILABLE_HEADLINE = "Engine indisponível"
+ENGINE_REFUSED_HEADLINE = "Engine recusou o pedido"
+ONBOARD_RUN_LOGIN = "Executar `{command}`"
+ENGINE_UNAVAILABLE = "Engine indisponível: {error}"
+ENGINE_REFUSED = "Engine recusou o pedido: {error}"
 ONBOARD_READY = "Pronto"
 ONBOARD_CONFIG_SAVED = "Config salvo em {path}"
 
@@ -218,8 +224,6 @@ SETTINGS_WORKTREE_DISABLED = (
     "As runs voltam a rodar na árvore de trabalho do projeto. "
     "Os worktrees já criados continuam onde estão."
 )
-SETTINGS_SCOPE_GLOBAL = "Global — SQLite da máquina"
-SETTINGS_SCOPE_PROJECT = "Projeto — SQLite por project_id"
 SETTINGS_LOADING_MODELS = "Carregando modelos…"
 SETTINGS_PICK_MODEL = "Escolha o modelo"
 SETTINGS_PICK_POLICY = "Escolha a política de permissões"
