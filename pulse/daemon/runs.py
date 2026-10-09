@@ -1,24 +1,36 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
-import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pulse.acp.session_runner import AcpSessionRunner
+from pulse.config import resolve_config
+from pulse.config.agent_profiles import ConfiguredAgentProfiles
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
-from pulse.domain.control import RunControl
+from pulse.doctor.checks import check_runtime_ready
+from pulse.domain.control import SHUTDOWN_GRACE_SECONDS, RunControl
+from pulse.domain.ports import PromptPort, StreamSink
 from pulse.domain.run import RunStatus
+from pulse.history.session_log import RecordedSessionLog
+from pulse.mcp.channel import McpQuestionChannel
 from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.wiring import EnginePorts
+from pulse.replies.permission import parse_policy
 from pulse.store import runs as run_store
-from pulse.store.paths import safe_cwd
+from pulse.store.paths import safe_cwd, worktrees_dir
+from pulse.store.runs import SqliteRunRepository
 from pulse.store.workflow_defs import get_workflow, list_workflows
+from pulse.vcs.workspace import GitWorkspace
 
 FINISHED_TTL = 15 * 60.0
 FINISHED_KEEP = 10
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,14 +39,42 @@ class RunState:
     workflow_id: str
     prompt: str
     workspace: str
+    bus: EventBus
+    correlator: PromptCorrelator
+    control: RunControl
     status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
-    bus: EventBus = field(default_factory=EventBus)
-    correlator: PromptCorrelator | None = None
-    control: RunControl | None = None
     resume_run_id: str | None = None
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+    ended: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
+
+    @classmethod
+    def open(
+        cls,
+        *,
+        run_id: str,
+        workflow_id: str,
+        prompt: str,
+        workspace: str,
+        resume_run_id: str | None = None,
+    ) -> RunState:
+        """A new run with its own bus; questions and stop/pause go out on that bus."""
+        bus = EventBus()
+
+        def _publish_control(kind: str) -> None:
+            bus.publish({"type": f"run.{kind}", "run_id": run_id})
+
+        return cls(
+            id=run_id,
+            workflow_id=workflow_id,
+            prompt=prompt,
+            workspace=workspace,
+            bus=bus,
+            correlator=PromptCorrelator(bus),
+            control=RunControl(on_change=_publish_control),
+            resume_run_id=resume_run_id,
+        )
 
     def is_active(self) -> bool:
         return self.finished_at is None
@@ -46,16 +86,83 @@ class RunState:
         self.exit_code = exit_code
         self.status = RunStatus.for_exit_code(exit_code)
         self.finished_at = time.time()
+        self.ended.set()
 
 
 class RunAlreadyActive(Exception):
     """Raised when resuming a run that is already running."""
 
 
+class UnknownWorkflow(ValueError):
+    """Id that does not exist in `workflow_defs`."""
+
+
+class DaemonShuttingDown(RuntimeError):
+    """A run asked for after shutdown began; nobody would stop it before the daemon exits."""
+
+
+def run_engine(
+    *,
+    workflow_id: str,
+    user_prompt: str,
+    workspace: Path | None,
+    stream: StreamSink,
+    prompt_handler: PromptPort,
+    resume_run_id: str | None,
+    control: RunControl,
+    run_id: str,
+) -> int:
+    """Wire the engine's ports for one run, then run it.
+
+    The only place that knows which adapter stands behind each port. The checks
+    that need config, the database or the runtime happen here, before the engine
+    spends a session.
+    """
+    definition = get_workflow(workflow_id)
+    if definition is None:
+        raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
+    resolved = resolve_config(workspace=workspace, workflow=workflow_id)
+    runtime = resolved.runtime
+    blocking = check_runtime_ready(runtime.id)
+    if blocking is not None:
+        raise RuntimeError(
+            f"Runtime `{runtime.id}` unavailable: {blocking.message}. "
+            f"{blocking.detail or ''}".strip()
+        )
+    session = AcpSessionRunner(
+        resolved.acp_command,
+        cwd=str(resolved.workspace_dir),
+        permission_policy=parse_policy(resolved.permission_policy),
+        stream=stream,
+        prompt_handler=prompt_handler,
+        runtime=runtime,
+        control=control,
+        questions=McpQuestionChannel(),
+        session_log=RecordedSessionLog(project_root=resolved.workspace_dir),
+    )
+    ports = EnginePorts(
+        session=session,
+        stream=stream,
+        runs=SqliteRunRepository(),
+        workspace=GitWorkspace(resolved.workspace_dir, worktrees=worktrees_dir()),
+        agents=ConfiguredAgentProfiles(resolved.workspace_dir, fallback_model=resolved.model),
+    )
+    return run_workflow(
+        definition=definition,
+        user_prompt=user_prompt,
+        ports=ports,
+        use_worktree=resolved.use_worktree,
+        resume_run_id=resume_run_id,
+        control=control,
+        run_id=run_id,
+    )
+
+
 class RunManager:
     def __init__(self) -> None:
         self._runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
+        self._closing = False
 
     def list_workflows(self) -> list[dict[str, Any]]:
         return [
@@ -82,29 +189,22 @@ class RunManager:
         resume_run_id: str | None = None,
     ) -> RunState:
         if get_workflow(workflow_id) is None:
-            raise ValueError(f"workflow desconhecido: {workflow_id}")
+            raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
         self._prune()
-        bus = EventBus()
-        correlator = PromptCorrelator(bus)
-
-        def _publish_control(kind: str) -> None:
-            bus.publish({"type": f"run.{kind}", "run_id": run_id})
-
-        state = RunState(
-            id=run_id,
+        state = RunState.open(
+            run_id=run_id,
             workflow_id=workflow_id,
             prompt=prompt,
             workspace=workspace or str(safe_cwd()),
-            bus=bus,
-            correlator=correlator,
-            control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
         )
         with self._lock:
+            if self._closing:
+                raise DaemonShuttingDown("the daemon is shutting down")
             existing = self._runs.get(run_id)
             if existing is not None and existing.is_active():
-                raise RunAlreadyActive(f"run já está em execução: {run_id}")
+                raise RunAlreadyActive(f"run is already running: {run_id}")
             self._runs[run_id] = state
         thread = threading.Thread(
             target=self._execute,
@@ -132,8 +232,8 @@ class RunManager:
         return items
 
     def _describe(self, state: RunState, labels: dict[str, str]) -> dict[str, Any]:
-        awaiting = bool(state.correlator is not None and state.correlator.pending())
-        since = state.correlator.pending_since() if state.correlator is not None else None
+        awaiting = bool(state.correlator.pending())
+        since = state.correlator.pending_since()
         return {
             "id": state.id,
             "workflow_id": state.workflow_id,
@@ -186,25 +286,53 @@ class RunManager:
         state = self.get(run_id)
         if state is None:
             return False
-        if state.correlator is not None:
-            state.correlator.cancel_all()
-        if state.control is not None:
-            state.control.stop()
-        state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
+        self._stop(state)
         return True
 
-    def answer_prompt(self, prompt_id: str, answer: Any) -> bool:
+    def shutdown(self, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> list[str]:
+        """Stop every active run and wait for each to end; return the ids still running.
+
+        A stop is what ends a run cleanly: the engine records `RUN_STOPPED`, puts
+        the step back to pending (resumable later) and closes the agent session,
+        which terminates the ACP process. Without it, the daemon exited with
+        runs left `running` and their agent processes orphaned.
+        """
+        with self._lock:
+            self._closing = True
+            active = [state for state in self._runs.values() if state.is_active()]
+        for state in active:
+            self._stop(state)
+        deadline = time.monotonic() + grace
+        return [
+            state.id
+            for state in active
+            if not state.ended.wait(max(0.0, deadline - time.monotonic()))
+        ]
+
+    @staticmethod
+    def _stop(state: RunState) -> None:
+        _log.info("run.cancel_requested run_id=%s", state.id)
+        state.correlator.cancel_all()
+        state.control.stop()
+        state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
+
+    def answer_prompt(self, prompt_id: str, answer: object) -> bool:
         with self._lock:
             runs = list(self._runs.values())
         for state in runs:
-            if state.correlator is not None and state.correlator.answer(prompt_id, answer):
+            if state.correlator.answer(prompt_id, answer):
                 return True
         return False
 
     def _execute(self, state: RunState) -> None:
-        assert state.correlator is not None
-        stream = ApiStreamSink(state.bus)
+        stream = ApiStreamSink(state.bus, run_id=state.id)
         prompt_handler = ApiPromptPort(state.correlator)
+        _log.info(
+            "run.started run_id=%s workflow=%s resumed=%s",
+            state.id,
+            state.workflow_id,
+            state.resume_run_id is not None,
+        )
         state.bus.publish(
             {
                 "type": "run.started",
@@ -213,19 +341,18 @@ class RunManager:
             }
         )
         try:
-            exit_code = run_workflow(
+            exit_code = run_engine(
                 workflow_id=state.workflow_id,
                 user_prompt=state.prompt,
                 workspace=Path(state.workspace) if state.workspace else None,
                 stream=stream,
                 prompt_handler=prompt_handler,
-                render_header=False,
                 resume_run_id=state.resume_run_id,
                 control=state.control,
                 run_id=state.id,
             )
-        except Exception as error:
-            traceback.print_exc()
+        except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
+            _log.exception("run.failed run_id=%s workflow=%s", state.id, state.workflow_id)
             state.finish(1)
             state.bus.publish(
                 {
@@ -238,6 +365,13 @@ class RunManager:
             state.bus.close()
             return
         state.finish(exit_code)
+        _log.info(
+            "run.finished run_id=%s status=%s exit_code=%d seconds=%.1f",
+            state.id,
+            state.status,
+            exit_code,
+            (state.finished_at or state.started_at) - state.started_at,
+        )
         state.bus.publish(
             {
                 "type": "run.finished",

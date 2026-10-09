@@ -21,7 +21,7 @@ def run_config_command(
 
 def _show(base: Path, workflow: str | None) -> int:
     resolved = resolve_config(base, workflow=workflow)
-    title = "Config efetiva"
+    title = "Effective config"
     if workflow:
         title += f" · workflow {workflow}"
     print(title)
@@ -35,7 +35,7 @@ def _show(base: Path, workflow: str | None) -> int:
         f"  workspace_dir      {resolved.workspace_dir}  "
         f"({resolved.sources.get('workspace_dir', '')})"
     )
-    print(f"  worktree           {'ligado' if resolved.use_worktree else 'desligado'}  (project)")
+    print(f"  worktree           {'on' if resolved.use_worktree else 'off'}  (project)")
     project = find_project_root(base)
     if project is not None:
         print(f"  project_config     {project}")
@@ -44,5 +44,5 @@ def _show(base: Path, workflow: str | None) -> int:
 
 def _init_project(base: Path) -> int:
     path = init_project_config(base)
-    print(f"Projeto registrado no SQLite: {path}")
+    print(f"Project registered in SQLite: {path}")
     return 0

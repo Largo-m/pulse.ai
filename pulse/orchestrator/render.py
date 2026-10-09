@@ -42,5 +42,5 @@ def render(text: str, context: dict[str, str]) -> str:
 
     result = PLACEHOLDER.sub(_replace, text)
     if missing:
-        raise TemplateError("placeholder sem valor: " + ", ".join(sorted(set(missing))))
+        raise TemplateError("placeholder without a value: " + ", ".join(sorted(set(missing))))
     return result

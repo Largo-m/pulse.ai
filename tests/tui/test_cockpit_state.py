@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 PAIR = [("plan", "Planejar"), ("build", "Construir")]
@@ -10,7 +10,7 @@ PAIR = [("plan", "Planejar"), ("build", "Construir")]
 def _state(workflow_id: str = "demo", steps: list[tuple[str, str]] | None = None) -> CockpitState:
     make_workflow(workflow_id, steps=steps or FOUR, label=workflow_id.upper())
     state = CockpitState()
-    state.configure_workflow(workflow_id)
+    configure_from_db(state, workflow_id)
     return state
 
 
@@ -419,7 +419,7 @@ def test_fan_out_replaces_one_phase_with_the_items():
     """The panel built phases from the definition; fan-out changes that during the run."""
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.apply_phase_statuses(
         steps=[{"id": "plan", "label": "Planejar"}],
         done_ids=["plan"],
@@ -449,7 +449,7 @@ def test_the_fan_out_items_stay_grouped_under_the_step_that_made_them():
     """`Implementar` stays in the sidebar: the tasks are nested under it."""
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.apply_phase_statuses(
         steps=[
             {"id": "plan", "label": "Planejar"},
@@ -470,7 +470,7 @@ def test_syncing_the_list_keeps_what_a_phase_already_gathered():
     """Recreating the phase would wipe status, timer and counters of phases that already ran."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Um")
     running = state.phases[0]
     running.files = 3
@@ -486,7 +486,7 @@ def test_an_empty_list_leaves_the_phases_alone():
     """An old sink (without `steps`) must not reset the panel."""
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
 
     state.apply_phase_statuses(done_ids=["one"])
 
@@ -516,6 +516,18 @@ def test_a_task_whose_title_contains_an_earlier_step_id_lights_itself():
     assert state.selected_phase().id == "implement:T1"
     assert [entry.phase_id for entry in state.visible_entries()] == ["implement:T1"]
 
-    state.begin_phase("Regra de destaque (TaskSearch) — continuação (2)")
+    state.begin_phase("Regra de destaque (TaskSearch)", turn=2)
     assert state.phases[1].status == PhaseStatus.RUNNING
     assert state.phases[0].status == PhaseStatus.DONE
+
+
+def test_a_later_turn_runs_on_its_own_step_and_says_it_continues():
+    """The turn arrives as data; the step is found by its label, not by parsing a title."""
+    state = _state("pair", PAIR)
+    state.begin_phase("Planejar")
+
+    state.begin_phase("Planejar", turn=2)
+
+    assert state.phases[0].status == PhaseStatus.RUNNING
+    assert state.phases[1].status == PhaseStatus.PENDING
+    assert state.surface_title == "PLANEJAR — CONTINUAÇÃO (2)"

@@ -11,7 +11,7 @@ from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 SHAPES: dict[str, list[tuple[str, str]]] = {
     "single": [("only", "Único")],
@@ -29,7 +29,7 @@ WORKFLOWS = tuple(SHAPES)
 def _configure(workflow_id: str) -> CockpitState:
     make_workflow(workflow_id, steps=SHAPES[workflow_id])
     state = CockpitState()
-    state.configure_workflow(workflow_id)
+    configure_from_db(state, workflow_id)
     return state
 
 

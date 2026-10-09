@@ -3,23 +3,32 @@ from __future__ import annotations
 import re
 import textwrap
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical, VerticalScroll
+from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest, format_prompt_reply
-from pulse.tui.state import CockpitState, LogKind, PhaseStatus
+from pulse.tui.state import CockpitState, LogEntry, LogKind, PhaseStatus
 from pulse.tui.theme import ERROR, ERROR_SOFT
 from pulse.tui.widgets.prompt_dock import PromptDock
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 _SPINNER = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _INLINE_RE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__")
 _ASSIST_INDENT = "  "
 _ASSIST_GUTTER = "│ "
+_VISIBLE_ENTRIES = 120
 
 
 def _assistant_line(text: str) -> Text:
@@ -67,7 +76,7 @@ def format_assistant_lines(body: str, *, width: int = 72) -> list[str]:
 class LogStream(Widget):
     can_focus = True
 
-    def __init__(self, state: CockpitState, **kwargs) -> None:
+    def __init__(self, state: CockpitState, **kwargs: Unpack[WidgetOptions]) -> None:
         super().__init__(**kwargs)
         self._state = state
         self._fingerprint: tuple[object, ...] | None = None
@@ -116,7 +125,7 @@ class LogStream(Widget):
     def focus_prompt(self) -> bool:
         try:
             dock = self.query_one(PromptDock)
-        except Exception:
+        except NoMatches:
             return False
         dock.focus_inner()
         return True
@@ -155,20 +164,27 @@ class LogStream(Widget):
         if current is not None:
             surface = current.label.upper()
         else:
-            surface = state.surface_title or "RUNTIME MODE & WORKSPACE CONFIG SURFACE"
-        header.update(Text(f"{surface} [backend]", style="#A2D729 bold"))
+            surface = state.surface_title or strings.STREAM_DEFAULT_SURFACE
+        header.update(Text(strings.STREAM_HEADER.format(surface=surface), style="#A2D729 bold"))
         right = " · ".join(
             part
-            for part in (state.model_label or state.agent_label or "Agent", state.branch_label)
+            for part in (
+                state.model_label or state.agent_label or strings.AGENT,
+                state.branch_label,
+            )
             if part
         )
         visible = state.visible_entries()
         count = len(visible)
         position = (state.selected_phase_index + 1) if state.phases else 0
         total = state.total_count()
-        kind = "step"
         meta.update(
-            Text(f"{count} entries · {kind} {position}/{total}          {right}", style="#888888")
+            Text(
+                strings.STREAM_META.format(
+                    count=count, position=position, total=total, right=right
+                ),
+                style="#888888",
+            )
         )
 
         if not force and fingerprint == self._fingerprint:
@@ -246,73 +262,86 @@ class LogStream(Widget):
         return output
 
     def _render_assistant(self, entry_active: bool, body: str) -> Text:
-        return self._render_bubble(entry_active, "Assistente", body)
+        return self._render_bubble(entry_active, strings.STREAM_ASSISTANT, body)
 
     def _render_entries(self, state: CockpitState) -> Text:
-        output = Text()
-        entries = state.visible_entries()[-120:]
+        entries = state.visible_entries()[-_VISIBLE_ENTRIES:]
         if not entries:
-            current = state.selected_nav_item()
-            if current is not None and current.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}:
-                output.append("Nenhuma atividade neste item.\n", style="#888888")
-            else:
-                output.append("Aguardando atividade do agente…\n", style="#888888")
-            return output
-
-        spin = _SPINNER[self._spin_frame]
+            return _render_empty(state)
+        output = Text()
+        last = len(entries) - 1
         for index, entry in enumerate(entries):
-            active = entry.active or index == len(entries) - 1
-            if entry.kind == LogKind.ASSISTANT:
-                output.append_text(self._render_assistant(active, entry.body or ""))
-                continue
-            if entry.kind == LogKind.QUESTION:
-                output.append_text(
-                    self._render_bubble(active, "Pergunta", entry.body or entry.title)
-                )
-                continue
-            if entry.kind == LogKind.ANSWER:
-                output.append_text(
-                    self._render_bubble(
-                        active,
-                        "Você",
-                        entry.body or entry.title,
-                        gutter_style="#A2D729",
-                        styled=False,
-                    )
-                )
-                continue
-
-            prefix = "▌ " if active else "  "
-            if entry.kind == LogKind.ERROR:
-                output.append(prefix, style=ERROR if active else "#333333")
-                output.append("Erro\n", style=f"bold {ERROR}")
-                title = entry.title.strip() or "Falha no workflow"
-                output.append(f"  {escape(title)}\n", style=f"bold {ERROR_SOFT}")
-                reason = entry.detail.strip()
-                if reason and reason != title:
-                    for line in reason.splitlines():
-                        output.append(f"  {escape(line)}\n", style=ERROR)
-                output.append("\n")
-                continue
-            output.append(prefix, style="#A2D729" if active else "#333333")
-            if entry.kind == LogKind.INFO:
-                output.append(f"{entry.title}\n", style="#888888")
-                output.append("\n")
-                continue
-
-            if entry.pending:
-                output.append(f"{spin} ", style="#A2D729")
-            else:
-                output.append("v ", style="#A2D729")
-            output.append(f"{entry.kind.value}\n", style="#A2D729")
-            target = entry.title.strip() or entry.detail.strip() or "…"
-            if entry.pending and target in {"…", "..."}:
-                output.append("  carregando…\n", style="#888888")
-            else:
-                output.append(f"  {escape(target)}\n", style="#B0B0B0")
-            detail = entry.detail.strip()
-            if detail and detail != target:
-                for line in detail.splitlines():
-                    output.append(f"    {escape(line)}\n", style="#888888")
-            output.append("\n")
+            output.append_text(self._render_entry(entry, active=entry.active or index == last))
         return output
+
+    def _render_entry(self, entry: LogEntry, *, active: bool) -> Text:
+        if entry.kind == LogKind.ASSISTANT:
+            return self._render_assistant(active, entry.body or "")
+        if entry.kind == LogKind.QUESTION:
+            return self._render_bubble(active, strings.QUESTION, entry.body or entry.title)
+        if entry.kind == LogKind.ANSWER:
+            return self._render_bubble(
+                active,
+                strings.ANSWER,
+                entry.body or entry.title,
+                gutter_style="#A2D729",
+                styled=False,
+            )
+        if entry.kind == LogKind.ERROR:
+            return _render_error(entry, active=active)
+        if entry.kind == LogKind.INFO:
+            return _render_info(entry, active=active)
+        return _render_tool(entry, active=active, spin=_SPINNER[self._spin_frame])
+
+
+def _render_empty(state: CockpitState) -> Text:
+    current = state.selected_nav_item()
+    settled = current is not None and current.status in {PhaseStatus.DONE, PhaseStatus.SKIPPED}
+    message = strings.STREAM_NO_ACTIVITY if settled else strings.STREAM_WAITING
+    output = Text()
+    output.append(f"{message}\n", style="#888888")
+    return output
+
+
+def _gutter(active: bool) -> str:
+    return "▌ " if active else "  "
+
+
+def _render_error(entry: LogEntry, *, active: bool) -> Text:
+    output = Text()
+    output.append(_gutter(active), style=ERROR if active else "#333333")
+    output.append(f"{strings.ERROR}\n", style=f"bold {ERROR}")
+    title = entry.title.strip() or strings.STREAM_WORKFLOW_FAILURE
+    output.append(f"  {escape(title)}\n", style=f"bold {ERROR_SOFT}")
+    reason = entry.detail.strip()
+    if reason and reason != title:
+        for line in reason.splitlines():
+            output.append(f"  {escape(line)}\n", style=ERROR)
+    output.append("\n")
+    return output
+
+
+def _render_info(entry: LogEntry, *, active: bool) -> Text:
+    output = Text()
+    output.append(_gutter(active), style="#A2D729" if active else "#333333")
+    output.append(f"{entry.title}\n", style="#888888")
+    output.append("\n")
+    return output
+
+
+def _render_tool(entry: LogEntry, *, active: bool, spin: str) -> Text:
+    output = Text()
+    output.append(_gutter(active), style="#A2D729" if active else "#333333")
+    output.append(f"{spin} " if entry.pending else "v ", style="#A2D729")
+    output.append(f"{entry.kind.value}\n", style="#A2D729")
+    target = entry.title.strip() or entry.detail.strip() or "…"
+    if entry.pending and target in {"…", "..."}:
+        output.append(f"  {strings.STREAM_LOADING}\n", style="#888888")
+    else:
+        output.append(f"  {escape(target)}\n", style="#B0B0B0")
+    detail = entry.detail.strip()
+    if detail and detail != target:
+        for line in detail.splitlines():
+            output.append(f"    {escape(line)}\n", style="#888888")
+    output.append("\n")
+    return output

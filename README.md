@@ -30,6 +30,16 @@ pulse-engine                  # foreground (= python -m pulse.daemon serve)
 pulse-engine --host 127.0.0.1 --port 8787
 ```
 
+`--host` só aceita `127.0.0.1` ou `localhost`, e a API recusa requests de navegador
+([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)). Por TCP, toda
+request leva o token do daemon, que muda a cada início
+([ADR 0005](docs/adr/0005-tcp-exige-token-do-daemon.md)):
+
+```bash
+curl -H "Authorization: Bearer $(jq -r .token ~/.pulse/daemon.json)" \
+  http://127.0.0.1:8787/api/status
+```
+
 ## Runtimes suportados
 
 Um *runtime* é o backend que executa um Pulse agent. Cada um declara binário,

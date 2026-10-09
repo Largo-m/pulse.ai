@@ -120,6 +120,8 @@ Este canal **não** passa pelo classificador de fase. A resposta vai direto ao a
 
 No `start()` do runner sobe um HTTP local (`AskQuestionHttpServer`, `127.0.0.1` porta aleatória, path `/mcp`).
 
+O servidor recusa (`403`) request com `Origin` ou com `Host` que não seja `127.0.0.1`/`localhost`: só o processo do agente fala com ele, nunca uma página no navegador ([ADR 0003](adr/0003-listeners-locais-recusam-navegador.md)).
+
 `session/new` registra:
 
 ```json

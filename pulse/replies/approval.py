@@ -6,6 +6,8 @@ or cancel) to decide whether the next agent may run.
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pulse.replies.ask_question import (
     ADJUST_WORDS,
     APPROVE_WORDS,
@@ -19,12 +21,16 @@ from pulse.replies.ask_question import (
 
 SUMMARY_MAX_CHARS = 8_000
 
-APPROVE = "approve"
-ADJUST = "adjust"
-SKIP = "skip"
-CANCEL = "cancel"
-CONTINUE = "continue"
-UNKNOWN = "unknown"
+
+class ApprovalOutcome(StrEnum):
+    """What the user's answer to an approval gate means for the next agent."""
+
+    APPROVE = "approve"
+    ADJUST = "adjust"
+    SKIP = "skip"
+    CANCEL = "cancel"
+    CONTINUE = "continue"
+    UNKNOWN = "unknown"
 
 
 def format_summary(text: str) -> str:
@@ -38,8 +44,9 @@ def format_summary(text: str) -> str:
 
 def picked_answers(answers_text: str) -> list[str]:
     result: list[str] = []
-    for line in answers_text.splitlines():
-        if line.strip().startswith("→"):
+    for raw in answers_text.splitlines():
+        line = raw.strip()
+        if line.startswith("→"):
             answer = line.lstrip("→").strip()
             if answer:
                 result.append(answer)
@@ -69,19 +76,19 @@ def is_positive(answers_text: str) -> bool:
     return False
 
 
-def classify_outcome(answers_text: str) -> str:
+def classify_outcome(answers_text: str) -> ApprovalOutcome:
     if not picked_answers(answers_text):
-        return UNKNOWN
+        return ApprovalOutcome.UNKNOWN
     picked = chosen_options(answers_text)
     if any(word in answer for answer in picked for word in CANCEL_WORDS):
-        return CANCEL
+        return ApprovalOutcome.CANCEL
     if any(word in answer for answer in picked for word in SKIP_WORDS):
-        return SKIP
+        return ApprovalOutcome.SKIP
     if is_positive(answers_text):
-        return APPROVE
+        return ApprovalOutcome.APPROVE
     if any(word in answer for answer in picked for word in ADJUST_WORDS):
-        return ADJUST
-    return CONTINUE
+        return ApprovalOutcome.ADJUST
+    return ApprovalOutcome.CONTINUE
 
 
 def answer_needs_description(*, prompt: str, label: str) -> bool:
@@ -96,4 +103,4 @@ def answer_needs_description(*, prompt: str, label: str) -> bool:
         return True
     if not is_approval_prompt(prompt):
         return False
-    return classify_outcome(f"→ {label}") in {ADJUST, CONTINUE}
+    return classify_outcome(f"→ {label}") in {ApprovalOutcome.ADJUST, ApprovalOutcome.CONTINUE}

@@ -84,18 +84,18 @@ permite é a coluna, e `repeat_max` é o teto. Ver §2.3.
 pública, `run_workflow`, e nenhum `if workflow_id == ...`:
 
 ```
-run_workflow(workflow_id, user_prompt, …)
-  │
+run_engine(workflow_id, …)            daemon: definição, config e portas
   ├─ get_workflow(id)                 definição + steps, do banco
   ├─ resolve_config(workflow=id)      runtime, model, policy, cwd
-  ├─ create_run | load_run            linha em `runs` + N em `run_steps`
-  └─ para cada step pendente:
-       control.checkpoint()           ponto de corte do parar
-       resolve_config(pulse_agent=…)  o agente DESTE step
-       runner.use_agent(…)
-       render(step.prompt_template)   valores da run
-       run_isolated_phase | run_isolated_prompt
-       record.deliver()/block()…      desfecho no agregado → save(run)
+  └─ run_workflow(definition, ports)
+       ├─ runs.create | runs.load     linha em `runs` + N em `run_steps`
+       └─ para cada step pendente:
+            control.checkpoint()      ponto de corte do parar
+            agents.profile(agent_id)  o agente DESTE step
+            session.use_agent(…)
+            render(step.prompt_template) valores da run
+            run_isolated_phase | run_isolated_prompt
+            record.deliver()/block()… desfecho no agregado → runs.save(run)
 ```
 
 A sessão ACP é **isolada por step**. O agente do step seguinte não herda o
