@@ -13,17 +13,31 @@ import pytest
 from pulse.client.engine_client import EngineClient
 from pulse.config.project_config import init_project_config
 from pulse.tui import engine, strings
+from tests.tui.conftest import DAEMON_DOWN
 
 
-def _refused(_self: object) -> None:
-    raise RuntimeError("could not connect to pulse-engine")
-
-
-def test_an_unreachable_daemon_is_engine_unavailable(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(EngineClient, "ensure_daemon", _refused)
-
-    with pytest.raises(engine.EngineUnavailable, match="could not connect"):
+def test_an_unreachable_daemon_is_engine_unavailable(daemon_down, tmp_path: Path) -> None:
+    with pytest.raises(engine.EngineUnavailable, match=DAEMON_DOWN):
         engine.history(tmp_path)
+
+
+def test_a_screen_read_never_starts_a_daemon(daemon_down, monkeypatch, tmp_path: Path) -> None:
+    """Screens read on the event loop: spawning and polling a daemon froze them for 20s.
+
+    The CLI starts the daemon before any screen opens; a read only reports it is gone.
+    """
+    spawned: list[str] = []
+
+    def spawn(_self: object) -> None:
+        spawned.append("start")
+        raise RuntimeError("spawned a daemon")
+
+    monkeypatch.setattr(EngineClient, "_start_daemon", spawn)
+
+    with pytest.raises(engine.EngineUnavailable, match=DAEMON_DOWN):
+        engine.history(tmp_path)
+
+    assert spawned == []
 
 
 def test_a_daemon_that_fails_the_request_refused_it_with_its_reason(
@@ -54,15 +68,11 @@ def test_a_rejected_value_is_refused_with_the_daemons_detail(
     assert caught.value.describe() == strings.ENGINE_REFUSED.format(error="unknown policy: nope")
 
 
-def test_an_unreachable_daemon_describes_itself_as_unavailable(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(EngineClient, "ensure_daemon", _refused)
-
+def test_an_unreachable_daemon_describes_itself_as_unavailable(daemon_down, tmp_path: Path) -> None:
     with pytest.raises(engine.EngineUnavailable) as caught:
         engine.history(tmp_path)
 
-    assert caught.value.describe() == strings.ENGINE_UNAVAILABLE.format(
-        error="could not connect to pulse-engine"
-    )
+    assert caught.value.describe() == strings.ENGINE_UNAVAILABLE.format(error=DAEMON_DOWN)
 
 
 def test_unknown_ids_are_none(tmp_path: Path) -> None:

@@ -128,13 +128,14 @@ class WorktreeState:
 
 
 def _call(request: Callable[[EngineClient], T]) -> T:
+    # No `ensure_daemon`: screens call this on the event loop, and starting a
+    # daemon polls for up to 20s. The CLI starts it before the first screen.
     client = EngineClient()
     try:
-        client.ensure_daemon()
         return request(client)
     except httpx.HTTPStatusError as error:
         raise EngineRefused(_detail(error.response)) from error
-    except (httpx.HTTPError, RuntimeError) as error:
+    except httpx.HTTPError as error:
         raise EngineUnavailable(str(error)) from error
     finally:
         client.close()

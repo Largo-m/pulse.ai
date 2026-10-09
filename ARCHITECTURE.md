@@ -53,7 +53,10 @@ Você digita `pulse`
 3. **Daemon = verdade única** — runs, config efetiva e estado vivem no Engine.
 4. **CLI é cliente fino** — a TUI não executa, não lê SQLite, não resolve
    config nem roda checks: tudo passa pela API (`pulse/tui/engine.py`). O
-   contrato do import-linter barra também as cadeias indiretas.
+   contrato do import-linter barra também as cadeias indiretas. Tela nunca sobe
+   o daemon: ela lê no event loop, e subir um espera até 20 s. O `pulse` sobe o
+   daemon uma vez, antes do onboarding e da TUI; sem ele, a tela mostra
+   `EngineUnavailable` na hora.
 5. **Um contrato, dois transportes** — mesmas rotas `/api/*` em **UDS**
    (`~/.pulse/daemon.sock`, CLI local) e **TCP** (`127.0.0.1:8787`, tooling e
    clientes futuros).

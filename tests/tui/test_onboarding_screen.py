@@ -9,6 +9,7 @@ pytest.importorskip("textual")
 
 from pulse.tui.screens.onboarding import OnboardingScreen
 from pulse.tui.theme import COCKPIT_CSS
+from tests.tui.conftest import DAEMON_DOWN, cut_the_daemon
 
 
 def test_onboarding_uses_centered_panel_layout():
@@ -57,12 +58,7 @@ class _Probe:
         )
 
 
-def _unreachable(_self: object) -> None:
-    raise RuntimeError("Não foi possível conectar ao pulse-engine")
-
-
 def _probe_on_screen(monkeypatch, tmp_path, *, probe=None, unreachable=False):
-    from pulse.client.engine_client import EngineClient
 
     monkeypatch.setattr(_Probe, "calls", [])
     monkeypatch.setattr(_Probe, "probe", probe or {})
@@ -87,7 +83,7 @@ def _probe_on_screen(monkeypatch, tmp_path, *, probe=None, unreachable=False):
             assert isinstance(screen, OnboardingScreen)
             screen._workspace = tmp_path
             if unreachable:
-                monkeypatch.setattr(EngineClient, "ensure_daemon", _unreachable)
+                cut_the_daemon(monkeypatch)
             screen._run_acp_probe()
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -113,9 +109,9 @@ def test_onboarding_probes_the_chosen_runtime_through_the_engine(monkeypatch, tm
 
 
 def test_an_unreachable_engine_is_a_failed_probe_the_user_can_skip(monkeypatch, tmp_path):
-    """Onboarding must not crash when the daemon can't start; it offers to continue instead."""
+    """Onboarding must not crash when the daemon does not answer; it offers to continue instead."""
     outcome = _probe_on_screen(monkeypatch, tmp_path, unreachable=True)
 
     assert _Probe.calls == []
     assert outcome["step"] == "acp_fail"
-    assert outcome["report"] == "Não foi possível conectar ao pulse-engine"
+    assert outcome["report"] == DAEMON_DOWN

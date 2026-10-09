@@ -201,11 +201,44 @@ def test_a_first_run_goes_through_onboarding_before_the_tui(monkeypatch):
     assert opened == ["onboarding", "tui"]
 
 
+def test_a_first_run_starts_the_engine_before_onboarding_asks_it_anything(monkeypatch):
+    """Onboarding reads the daemon from the event loop, where screens never start one."""
+    engine = _Engine([])
+    asked_at: list[list[str]] = []
+    monkeypatch.setattr(cli_main, "_is_interactive", lambda: True)
+    monkeypatch.setattr(cli_main, "global_config_exists", lambda: False)
+    _use_engine(monkeypatch, cli_main, engine)
+    monkeypatch.setattr(
+        "pulse.tui.app.run_onboarding_app", lambda: asked_at.append(list(engine.paths)) or 0
+    )
+    monkeypatch.setattr("pulse.tui.app.run_pulse_app", lambda: 0)
+
+    assert main([]) == 0
+
+    assert asked_at == [["/api/status", "/api/status"]]
+
+
+def test_init_starts_the_engine_before_onboarding(monkeypatch):
+    engine = _Engine([])
+    asked_at: list[list[str]] = []
+    _use_engine(monkeypatch, cli_main, engine)
+
+    def onboarding(*, force: bool = False) -> int:
+        asked_at.append(list(engine.paths))
+        return 0
+
+    monkeypatch.setattr("pulse.tui.app.run_onboarding_app", onboarding)
+
+    assert main(["init"]) == 0
+
+    assert asked_at == [["/api/status", "/api/status"]]
+
+
 def test_an_abandoned_onboarding_exits_with_its_code_without_the_tui(monkeypatch):
     """Without a config the TUI cannot run; quitting onboarding must stop there."""
     monkeypatch.setattr(cli_main, "_is_interactive", lambda: True)
     monkeypatch.setattr(cli_main, "global_config_exists", lambda: False)
-    monkeypatch.setattr(cli_main, "EngineClient", _must_not_open)
+    _use_engine(monkeypatch, cli_main, _Engine([]))
     monkeypatch.setattr("pulse.tui.app.run_onboarding_app", lambda: 3)
     monkeypatch.setattr("pulse.tui.app.run_pulse_app", _must_not_open)
 

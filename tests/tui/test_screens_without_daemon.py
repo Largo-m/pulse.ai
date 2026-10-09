@@ -1,7 +1,7 @@
 """Screens degrade when the daemon cannot be reached: they say so and stay usable.
 
 The TUI is a thin client now, so every read goes through the daemon; a daemon
-that will not start must leave a message on screen, never a crashed app.
+that does not answer must leave a message on screen, never a crashed app.
 """
 
 from __future__ import annotations
@@ -16,22 +16,12 @@ pytest.importorskip("textual")
 from textual.app import App
 from textual.widgets import OptionList, Static
 
-from pulse.client.engine_client import EngineClient
 from pulse.tui import strings
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.screens.settings import SettingsScreen
 from pulse.tui.theme import COCKPIT_CSS
-
-REFUSED = "could not connect to pulse-engine"
-
-
-@pytest.fixture
-def daemon_down(monkeypatch: pytest.MonkeyPatch) -> None:
-    def refuse(_self: object) -> None:
-        raise RuntimeError(REFUSED)
-
-    monkeypatch.setattr(EngineClient, "ensure_daemon", refuse)
+from tests.tui.conftest import DAEMON_DOWN, cut_the_daemon
 
 
 def _run(screen, check) -> None:
@@ -63,7 +53,7 @@ def _options(app: App) -> list[str]:
 def test_settings_says_the_engine_is_down_and_only_offers_back(tmp_path: Path) -> None:
     def check(app: App) -> None:
         report = str(app.screen.query_one("#settings-report", Static).render())
-        assert report == strings.ENGINE_UNAVAILABLE.format(error=REFUSED)
+        assert report == strings.ENGINE_UNAVAILABLE.format(error=DAEMON_DOWN)
         assert _options(app) == ["back"]
 
     _run(SettingsScreen(cwd=tmp_path), check)
@@ -72,7 +62,7 @@ def test_settings_says_the_engine_is_down_and_only_offers_back(tmp_path: Path) -
 @pytest.mark.usefixtures("daemon_down")
 def test_history_says_the_engine_is_down_and_lists_nothing(tmp_path: Path) -> None:
     def check(app: App) -> None:
-        assert set(app.notes) == {strings.ENGINE_UNAVAILABLE.format(error=REFUSED)}
+        assert set(app.notes) == {strings.ENGINE_UNAVAILABLE.format(error=DAEMON_DOWN)}
         assert app.screen._items == {}
 
     _run(HistoryListScreen(workspace=tmp_path), check)
@@ -110,15 +100,12 @@ def test_settings_going_back_from_a_picker_reports_a_daemon_gone_meanwhile(
             screen._show_permissions()
             await pilot.pause()
 
-            def refuse(_self: object) -> None:
-                raise RuntimeError(REFUSED)
-
-            monkeypatch.setattr(EngineClient, "ensure_daemon", refuse)
+            cut_the_daemon(monkeypatch)
             await pilot.press("escape")
             await pilot.pause()
 
             report = str(screen.query_one("#settings-report", Static).render())
-            assert report == strings.ENGINE_UNAVAILABLE.format(error=REFUSED)
+            assert report == strings.ENGINE_UNAVAILABLE.format(error=DAEMON_DOWN)
             assert app.screen is screen
 
         assert app.return_code is None
