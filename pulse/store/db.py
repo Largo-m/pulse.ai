@@ -292,7 +292,8 @@ def migrate(
 
 def _set_version(connection: sqlite3.Connection, version: int) -> None:
     # PRAGMA takes no bound parameters; `version` is an int from MIGRATIONS.
-    connection.execute(f"PRAGMA user_version = {int(version)}")
+    # The noqa is read by sast-lite, which flags any f-string query.
+    connection.execute(f"PRAGMA user_version = {int(version)}")  # noqa: S608
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
