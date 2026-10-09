@@ -48,12 +48,12 @@ def _session_workflows() -> list[engine.WorkflowShape]:
     return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
 
 
-def _setup() -> engine.SetupState | None:
-    """Where the first run stands; `None` when the daemon cannot say."""
+def _setup() -> engine.SetupState | engine.EngineError:
+    """Where the first run stands, or why the daemon could not say."""
     try:
         return engine.setup_state(Path.cwd())
-    except engine.EngineError:
-        return None
+    except engine.EngineError as error:
+        return error
 
 
 ROOT = "root"
@@ -177,11 +177,11 @@ class HomeScreen(Screen[None]):
         options.clear_options()
         hint = self.query_one(".home-hint", Static)
         setup = _setup()
-        if setup is None or not setup.configured:
-            self._view = ROOT
-            options.add_option(Option(strings.HOME_SETUP, id="init"))
-            options.add_option(Option(strings.QUIT, id="exit"))
-            hint.update(strings.HOME_ROOT_HINT)
+        if isinstance(setup, engine.EngineError):
+            self._offer_setup(options, hint, setup)
+            return
+        if not setup.configured:
+            self._offer_setup(options, hint, None)
             return
         if self._view == ALERTS:
             for run in self._alerts:
@@ -224,6 +224,17 @@ class HomeScreen(Screen[None]):
         options.add_option(Option(strings.QUIT, id="exit"))
         hint.update(strings.HOME_ROOT_HINT)
 
+    def _offer_setup(
+        self, options: OptionList, hint: Static, failure: engine.EngineError | None
+    ) -> None:
+        self._view = ROOT
+        # Screens never start the daemon themselves, so Home is where it comes back.
+        if isinstance(failure, engine.EngineUnavailable):
+            options.add_option(Option(strings.HOME_START_ENGINE, id="start_engine"))
+        options.add_option(Option(strings.HOME_SETUP, id="init"))
+        options.add_option(Option(strings.QUIT, id="exit"))
+        hint.update(failure.describe() if failure is not None else strings.HOME_ROOT_HINT)
+
     @on(OptionList.OptionSelected, "#home-options")
     def on_option_selected(self, event: OptionList.OptionSelected) -> None:
         if event.option_id is None:
@@ -238,6 +249,7 @@ class HomeScreen(Screen[None]):
         return {
             "exit": lambda _: self.action_quit_app(),
             "init": lambda _: pulse_app(self).open_onboarding(),
+            "start_engine": lambda _: self._start_engine(),
             "settings": lambda _: pulse_app(self).open_settings(),
             "history": lambda _: pulse_app(self).open_history(),
             "session": lambda _: self._show_view(SESSION),
@@ -246,6 +258,29 @@ class HomeScreen(Screen[None]):
             "back": lambda _: self.action_back(),
             "workflow": self._choose_workflow,
         }
+
+    def _start_engine(self) -> None:
+        self.query_one(".home-hint", Static).update(strings.HOME_ENGINE_STARTING)
+        # Its own group: the alert poll is `exclusive` too and would cancel it.
+        self.run_worker(self._bring_engine_up, group="engine", exclusive=True, thread=True)
+
+    def _bring_engine_up(self) -> None:
+        try:
+            engine.start_daemon()
+        except engine.EngineError as error:
+            failure: engine.EngineError | None = error
+        else:
+            failure = None
+        # The app already exited while the daemon was starting.
+        with contextlib.suppress(RuntimeError):
+            self.app.call_from_thread(self._engine_started, failure)
+
+    def _engine_started(self, failure: engine.EngineError | None) -> None:
+        if not self.is_mounted:
+            return
+        self._refresh_options()
+        if failure is not None:
+            self.query_one(".home-hint", Static).update(failure.describe())
 
     def _show_view(self, view: str) -> None:
         self._view = view

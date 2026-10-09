@@ -141,6 +141,20 @@ def _call(request: Callable[[EngineClient], T]) -> T:
         client.close()
 
 
+def start_daemon() -> None:
+    """Start the daemon and wait until it answers.
+
+    Only from a thread worker: it polls for up to 20s.
+    """
+    client = EngineClient()
+    try:
+        client.ensure_daemon()
+    except (RuntimeError, OSError) as error:
+        raise EngineUnavailable(str(error)) from error
+    finally:
+        client.close()
+
+
 def optional(read: Callable[[], T | None]) -> T | None:
     """A read that only enriches a screen: without an answer the screen draws without it."""
     try:
