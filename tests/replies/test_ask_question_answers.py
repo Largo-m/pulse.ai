@@ -11,7 +11,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pulse.domain import ui_text
+from pulse.replies import wording
 from pulse.replies.acp_payloads import (
     Question,
     QuestionAnswer,
@@ -35,7 +35,7 @@ from pulse.replies.ask_question import (
     should_add_other_option,
 )
 
-_OTHER = ui_text.OTHER_DESCRIBE_OPTION
+_OTHER = wording.OTHER_DESCRIBE_OPTION
 
 # --- reply payloads ---------------------------------------------------------
 
@@ -201,7 +201,7 @@ def test_free_text_answer_starts_with_the_other_prefix(answer: str, expected: bo
 
 
 def test_multi_select_prompt_adds_the_hint_on_its_own_line() -> None:
-    assert multi_select_prompt("Pick stacks") == f"Pick stacks\n{ui_text.MULTI_SELECT_HINT}"
+    assert multi_select_prompt("Pick stacks") == f"Pick stacks\n{wording.MULTI_SELECT_HINT}"
 
 
 # --- the implicit "Other" option --------------------------------------------
@@ -327,10 +327,10 @@ def test_choices_keep_every_ordinary_option_in_order(labels: list[str]) -> None:
         ({"name": "Refactor"}, "Refactor"),
         ({"name": "Refactor", "plan": "Steps"}, "Refactor\n\nSteps"),
         ({"name": "Refactor", "overview": "Why"}, "Refactor\nWhy"),
-        ({}, ui_text.PLAN_FALLBACK_NAME),
-        ({"name": "", "overview": None, "plan": 0}, ui_text.PLAN_FALLBACK_NAME),
+        ({}, wording.PLAN_FALLBACK_NAME),
+        ({"name": "", "overview": None, "plan": 0}, wording.PLAN_FALLBACK_NAME),
         ({"name": "   "}, ""),
-        ({"overview": "   ", "plan": "  "}, ui_text.PLAN_FALLBACK_NAME),
+        ({"overview": "   ", "plan": "  "}, wording.PLAN_FALLBACK_NAME),
     ],
 )
 def test_plan_prompt_shows_name_overview_and_plan(params: dict[str, object], expected: str) -> None:

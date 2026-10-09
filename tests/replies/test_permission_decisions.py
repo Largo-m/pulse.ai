@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from pulse.domain import ui_text
+from pulse.replies import wording
 from pulse.replies.acp_payloads import PermissionRequest
 from pulse.replies.permission import (
     build_permission_choices,
@@ -73,8 +73,8 @@ def test_the_wire_answers_have_the_shape_acp_expects():
 
 def test_a_request_without_options_offers_allow_and_reject():
     assert build_permission_choices(()) == [
-        ("allow-once", f"A) {ui_text.ALLOW_ONCE}"),
-        ("reject-once", f"B) {ui_text.REJECT_ONCE}"),
+        ("allow-once", f"A) {wording.ALLOW_ONCE}"),
+        ("reject-once", f"B) {wording.REJECT_ONCE}"),
     ]
 
 
@@ -99,5 +99,5 @@ def test_the_tool_title_is_shown_when_it_is_new():
 
 def test_a_request_with_nothing_to_say_uses_the_fallback_text():
     assert permission_prompt_text(PermissionRequest.parse({})) == (
-        ui_text.PERMISSION_PROMPT_FALLBACK
+        wording.PERMISSION_PROMPT_FALLBACK
     )

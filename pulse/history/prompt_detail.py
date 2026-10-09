@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 
-from pulse.domain import ui_text
+from pulse.history import log_wording
+from pulse.replies import wording
 from pulse.replies.acp_payloads import (
     AskQuestionRequest,
     PermissionRequest,
@@ -36,7 +37,7 @@ from pulse.replies.text_questionnaire import (
     split_questionnaire_answers,
 )
 
-CANCELLED = ui_text.ANSWER_CANCELLED
+CANCELLED = log_wording.ANSWER_CANCELLED
 EMPTY = "—"
 _DETAIL_SEP = "::"
 
@@ -183,13 +184,13 @@ def _create_plan_qa(args: Args, kwargs: Kwargs, result: object) -> list[QA]:
     params = _arg(args, kwargs, 0, "params")
     if not isinstance(params, Mapping):
         return []
-    prompt = f"{ui_text.PLAN_APPROVAL_TITLE}\n{plan_prompt_text(params)}"
+    prompt = f"{wording.PLAN_APPROVAL_TITLE}\n{plan_prompt_text(params)}"
 
     decision = _outcome(result).get("outcome")
     if decision == "accepted":
-        return [(prompt, ui_text.ANSWER_YES)]
+        return [(prompt, log_wording.ANSWER_YES)]
     if decision == "rejected":
-        return [(prompt, ui_text.ANSWER_NO)]
+        return [(prompt, log_wording.ANSWER_NO)]
     return [(prompt, CANCELLED)]
 
 

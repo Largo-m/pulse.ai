@@ -7,10 +7,18 @@ from textual.screen import ModalScreen
 from textual.widgets import OptionList, Static
 from textual.widgets.option_list import Option
 
+from pulse.history.models import HistoryItem
 from pulse.tui import strings
 
 RESUME = "resume"
 BACK = "back"
+
+
+def resume_summary(item: HistoryItem) -> str:
+    """Where an unfinished run stopped: its first unsettled step and how many are done."""
+    done = sum(1 for step in item.steps if step.settled)
+    current = next((step.label for step in item.steps if not step.settled), "—")
+    return strings.RUN_SUMMARY.format(current=current, done=done, total=len(item.steps))
 
 
 class ResumeChoiceScreen(ModalScreen[str | None]):

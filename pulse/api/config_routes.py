@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 from pulse.api.deps import workspace_path
 from pulse.config.global_config import GlobalConfig, load_global_config, update_global_defaults
-from pulse.config.project_config import ProjectConfig, init_project_config, load_project_config
+from pulse.config.project_config import ProjectConfig, load_project_config
+from pulse.config.project_settings import open_project
 from pulse.config.resolved import resolve_config
 
 router = APIRouter()
@@ -57,10 +58,10 @@ def _project_to_dict(config: ProjectConfig | None) -> dict[str, Any] | None:
 
 
 @router.get("/api/config")
-def get_config() -> dict[str, Any]:
+def get_config(workspace: str | None = None) -> dict[str, Any]:
     return {
         "global": _global_to_dict(load_global_config()),
-        "project": _project_to_dict(load_project_config()),
+        "project": _project_to_dict(load_project_config(workspace_path(workspace))),
     }
 
 
@@ -91,5 +92,6 @@ def patch_global(body: ConfigPatchBody) -> dict[str, Any]:
 
 @router.post("/api/config/project")
 def post_project(body: ProjectConfigBody) -> dict[str, Any]:
-    path = init_project_config(Path(body.workspace))
+    """Create the project, and its workflow rows, if missing; idempotent."""
+    path = open_project(Path(body.workspace))
     return {"ok": True, "path": str(path)}

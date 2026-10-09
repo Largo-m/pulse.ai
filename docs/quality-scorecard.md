@@ -11,9 +11,9 @@ entrar aqui; os corrigidos têm o teste que falhava antes da correção.
 
 | Área | Nota | Leitura |
 |---|---|---|
-| Arquitetura (`software-architect`, 53 itens) | **26,5/53 — 50 % (D)**; 66 % (C) sem os 13 itens de operação que não cabem numa CLI local | Fronteiras, contratos e invariantes de dados fortes; observabilidade e confiabilidade operacional fracas. D é forçado pelo item STOP-SHIP F1 (abaixo) |
+| Arquitetura (`software-architect`, 53 itens) | **26,5/53 — 50 % (D)**; 66 % (C) sem os 13 itens de operação que não cabem numa CLI local | Fronteiras, contratos e invariantes de dados fortes; observabilidade e confiabilidade operacional fracas. D era forçado pelo item STOP-SHIP F1 (abaixo), fechado depois pelo [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md) |
 | Domínio (`tactical-ddd`, 0 = rico … 7+ = anêmico) | **Leve, ~2** | Núcleo rico (`RunRecord`, `Outcome`, definições, `RunControl`); anemia nas bordas (`ResolvedConfig` 5) |
-| Segurança (`security-audit`) | **3 vulnerabilidades corrigidas, 1 em aberto** | SAST, segredos, dependências e CORS limpos; CSRF em loopback e bind fora de loopback corrigidos |
+| Segurança (`security-audit`) | **4 vulnerabilidades corrigidas** (F1 depois da auditoria, [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md)) | SAST, segredos, dependências e CORS limpos; CSRF em loopback e bind fora de loopback corrigidos |
 | Qualidade (`python-quality`) | **Tudo verde** | ruff, format, mypy estrito, vulture, 8 contratos de import, 93 % de cobertura por branch, 98,1 % de mutantes mortos |
 
 ## 1. Arquitetura — `software-architect`
@@ -28,7 +28,7 @@ FAIL 0; A ≥ 90 %, B 75–89 %, C 60–74 %, D < 60 %.
 | C Contratos | 3,5/5 | `ENGINE_PROTOCOL`, teste de contrato OpenAPI; eventos SSE só em prosa |
 | D Dados | 2,5/5 | Run gravada numa transação; migrações só adicionam colunas, sem versão; sem backup; TUI ainda escreve tabelas |
 | E Confiabilidade | 1/6 | Timeouts em git e CLIs; SIGTERM não cancela runs nem encerra os processos ACP |
-| F Segurança | 5/8 | SQL parametrizado, subprocess em lista, socket `0600`, guarda de navegador, scanners no CI. **F1 FAIL**: TCP sem autenticação contra outro usuário local |
+| F Segurança | 5/8 | SQL parametrizado, subprocess em lista, socket `0600`, guarda de navegador, scanners no CI. **F1 FAIL** na auditoria: TCP sem autenticação contra outro usuário local; fechado depois pelo [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md) |
 | G Observabilidade | 0,5/7 | Só `pulse doctor` e `docs/logs.md`; o primeiro `logging` do pacote entrou neste PR (traceback de 500) |
 | H Testes e entrega | 3/6 | 1 751 testes, cobertura por branch 93 %, mutação 98 %, 3 rodadas aleatórias no CI, matriz 3.11–3.14; sem feature flags nem baseline de performance |
 | I IA / agentes | 4,5/7 | Permissão nega por padrão, aprovação humana, `max_rounds`, `parse_outcome` falha seguro; sem harness de avaliação, orçamento de custo ou versão de prompt |
@@ -70,12 +70,13 @@ domínio fora da semente de fábrica, nenhum `if workflow_id == …`.
 
 Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md).
 
-### Em aberto
+### Corrigido depois da auditoria (ADR 0005)
 
-- **F1 — outro usuário do SO alcança o TCP.** O UDS é `0600`, mas
-  `127.0.0.1:8787` atende qualquer processo local: dá para trocar
-  `permission_policy` e iniciar uma run. Correção: token por daemon no meta
-  `0600` (muda `ENGINE_PROTOCOL`), ou TCP opt-in.
+| Sev. | CWE | Achado | Correção | Teste |
+|---|---|---|---|---|
+| Alta | 306 | **F1 — outro usuário do SO alcançava o TCP.** O UDS é `0600`, mas `127.0.0.1:8787` atendia qualquer processo local: dava para trocar `permission_policy` e iniciar uma run | Token por daemon no meta `0600`; `TokenGuard` cobra `Authorization: Bearer` só no TCP (`401`); `ENGINE_PROTOCOL` 8 | `tests/api/test_api_token_guard.py`, `tests/infra/test_daemon_meta.py`, `tests/client/test_engine_client_transport.py` |
+
+Decisão registrada em [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md).
 
 ## 4. Qualidade — `python-quality`
 
@@ -114,20 +115,33 @@ Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md
 
 ## 6. Follow-ups (fora do escopo desta fase)
 
-Em ordem de prioridade:
+Os itens 2–5 e 8 da lista anterior, mais "migrações sem versão" (seção D) e o
+texto de tela em `domain/ui_text.py`, foram fechados na fase 10 (§7). Em ordem
+de prioridade, o que segue aberto (o F1 foi fechado pelo
+[ADR 0005](adr/0005-tcp-exige-token-do-daemon.md)):
 
-1. **F1: autenticação no TCP** (token por daemon ou TCP opt-in). Bump de `ENGINE_PROTOCOL`.
-2. **"Daemon = verdade única"**: Settings e onboarding escrevem SQLite direto
-   (`tui/screens/settings.py`, `onboarding.py`). Rotas `/api/agents` e
-   `/api/models`; cada import removido baixa o teto do contrato da TUI (hoje 18).
-3. **Desligamento gracioso**: no SIGTERM, cancelar as runs via `RunControl` e
-   encerrar os processos ACP; hoje ficam órfãos e a run fica `running`.
-4. **Portas no adapter ACP**: `acp/run_events.py` e `session_runner.py` gravam
-   no store direto; mover para `daemon/adapters.py` (teto de adapters, hoje 12).
-5. **Ciclo `acp` ↔ `runtimes`**: parsing de model-id para dentro de `AgentRuntime`.
-6. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
+1. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
    coleções imutáveis; config do agente parseada na borda do store.
-7. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
+2. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
    permissão em três lugares, com fallbacks `or "ask"`.
-8. **Observabilidade**: logger do daemon com `run_id` para início/fim/falha de run.
-9. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
+3. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
+
+## 7. Fase 10 — dívidas apontadas por este scorecard, fechadas
+
+Branch `refactor/close-audit-gaps`. Cada item tem o teste que o prende.
+
+| Dívida | Antes | Depois | Prova |
+|---|---|---|---|
+| TUI não é cliente fino | 18 imports tolerados no contrato da TUI + 3 no do cliente; cadeias indiretas não checadas | Telas falam só com `/api/*` (`tui/engine.py`); contrato da TUI checa cadeias indiretas e proíbe também `vcs`, `mcp`, `api`; única entrada é o layout de `~/.pulse` (regra, não dívida); cliente sem entrada | `test_import_contracts.py` (tetos 0 e 1), `tests/api/test_settings_routes.py`, `tests/tui/test_engine_gateway.py`, `tests/tui/test_screens_without_daemon.py` |
+| Adapters importam uns aos outros | 12 imports tolerados | 0, com cadeias indiretas; `acp/` recebe `RuntimeDialect`, `QuestionChannel` e `SessionLog` do daemon | `test_import_contracts.py`, `tests/domain/test_ports.py`, `tests/api/test_run_engine.py` |
+| SIGTERM não cancela runs nem encerra ACP | Runs ficavam `running`, agentes órfãos | `GracefulServer` para as runs (caminho do cancelamento), recusa runs novas (`503`) e loga a que não parou no prazo | `tests/api/test_daemon_shutdown.py`; fumaça manual: daemon ocioso sai com 0 e limpa meta/socket |
+| Observabilidade quase nula | Um `logging` no pacote | Log operacional com `run_id`: início, fim, falha, stop, fases, status de step, espera do usuário; sem prompt nem env | `tests/api/test_daemon_logs.py`, `docs/logs.md` |
+| Migrações sem versão | `ALTER` idempotente a cada abertura | `PRAGMA user_version` + `MIGRATIONS` em ordem, cada uma numa transação; banco mais novo é recusado | `tests/infra/test_schema_migrations.py` |
+| Texto de UI no domínio | `domain/ui_text.py` importado por todas as camadas | Texto com o dono que o compõe; modelo e turno de fase viajam como dado (`ENGINE_PROTOCOL` 7) | ADR 0004, três contratos `protected`, `test_the_domain_holds_no_screen_copy_module` |
+
+Qualidade ao fim da fase: 8 → 11 contratos do import-linter, 0 exceções de
+dívida; cobertura por branch 93,5 % (domínio 97,5 %); mutação dos parsers
+97,5 %; `sast-lite` e `secret-scanner` limpos. Um bug real apareceu nos testes
+novos e foi corrigido: preferência de modelo só com espaços escolhia o primeiro
+modelo da lista em vez de "auto".
+

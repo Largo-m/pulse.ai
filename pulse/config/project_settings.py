@@ -1,0 +1,165 @@
+"""What the settings screen shows and changes for a project, decided in the daemon.
+
+The screen asks `/api/settings`, and these functions are the only place that
+knows how a project default, a machine default and an agent's own setting combine.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal, get_args
+
+from pulse import vcs
+from pulse.config.global_config import load_global_config
+from pulse.config.project_config import (
+    ensure_project_workflows,
+    init_project_config,
+    load_project_config,
+    update_project_defaults,
+)
+from pulse.domain.workflow import AgentDef
+from pulse.store.agent_settings import (
+    apply_setting_to_all_agents,
+    load_agent_settings,
+    upsert_agent_settings,
+)
+from pulse.store.workflow_defs import get_agent, list_agents
+
+AgentField = Literal["runtime", "model", "permission_policy"]
+AGENT_FIELDS: tuple[AgentField, ...] = get_args(AgentField)
+
+# What the screen shows when neither the project nor the machine chose.
+FALLBACK_RUNTIME = "cursor"
+FALLBACK_MODEL = "Auto"
+FALLBACK_POLICY = "ask"
+
+
+@dataclass(frozen=True)
+class AgentFields:
+    runtime: str
+    model: str
+    permission_policy: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "runtime": self.runtime,
+            "model": self.model,
+            "permission_policy": self.permission_policy,
+        }
+
+
+@dataclass(frozen=True)
+class AgentSettings:
+    id: str
+    label: str
+    fields: AgentFields
+
+
+@dataclass(frozen=True)
+class ProjectSettings:
+    is_repo: bool
+    use_worktree: bool
+    defaults: AgentFields
+    agents: tuple[AgentSettings, ...]
+
+
+def open_project(workspace: Path) -> Path:
+    """Make sure the project and its workflow rows exist before anything is edited."""
+    ensure_project_workflows(workspace)
+    return init_project_config(workspace)
+
+
+def project_settings(workspace: Path) -> ProjectSettings:
+    project = load_project_config(workspace)
+    defaults = effective_defaults(workspace)
+    return ProjectSettings(
+        is_repo=vcs.is_repo(workspace),
+        use_worktree=bool(project.use_worktree) if project is not None else False,
+        defaults=defaults,
+        agents=tuple(
+            AgentSettings(id=agent.id, label=agent.label, fields=_agent_fields(agent, workspace))
+            for agent in list_agents()
+        ),
+    )
+
+
+def effective_defaults(workspace: Path) -> AgentFields:
+    """Project, else machine, else Pulse's own default."""
+    project = load_project_config(workspace)
+    machine = load_global_config()
+    return AgentFields(
+        runtime=(project and project.default_agent)
+        or (machine and machine.default_agent)
+        or FALLBACK_RUNTIME,
+        model=(project and project.model) or (machine and machine.model) or FALLBACK_MODEL,
+        permission_policy=(project and project.permission_policy)
+        or (machine and machine.permission_policy)
+        or FALLBACK_POLICY,
+    )
+
+
+def agent_fields(workspace: Path, agent_id: str) -> AgentFields | None:
+    agent = get_agent(agent_id)
+    return _agent_fields(agent, workspace) if agent is not None else None
+
+
+def _agent_fields(agent: AgentDef, workspace: Path) -> AgentFields:
+    """Stored values for this agent: project settings, then its definition, then the defaults.
+
+    Full resolution is avoided because it swaps an unavailable runtime for one
+    the machine has, showing a value other than what the user picked.
+    """
+    runtime, model, policy = agent.runtime, agent.model, agent.permission_policy
+    project = load_project_config(workspace)
+    if project is not None:
+        stored = load_agent_settings(project.project_id, agent.id)
+        runtime = str(stored.get("runtime") or runtime)
+        model = str(stored.get("model") or model)
+        policy = str(stored.get("permission_policy") or policy)
+    fallback = effective_defaults(workspace)
+    return AgentFields(
+        runtime=runtime or fallback.runtime,
+        model=model or fallback.model,
+        permission_policy=policy or fallback.permission_policy,
+    )
+
+
+def set_project_default(workspace: Path, field: AgentField, value: str) -> None:
+    """A project-wide value, written into every agent too.
+
+    A point-in-time write, not a layer: a later per-agent change applies only
+    to that agent.
+    """
+    if field == "runtime":
+        update_project_defaults(workspace, agent=value)
+    elif field == "model":
+        update_project_defaults(workspace, model=value)
+    else:
+        update_project_defaults(workspace, permission_policy=value)
+    project = load_project_config(workspace)
+    if project is None:
+        return
+    apply_setting_to_all_agents(
+        project.project_id,
+        field=field,
+        value=value,
+        agent_ids=[agent.id for agent in list_agents()],
+    )
+
+
+def set_agent_field(workspace: Path, agent_id: str, field: AgentField, value: str) -> None:
+    init_project_config(workspace)
+    project = load_project_config(workspace)
+    if project is None:
+        return
+    if field == "runtime":
+        upsert_agent_settings(project.project_id, agent_id, runtime=value)
+    elif field == "model":
+        upsert_agent_settings(project.project_id, agent_id, model=value)
+    else:
+        upsert_agent_settings(project.project_id, agent_id, permission_policy=value)
+
+
+def set_worktree(workspace: Path, *, enabled: bool) -> None:
+    update_project_defaults(workspace, use_worktree=enabled)

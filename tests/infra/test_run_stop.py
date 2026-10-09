@@ -5,11 +5,14 @@ import pytest
 from pulse.acp import reply_clock
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain.control import RunControl
+from pulse.runtimes import get_runtime
 
 
 def _runner(control: RunControl) -> tuple[AcpSessionRunner, list[dict]]:
     """A runner without a process: just enough to exercise `_request`."""
-    runner = AcpSessionRunner(["fake-agent"], cwd="/repo", control=control)
+    runner = AcpSessionRunner(
+        ["fake-agent"], cwd="/repo", control=control, runtime=get_runtime("cursor")
+    )
     sent: list[dict] = []
     runner._send = sent.append  # type: ignore[method-assign]
     runner._session_id = "sess-1"

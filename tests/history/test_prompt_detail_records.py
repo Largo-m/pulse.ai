@@ -6,8 +6,9 @@ pairs must name the answer exactly as the live dock showed it.
 
 from __future__ import annotations
 
-from pulse.domain import ui_text
+from pulse.history import log_wording
 from pulse.history.prompt_detail import CANCELLED, EMPTY, build_prompt_qa
+from pulse.replies import wording
 from pulse.replies.text_questionnaire import TextQuestion, TextQuestionnaire
 
 ASK = "respond_to_ask_question"
@@ -60,7 +61,7 @@ def test_multi_select_shows_the_hint_and_joins_every_label():
     params = {"questions": [_stack(allowMultiple=True)]}
     result = _answered(("stack", ["py", "go"]))
     assert build_prompt_qa(ASK, (params,), {}, result) == [
-        (f"Qual stack?\n{ui_text.MULTI_SELECT_HINT}", "A) Python, B) Go")
+        (f"Qual stack?\n{wording.MULTI_SELECT_HINT}", "A) Python, B) Go")
     ]
 
 
@@ -198,7 +199,7 @@ def test_an_asked_permission_shows_the_picked_option_label():
     result = build_prompt_qa(
         "respond_to_permission", (PERMISSION,), {"policy": "ask"}, _selected("reject-once")
     )
-    assert result == [("Editar app.py", f"B) {ui_text.REJECT_ONCE}")]
+    assert result == [("Editar app.py", f"B) {wording.REJECT_ONCE}")]
 
 
 def test_a_permission_without_a_policy_is_treated_as_asked():
@@ -236,7 +237,7 @@ def test_a_terminal_permission_allowed_by_config_is_asked_under_ask():
         {"policy": "ask", "allow_terminal": True},
         _selected("allow-once"),
     )
-    assert result == [("Rodar ls", f"A) {ui_text.ALLOW_ONCE}")]
+    assert result == [("Rodar ls", f"A) {wording.ALLOW_ONCE}")]
 
 
 def test_permission_params_of_the_wrong_type_are_not_a_question():
@@ -248,10 +249,10 @@ def test_permission_params_of_the_wrong_type_are_not_a_question():
 
 def test_create_plan_records_yes_no_or_cancelled():
     params = {"name": "Plano X", "overview": "Resumo"}
-    prompt = f"{ui_text.PLAN_APPROVAL_TITLE}\nPlano X\nResumo"
+    prompt = f"{wording.PLAN_APPROVAL_TITLE}\nPlano X\nResumo"
     for decision, answer in (
-        ("accepted", ui_text.ANSWER_YES),
-        ("rejected", ui_text.ANSWER_NO),
+        ("accepted", log_wording.ANSWER_YES),
+        ("rejected", log_wording.ANSWER_NO),
         ("cancelled", CANCELLED),
     ):
         result = {"outcome": {"outcome": decision}}

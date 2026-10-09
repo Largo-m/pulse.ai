@@ -231,6 +231,8 @@ def test_db_seeded_before_the_column_gets_the_task_on_migration(tmp_path: Path):
 
     raw = sqlite3.connect(str(db_path))
     raw.execute("ALTER TABLE workflow_defs DROP COLUMN default_prompt")
+    # A database from before the column also predates the schema version.
+    raw.execute("PRAGMA user_version = 0")
     raw.commit()
     raw.close()
 

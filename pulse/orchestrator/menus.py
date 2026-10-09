@@ -5,9 +5,9 @@ With nobody to ask, the answer is stop: what nobody sees does not go on alone.
 
 from __future__ import annotations
 
-from pulse.domain import ui_text
 from pulse.domain.control import RUN_BLOCKED
 from pulse.domain.run import RunRecord, StepRecord, StepStatus
+from pulse.orchestrator import wording
 from pulse.orchestrator.turn import MenuChoice
 from pulse.orchestrator.wiring import Wiring, notify, sync_steps
 
@@ -15,8 +15,8 @@ from pulse.orchestrator.wiring import Wiring, notify, sync_steps
 def offer_next(wiring: Wiring, record: StepRecord, reason: str) -> tuple[MenuChoice, str]:
     """A blocked step may be skipped; a failed one may only be retried or abandoned."""
     if record.status == StepStatus.BLOCKED:
-        return _offer_blocked(wiring, ui_text.step_blocked_title(record.label), reason)
-    return _offer_retry(wiring, ui_text.step_failed_title(record.label), reason)
+        return _offer_blocked(wiring, wording.step_blocked_title(record.label), reason)
+    return _offer_retry(wiring, wording.step_failed_title(record.label), reason)
 
 
 def end_without_retry(
@@ -33,11 +33,11 @@ def end_without_retry(
         record.skip_blocked()
         wiring.runs.save(run)
         sync_steps(wiring, run)
-        notify(wiring, ui_text.step_skipped_by_user(record.label))
+        notify(wiring, wording.step_skipped_by_user(record.label))
         return 0
     record.close_after_wait()
     wiring.runs.save(run)
-    notify(wiring, ui_text.run_blocked_at(record.label, reason))
+    notify(wiring, wording.run_blocked_at(record.label, reason))
     return RUN_BLOCKED
 
 
@@ -48,9 +48,9 @@ def revive_session(wiring: Wiring) -> None:
     """
     try:
         if wiring.session.revive():
-            notify(wiring, ui_text.AGENT_SESSION_RESTARTED)
+            notify(wiring, wording.AGENT_SESSION_RESTARTED)
     except (RuntimeError, TimeoutError, OSError) as error:
-        notify(wiring, ui_text.agent_session_restart_failed(str(error)))
+        notify(wiring, wording.agent_session_restart_failed(str(error)))
 
 
 def _offer_retry(wiring: Wiring, title: str, reason: str) -> tuple[MenuChoice, str]:
@@ -60,9 +60,9 @@ def _offer_retry(wiring: Wiring, title: str, reason: str) -> tuple[MenuChoice, s
         title,
         reason,
         [
-            (ui_text.RETRY, MenuChoice.RETRY),
-            (ui_text.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
-            (ui_text.STOP, MenuChoice.STOP),
+            (wording.RETRY, MenuChoice.RETRY),
+            (wording.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
+            (wording.STOP, MenuChoice.STOP),
         ],
     )
 
@@ -77,10 +77,10 @@ def _offer_blocked(wiring: Wiring, title: str, reason: str) -> tuple[MenuChoice,
         title,
         reason,
         [
-            (ui_text.RETRY_RESOLVED, MenuChoice.RETRY),
-            (ui_text.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
-            (ui_text.SKIP_STEP, MenuChoice.SKIP),
-            (ui_text.STOP_RUN, MenuChoice.STOP),
+            (wording.RETRY_RESOLVED, MenuChoice.RETRY),
+            (wording.GIVE_GUIDANCE, MenuChoice.GUIDANCE),
+            (wording.SKIP_STEP, MenuChoice.SKIP),
+            (wording.STOP_RUN, MenuChoice.STOP),
         ],
     )
 
@@ -96,7 +96,7 @@ def _choose(
     The guidance option lets the user write what the agent should do. With nobody to ask,
     the answer is stop, and the reason is left on the stream for whoever reads it.
     """
-    prompt = reason.strip() or ui_text.STEP_NOT_COMPLETED
+    prompt = reason.strip() or wording.STEP_NOT_COMPLETED
     choice = wiring.session.prompts.select_choice(prompt, choices, title=title)
     if choice is None:
         if not wiring.control.interrupted:
@@ -115,5 +115,5 @@ def _choose(
 
 
 def _ask_guidance(wiring: Wiring, title: str) -> str:
-    answer = wiring.session.prompts.ask_text(ui_text.GUIDANCE_QUESTION, title=title)
+    answer = wiring.session.prompts.ask_text(wording.GUIDANCE_QUESTION, title=title)
     return (answer or "").strip()

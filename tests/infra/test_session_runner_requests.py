@@ -17,10 +17,11 @@ import pytest
 
 from pulse.acp import reply_clock, session_runner
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.domain import ui_text
 from pulse.domain.control import RunControl
 from pulse.domain.ports import AgentProfile, NullPromptPort
 from pulse.domain.run import StepRecord
+from pulse.history.session_log import RecordedSessionLog
+from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 from tests.fakes import RecordingStream
@@ -144,9 +145,14 @@ def _reply(request_id: int, result: dict[str, Any]) -> dict:
 
 
 def _runner(**kwargs: Any) -> AcpSessionRunner:
-    kwargs.setdefault("enable_mcp_ask", False)
     kwargs.setdefault("timeout_seconds", 5)
-    return AcpSessionRunner(["agent", "acp"], cwd="/repo", **kwargs)
+    return AcpSessionRunner(
+        ["agent", "acp"],
+        cwd="/repo",
+        **kwargs,
+        runtime=get_runtime("cursor"),
+        session_log=RecordedSessionLog(),
+    )
 
 
 def _read(runner: AcpSessionRunner, lines: list[dict[str, Any] | str]) -> FakeProcess:
@@ -349,7 +355,7 @@ def test_run_prompt_handshakes_logs_in_prompts_and_closes(monkeypatch, tmp_path)
     monkeypatch.setattr(session_runner.subprocess, "Popen", lambda *_a, **_k: process)
     stream = SpyStream()
     runner = AcpSessionRunner(
-        ["agent", "acp"], cwd=str(tmp_path), stream=stream, enable_mcp_ask=False
+        ["agent", "acp"], cwd=str(tmp_path), stream=stream, runtime=get_runtime("cursor")
     )
 
     result = runner.run_prompt("say hi")
@@ -374,7 +380,7 @@ def test_run_prompt_without_a_session_id_fails_and_still_closes(monkeypatch, tmp
     monkeypatch.setattr(session_runner.subprocess, "Popen", lambda *_a, **_k: process)
     stream = SpyStream()
     runner = AcpSessionRunner(
-        ["agent", "acp"], cwd=str(tmp_path), stream=stream, enable_mcp_ask=False
+        ["agent", "acp"], cwd=str(tmp_path), stream=stream, runtime=get_runtime("cursor")
     )
 
     with pytest.raises(RuntimeError, match="no sessionId"):
@@ -407,8 +413,16 @@ def test_a_rejected_authentication_does_not_fail_the_run():
 
 def test_a_session_new_advertises_the_ask_bridge_while_it_runs(monkeypatch):
     """The agent asks questions through the MCP bridge only Pulse knows the url of."""
+    from pulse.mcp.channel import McpQuestionChannel
+
     monkeypatch.setattr(session_runner.subprocess, "Popen", lambda *_a, **_k: FakeProcess())
-    runner = AcpSessionRunner(["agent", "acp"], cwd="/repo", timeout_seconds=5)
+    runner = AcpSessionRunner(
+        ["agent", "acp"],
+        cwd="/repo",
+        timeout_seconds=5,
+        runtime=get_runtime("cursor"),
+        questions=McpQuestionChannel(),
+    )
     runner.start()
     sent = _offline(runner)
     _queue(runner, _reply(1, {"sessionId": "sess-1"}))
@@ -512,8 +526,8 @@ def test_apply_model_announces_the_model_it_set():
             "params": {"sessionId": "sess-1", "modelId": "gpt-5.5"},
         }
     ]
-    titles = [update["update"].get("title") for update in stream.updates]
-    assert titles == [ui_text.model_notice("GPT 5.5")]
+    assert stream.models == ["GPT 5.5"], "the agent's own name for the model, not its id"
+    assert stream.updates == [], "the model is not disguised as a session update"
 
 
 def test_a_rejected_model_is_not_announced_and_does_not_fail_the_session():
@@ -526,7 +540,7 @@ def test_a_rejected_model_is_not_announced_and_does_not_fail_the_session():
 
     runner.apply_model(MODEL_SESSION, "gpt-5.5")
 
-    assert stream.updates == []
+    assert stream.models == []
 
 
 @pytest.mark.parametrize(
@@ -642,7 +656,7 @@ def test_nested_questions_count_as_one_user_wait():
     stream, waits = SpyStream(), _Waits()
     runner = _runner(stream=stream)
     runner.bind_run("", waits)
-    runner._phase_id = "plan"
+    runner._enter_phase("plan")
 
     runner._begin_user_wait()
     runner._begin_user_wait()
@@ -666,7 +680,7 @@ def test_a_wait_listener_failure_is_logged_and_the_answer_still_arrives(tmp_path
     port = Port()
     runner = _runner(prompt_handler=port)
     runner.bind_run("run-1", _Waits(fail=True))
-    runner._phase_id = "plan"
+    runner._enter_phase("plan")
 
     answer = runner.prompts.respond_to_create_plan({"plan": "x"})
 

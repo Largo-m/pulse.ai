@@ -160,24 +160,3 @@ class ArtifactItem:
     phase_id: str = ""
     ready: bool = False
     has_content: bool = False
-
-
-def workflow_steps(workflow_id: str) -> tuple[tuple[str, str], ...]:
-    """A workflow's steps, so the sidebar can render before ACP starts.
-
-    The shape comes from the database; an unknown workflow returns empty and the
-    sidebar fills in as steps start.
-    """
-    from pulse.store.workflow_defs import get_workflow
-
-    definition = get_workflow(workflow_id)
-    if definition is None:
-        return ()
-    return tuple((step.step_id, step.label or step.step_id) for step in definition.steps)
-
-
-def workflow_label(workflow_id: str) -> str:
-    from pulse.store.workflow_defs import get_workflow
-
-    definition = get_workflow(workflow_id)
-    return (definition.label if definition else workflow_id).upper()

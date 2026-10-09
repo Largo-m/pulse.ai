@@ -15,7 +15,7 @@ from pulse.daemon.events import EventBus
 from pulse.domain.ports import NullPromptPort
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 from tests.fakes import FakeAgentSession
 from tests.orchestrator.harness import EngineHarness, approved_turn
 
@@ -84,7 +84,7 @@ def _beginning_a_phase(runner: FakeAgentSession):
 def test_client_forwards_the_context_to_the_sink():
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/projeto")
     session = EngineRunSession(
         stream=sink,
@@ -105,7 +105,7 @@ def test_client_forwards_the_context_to_the_sink():
 def test_context_tells_the_screen_to_repoint_the_panel():
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     seen: list[str] = []
     sink = CockpitSink(state, cwd="/projeto", on_context=seen.append)
 
@@ -118,7 +118,7 @@ def test_context_without_worktree_only_sets_the_branch():
     """Run at the project root: the branch shows up, the cwd does not change."""
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/projeto")
 
     sink.set_context(cwd="/projeto", branch="main")

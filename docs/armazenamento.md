@@ -15,6 +15,24 @@ definido num lugar só: [`pulse/store/paths.py`](../pulse/store/paths.py).
 Resolução de config: `defaults do código` → tabela `machine` → tabelas
 `project_*` no mesmo `pulse.db`, identificadas por `project_id` / `root_path`.
 
+## Versão do schema
+
+`PRAGMA user_version` guarda a versão do schema; `MIGRATIONS` em
+[`pulse/store/db.py`](../pulse/store/db.py) lista as mudanças em ordem. Ao
+abrir o banco, `migrate` aplica só as pendentes, cada uma numa transação junto
+com o novo número — uma falha no meio deixa gravada a última versão boa.
+
+- Banco novo nasce na última versão: `SCHEMA` já tem todas as mudanças.
+- Versão 0 é todo banco anterior ao versionamento; a migração 1 adiciona as
+  colunas que faltarem nele.
+- Banco com versão maior que a do código (gravado por um Pulse mais novo) é
+  recusado com `SchemaTooNewError`, em vez de ser escrito por um schema que
+  este código não conhece.
+- Mudança nova: acrescente uma `Migration` ao fim e a mesma mudança em
+  `SCHEMA`. Os reconciliadores da fábrica (`backfill_default_prompts`,
+  `drop_approval_from_unattended_steps`, …) são de dados, idempotentes, e
+  continuam rodando a cada abertura.
+
 ## Quem escreve o quê
 
 | Dado | Onde | Formato | Quem escreve | Quem lê |

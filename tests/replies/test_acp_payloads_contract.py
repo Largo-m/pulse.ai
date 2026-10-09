@@ -13,7 +13,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pulse.domain import ui_text
+from pulse.replies import wording
 from pulse.replies.acp_payloads import (
     AskQuestionRequest,
     PermissionOption,
@@ -361,15 +361,15 @@ def test_permission_option_that_is_not_an_object_is_dropped(raw: object) -> None
     ("name", "kind", "expected"),
     [
         ("Run it", "allow_once", "Run it"),
-        ("", "allow_once", ui_text.PERMISSION_KIND_LABELS["allow_once"]),
-        ("", "ALLOW-ALWAYS", ui_text.PERMISSION_KIND_LABELS["allow_always"]),
-        ("", "Reject-Once", ui_text.PERMISSION_KIND_LABELS["reject_once"]),
-        ("", "reject_always", ui_text.PERMISSION_KIND_LABELS["reject_always"]),
+        ("", "allow_once", wording.PERMISSION_KIND_LABELS["allow_once"]),
+        ("", "ALLOW-ALWAYS", wording.PERMISSION_KIND_LABELS["allow_always"]),
+        ("", "Reject-Once", wording.PERMISSION_KIND_LABELS["reject_once"]),
+        ("", "reject_always", wording.PERMISSION_KIND_LABELS["reject_always"]),
         ("", "Edit-File_Now", "edit file now"),
         ("", "_trim_", "trim"),
-        ("", "", ui_text.OPTION_FALLBACK),
-        ("", "_", ui_text.OPTION_FALLBACK),
-        ("", "--", ui_text.OPTION_FALLBACK),
+        ("", "", wording.OPTION_FALLBACK),
+        ("", "_", wording.OPTION_FALLBACK),
+        ("", "--", wording.OPTION_FALLBACK),
     ],
 )
 def test_permission_option_label_falls_back_from_name_to_kind_to_a_generic_label(

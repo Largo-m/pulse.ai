@@ -11,7 +11,8 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
-from pulse.tui import strings
+from pulse.history.models import HistoryItem, HistoryStatus
+from pulse.tui import engine, strings
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,
@@ -19,7 +20,7 @@ from pulse.tui.adapters.prompt_bridge import (
     TextualPromptHandler,
 )
 from pulse.tui.screens.navigation import pulse_app
-from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen, resume_summary
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -34,7 +35,6 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 if TYPE_CHECKING:
     from pulse.client.run_session import EngineRunSession
-    from pulse.domain.run import RunRecord
 
 _PROMPT_BLOCKED = {
     "stop_run",
@@ -80,7 +80,12 @@ class CockpitScreen(Screen[None]):
         self.resume_run_id = resume_run_id
         self.attach_run_id = attach_run_id
         self.state = CockpitState()
-        self.state.configure_workflow(workflow_id)
+        shape = _workflow_shape(workflow_id)
+        self.state.configure_workflow(
+            workflow_id,
+            label=shape.label if shape else "",
+            steps=shape.steps if shape else (),
+        )
         self.bridge = PromptBridge()
         self._workspace = str(workspace or Path.cwd())
         self._cwd = self._workspace
@@ -148,12 +153,15 @@ class CockpitScreen(Screen[None]):
         from pulse.tui.hydrate import restore_run
 
         try:
-            exec_root = restore_run(self.state, self.resume_run_id, Path(self._workspace))
-            if exec_root:
-                self._cwd = exec_root
-                self.sink.set_cwd(exec_root)
-        except (OSError, ValueError):
-            pass
+            log = engine.run_log(self.resume_run_id)
+        except engine.EngineUnavailable:
+            return
+        if log is None:
+            return
+        exec_root = restore_run(self.state, log, Path(self._workspace))
+        if exec_root:
+            self._cwd = exec_root
+            self.sink.set_cwd(exec_root)
 
     def _on_replay_end(self) -> None:
         """Fix step timings after replay using the real times from `run_steps`.
@@ -165,10 +173,12 @@ class CockpitScreen(Screen[None]):
         from pulse.tui.hydrate import restore_settled_steps, stamp_live_elapsed
 
         try:
-            restore_settled_steps(self.state, self.attach_run_id, Path(self._workspace))
-            stamp_live_elapsed(self.state, self.attach_run_id)
-        except (OSError, ValueError):
-            pass
+            log = engine.run_log(self.attach_run_id)
+        except engine.EngineUnavailable:
+            log = None
+        if log is not None:
+            restore_settled_steps(self.state, log, Path(self._workspace))
+            stamp_live_elapsed(self.state, log)
         self._dirty = True
 
     def _on_context(self, cwd: str) -> None:
@@ -346,21 +356,23 @@ class CockpitScreen(Screen[None]):
 
     def _resumable_run(self) -> tuple[str, str] | None:
         """Resumable stopped run: this screen's run, or the most recent one."""
-        from pulse.store import runs as run_store
-
         known = self.attach_run_id or self.resume_run_id
+        workspace = Path(self._workspace)
         try:
             if known:
-                record = run_store.load_run(known)
-                pending = [record] if record is not None and record.is_incomplete() else []
+                item = engine.history_item(workspace, known)
+                listed: list[HistoryItem] = [item] if item is not None else []
             else:
-                pending = run_store.find_resumable(Path(self._workspace))
-        except (OSError, ValueError):
+                listed = engine.history(workspace)
+        except engine.EngineUnavailable:
             return None
+        pending = [
+            item for item in listed if item.status is not HistoryStatus.DONE and item.is_incomplete
+        ]
         if not pending:
             return None
-        newest = max(pending, key=lambda item: item.updated_at or item.created_at)
-        return newest.id, _run_summary(newest)
+        newest = max(pending, key=lambda item: item.updated_at)
+        return newest.run_id, resume_summary(newest)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":
@@ -467,8 +479,12 @@ class CockpitScreen(Screen[None]):
         self.app.pop_screen()
 
 
-def _run_summary(record: RunRecord) -> str:
-    """Where the run stopped, for the resume choice screen."""
-    done = sum(1 for step in record.steps if step.settled)
-    current = record.current_step or (record.steps[0].step_id if record.steps else "—")
-    return strings.RUN_SUMMARY.format(current=current, done=done, total=len(record.steps))
+def _workflow_shape(workflow_id: str) -> engine.WorkflowShape | None:
+    """The workflow's steps, to draw the sidebar before the run reports them.
+
+    Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
+    """
+    try:
+        return engine.workflow(workflow_id)
+    except engine.EngineUnavailable:
+        return None

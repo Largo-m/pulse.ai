@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from pulse.domain import ui_text
 from pulse.domain.ports import PhaseContinuation, PromptContinuation, StreamSink
 from pulse.replies.approval import ApprovalOutcome, classify_outcome
 
@@ -27,13 +26,14 @@ class _SessionHost(Protocol):
     """What the turns need from the runner they are mixed into."""
 
     _cwd: str
-    _phase_id: str
     _stream: StreamSink
     ask_question_count: int
 
     def new_session(self, cwd: str, *, workflow: str = "") -> dict[str, Any]: ...
 
     def _activate_session(self, session_id: str) -> None: ...
+
+    def _enter_phase(self, phase_id: str) -> None: ...
 
     def apply_model(self, session: dict[str, Any], preferred_model: str | None) -> None: ...
 
@@ -43,7 +43,7 @@ class _SessionHost(Protocol):
 
     def close_session(self) -> None: ...
 
-    def _begin_phase(self, label: str) -> None: ...
+    def _begin_phase(self, label: str, *, turn: int = 1) -> None: ...
 
     def _run_text_questionnaire(self, phase1_text: str) -> str | None: ...
 
@@ -62,7 +62,7 @@ class StepTurns:
         phase_id: str = "",
     ) -> dict[str, Any]:
         if phase_id:
-            self._phase_id = phase_id
+            self._enter_phase(phase_id)
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:
@@ -82,9 +82,7 @@ class StepTurns:
 
         try:
             for turn in range(MAX_PHASE_APPROVAL_TURNS):
-                self._begin_phase(
-                    ui_text.continuation_label(phase_label, turn + 1) if turn else phase_label
-                )
+                self._begin_phase(phase_label, turn=turn + 1)
                 self._stream.reset_capture()
                 phase_result = self.prompt(active_session, next_prompt)
                 if phase_result.get("stopReason") == "cancelled":
@@ -158,7 +156,7 @@ class StepTurns:
         or empty to stop. Continuing in the same session preserves the agent's context.
         """
         if phase_id:
-            self._phase_id = phase_id
+            self._enter_phase(phase_id)
         session = self.new_session(self._cwd, workflow=workflow)
         session_id = session.get("sessionId")
         if not session_id:
@@ -175,10 +173,7 @@ class StepTurns:
         result: dict[str, Any] = {}
         try:
             for turn in range(max(1, max_turns)):
-                if turn:
-                    self._begin_phase(ui_text.continuation_label(phase_label, turn + 1))
-                else:
-                    self._begin_phase(phase_label)
+                self._begin_phase(phase_label, turn=turn + 1)
                 self._stream.reset_capture()
                 result = self.prompt(active_session, next_prompt)
                 text = self._stream.agent_text().strip()

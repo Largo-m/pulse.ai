@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
@@ -45,7 +45,7 @@ def test_cockpit_sink_enriches_from_cursor_store(tmp_path: Path, monkeypatch):
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
     sink.begin_phase("PRD")
 
@@ -92,7 +92,7 @@ def test_cockpit_sink_backfills_vague_search(tmp_path: Path, monkeypatch):
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
     sink.begin_phase("PRD")
 
@@ -170,7 +170,7 @@ def test_completed_without_path_keeps_spinner_until_backfill(tmp_path: Path, mon
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
     sink.begin_phase("PRD")
     tool_id = "call-read\nfc_pending"
@@ -259,7 +259,7 @@ def test_assistant_chunk_backfills_completed_placeholder(tmp_path: Path, monkeyp
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
     sink.begin_phase("PRD")
     tool_id = "call-last\nfc_z"
@@ -342,7 +342,7 @@ def test_search_stays_pending_until_completed(tmp_path: Path, monkeypatch):
 
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/repo", session_id=session_id)
     sink.begin_phase("PRD")
     sink.handle_update(

@@ -404,10 +404,12 @@ def test_a_spawn_failure_propagates_and_closes_the_log(monkeypatch, tmp_path: Pa
 
 
 class _StatusHandler(http.server.BaseHTTPRequestHandler):
-    """Answers `/api/status` with its server's tag, so the test knows who answered."""
+    """Answers `/api/status` with its server's tag and the credential it received."""
 
     def do_GET(self) -> None:  # noqa: N802 - name fixed by BaseHTTPRequestHandler
-        body = json.dumps({"ok": True, "via": self.server.tag}).encode()  # type: ignore[attr-defined]  # tag is set on the server by the fixture
+        tag = self.server.tag  # type: ignore[attr-defined]  # tag is set on the server by the fixture
+        body = json.dumps({"ok": True, "via": tag, "auth": self.headers.get("Authorization")})
+        body = body.encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -487,6 +489,61 @@ def test_without_a_socket_the_client_dials_the_meta_host_and_port(
 
     assert client.ping() is True
     assert client.get("/api/status")["via"] == "tcp"
+    client.close()
+
+
+def test_tcp_presents_the_token_from_the_meta(tcp_server, tmp_path: Path, monkeypatch):
+    """The TCP listener refuses anyone who cannot read the daemon's private meta."""
+    meta = {"http_port": _port(tcp_server), "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
+    client = EngineClient(socket_path=tmp_path / "missing.sock")
+
+    assert client.get("/api/status")["auth"] == "Bearer daemon-token"
+    client.close()
+
+
+def test_an_explicit_http_base_at_the_daemon_presents_the_token(
+    tcp_server, tmp_path: Path, monkeypatch
+):
+    meta = {"http_host": "127.0.0.1", "http_port": _port(tcp_server), "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
+    client = EngineClient(
+        http_base=f"http://127.0.0.1:{_port(tcp_server)}", socket_path=tmp_path / "none.sock"
+    )
+
+    assert client.get("/api/status")["auth"] == "Bearer daemon-token"
+    client.close()
+
+
+def test_an_http_base_elsewhere_never_receives_the_token(tcp_server, tmp_path: Path, monkeypatch):
+    """The token belongs to the listener in the meta; any other server could replay it."""
+    meta = {"http_host": "127.0.0.1", "http_port": 1, "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
+    client = EngineClient(
+        http_base=f"http://127.0.0.1:{_port(tcp_server)}", socket_path=tmp_path / "none.sock"
+    )
+
+    assert client.get("/api/status")["auth"] is None
+    client.close()
+
+
+def test_the_socket_never_carries_the_token(unix_socket: Path, monkeypatch):
+    """The socket is `0600`; sending the token there would only widen where it travels."""
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: {"token": "daemon-token"})
+    client = EngineClient(socket_path=unix_socket)
+
+    assert client.get("/api/status")["auth"] is None
+    client.close()
+
+
+def test_a_meta_without_a_token_sends_no_credential(tcp_server, tmp_path: Path, monkeypatch):
+    """A pre-token daemon ignores the header; the protocol bump makes the client replace it."""
+    monkeypatch.setattr(
+        engine_client_module, "read_daemon_meta", lambda: {"http_port": _port(tcp_server)}
+    )
+    client = EngineClient(socket_path=tmp_path / "missing.sock")
+
+    assert client.get("/api/status")["auth"] is None
     client.close()
 
 

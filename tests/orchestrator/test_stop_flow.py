@@ -3,7 +3,7 @@ from __future__ import annotations
 from pulse.domain.control import RUN_STOPPED, RunControl
 from pulse.domain.run import StepStatus
 from pulse.tui.state import CockpitState
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 from tests.fakes import FakeAgentSession
 from tests.orchestrator.harness import EngineHarness
 
@@ -51,7 +51,7 @@ def test_settled_step_is_not_reopened_by_stop(tmp_path):
 def test_stop_does_not_mark_failure_in_sidebar():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Um")
     running = state.phases[0]
     assert running.status.value == "running"
@@ -68,7 +68,7 @@ def test_stop_does_not_mark_failure_in_sidebar():
 def test_real_failure_still_marks_failure():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Um")
 
     state.mark_finished(1)
@@ -81,6 +81,6 @@ def test_every_workflow_can_stop():
     """The ACP session is isolated per step: there is always a place to cut."""
     make_workflow("qualquer", steps=[("only", "Único")])
     state = CockpitState()
-    state.configure_workflow("qualquer")
+    configure_from_db(state, "qualquer")
 
     assert state.can_stop is True

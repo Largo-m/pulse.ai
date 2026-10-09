@@ -5,16 +5,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pulse.domain import ui_text
 from pulse.domain.control import RUN_STOPPED
+from pulse.history import log_wording
 from pulse.history.events import (
     ArtifactItem,
     LogEntry,
     LogKind,
     PhaseItem,
     PhaseStatus,
-    workflow_label,
-    workflow_steps,
 )
 from pulse.tui import strings
 from pulse.tui.artifact_tab import ArtifactTab
@@ -59,8 +57,7 @@ class CockpitState(ArtifactTab):
     _next_entry_id: int = 1
     _active_assistant_id: int | None = None
     _follow_live: bool = True
-    _base_labels: dict[str, str] = field(default_factory=dict, repr=False)
-    _base_labels_for: str = field(default="", repr=False)
+    base_labels: dict[str, str] = field(default_factory=dict, repr=False)
 
     def subscribe(self, listener: Listener) -> None:
         self._listeners.append(listener)
@@ -73,12 +70,18 @@ class CockpitState(ArtifactTab):
         for listener in list(self._listeners):
             listener()
 
-    def configure_workflow(self, workflow_id: str) -> None:
+    def configure_workflow(
+        self, workflow_id: str, *, label: str = "", steps: Sequence[tuple[str, str]] = ()
+    ) -> None:
+        """Start a run of `workflow_id`; `steps` draws the sidebar before the run reports them.
+
+        An unknown shape (no `steps`) leaves the sidebar empty: it fills in as
+        steps start.
+        """
         self.workflow_id = workflow_id
-        self.workflow_label = workflow_label(workflow_id)
-        self.phases = [
-            PhaseItem(id=step_id, label=label) for step_id, label in workflow_steps(workflow_id)
-        ]
+        self.workflow_label = (label or workflow_id).upper()
+        self.base_labels = dict(steps)
+        self.phases = [PhaseItem(id=step_id, label=name) for step_id, name in steps]
         self.selected_phase_index = 0
         self.entries = []
         self.artifacts = []
@@ -104,7 +107,8 @@ class CockpitState(ArtifactTab):
     def total_count(self) -> int:
         return len(self.phases)
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        """`title` names the phase; a later `turn` shows as its continuation."""
         self.finish_assistant()
         matched = self._match_phase(title)
         now = time.monotonic()
@@ -123,7 +127,7 @@ class CockpitState(ArtifactTab):
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
                 self.follow_artifact = True
-        self.surface_title = title.upper()
+        self.surface_title = log_wording.phase_title(title, turn).upper()
         self.running = True
         self.notify()
 
@@ -464,10 +468,7 @@ class CockpitState(ArtifactTab):
         Fan-out replaces the parent step with N children, so the parent's name
         only exists in the workflow definition.
         """
-        if self._base_labels_for != self.workflow_id:
-            self._base_labels_for = self.workflow_id
-            self._base_labels = dict(workflow_steps(self.workflow_id)) if self.workflow_id else {}
-        return self._base_labels.get(step_id, "")
+        return self.base_labels.get(step_id, "")
 
     def phase_groups(self) -> list[tuple[str, list[tuple[int, PhaseItem]]]]:
         """Phases in order, with fan-out children grouped under their parent.
@@ -593,8 +594,7 @@ class CockpitState(ArtifactTab):
             entry.active = False
 
     def _match_phase(self, title: str) -> PhaseItem | None:
-        lowered = title.lower()
-        base = ui_text.phase_label_of(lowered)
+        base = title.lower()
         exact = [phase for phase in self.phases if base in {phase.id.lower(), phase.label.lower()}]
         if exact:
             for status in (PhaseStatus.RUNNING, PhaseStatus.PENDING):
@@ -603,7 +603,7 @@ class CockpitState(ArtifactTab):
                         return phase
             return exact[0]
         for phase in self.phases:
-            if phase.id.lower() in lowered or phase.label.lower() in lowered:
+            if phase.id.lower() in base or phase.label.lower() in base:
                 return phase
         pending = [phase for phase in self.phases if phase.status == PhaseStatus.PENDING]
         if pending:
