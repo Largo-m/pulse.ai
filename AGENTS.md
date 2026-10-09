@@ -272,7 +272,9 @@ depend on the factory seed.
   reasons, markdown links, modules cited in `ARCHITECTURE.md` and `tests/`
   mirroring `pulse/`. Keep
   them, and extend them when adding a rule.
-- No `skip`, `xfail` or weakened assertions to make CI green.
+- No `skip`, `xfail` or weakened assertions to make CI green. A required
+  dependency is imported plainly, never through `pytest.importorskip`
+  (`tests/architecture/test_no_skip_on_required_dependencies.py`).
 
 ### 5.2 Before finishing
 

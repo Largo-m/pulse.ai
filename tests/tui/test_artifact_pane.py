@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.artifact_pane import ArtifactPane, ArtifactPaneClosed, ArtifactPaneOpened

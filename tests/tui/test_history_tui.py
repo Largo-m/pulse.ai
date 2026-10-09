@@ -3,10 +3,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store

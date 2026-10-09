@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("textual")
-
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState, LogKind, PhaseStatus
 from pulse.tui.theme import COCKPIT_CSS

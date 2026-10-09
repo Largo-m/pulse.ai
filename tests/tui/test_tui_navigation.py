@@ -4,10 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar

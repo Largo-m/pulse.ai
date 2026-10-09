@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui.app import PulseApp
 from pulse.tui.screens.cockpit import CockpitScreen
 from pulse.tui.state import LogKind, PhaseStatus

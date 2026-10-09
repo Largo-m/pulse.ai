@@ -6,10 +6,6 @@ import asyncio
 import os
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui import strings
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS

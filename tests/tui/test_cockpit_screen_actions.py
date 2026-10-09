@@ -13,10 +13,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.client.run_session import DETACHED
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.domain.run import StepRecord, StepStatus

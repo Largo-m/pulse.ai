@@ -5,8 +5,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("textual")
-
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.store.agent_settings import upsert_agent_settings
 from pulse.tui.screens.settings import SettingsScreen

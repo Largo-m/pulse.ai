@@ -110,10 +110,6 @@ def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Pat
     """The screen, not just the state: the cockpit `on_mount` calls the restore."""
     import asyncio
 
-    import pytest
-
-    pytest.importorskip("textual")
-
     from pulse.tui.screens.cockpit import CockpitScreen
     from pulse.tui.theme import COCKPIT_CSS
 
@@ -143,10 +139,6 @@ def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Pat
 def test_the_choice_offers_back_instead_of_view_only():
     """ "Só visualizar" promised a screen; "Voltar" says what the key does."""
     import asyncio
-
-    import pytest
-
-    pytest.importorskip("textual")
 
     from pulse.tui.screens.resume_choice import BACK, RESUME, ResumeChoiceScreen
     from pulse.tui.theme import COCKPIT_CSS

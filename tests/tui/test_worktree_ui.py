@@ -9,8 +9,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-pytest.importorskip("textual")
-
 from pulse import vcs
 from pulse.config.project_config import load_project_config, update_project_defaults
 from pulse.daemon.runs import RunManager

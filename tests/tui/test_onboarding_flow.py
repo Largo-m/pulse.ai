@@ -11,8 +11,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("textual")
-
 from pulse.config import load_global_config, mark_onboarding_complete, project_config_exists
 from pulse.doctor.checks import CheckResult
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime

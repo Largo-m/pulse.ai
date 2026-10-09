@@ -3,10 +3,6 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui.screens.onboarding import OnboardingScreen
 from pulse.tui.theme import COCKPIT_CSS
 from tests.tui.conftest import DAEMON_DOWN, cut_the_daemon

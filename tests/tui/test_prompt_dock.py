@@ -3,11 +3,6 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import Future
 
-import pytest
-
-pytest.importorskip("textual")
-
-
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest
 from pulse.tui.screens.cockpit import CockpitScreen

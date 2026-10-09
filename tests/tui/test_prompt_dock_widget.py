@@ -5,10 +5,6 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest
 from pulse.tui.theme import COCKPIT_CSS
