@@ -7,9 +7,8 @@ decides what the permission policy already answers and times what a person must.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
-from pulse.replies.permission import decide_permission, parse_policy
+from pulse.replies.permission import decide_permission_call
 
 AnswerRecorder = Callable[[str, tuple[object, ...], dict[str, object], object], None]
 """Receives each prompt-port call with its result, to record the dialog."""
@@ -43,7 +42,7 @@ class WatchedPrompts:
 
         def watched(*args: object, **kwargs: object) -> object:
             if name == "respond_to_permission":
-                decided = _policy_decision(args, kwargs)
+                decided = decide_permission_call(args, kwargs)
                 if decided is not None:
                     return decided
             self._on_enter()
@@ -61,18 +60,3 @@ class WatchedPrompts:
     ) -> None:
         if self._on_answer is not None:
             self._on_answer(name, args, kwargs, result)
-
-
-def _policy_decision(args: tuple[object, ...], kwargs: dict[str, object]) -> dict[str, Any] | None:
-    """Answer to `respond_to_permission(params, *, policy, allow_terminal)` decided by policy alone.
-
-    `None` means only a person can decide."""
-    params = args[0] if args else kwargs.get("params")
-    if not isinstance(params, dict):
-        return None
-    policy = kwargs.get("policy", "ask")
-    return decide_permission(
-        params,
-        policy=parse_policy(policy) if isinstance(policy, str) else "ask",
-        allow_terminal=bool(kwargs.get("allow_terminal", False)),
-    )

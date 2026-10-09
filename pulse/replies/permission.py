@@ -106,3 +106,22 @@ def decide_permission(
         return None
 
     return None
+
+
+def decide_permission_call(
+    args: Sequence[object], kwargs: Mapping[str, object]
+) -> JsonObject | None:
+    """`decide_permission` for a `respond_to_permission(params, *, policy, allow_terminal)` call.
+
+    The live gate and the run log read the call through here, so the log never
+    shows as asked a permission the policy answered, nor drops one a person saw.
+    """
+    params = args[0] if args else kwargs.get("params")
+    if not isinstance(params, Mapping):
+        return None
+    policy = kwargs.get("policy")
+    return decide_permission(
+        params,
+        policy=parse_policy(policy) if isinstance(policy, str) else "ask",
+        allow_terminal=bool(kwargs.get("allow_terminal", False)),
+    )

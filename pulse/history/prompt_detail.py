@@ -27,8 +27,7 @@ from pulse.replies.ask_question import (
 )
 from pulse.replies.permission import (
     build_permission_choices,
-    decide_permission,
-    parse_policy,
+    decide_permission_call,
     permission_prompt_text,
 )
 from pulse.replies.text_questionnaire import (
@@ -166,9 +165,7 @@ def _permission_qa(args: Args, kwargs: Kwargs, result: object) -> list[QA]:
     params = _arg(args, kwargs, 0, "params")
     if not isinstance(params, Mapping):
         return []
-    policy = parse_policy(str(kwargs.get("policy") or "ask"))
-    allow_terminal = bool(kwargs.get("allow_terminal", False))
-    if decide_permission(params, policy=policy, allow_terminal=allow_terminal) is not None:
+    if decide_permission_call(args, kwargs) is not None:
         return []
 
     request = PermissionRequest.parse(params)
