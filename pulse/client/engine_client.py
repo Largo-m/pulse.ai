@@ -199,8 +199,9 @@ class EngineClient:
                 transport=self._transport, base_url="http://pulse", timeout=self._timeout
             )
             return self._client
+        meta = read_daemon_meta() or {}
         if self._http_base:
-            self._client = httpx.Client(base_url=self._http_base.rstrip("/"), timeout=self._timeout)
+            self._client = self._tcp_client(self._http_base.rstrip("/"), meta)
             return self._client
         if self._prefer_uds and self._socket_path.exists():
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
@@ -210,8 +211,13 @@ class EngineClient:
                 timeout=self._timeout,
             )
             return self._client
-        meta = read_daemon_meta() or {}
         host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
         port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        self._client = httpx.Client(base_url=f"http://{host}:{port}", timeout=self._timeout)
+        self._client = self._tcp_client(f"http://{host}:{port}", meta)
         return self._client
+
+    def _tcp_client(self, base_url: str, meta: dict[str, Any]) -> httpx.Client:
+        """TCP needs the daemon's token from its private meta; the socket never sends it."""
+        token = meta.get("token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        return httpx.Client(base_url=base_url, headers=headers, timeout=self._timeout)

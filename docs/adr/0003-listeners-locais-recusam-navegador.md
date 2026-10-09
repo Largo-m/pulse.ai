@@ -66,11 +66,10 @@ na mesma máquina**. A auditoria final (fase 9) confirmou com teste:
   daemon + allowlist de origem); este ADR fecha a porta por padrão.
 - HSTS e `Permissions-Policy` não se aplicam: HTTP puro em loopback e nenhuma
   página é renderizada. O `http-sec-audit` os reporta; ficam aceitos aqui.
-- **Fica em aberto**: outro *usuário do sistema operacional* na mesma máquina
-  alcança `127.0.0.1:8787` (o UDS é `0600`, o TCP não tem equivalente). A
-  correção é um token por daemon guardado no meta `0600`, ou TCP opt-in —
-  muda o protocolo e fica como follow-up em
-  [`quality-scorecard.md`](../quality-scorecard.md).
+- Outro *usuário do sistema operacional* na mesma máquina alcançava
+  `127.0.0.1:8787` (o UDS é `0600`, o TCP não tinha equivalente). Fechado
+  pelo [ADR 0005](0005-tcp-exige-token-do-daemon.md): token por daemon no
+  meta `0600`.
 
 ## Prós e contras das opções
 

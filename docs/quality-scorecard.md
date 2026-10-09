@@ -70,12 +70,13 @@ domínio fora da semente de fábrica, nenhum `if workflow_id == …`.
 
 Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md).
 
-### Em aberto
+### Corrigido depois (branch `fix/tcp-daemon-token`)
 
-- **F1 — outro usuário do SO alcança o TCP.** O UDS é `0600`, mas
-  `127.0.0.1:8787` atende qualquer processo local: dá para trocar
-  `permission_policy` e iniciar uma run. Correção: token por daemon no meta
-  `0600` (muda `ENGINE_PROTOCOL`), ou TCP opt-in.
+| Sev. | CWE | Achado | Correção | Teste |
+|---|---|---|---|---|
+| Alta | 306 | **F1 — outro usuário do SO alcançava o TCP.** O UDS é `0600`, mas `127.0.0.1:8787` atendia qualquer processo local: dava para trocar `permission_policy` e iniciar uma run | Token por daemon no meta `0600`; `TokenGuard` cobra `Authorization: Bearer` só no TCP (`401`); `ENGINE_PROTOCOL` 8 | `tests/api/test_api_token_guard.py`, `tests/infra/test_daemon_meta.py`, `tests/client/test_engine_client_transport.py` |
+
+Decisão registrada em [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md).
 
 ## 4. Qualidade — `python-quality`
 
@@ -116,14 +117,14 @@ Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md
 
 Os itens 2–5 e 8 da lista anterior, mais "migrações sem versão" (seção D) e o
 texto de tela em `domain/ui_text.py`, foram fechados na fase 10 (§7). Em ordem
-de prioridade, o que segue aberto:
+de prioridade, o que segue aberto (o F1 foi fechado pelo
+[ADR 0005](adr/0005-tcp-exige-token-do-daemon.md)):
 
-1. **F1: autenticação no TCP** (token por daemon ou TCP opt-in). Bump de `ENGINE_PROTOCOL`.
-2. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
+1. **`ResolvedConfig`**: `Sourced(valor, fonte)` + `ConfigSource` (`StrEnum`);
    coleções imutáveis; config do agente parseada na borda do store.
-3. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
+2. **Vocabulários duplicados**: `HistoryStatus` × `RunStatus`; política de
    permissão em três lugares, com fallbacks `or "ask"`.
-4. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
+3. **`RunRecord.created_at`/`updated_at`** como `datetime`, como nos steps.
 
 ## 7. Fase 10 — dívidas apontadas por este scorecard, fechadas
 

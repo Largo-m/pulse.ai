@@ -18,6 +18,7 @@ DAEMON_META_FILE = GLOBAL_DIR / "daemon.json"
 DAEMON_LOG_FILE = GLOBAL_DIR / "daemon.log"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8787
+META_MODE = 0o600
 
 
 def global_state_dir() -> Path:
@@ -59,15 +60,26 @@ def worktrees_dir() -> Path:
     return global_state_dir() / "worktrees"
 
 
-def write_daemon_meta(*, pid: int, http_host: str, http_port: int, socket_path: Path) -> None:
+def write_daemon_meta(
+    *, pid: int, http_host: str, http_port: int, socket_path: Path, token: str
+) -> None:
+    """Record where the daemon listens and the token its TCP listener demands.
+
+    Created `0600` and re-tightened if an older daemon left it wider: whoever
+    reads the token can drive runs over TCP (ADR 0005).
+    """
     ensure_global_dir()
     payload = {
         "pid": pid,
         "http_host": http_host,
         "http_port": http_port,
         "socket": str(socket_path),
+        "token": token,
     }
-    DAEMON_META_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    descriptor = os.open(DAEMON_META_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, META_MODE)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as meta:
+        os.fchmod(meta.fileno(), META_MODE)
+        meta.write(json.dumps(payload, indent=2) + "\n")
 
 
 def read_daemon_meta() -> dict[str, Any] | None:
