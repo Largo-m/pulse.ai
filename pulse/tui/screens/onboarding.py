@@ -230,7 +230,11 @@ class OnboardingScreen(Screen[int]):
             self._set_status, strings.ONBOARD_OPENING_LOGIN.format(login=_login_label(runtime))
         )
         code = run_login(runtime.login_command)
-        auth = engine.runtime_checks(runtime.id)[-1]
+        try:
+            auth = engine.runtime_checks(runtime.id)[-1]
+        except EngineUnavailable as error:
+            self.app.call_from_thread(self._login_unverified, str(error))
+            return
 
         def apply() -> None:
             if code != 0 or auth.status == "fail":
@@ -242,6 +246,11 @@ class OnboardingScreen(Screen[int]):
             self._ask_workspace()
 
         self.app.call_from_thread(apply)
+
+    def _login_unverified(self, error: str) -> None:
+        self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
+        self._set_report(error)
+        self._set_options(self._auth_options(retry=True))
 
     @work(thread=True)
     def _run_acp_probe(self) -> None:

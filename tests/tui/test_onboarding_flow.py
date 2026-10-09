@@ -252,6 +252,37 @@ def test_a_failed_login_offers_a_retry_and_a_good_one_moves_on(monkeypatch, tmp_
     assert results == []
 
 
+def test_a_daemon_gone_after_the_login_keeps_the_wizard_on_the_auth_step(monkeypatch):
+    """The login can take minutes; a daemon that died meanwhile must not end the app."""
+    env = _Env(monkeypatch, [[OK_CLI, LOGGED_OUT]])
+    env.login_codes = [0]
+    results: list[int | None] = []
+    screen = OnboardingScreen()
+
+    def daemon_gone(_runtime_id: str) -> list[CheckResult]:
+        raise onboarding.EngineUnavailable("daemon died")
+
+    async def run() -> None:
+        app = _app(screen, results)
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            await _choose(pilot, screen, f"runtime:{DEFAULT_RUNTIME_ID}")
+            monkeypatch.setattr(onboarding.engine, "runtime_checks", daemon_gone)
+
+            await _choose(pilot, screen, "auth_login")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert _status(screen) == strings.ONBOARD_ENGINE_UNAVAILABLE
+            assert _report(screen) == "daemon died"
+            assert _option_ids(screen) == ["auth_login", "auth_skip", "quit"]
+
+    asyncio.run(run())
+
+    assert env.logins == [0]
+    assert results == []
+
+
 def test_skipping_login_tells_which_key_to_export_and_ends_the_wizard(monkeypatch):
     _Env(monkeypatch, [[OK_CLI, LOGGED_OUT]])
     results: list[int | None] = []
