@@ -196,7 +196,8 @@ forbidden_modules = [
 ignore_imports = [
     # Not debt: the `~/.pulse` layout (socket, daemon meta) is where client and
     # daemon meet, shared by design (AGENTS.md §2.1). It imports nothing.
-    "pulse.client.* -> pulse.store.paths",
+    "pulse.client.daemon_process -> pulse.store.paths",
+    "pulse.client.engine_client -> pulse.store.paths",
 ]
 
 [[tool.importlinter.contracts]]
