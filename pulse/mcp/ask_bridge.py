@@ -1,32 +1,27 @@
 from __future__ import annotations
 
 import json
-import os
 import socket
 import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pulse.domain.ports import NullPromptPort
+from pulse.domain.ports import NullPromptPort, PromptPort
 
 SOCKET_ENV = "PULSE_ASK_SOCKET"
 DEFAULT_SOCKET_TIMEOUT = 600.0
-
-
-def default_socket_path() -> Path:
-    return Path("/tmp") / f"pulse-ask-{os.getpid()}.sock"
 
 
 class AskQuestionBridgeServer:
     def __init__(
         self,
         *,
-        socket_path: Path | None = None,
-        prompt_handler=None,
+        socket_path: Path,
+        prompt_handler: PromptPort | None = None,
         on_question: Callable[[], None] | None = None,
     ) -> None:
-        self._socket_path = socket_path or default_socket_path()
+        self._socket_path = socket_path
         self._prompt_handler = prompt_handler or NullPromptPort()
         self._on_question = on_question
         self._server: socket.socket | None = None

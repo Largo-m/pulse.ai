@@ -23,9 +23,8 @@ class CursorRuntime(AgentRuntime):
     auth_env_var = "CURSOR_API_KEY"
     auth_method_id = "cursor_login"
     auth_method_label = "cursor_login"
-    install_hint = "Instale o Cursor CLI: https://cursor.com/docs/cli"
+    install_hint = "Install the Cursor CLI: https://cursor.com/docs/cli"
     login_command = ("agent", "login")
-    login_label = "Executar `agent login`"
     interview_modes = ("agent", "plan", "default")
     execute_modes = ("agent", "default", "acceptEdits")
 
@@ -41,12 +40,12 @@ class CursorRuntime(AgentRuntime):
                 return RuntimeCheck(
                     name=self.auth_check_name,
                     status="ok",
-                    message="Sessão Cursor ativa (`agent login`)",
+                    message="Cursor session active (`agent login`)",
                     detail=email.group(1) if email else "cursor_login",
                 )
         return RuntimeCheck(
             name=self.auth_check_name,
             status="fail",
-            message="Não autenticado",
+            message="Not authenticated",
             detail=self.auth_hint,
         )

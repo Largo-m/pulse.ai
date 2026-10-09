@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
@@ -41,7 +41,13 @@ class StreamSink(Protocol):
 
     def handle_update(self, params: JsonObject) -> None: ...
 
-    def begin_phase(self, title: str) -> None: ...
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        """A phase starts; `turn` above 1 is a later turn of the same phase."""
+        ...
+
+    def set_model(self, model: str) -> None:
+        """The model the agent session runs on, as the agent names it."""
+        ...
 
     def reset_capture(self) -> None: ...
 
@@ -218,6 +224,92 @@ class AgentSession(Protocol):
         ...
 
 
+# The ports below sit between adapters, not between the engine and the world:
+# the ACP session runner gets them from the daemon instead of importing the
+# runtime registry, the MCP bridge or the store (AGENTS.md §2.1).
+
+
+@dataclass(frozen=True)
+class ModelRequest:
+    """JSON-RPC call that applies a model to the session.
+
+    Not every ACP agent implements `session/set_model` (Claude exposes the model
+    as a config option), so each runtime returns the right call.
+    """
+
+    method: str
+    params: JsonObject
+    model_id: str
+
+
+@runtime_checkable
+class RuntimeDialect(Protocol):
+    """How one runtime's ACP adapter differs from plain ACP, as the session runner needs it."""
+
+    def auth_method(self, advertised: Sequence[str]) -> str | None:
+        """`methodId` for `authenticate`, or `None` to skip the call."""
+        ...
+
+    def model_request(
+        self, session: JsonObject, preferred_model: str | None, *, session_id: str
+    ) -> ModelRequest | None: ...
+
+    def resolve_mode(self, session: JsonObject, *, execute: bool) -> str | None: ...
+
+
+@runtime_checkable
+class QuestionChannel(Protocol):
+    """Where the agent asks the user a question mid-turn (the MCP `AskQuestion` tool)."""
+
+    def open(self, prompts: PromptPort, on_question: Callable[[], None]) -> list[JsonObject]:
+        """Start listening; return the `mcpServers` entries the agent must be given."""
+        ...
+
+    def close(self) -> None: ...
+
+
+@runtime_checkable
+class SessionLog(Protocol):
+    """What an agent session leaves in its run's log, so history shows what the screen showed.
+
+    The runner tells where it is (`bind_run`, `enter_step`, `enter_session`) and
+    what happened; the log decides what becomes a row. Writing must never end
+    the session: an adapter swallows its own storage failures.
+    """
+
+    def bind_run(self, run_id: str) -> None: ...
+
+    def enter_step(self, step_id: str) -> None: ...
+
+    def enter_session(
+        self, session_id: str, *, pulse_session_id: str, cwd: str, agent_id: str | None
+    ) -> None:
+        """A new ACP session opened in `cwd`; `pulse_session_id` is the runner's own id."""
+        ...
+
+    def update(self, params: JsonObject) -> None:
+        """A `session/update` the screen just drew."""
+        ...
+
+    def phase(self, label: str, *, turn: int = 1) -> None:
+        """A phase marker, so history does not merge consecutive turns."""
+        ...
+
+    def dialog(
+        self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
+    ) -> None:
+        """A question the user answered through the prompt port."""
+        ...
+
+    def notice(self, title: str, detail: str) -> None:
+        """A failure the session survived, recorded for whoever reads the run later."""
+        ...
+
+    def flush(self) -> None:
+        """Close the agent's pending speech into one row."""
+        ...
+
+
 class WorkspaceError(RuntimeError):
     """The run could not get a place to work: a worktree that would not open."""
 
@@ -275,7 +367,10 @@ class NullStreamSink:
         if isinstance(content, dict) and content.get("type") == "text":
             self._agent_text += str(content.get("text", ""))
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
+        return None
+
+    def set_model(self, model: str) -> None:
         return None
 
     def reset_capture(self) -> None:
@@ -360,4 +455,61 @@ class NullPromptPort:
         *,
         title: str = "",
     ) -> Choice | None:
+        return None
+
+
+class NullQuestionChannel:
+    """No one to ask mid-turn (a probe, a test): the agent gets no MCP server."""
+
+    def open(self, prompts: PromptPort, on_question: Callable[[], None]) -> list[JsonObject]:
+        return []
+
+    def close(self) -> None:
+        return None
+
+
+class NullRuntimeDialect:
+    """Plain ACP, for a runtime with no dialect of its own: no auth, model or mode calls."""
+
+    def auth_method(self, advertised: Sequence[str]) -> str | None:
+        return None
+
+    def model_request(
+        self, session: JsonObject, preferred_model: str | None, *, session_id: str
+    ) -> ModelRequest | None:
+        return None
+
+    def resolve_mode(self, session: JsonObject, *, execute: bool) -> str | None:
+        return None
+
+
+class NullSessionLog:
+    """No run bound (a probe, a test): nothing is recorded."""
+
+    def bind_run(self, run_id: str) -> None:
+        return None
+
+    def enter_step(self, step_id: str) -> None:
+        return None
+
+    def enter_session(
+        self, session_id: str, *, pulse_session_id: str, cwd: str, agent_id: str | None
+    ) -> None:
+        return None
+
+    def update(self, params: JsonObject) -> None:
+        return None
+
+    def phase(self, label: str, *, turn: int = 1) -> None:
+        return None
+
+    def dialog(
+        self, name: str, args: tuple[object, ...], kwargs: dict[str, object], result: object
+    ) -> None:
+        return None
+
+    def notice(self, title: str, detail: str) -> None:
+        return None
+
+    def flush(self) -> None:
         return None

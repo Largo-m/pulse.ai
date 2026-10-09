@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
+from typing import Any
 
 from pulse.domain.run import SETTLED, StepStatus
 from pulse.history.status_labels import status_label
 
 
-class HistoryStatus(str, Enum):
+class HistoryStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     AWAITING_INPUT = "awaiting_input"
@@ -30,6 +32,23 @@ class HistoryStep:
     @property
     def settled(self) -> bool:
         return self.status in SETTLED
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "status": self.status.value,
+            "acp_session_id": self.acp_session_id,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> HistoryStep:
+        return cls(
+            id=str(data["id"]),
+            label=str(data.get("label") or ""),
+            status=StepStatus.parse(str(data.get("status") or "")),
+            acp_session_id=str(data.get("acp_session_id") or ""),
+        )
 
 
 @dataclass
@@ -55,6 +74,43 @@ class HistoryItem:
     @property
     def item_id(self) -> str:
         return self.run_id
+
+    def to_dict(self) -> dict[str, Any]:
+        """The `/api/history` wire shape; `from_dict` reads it back on the client."""
+        return {
+            "id": self.item_id,
+            "run_id": self.run_id,
+            "workflow_id": self.workflow_id,
+            "workflow_label": self.workflow_label,
+            "title": self.title,
+            "prompt": self.prompt,
+            "status": self.status.value,
+            "updated_at": self.updated_at,
+            "artifacts": list(self.artifacts),
+            "branch": self.branch,
+            "worktree_path": self.worktree_path,
+            "steps": [step.to_dict() for step in self.steps],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> HistoryItem:
+        try:
+            status = HistoryStatus(str(data.get("status") or ""))
+        except ValueError:
+            status = HistoryStatus.PENDING
+        return cls(
+            run_id=str(data["run_id"]),
+            workflow_id=str(data.get("workflow_id") or ""),
+            workflow_label=str(data.get("workflow_label") or ""),
+            title=str(data.get("title") or ""),
+            prompt=str(data.get("prompt") or ""),
+            status=status,
+            updated_at=str(data.get("updated_at") or ""),
+            steps=[HistoryStep.from_dict(step) for step in data.get("steps") or ()],
+            artifacts=[str(path) for path in data.get("artifacts") or ()],
+            branch=str(data.get("branch") or ""),
+            worktree_path=str(data.get("worktree_path") or ""),
+        )
 
     @property
     def status_label(self) -> str:

@@ -11,10 +11,10 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from pulse.domain.run import (
     RunRecord,
@@ -36,7 +36,7 @@ def _now_text() -> str:
     return utc_now().isoformat()
 
 
-def _stamp(value: Any) -> datetime | None:
+def _stamp(value: object) -> datetime | None:
     """Stamp read from storage; empty or unreadable is no stamp, naive is UTC.
 
     Older rows were written by hand-rolled code; a bad value must not break history.
@@ -55,7 +55,7 @@ def _stamp_text(value: datetime | None) -> str:
     return value.isoformat() if value is not None else ""
 
 
-def _step(row: Any) -> StepRecord:
+def _step(row: sqlite3.Row) -> StepRecord:
     return StepRecord(
         step_id=str(row["step_id"]),
         position=int(row["position"] or 0),
@@ -72,7 +72,7 @@ def _step(row: Any) -> StepRecord:
     )
 
 
-def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
+def _run(row: sqlite3.Row, steps: list[StepRecord]) -> RunRecord:
     return RunRecord(
         id=str(row["id"]),
         workflow_id=str(row["workflow_id"]),
@@ -88,7 +88,7 @@ def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
     )
 
 
-def _steps_for(connection: Any, run_id: str) -> list[StepRecord]:
+def _steps_for(connection: sqlite3.Connection, run_id: str) -> list[StepRecord]:
     rows = connection.execute(
         "SELECT * FROM run_steps WHERE run_id = ? ORDER BY position, step_id",
         (run_id,),
@@ -229,7 +229,7 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
     run.forget_removed_steps()
 
 
-def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
+def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) -> None:
     connection.execute(
         """
         INSERT INTO run_steps

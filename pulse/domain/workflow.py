@@ -60,6 +60,13 @@ class Loop:
     end: int
     max_rounds: int
 
+    def __post_init__(self) -> None:
+        if not 0 <= self.start < self.end or self.max_rounds < MIN_LOOP_ROUNDS:
+            raise ValueError(
+                f"a loop spans at least two steps and {MIN_LOOP_ROUNDS} rounds: "
+                f"{self.start}..{self.end}, {self.max_rounds}"
+            )
+
     def opens(self, index: int) -> bool:
         return index == self.start
 

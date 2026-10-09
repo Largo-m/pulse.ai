@@ -7,6 +7,7 @@ clock where it was.
 
 from __future__ import annotations
 
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -22,7 +23,7 @@ from pulse.store import runs as run_store
 from pulse.tui.adapters.prompt_bridge import PromptAbandoned, PromptBridge, PromptKind
 from pulse.tui.hydrate import stamp_live_elapsed
 from pulse.tui.state import CockpitState
-from tests.conftest import store_run_status, store_step
+from tests.conftest import served_log, store_run_status, store_step
 
 
 class _BlockingClient:
@@ -30,22 +31,23 @@ class _BlockingClient:
 
     def __init__(self) -> None:
         self.cancelled: list[str] = []
-        self.closed = False
+        self.streaming = threading.Event()
+        self._closed = threading.Event()
 
     def stream_events(self, run_id: str, *, after: int = 0):
         from pulse.client.protocol import PING
 
         yield {"type": "phase.begin", "title": "Um"}
-        while not self.closed:
+        self.streaming.set()
+        while not self._closed.wait(timeout=0.01):
             yield {"type": PING}
-            time.sleep(0.01)
 
     def cancel_run(self, run_id: str):
         self.cancelled.append(run_id)
         return {"ok": True}
 
     def close(self) -> None:
-        self.closed = True
+        self._closed.set()
 
     def answer_prompt(self, prompt_id: str, answer):
         return {"ok": True}
@@ -60,7 +62,7 @@ def test_detaching_leaves_the_run_alone():
     )
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(session.attach, "run-1")
-        time.sleep(0.1)
+        assert client.streaming.wait(timeout=5)
         session.detach()
         assert future.result(timeout=5) == DETACHED
     assert client.cancelled == []
@@ -71,9 +73,7 @@ def test_abandoning_the_bridge_frees_the_thread_without_answering():
     bridge = PromptBridge()
     with ThreadPoolExecutor(max_workers=1) as pool:
         asking = pool.submit(bridge.request, PromptKind.TEXT, title="t", prompt="responde?")
-        deadline = time.monotonic() + 2
-        while bridge.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.01)
+        assert bridge.poll(timeout=2) is not None
         bridge.abandon()
         with pytest.raises(PromptAbandoned):
             asking.result(timeout=5)
@@ -84,9 +84,7 @@ def test_closing_the_bridge_still_cancels_what_is_open():
     bridge = PromptBridge()
     with ThreadPoolExecutor(max_workers=1) as pool:
         asking = pool.submit(bridge.request, PromptKind.TEXT, title="t", prompt="?")
-        deadline = time.monotonic() + 2
-        while bridge.poll() is None and time.monotonic() < deadline:
-            time.sleep(0.01)
+        assert bridge.poll(timeout=2) is not None
         bridge.close()
         assert asking.result(timeout=5) is None
 
@@ -137,7 +135,7 @@ def test_the_clock_survives_leaving_and_coming_back(tmp_path: Path):
     state.phases[0].status = PhaseStatus.DONE
     state.begin_phase("Dois")
 
-    stamp_live_elapsed(state, "run-live")
+    stamp_live_elapsed(state, served_log("run-live"))
 
     assert state.phases[0].elapsed_label() == "00:30"
     spent = time.monotonic() - state.phases[1].started_at
@@ -182,7 +180,7 @@ def test_attaching_to_a_waiting_run_reopens_with_the_clock_frozen(tmp_path: Path
     assert state.awaiting_input is True
     assert state.phases[0].display_status() == "awaiting_input"
 
-    stamp_live_elapsed(state, "run-wait")
+    stamp_live_elapsed(state, served_log("run-wait"))
 
     assert state.phases[0].elapsed_label() == "01:00"
     assert state.phases[0].elapsed_label(now=time.monotonic() + 120) == "01:00"

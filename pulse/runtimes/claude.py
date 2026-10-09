@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
+from pulse.domain.ports import ModelRequest
+from pulse.replies.session_models import MODEL_CONFIG_ID, model_config_option, resolve_model_id
+from pulse.runtimes.base import AgentRuntime, RuntimeCheck
 
 CLAUDE_ACP_PACKAGE = "@agentclientprotocol/claude-agent-acp"
 CLAUDE_ACP_VERSION = "0.86.0"
-
-MODEL_CONFIG_ID = "model"
 
 
 class ClaudeRuntime(AgentRuntime):
@@ -29,9 +29,8 @@ class ClaudeRuntime(AgentRuntime):
     auth_env_var = "ANTHROPIC_API_KEY"
     auth_method_id = None
     auth_method_label = "claude_login"
-    install_hint = "Instale o Claude Code (https://claude.com/claude-code) e o Node.js 18+ (`npx`)."
+    install_hint = "Install Claude Code (https://claude.com/claude-code) and Node.js 18+ (`npx`)."
     login_command = ("claude", "/login")
-    login_label = "Executar `claude /login`"
     interview_modes = ("default", "acceptEdits", "agent")
     execute_modes = ("default", "acceptEdits", "agent")
 
@@ -42,8 +41,8 @@ class ClaudeRuntime(AgentRuntime):
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="warn",
-                message="Não foi possível confirmar a sessão Claude",
-                detail="`claude auth status` não respondeu; rode `claude` e confira o login",
+                message="Could not confirm the Claude session",
+                detail="`claude auth status` did not answer; run `claude` and check the login",
             )
         try:
             payload = json.loads((completed.stdout or "").strip())
@@ -54,20 +53,20 @@ class ClaudeRuntime(AgentRuntime):
                 return RuntimeCheck(
                     name=self.auth_check_name,
                     status="ok",
-                    message="Sessão Claude ativa",
+                    message="Claude session active",
                     detail=str(payload.get("authMethod") or "claude_login"),
                 )
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="fail",
-                message="Não autenticado no Claude Code",
+                message="Not authenticated in Claude Code",
                 detail=self.auth_hint,
             )
         return RuntimeCheck(
             name=self.auth_check_name,
             status="warn",
-            message="Não foi possível confirmar a sessão Claude",
-            detail="`claude auth status` não respondeu; rode `claude` e confira o login",
+            message="Could not confirm the Claude session",
+            detail="`claude auth status` did not answer; run `claude` and check the login",
         )
 
     def model_request(
@@ -77,8 +76,6 @@ class ClaudeRuntime(AgentRuntime):
         *,
         session_id: str,
     ) -> ModelRequest | None:
-        from pulse.acp.models import resolve_model_id
-
         model_id = resolve_model_id(session, preferred_model)
         if not model_id:
             return None
@@ -94,16 +91,3 @@ class ClaudeRuntime(AgentRuntime):
             },
             model_id=model_id,
         )
-
-
-def model_config_option(session: dict[str, Any]) -> dict[str, Any] | None:
-    """Config option that carries the model list."""
-    options = session.get("configOptions")
-    if not isinstance(options, list):
-        return None
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        if option.get("id") == MODEL_CONFIG_ID or option.get("category") == MODEL_CONFIG_ID:
-            return option
-    return None

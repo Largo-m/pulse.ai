@@ -13,10 +13,10 @@ expanded at seed time so each row is self-contained.
 from __future__ import annotations
 
 import re
+import sqlite3
 from dataclasses import dataclass
 from functools import cache, lru_cache
 from pathlib import Path
-from typing import Any
 
 INCLUDE = re.compile(r"^[ \t]*<!--[ \t]*include:[ \t]*([a-z0-9-]+)[ \t]*-->[ \t]*$", re.MULTILINE)
 
@@ -214,7 +214,7 @@ def load_agents() -> tuple[FactoryAgent, ...]:
     return tuple(agents)
 
 
-def seed(connection: Any) -> None:
+def seed(connection: sqlite3.Connection) -> None:
     """Write the factory configuration. `INSERT OR IGNORE`: never undoes edits.
 
     An agent or step deleted from the DB is restored on the next open, since
@@ -276,7 +276,7 @@ def seed(connection: Any) -> None:
     )
 
 
-def inherit_policy_on_default_agent(connection: Any) -> None:
+def inherit_policy_on_default_agent(connection: sqlite3.Connection) -> None:
     """Make DBs seeded with `ask` on the `default` agent inherit the policy.
 
     A hardcoded `ask` overrode machine and project policy in
@@ -288,7 +288,7 @@ def inherit_policy_on_default_agent(connection: Any) -> None:
     )
 
 
-def backfill_default_prompts(connection: Any) -> None:
+def backfill_default_prompts(connection: sqlite3.Connection) -> None:
     """Fill `default_prompt` in DBs seeded before the column existed.
 
     The `ALTER` gives existing rows `''` and `seed` does not rerun. Only empty
@@ -308,7 +308,7 @@ UNATTENDED_STEPS: tuple[tuple[str, str], ...] = (
 )
 
 
-def drop_approval_from_unattended_steps(connection: Any) -> None:
+def drop_approval_from_unattended_steps(connection: sqlite3.Connection) -> None:
     """Remove the approval request from these steps in already-seeded DBs.
 
     `seed` never rewrites existing rows, so only rows still carrying the factory
@@ -321,7 +321,7 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
         f"""
         SELECT count(*) FROM workflow_steps
          WHERE step_id IN ({placeholders}) AND instr(prompt_template, ?) > 0
-        """,  # noqa: S608
+        """,  # noqa: S608  # only `?` placeholders are interpolated
         (*(step_id for _workflow_id, step_id in UNATTENDED_STEPS), APPROVAL_MARK),
     ).fetchone()[0]
     if not pending:
@@ -341,14 +341,16 @@ def drop_approval_from_unattended_steps(connection: Any) -> None:
     )
 
 
-def _count_present(connection: Any, table: str, column: str, ids: tuple[str, ...]) -> int:
+def _count_present(
+    connection: sqlite3.Connection, table: str, column: str, ids: tuple[str, ...]
+) -> int:
     # `table` and `column` are literals from `is_seeded`, never input.
     placeholders = ",".join("?" * len(ids))
     query = f"SELECT count(*) FROM {table} WHERE {column} IN ({placeholders})"  # noqa: S608
     return int(connection.execute(query, ids).fetchone()[0])
 
 
-def is_seeded(connection: Any) -> bool:
+def is_seeded(connection: sqlite3.Connection) -> bool:
     """Whether every factory row is already present.
 
     Called on every `connect`, so it only counts factory ids instead of

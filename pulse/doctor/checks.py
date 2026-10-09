@@ -66,7 +66,7 @@ def other_runtimes_summary(active: str) -> list[CheckResult]:
                 CheckResult(
                     name=f"Runtime {runtime.id}",
                     status="warn",
-                    message=f"Runtime `{runtime.id}` indisponível",
+                    message=f"Runtime `{runtime.id}` unavailable",
                     detail=failures[0].detail or failures[0].message,
                 )
             )
@@ -75,8 +75,8 @@ def other_runtimes_summary(active: str) -> list[CheckResult]:
                 CheckResult(
                     name=f"Runtime {runtime.id}",
                     status="ok",
-                    message=f"Runtime `{runtime.id}` pronto",
-                    detail="disponível para workflows",
+                    message=f"Runtime `{runtime.id}` ready",
+                    detail="available to workflows",
                 )
             )
     return results
@@ -100,14 +100,14 @@ def check_git() -> CheckResult:
         return CheckResult(
             name="Git",
             status="ok",
-            message="git disponível",
-            detail="worktree por run pode ser ligado nas configurações do projeto",
+            message="git available",
+            detail="a worktree per run can be turned on in the project settings",
         )
     return CheckResult(
         name="Git",
         status="warn",
-        message="git não encontrado no PATH",
-        detail="sem ele as runs rodam sempre na árvore de trabalho do projeto",
+        message="git not found on PATH",
+        detail="without it, runs always work in the project's working tree",
     )
 
 

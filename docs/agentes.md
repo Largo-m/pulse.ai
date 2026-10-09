@@ -458,7 +458,7 @@ Bloqueio é o último recurso, não o jeito de pedir informação.
 | `cancel` / não aprovado / `stopReason` ruim | — | cai no menu de retry |
 | `status: blocked` (ou sem bloco) | `blocked` | cai no menu de bloqueio |
 
-O menu de falha ([`_offer_retry`](../pulse/orchestrator/engine.py)):
+O menu de falha ([`_offer_retry`](../pulse/orchestrator/menus.py)):
 
 ```
 Refazer                      → nova tentativa, mesmo prompt
@@ -466,7 +466,7 @@ Outro — dizer o que fazer    → ask_text() → guidance_block() no prompt seg
 Parar                        → status FAILED, run encerra com exit 1
 ```
 
-O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/engine.py)) tem uma
+O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/menus.py)) tem uma
 opção a mais, porque bloqueio costuma ser legítimo e às vezes a resposta certa é
 seguir sem aquele step:
 
@@ -569,13 +569,14 @@ stdout do runtime (uma linha = um JSON-RPC)
   │
   ├─ method = session/update           → notificação:
   │     stream.handle_update(params)   → cockpit / SSE
-  │     _record_run_event(params)      → run_events + run_artifacts
+  │     session_log.update(params)     → run_events + run_artifacts
   │
   └─ só id                            → resposta a um request nosso (fila)
 ```
 
 **Como artefato é descoberto:** um `tool_call` com `kind` ∈ {`edit`, `write`,
-`create`} faz o runner extrair o caminho de `locations[].path` ou do `rawInput`
+`create`} faz o log da sessão ([`RecordedSessionLog`](../pulse/history/session_log.py),
+injetado pelo daemon) extrair o caminho de `locations[].path` ou do `rawInput`
 (chaves `path`, `file_path`, `target_file`, `filePath`, `abs_path` — cada runtime
 reporta de um jeito) e gravar em `run_artifacts`. Não há convenção de pasta, nome
 ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.

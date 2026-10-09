@@ -7,6 +7,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from pulse.domain.ports import ModelRequest
+from pulse.replies.session_models import resolve_model_id
+
 
 @dataclass(frozen=True)
 class RuntimeCheck:
@@ -16,19 +19,6 @@ class RuntimeCheck:
     status: str
     message: str
     detail: str | None = None
-
-
-@dataclass(frozen=True)
-class ModelRequest:
-    """JSON-RPC call that applies a model to the session.
-
-    Not every ACP agent implements `session/set_model` (Claude exposes the model
-    as a config option), so each runtime returns the right call.
-    """
-
-    method: str
-    params: dict[str, Any]
-    model_id: str
 
 
 def run_cli(
@@ -57,7 +47,7 @@ class AgentRuntime:
     """
 
     id: str = "generic"
-    label: str = "Agente ACP"
+    label: str = "ACP agent"
     binary: str = ""
     acp_args: tuple[str, ...] = ("acp",)
     acp_override: tuple[str, ...] = ()
@@ -68,7 +58,6 @@ class AgentRuntime:
     auth_method_label: str = ""
     install_hint: str = ""
     login_command: tuple[str, ...] = ()
-    login_label: str = ""
     interview_modes: tuple[str, ...] = ("agent", "plan", "default")
     execute_modes: tuple[str, ...] = ("agent", "default", "acceptEdits")
 
@@ -104,7 +93,7 @@ class AgentRuntime:
             return RuntimeCheck(
                 name=name,
                 status="fail",
-                message=f"Binário `{self.binary}` não encontrado no PATH",
+                message=f"Binary `{self.binary}` not found on PATH",
                 detail=self.install_hint or None,
             )
         completed = self.run_cli([found, "--version"])
@@ -112,14 +101,14 @@ class AgentRuntime:
             return RuntimeCheck(
                 name=name,
                 status="fail",
-                message=f"Falha ao executar `{self.binary} --version`",
+                message=f"Failed to run `{self.binary} --version`",
                 detail=self.install_hint or None,
             )
         version = (completed.stdout or completed.stderr).strip()
         return RuntimeCheck(
             name=name,
             status="ok",
-            message=f"Encontrado em {found}",
+            message=f"Found at {found}",
             detail=version or None,
         )
 
@@ -132,33 +121,33 @@ class AgentRuntime:
                     RuntimeCheck(
                         name=dependency,
                         status="fail",
-                        message=f"`{dependency}` não encontrado no PATH",
+                        message=f"`{dependency}` not found on PATH",
                         detail=self.install_hint or None,
                     )
                 )
             else:
                 results.append(
-                    RuntimeCheck(name=dependency, status="ok", message=f"Encontrado em {found}")
+                    RuntimeCheck(name=dependency, status="ok", message=f"Found at {found}")
                 )
         return results
 
     @property
     def auth_check_name(self) -> str:
-        return f"Autenticação {self.label}"
+        return f"{self.label} authentication"
 
     def check_auth(self) -> RuntimeCheck:
         if self.auth_env_var and os.environ.get(self.auth_env_var, "").strip():
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="ok",
-                message=f"{self.auth_env_var} definida no ambiente",
+                message=f"{self.auth_env_var} set in the environment",
                 detail="api_key",
             )
         if self.find_binary() is None:
             return RuntimeCheck(
                 name=self.auth_check_name,
                 status="fail",
-                message=f"Sem {self.auth_env_var} e `{self.binary}` indisponível",
+                message=f"No {self.auth_env_var} and `{self.binary}` unavailable",
                 detail=self.auth_hint,
             )
         return self._check_auth_cli()
@@ -167,7 +156,7 @@ class AgentRuntime:
         return RuntimeCheck(
             name=self.auth_check_name,
             status="warn",
-            message="Autenticação não verificável",
+            message="Authentication cannot be verified",
             detail=self.auth_hint,
         )
 
@@ -175,24 +164,15 @@ class AgentRuntime:
     def auth_hint(self) -> str:
         parts = []
         if self.login_command:
-            parts.append(f"Execute `{' '.join(self.login_command)}`")
+            parts.append(f"Run `{' '.join(self.login_command)}`")
         if self.auth_env_var:
-            parts.append(f"ou exporte {self.auth_env_var}")
+            parts.append(f"or export {self.auth_env_var}")
         return " ".join(parts)
 
     def checks(self) -> list[RuntimeCheck]:
         results = [self.check_binary(), *self.check_dependencies()]
         results.append(self.check_auth())
         return results
-
-    def login(self) -> int:
-        if not self.login_command:
-            return 1
-        try:
-            # login_command is a class constant of the runtime; interactive, so no timeout.
-            return subprocess.run(list(self.login_command), check=False).returncode  # noqa: S603
-        except OSError:
-            return 1
 
     def auth_method(self, advertised: Sequence[str]) -> str | None:
         """`methodId` for `authenticate`, or None to skip the call.
@@ -237,8 +217,6 @@ class AgentRuntime:
         *,
         session_id: str,
     ) -> ModelRequest | None:
-        from pulse.acp.models import resolve_model_id
-
         model_id = resolve_model_id(session, preferred_model)
         if not model_id:
             return None

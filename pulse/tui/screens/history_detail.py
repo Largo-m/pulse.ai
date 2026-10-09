@@ -7,13 +7,12 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse import vcs
-from pulse.client.active_runs import active_run_ids
-from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
+from pulse.tui import engine, strings
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.confirm import ConfirmScreen
-from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
+from pulse.tui.screens.navigation import pulse_app
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen, resume_summary
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
 from pulse.tui.widgets.artifact_pane import (
@@ -28,21 +27,21 @@ from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
 
 class HistoryDetailScreen(Screen[None]):
     BINDINGS = [
-        Binding("q", "back_list", "Voltar"),
-        Binding("r", "resume_workflow", "Retomar"),
-        Binding("w", "remove_worktree", "Remover worktree"),
-        Binding("b", "back_list", "Voltar"),
-        Binding("tab", "toggle_focus", "Focus"),
-        Binding("a", "toggle_artifact_pane", "Artifacts"),
-        Binding("escape", "escape_back", "Back"),
-        Binding("left_square_bracket", "artifact_prev", "Prev file"),
-        Binding("right_square_bracket", "artifact_next", "Next file"),
-        Binding("left", "artifact_left", "Prev file"),
-        Binding("right", "artifact_right", "Next file"),
-        Binding("up", "nav_up", "Up", priority=True),
-        Binding("down", "nav_down", "Down", priority=True),
-        Binding("k", "nav_up", "Up", priority=True),
-        Binding("j", "nav_down", "Down", priority=True),
+        Binding("q", "back_list", strings.BACK),
+        Binding("r", "resume_workflow", strings.BINDING_RESUME),
+        Binding("w", "remove_worktree", strings.BINDING_REMOVE_WORKTREE),
+        Binding("b", "back_list", strings.BACK),
+        Binding("tab", "toggle_focus", strings.BINDING_FOCUS),
+        Binding("a", "toggle_artifact_pane", strings.BINDING_ARTIFACTS),
+        Binding("escape", "escape_back", strings.BINDING_BACK),
+        Binding("left_square_bracket", "artifact_prev", strings.BINDING_PREV_FILE),
+        Binding("right_square_bracket", "artifact_next", strings.BINDING_NEXT_FILE),
+        Binding("left", "artifact_left", strings.BINDING_PREV_FILE),
+        Binding("right", "artifact_right", strings.BINDING_NEXT_FILE),
+        Binding("up", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("down", "nav_down", strings.BINDING_DOWN, priority=True),
+        Binding("k", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("j", "nav_down", strings.BINDING_DOWN, priority=True),
     ]
 
     def __init__(self, item: HistoryItem, workspace: Path | None = None) -> None:
@@ -50,7 +49,12 @@ class HistoryDetailScreen(Screen[None]):
         self.item = item
         self._workspace = Path(workspace or Path.cwd())
         self._cwd = item.worktree_path or str(self._workspace)
-        self.state = hydrate_history_item(item, Path(self._cwd))
+        self.state = hydrate_history_item(
+            item, Path(self._cwd), engine.optional(lambda: engine.run_log(item.run_id))
+        )
+        shape = engine.optional(lambda: engine.workflow(item.workflow_id))
+        if shape is not None:
+            self.state.base_labels = dict(shape.steps)
         self._pending = _pending_run(item)
 
     def compose(self) -> ComposeResult:
@@ -59,7 +63,7 @@ class HistoryDetailScreen(Screen[None]):
             yield PhaseSidebar(self.state, id="phase-sidebar")
             yield LogStream(self.state, id="log-stream")
             yield ArtifactPane(self.state, cwd=self._cwd, id="artifact-pane")
-        yield AppFooter(back_label="VOLTAR")
+        yield AppFooter(back_label=strings.FOOTER_BACK)
 
     def on_mount(self) -> None:
         self._sync_ui(force=True)
@@ -74,7 +78,7 @@ class HistoryDetailScreen(Screen[None]):
         def _chosen(mode: str | None) -> None:
             if mode != RESUME:
                 return
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 self.item.workflow_id,
                 self.item.prompt,
                 resume_run_id=run_id,
@@ -92,39 +96,49 @@ class HistoryDetailScreen(Screen[None]):
         decides when they are done with it. A run the daemon still executes keeps
         it: the agent works there and the daemon would write the path back.
         """
-        path = self.item.worktree_path
-        if not path or not Path(path).exists():
+        if not self.item.worktree_path:
             return
-        if self.item.run_id in active_run_ids():
-            self.notify("Worktree mantido — a run está em andamento")
+        try:
+            worktree = engine.worktree_state(self._workspace, self.item.item_id)
+        except engine.EngineError as error:
+            self.notify(error.describe())
             return
-        dirty = vcs.has_changes(path)
-        detail = [path, f"Branch: {self.item.branch or '—'}"]
-        if dirty:
-            detail.append(
-                "Há mudança não commitada aqui. O git vai recusar a remoção — "
-                "commite ou descarte antes."
-            )
+        if worktree is None or not worktree.exists:
+            return
+        if worktree.active:
+            self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
+            return
+        detail = [worktree.path, strings.WORKTREE_BRANCH.format(branch=self.item.branch or "—")]
+        if worktree.dirty:
+            detail.append(strings.WORKTREE_DIRTY)
         else:
-            detail.append("A branch continua no repositório; só o diretório sai.")
-
-        def _answered(confirmed: bool | None) -> None:
-            if not confirmed:
-                return
-            catalog = HistoryCatalog(self._workspace)
-            if catalog.remove_worktree(self.item):
-                self.notify("Worktree removido")
-            else:
-                self.notify("Worktree mantido — o git recusou a remoção")
+            detail.append(strings.WORKTREE_CLEAN)
 
         self.app.push_screen(
             ConfirmScreen(
-                title="REMOVER WORKTREE",
+                title=strings.CONFIRM_TITLE_REMOVE_WORKTREE,
                 detail="\n".join(detail),
-                confirm_label="Remover",
+                confirm_label=strings.REMOVE,
             ),
-            callback=_answered,
+            callback=self._remove_confirmed,
         )
+
+    def _remove_confirmed(self, confirmed: bool | None) -> None:
+        if not confirmed:
+            return
+        try:
+            removed = engine.remove_worktree(self._workspace, self.item.item_id)
+        except engine.RunInUse:
+            self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
+            return
+        except engine.EngineError as error:
+            self.notify(error.describe())
+            return
+        if not removed:
+            self.notify(strings.WORKTREE_GIT_REFUSED)
+            return
+        self.item.worktree_path = ""
+        self.notify(strings.WORKTREE_REMOVED)
 
     def _sync_ui(self, *, force: bool = False) -> None:
         body = self.query_one("#cockpit-body")
@@ -139,7 +153,7 @@ class HistoryDetailScreen(Screen[None]):
         self.query_one(ArtifactPane).sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if action == "resume_workflow":
             return self._pending is not None
         if action == "remove_worktree":
@@ -256,6 +270,4 @@ def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
     """
     if not item.is_incomplete:
         return None
-    done = sum(1 for step in item.steps if step.settled)
-    current = next((step.label for step in item.steps if not step.settled), "—")
-    return item.run_id, f"{current} · steps {done}/{len(item.steps)}"
+    return item.run_id, resume_summary(item)

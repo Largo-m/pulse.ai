@@ -59,7 +59,7 @@ class ConsoleStreamSink(NullStreamSink):
         for step_id in done_ids:
             self._report(step_id, f"✓ {labels.get(step_id, step_id)}")
         for step_id in skipped_ids:
-            self._report(step_id, f"⏭  {labels.get(step_id, step_id)} pulado")
+            self._report(step_id, f"⏭  {labels.get(step_id, step_id)} skipped")
 
     def _report(self, step_id: str, line: str) -> None:
         if step_id in self._reported:

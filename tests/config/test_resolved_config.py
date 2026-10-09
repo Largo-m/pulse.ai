@@ -20,7 +20,7 @@ def _global(**overrides) -> GlobalConfig:
         agent_binary="agent",
         acp_command=["agent", "acp"],
         auth_method="cursor_login",
-        workspace_dir=Path("/tmp/global"),
+        workspace_dir=Path("/nonexistent/global-workspace"),
         model="global-model",
         permission_policy="auto_approve",
         completed_at="2026-06-21T12:00:00+00:00",

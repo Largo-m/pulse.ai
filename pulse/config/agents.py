@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 DEFAULT_AGENT_NAME = "default"
 
@@ -30,7 +29,7 @@ def default_acp_command(name: str, binary: str) -> list[str]:
     return [binary, "acp"]
 
 
-def parse_agents(raw: Any) -> dict[str, AgentConfig]:
+def parse_agents(raw: object) -> dict[str, AgentConfig]:
     if not isinstance(raw, dict):
         return {}
     agents: dict[str, AgentConfig] = {}
@@ -54,7 +53,7 @@ def parse_agents(raw: Any) -> dict[str, AgentConfig]:
     return agents
 
 
-def parse_workflows(raw: Any) -> dict[str, WorkflowConfig]:
+def parse_workflows(raw: object) -> dict[str, WorkflowConfig]:
     if not isinstance(raw, dict):
         return {}
     workflows: dict[str, WorkflowConfig] = {}

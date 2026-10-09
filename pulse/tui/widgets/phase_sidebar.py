@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
@@ -11,7 +13,13 @@ from textual.widget import Widget
 from textual.widgets import Static
 
 from pulse.history.status_labels import status_color, status_icon, status_label
+from pulse.tui import strings
 from pulse.tui.state import NAV_PHASE, CockpitState, PhaseItem, PhaseStatus
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 
 class NavSelected(Message):
@@ -37,7 +45,7 @@ class PhaseSidebar(Widget):
     can_focus = True
     selected_index: reactive[int] = reactive(0)
 
-    def __init__(self, state: CockpitState, **kwargs) -> None:
+    def __init__(self, state: CockpitState, **kwargs: Unpack[WidgetOptions]) -> None:
         super().__init__(**kwargs)
         self._state = state
         self._slots: list[tuple[int, int, str, int]] = []
@@ -63,7 +71,7 @@ class PhaseSidebar(Widget):
             return
         try:
             content = self.query_one("#phase-content", Static)
-        except Exception:
+        except NoMatches:
             return
         y = event.screen_y - content.region.y
         if y < 0:
@@ -80,7 +88,7 @@ class PhaseSidebar(Widget):
         now = time.monotonic()
         line = 0
         if not state.phases:
-            output.append("Nenhum step configurado\n", style="#888888")
+            output.append(f"{strings.SIDEBAR_NO_STEPS}\n", style="#888888")
             return output
 
         for key, members in state.phase_groups():
