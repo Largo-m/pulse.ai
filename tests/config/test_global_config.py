@@ -8,6 +8,8 @@ from pulse.config.global_config import (
     mark_onboarding_complete,
     save_global_config,
 )
+from pulse.store.codec import load_list
+from pulse.store.db import connect
 
 
 def test_global_config_roundtrip(tmp_path: Path):
@@ -112,6 +114,17 @@ def test_a_runtime_added_after_onboarding_is_listed_and_stored_rows_stay(tmp_pat
     assert loaded.agents["codex"] == default_global_agents()["codex"]
     assert loaded.agents["cursor"].models == ["Auto", "gpt-5.5"]
     assert loaded.agents["claude"].models == ["opus"]
+    connection = connect(config_path)
+    try:
+        rows = {
+            row["name"]: row
+            for row in connection.execute("SELECT name, binary, models FROM machine_agents")
+        }
+    finally:
+        connection.close()
+    assert rows["codex"]["binary"] == "codex"
+    assert load_list(rows["cursor"]["models"]) == ["Auto", "gpt-5.5"]
+    assert load_list(rows["claude"]["models"]) == ["opus"]
 
 
 def test_save_global_config_creates_parent(tmp_path: Path):
