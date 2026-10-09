@@ -78,39 +78,38 @@ def bind_private_socket(path: Path) -> socket.socket:
 
 
 class GracefulServer(uvicorn.Server):
-    """Runs `before_exit` on the first SIGTERM/SIGINT, then lets uvicorn shut down.
+    """Stops the runs on the first SIGTERM/SIGINT, then lets uvicorn shut down.
 
     uvicorn replaces the process's signal handlers while it serves, and its
     shutdown waits for open connections: an attached client's SSE stream only
     ends when its run's bus closes. So the runs must stop first, or the daemon
-    either hangs or exits leaving them `running`. A second signal while
-    stopping keeps uvicorn's meaning: force the exit.
+    either hangs or exits leaving them `running`. They stop on their own
+    thread: the handler runs on the event loop's thread, which may hold a lock
+    the stop needs. A later signal keeps uvicorn's meaning: force the exit.
     """
 
     def __init__(self, config: uvicorn.Config, *, before_exit: Callable[[], None]) -> None:
         super().__init__(config)
         self._before_exit = before_exit
-        self._stopping = False
+        self.stopping: threading.Thread | None = None
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
-        if self._stopping:
-            # The handler runs on the main thread, inside the wait for the runs:
-            # only an exception gets out of that wait.
-            self.force_exit = True
-            raise _StopWaiting
-        if not self.should_exit:
-            self._stopping = True
-            try:
-                self._before_exit()
-            except _StopWaiting:
-                _log.warning("shutdown: forced before the runs stopped")
-            finally:
-                self._stopping = False
+        if self.stopping is None:
+            self.stopping = threading.Thread(
+                target=self._stop_then_exit, args=(sig, frame), name="pulse-stop", daemon=True
+            )
+            self.stopping.start()
+            return
+        if self.stopping.is_alive():
+            _log.warning("shutdown: forced before the runs stopped")
+        self.force_exit = True
         super().handle_exit(sig, frame)
 
-
-class _StopWaiting(Exception):
-    """A second signal arrived while the runs were stopping."""
+    def _stop_then_exit(self, sig: int, frame: FrameType | None) -> None:
+        try:
+            self._before_exit()
+        finally:
+            super().handle_exit(sig, frame)
 
 
 def stop_runs(manager: RunManager, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> None:

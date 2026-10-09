@@ -90,6 +90,11 @@ def test_no_run_starts_once_shutdown_began(monkeypatch, tmp_path) -> None:
     assert manager.list_runs() == []
 
 
+def _stopped(server: GracefulServer) -> None:
+    assert server.stopping is not None
+    server.stopping.join()
+
+
 def test_the_first_signal_stops_the_runs_before_the_server_exits() -> None:
     calls: list[bool] = []
     server = GracefulServer(
@@ -98,9 +103,35 @@ def test_the_first_signal_stops_the_runs_before_the_server_exits() -> None:
     )
 
     server.handle_exit(signal.SIGTERM, None)
+    _stopped(server)
 
     assert calls == [False]
     assert server.should_exit
+
+
+def test_the_runs_stop_off_the_thread_the_signal_lands_on() -> None:
+    """The signal lands on the event loop's thread, which may hold a lock the stop needs.
+
+    `run_events` holds `RunManager`'s lock there; stopping the runs inside the
+    handler waited on it forever, until a second signal.
+    """
+    held_by_the_loop = threading.Lock()
+
+    def stop_needing_the_lock() -> None:
+        with held_by_the_loop:
+            pass
+
+    server = GracefulServer(
+        uvicorn.Config(create_app(RunManager())), before_exit=stop_needing_the_lock
+    )
+
+    with held_by_the_loop:
+        server.handle_exit(signal.SIGTERM, None)
+        assert not server.should_exit
+
+    _stopped(server)
+    assert server.should_exit
+    assert not server.force_exit
 
 
 def test_a_second_signal_forces_the_exit_without_stopping_again() -> None:
@@ -111,6 +142,7 @@ def test_a_second_signal_forces_the_exit_without_stopping_again() -> None:
     )
 
     server.handle_exit(signal.SIGINT, None)
+    _stopped(server)
     server.handle_exit(signal.SIGINT, None)
 
     assert calls == [1]
@@ -118,24 +150,27 @@ def test_a_second_signal_forces_the_exit_without_stopping_again() -> None:
 
 
 def test_a_signal_arriving_while_the_runs_stop_forces_the_exit() -> None:
-    """The stop blocks the main thread for up to the grace period, and the handler
-    re-enters there: the second Ctrl-C must force the exit, not start a second stop."""
+    """The stop can take the whole grace period: a second Ctrl-C must force the
+    exit right away, not start a second stop."""
     calls: list[int] = []
-    server: GracefulServer
+    release = threading.Event()
 
-    def stop_interrupted_by_a_second_signal() -> None:
+    def stop_still_running() -> None:
         calls.append(1)
-        if len(calls) == 1:
-            server.handle_exit(signal.SIGINT, None)
+        release.wait()
 
     server = GracefulServer(
-        uvicorn.Config(create_app(RunManager())), before_exit=stop_interrupted_by_a_second_signal
+        uvicorn.Config(create_app(RunManager())), before_exit=stop_still_running
     )
 
     server.handle_exit(signal.SIGINT, None)
+    server.handle_exit(signal.SIGINT, None)
 
-    assert calls == [1]
     assert server.force_exit
+    assert server.should_exit
+    release.set()
+    _stopped(server)
+    assert calls == [1]
 
 
 def test_a_run_left_behind_is_logged_by_id(monkeypatch, tmp_path, caplog) -> None:

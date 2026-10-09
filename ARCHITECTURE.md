@@ -474,7 +474,9 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 **Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
 mesmo caminho do cancelamento — a run grava `RUN_STOPPED`, o step volta a
 pendente (retomável) e o motor fecha a sessão, o que encerra o processo ACP — e
-espera até `SHUTDOWN_GRACE_SECONDS` (`domain/control.py`). Runs novas recebem
+espera até `SHUTDOWN_GRACE_SECONDS` (`domain/control.py`), numa thread própria: o
+sinal cai na thread do event loop, que pode estar segurando o lock que a parada
+precisa. Runs novas recebem
 `503` a partir daí. Só então o Uvicorn sai: o shutdown dele espera as conexões
 abertas, e o stream SSE de um cliente anexado só termina quando o barramento da
 run fecha. Run que não parou no prazo vai para o log do daemon pelo id; um
