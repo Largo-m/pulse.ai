@@ -231,8 +231,9 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
 
 
 def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) -> None:
-    # `context_tokens` is left out: the session log owns it, and the engine's
-    # in-memory step would write back a stale value over a fresher reading.
+    # `context_tokens` is not written from the step: the session log owns it, and
+    # the engine's in-memory step would write back a stale value over a fresher
+    # reading. A step back to `pending` reruns in a new session, so its reading goes.
     connection.execute(
         """
         INSERT INTO run_steps
@@ -248,7 +249,9 @@ def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) 
           ended_at = excluded.ended_at,
           waiting_seconds = excluded.waiting_seconds,
           rounds = excluded.rounds,
-          carried_seconds = excluded.carried_seconds
+          carried_seconds = excluded.carried_seconds,
+          context_tokens = CASE WHEN excluded.status = ? THEN 0
+                                ELSE run_steps.context_tokens END
         """,
         (
             run_id,
@@ -264,6 +267,7 @@ def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) 
             step.waiting_seconds,
             step.rounds,
             step.carried_seconds,
+            StepStatus.PENDING,
         ),
     )
 

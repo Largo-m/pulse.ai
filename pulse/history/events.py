@@ -6,6 +6,7 @@ from enum import StrEnum
 from typing import Any
 
 from pulse.domain.run import StepStatus
+from pulse.replies.acp_payloads import non_negative_int
 
 # The screen shows the persisted step states; one vocabulary, no translation.
 PhaseStatus = StepStatus
@@ -51,13 +52,6 @@ def format_tokens(tokens: int) -> str:
     return f"{tokens // 100_000 / 10:.1f}M"
 
 
-def _count(value: object) -> int | None:
-    # `bool` is an `int` subclass; `True` is not a token count.
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
 @dataclass(frozen=True)
 class ContextUsage:
     """How many tokens a step's context holds, as the agent's `usage_update` reports it.
@@ -70,10 +64,8 @@ class ContextUsage:
     @classmethod
     def parse(cls, update: dict[str, Any]) -> ContextUsage | None:
         """Agent output is untrusted: without a valid `used` there is no reading."""
-        used = _count(update.get("used"))
-        if used is None or used < 0:
-            return None
-        return cls(used=used)
+        used = non_negative_int(update.get("used"))
+        return None if used is None else cls(used=used)
 
 
 @dataclass

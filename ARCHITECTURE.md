@@ -544,7 +544,8 @@ cabeçalho, a soma da última leitura de cada step. Como o
 `session.update` é reenviado no replay, voltar à run reconstrói os números. O
 `RecordedSessionLog` grava a última leitura de cada step em
 `run_steps.context_tokens`, e o histórico reabre a run com ela; o `save` do
-motor não escreve essa coluna, para não apagar uma leitura mais nova. Runtime
+motor não escreve essa coluna, para não apagar uma leitura mais nova; só a zera
+quando o step volta a `pending`, porque ele roda de novo em outra sessão. Runtime
 que não emite `usage_update` não mostra o indicador.
 
 Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o

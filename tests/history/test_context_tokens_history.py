@@ -93,6 +93,25 @@ def test_saving_the_run_does_not_erase_the_tokens(tmp_path: Path):
     assert _stored_tokens(run_id)["plan"] == 42_000
 
 
+def test_a_step_cut_by_a_stop_forgets_its_stored_tokens(tmp_path: Path):
+    """A resume reruns the step in a new session; the old reading belongs to none."""
+    run_id = _run(tmp_path)
+    record = run_store.load_run(run_id)
+    assert record is not None
+    record.steps[0].status = StepStatus.RUNNING
+    record.steps[1].status = StepStatus.DONE
+    run_store.save(record)
+    _log(tmp_path, run_id, "plan").update(_usage(80_000))
+    _log(tmp_path, run_id, "build").update(_usage(12_000))
+
+    record = run_store.load_run(run_id)
+    assert record is not None
+    assert record.steps[0].release()
+    run_store.save(record)
+
+    assert _stored_tokens(run_id) == {"plan": 0, "build": 12_000}
+
+
 def test_a_failing_database_does_not_break_the_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
