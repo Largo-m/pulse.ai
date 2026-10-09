@@ -21,6 +21,9 @@ MAX_PHASE_APPROVAL_TURNS = 12
 # tokens to reach the same menu.
 MAX_PROMPT_TURNS = 2
 
+# ACP stop reason of a turn the agent or the user cut short; also the outcome reported for it.
+CANCELLED = "cancelled"
+
 
 class _SessionHost(Protocol):
     """What the turns need from the runner they are mixed into."""
@@ -77,7 +80,7 @@ class StepTurns:
         phase_summary = ""
         answers_text = ""
         approved = False
-        outcome = "unknown"
+        outcome: str = ApprovalOutcome.UNKNOWN
         phase_result: dict[str, Any] = {}
 
         try:
@@ -85,9 +88,9 @@ class StepTurns:
                 self._begin_phase(phase_label, turn=turn + 1)
                 self._stream.reset_capture()
                 phase_result = self.prompt(active_session, next_prompt)
-                if phase_result.get("stopReason") == "cancelled":
+                if phase_result.get("stopReason") == CANCELLED:
                     phase_result["approved"] = False
-                    phase_result["outcome"] = "cancelled"
+                    phase_result["outcome"] = CANCELLED
                     phase_result["phaseSummary"] = phase_summary
                     return phase_result
 
@@ -95,11 +98,11 @@ class StepTurns:
                 answers = self._run_text_questionnaire(phase_summary)
                 if answers is None:
                     return {
-                        "stopReason": "cancelled",
+                        "stopReason": CANCELLED,
                         "phaseStopReason": phase_result.get("stopReason"),
                         "askQuestionCount": self.ask_question_count,
                         "approved": False,
-                        "outcome": "cancelled",
+                        "outcome": CANCELLED,
                         "phaseSummary": phase_summary,
                     }
 
@@ -182,7 +185,7 @@ class StepTurns:
                 result["phaseSummary"] = "\n\n".join(parts)
                 result["askQuestionCount"] = self.ask_question_count
                 result["turns"] = turn + 1
-                if build_continuation is None or result.get("stopReason") == "cancelled":
+                if build_continuation is None or result.get("stopReason") == CANCELLED:
                     break
                 follow_up = str(build_continuation(result=result, turn=turn) or "").strip()
                 if not follow_up:
