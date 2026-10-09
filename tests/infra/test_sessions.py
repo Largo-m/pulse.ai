@@ -28,14 +28,16 @@ def test_start_agent_session_inserts_row(tmp_path: Path):
 
 def test_persist_runtime_session_creates_and_keeps_each_session(tmp_path: Path):
     init_project_config(tmp_path)
+    project = load_project_config(tmp_path)
+    assert project is not None
     persist_runtime_session(
-        str(tmp_path),
+        project.project_id,
         pulse_session_id="pulse-sess",
         acp_session_id="acp-sess",
         agent_id="tester",
     )
     persist_runtime_session(
-        str(tmp_path),
+        project.project_id,
         pulse_session_id="pulse-sess",
         acp_session_id="acp-sess-2",
         agent_id=None,

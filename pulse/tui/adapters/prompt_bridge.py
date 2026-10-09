@@ -6,11 +6,6 @@ from enum import StrEnum
 from queue import Empty, Queue
 
 from pulse.domain.ports import Choice, JsonObject
-from pulse.domain.ui_text import (
-    DEFAULT_QUESTIONNAIRE_TITLE,
-    FREE_TEXT_ANSWER_PREFIX,
-    PLAN_APPROVAL_TITLE,
-)
 from pulse.replies.acp_payloads import (
     AskQuestionRequest,
     PermissionRequest,
@@ -42,6 +37,11 @@ from pulse.replies.text_questionnaire import (
     TextQuestionnaire,
     format_questionnaire_answers,
     parse_text_questionnaire,
+)
+from pulse.replies.wording import (
+    DEFAULT_QUESTIONNAIRE_TITLE,
+    FREE_TEXT_ANSWER_PREFIX,
+    PLAN_APPROVAL_TITLE,
 )
 from pulse.tui import strings
 
@@ -123,9 +123,10 @@ class PromptBridge:
                     pending.append(request.future)
         return pending
 
-    def poll(self) -> PromptRequest | None:
+    def poll(self, timeout: float | None = None) -> PromptRequest | None:
+        """The next queued question; with `timeout`, wait up to that long for one."""
         try:
-            return self._queue.get_nowait()
+            return self._queue.get(block=timeout is not None, timeout=timeout)
         except Empty:
             return None
 

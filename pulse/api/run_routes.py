@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from pulse.api.deps import Runs
 from pulse.daemon.events import EventBus
-from pulse.daemon.runs import RunAlreadyActive, RunManager, RunState
+from pulse.daemon.runs import DaemonShuttingDown, RunAlreadyActive, RunManager, RunState
 
 router = APIRouter()
 
@@ -57,6 +57,8 @@ def start_workflow_run(workflow_id: str, body: StartRunBody, runs: Runs) -> dict
         )
     except RunAlreadyActive as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except DaemonShuttingDown as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return {

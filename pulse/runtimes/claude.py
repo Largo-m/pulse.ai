@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
+from pulse.domain.ports import ModelRequest
+from pulse.replies.session_models import MODEL_CONFIG_ID, model_config_option, resolve_model_id
+from pulse.runtimes.base import AgentRuntime, RuntimeCheck
 
 CLAUDE_ACP_PACKAGE = "@agentclientprotocol/claude-agent-acp"
 CLAUDE_ACP_VERSION = "0.86.0"
-
-MODEL_CONFIG_ID = "model"
 
 
 class ClaudeRuntime(AgentRuntime):
@@ -76,8 +76,6 @@ class ClaudeRuntime(AgentRuntime):
         *,
         session_id: str,
     ) -> ModelRequest | None:
-        from pulse.acp.models import resolve_model_id
-
         model_id = resolve_model_id(session, preferred_model)
         if not model_id:
             return None
@@ -93,16 +91,3 @@ class ClaudeRuntime(AgentRuntime):
             },
             model_id=model_id,
         )
-
-
-def model_config_option(session: dict[str, Any]) -> dict[str, Any] | None:
-    """Config option that carries the model list."""
-    options = session.get("configOptions")
-    if not isinstance(options, list):
-        return None
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        if option.get("id") == MODEL_CONFIG_ID or option.get("category") == MODEL_CONFIG_ID:
-            return option
-    return None

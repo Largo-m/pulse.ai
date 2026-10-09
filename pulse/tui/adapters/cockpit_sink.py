@@ -5,9 +5,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pulse.domain import ui_text
 from pulse.domain.ports import StepRow
-from pulse.domain.ui_text import QUESTIONNAIRE_NOTICE
+from pulse.history.log_wording import QUESTIONNAIRE_NOTICE, phase_title
 from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
@@ -114,7 +113,6 @@ class CockpitSink:
         self._update_handlers: dict[str, Callable[[dict[str, Any]], None]] = {
             "agent_message_chunk": self._on_message_chunk,
             "agent_thought_chunk": self._on_thought_chunk,
-            "session_info_update": self._on_session_info,
             **dict.fromkeys(_TOOL_KINDS, self._handle_tool),
         }
 
@@ -193,27 +191,21 @@ class CockpitSink:
         if self._backfill_vague_entries():
             self._emit()
 
-    def _on_session_info(self, update: dict[str, Any]) -> None:
-        title = update.get("title")
-        if not title:
-            return
+    def set_model(self, model: str) -> None:
         self._finish_message_line()
-        model = ui_text.model_of_notice(str(title))
-        if not model:
-            return
         self._state.set_model(model)
         self._backfill_vague_entries()
         self._emit()
 
-    def begin_phase(self, title: str) -> None:
+    def begin_phase(self, title: str, *, turn: int = 1) -> None:
         self.finish()
         self._visible_tool_ids.clear()
         self._tool_payloads.clear()
-        self._state.begin_phase(title)
+        self._state.begin_phase(title, turn=turn)
         if self._pending_session_phase and self._state.acp_sessions:
             self._state.acp_sessions[-1]["phase_id"] = self._state._entry_phase_id()
             self._pending_session_phase = False
-        self._state.add_info(title)
+        self._state.add_info(phase_title(title, turn))
         self._emit()
 
     def apply_phase_statuses(

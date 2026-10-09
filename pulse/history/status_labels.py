@@ -8,7 +8,21 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pulse.domain.ui_text import STATUS_LABELS
+AWAITING_YOU = "precisa de você"
+RUNNING = "executando"
+STATUS_LABELS: dict[str, str] = {
+    "pending": "pendente",
+    "in_progress": RUNNING,
+    "running": RUNNING,
+    "awaiting_input": AWAITING_YOU,
+    "awaiting_approval": AWAITING_YOU,
+    "approved": "aprovado",
+    "blocked": "bloqueado",
+    "stopped": "parado",
+    "done": "concluído",
+    "skipped": "pulado",
+    "failed": "falhou",
+}
 
 STATUS_COLORS: dict[str, str] = {
     "pending": "#888888",

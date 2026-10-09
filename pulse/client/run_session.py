@@ -9,7 +9,6 @@ import httpx
 
 from pulse.client.engine_client import EngineClient
 from pulse.client.protocol import PING, REPLAY_END
-from pulse.domain import ui_text
 from pulse.domain.ports import JsonObject, StepRow, StreamSink
 from pulse.replies.permission import PermissionPolicy, parse_policy
 from pulse.replies.text_questionnaire import (
@@ -19,6 +18,9 @@ from pulse.replies.text_questionnaire import (
 )
 
 DETACHED = -1
+# Error entries this session adds to the run's screen, titled like the TUI's own.
+ERROR_TITLE = "Erro"
+WORKFLOW_FAILED_TITLE = "Workflow falhou"
 INVALID_QUESTIONNAIRE_TITLE = "Invalid questionnaire"
 INVALID_QUESTIONNAIRE_REASON = (
     "The agent asked for a questionnaire, but its questions could not be parsed."
@@ -71,6 +73,11 @@ def _int(value: object, default: int) -> int:
     return value if isinstance(value, int) else default
 
 
+def _turn(event: JsonObject) -> int:
+    """The phase's turn; a missing or bogus one is the first."""
+    return max(1, _int(event.get("turn"), 1))
+
+
 def _step_rows(value: object) -> list[StepRow]:
     if not isinstance(value, list):
         return []
@@ -107,10 +114,13 @@ class EngineRunSession:
             REPLAY_END: self._on_replay_marker,
             "prompt.answered": lambda event: self._forget_prompt(_text(event, "id")),
             "session.update": self._on_session_update,
-            "phase.begin": lambda event: stream.begin_phase(_text(event, "title")),
+            "phase.begin": lambda event: stream.begin_phase(
+                _text(event, "title"), turn=_turn(event)
+            ),
+            "session.model": lambda event: stream.set_model(_text(event, "model")),
             "phase.info": lambda event: stream.info(_text(event, "title")),
             "phase.error": lambda event: stream.error(
-                _text(event, "title", ui_text.ERROR_TITLE), _text(event, "reason")
+                _text(event, "title", ERROR_TITLE), _text(event, "reason")
             ),
             "phases.sync": self._on_phases_sync,
             "run.context": lambda event: stream.set_context(
@@ -257,7 +267,7 @@ class EngineRunSession:
         self._exit_code = _int(event.get("exit_code"), 0)
         message = event.get("error")
         if message:
-            self._stream.error(ui_text.WORKFLOW_FAILED_TITLE, str(message))
+            self._stream.error(WORKFLOW_FAILED_TITLE, str(message))
         self._stream.finish()
 
     def _finish_replay(self) -> None:

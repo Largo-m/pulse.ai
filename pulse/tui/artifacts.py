@@ -2,7 +2,7 @@
 
 An artifact is any file the agent wrote, discovered from ACP tool-calls rather
 than by folder or extension convention; paths arrive from the runtime and are
-only normalized and read here.
+normalized, confined to the run's worktree and read here.
 """
 
 from __future__ import annotations
@@ -40,43 +40,46 @@ def artifact_paths_in_text(text: str, known: list[str]) -> list[str]:
     return found
 
 
-def resolve_artifact_path(path: str, cwd: str | None = None) -> Path:
+def resolve_artifact_path(path: str, cwd: str | None = None) -> Path | None:
+    """The artifact's file inside the run's worktree, or `None`.
+
+    The path comes from the agent, so it is untrusted (AGENTS.md §6.1): after
+    resolving `..` and symlinks it must still be under `cwd`, or a reported
+    `../../.ssh/id_rsa` would be read onto the screen. Without a `cwd` there is
+    nothing to confine to, so nothing is read.
+    """
     key = artifact_key(path)
-    raw = Path(str(path or "").strip())
-    candidates: list[Path] = []
-    if raw.is_absolute():
-        candidates.append(raw)
-    if cwd:
-        root = Path(cwd)
-        candidates.append(root / key)
-        stripped = str(path or "").strip()
-        if stripped and stripped != key:
-            candidates.append(root / stripped)
-    else:
-        candidates.append(Path(key))
-    for candidate in candidates:
-        try:
-            if candidate.is_file():
-                return candidate
-        except OSError:
-            continue
-    return candidates[0] if candidates else Path(key)
+    if not cwd or not key:
+        return None
+    try:
+        root = Path(cwd).resolve()
+        # `root / key` is `key` itself when the runtime reported an absolute path.
+        target = (root / key).resolve()
+    # A NUL byte (ValueError), an unreadable parent (OSError) or a symlink loop
+    # (RuntimeError before 3.13) is not a file Pulse can show.
+    except (ValueError, OSError, RuntimeError):
+        return None
+    if not target.is_relative_to(root) or not target.is_file():
+        return None
+    return target
 
 
 def artifact_has_content(path: str, cwd: str | None = None) -> bool:
     """File exists and is non-empty, so there is something to display."""
     target = resolve_artifact_path(path, cwd)
+    if target is None:
+        return False
     try:
-        return target.is_file() and target.stat().st_size > 0
+        return target.stat().st_size > 0
     except OSError:
         return False
 
 
 def read_artifact_markdown(path: str, cwd: str | None = None) -> tuple[str, float, bool]:
     target = resolve_artifact_path(path, cwd)
+    if target is None:
+        return "", 0.0, False
     try:
-        if not target.is_file():
-            return "", 0.0, False
         mtime = target.stat().st_mtime
         text = target.read_text(encoding="utf-8", errors="replace")
     except OSError:

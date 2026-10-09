@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 
-from pulse.domain import ui_text
 from pulse.domain.ports import JsonObject
+from pulse.replies import wording
 from pulse.replies.acp_payloads import (
     Question,
     QuestionAnswer,
@@ -88,7 +88,7 @@ def is_approval_prompt(prompt: str) -> bool:
 
 
 def is_free_text_answer(answer: str) -> bool:
-    return answer.strip().lower().startswith(ui_text.FREE_TEXT_ANSWER_PREFIX.strip().lower())
+    return answer.strip().lower().startswith(wording.FREE_TEXT_ANSWER_PREFIX.strip().lower())
 
 
 def should_add_other_option(*, prompt: str, option_labels: list[str]) -> bool:
@@ -125,7 +125,7 @@ def build_question_choices(
     for index, option in enumerate(options):
         if is_other_option(option.id, option.label):
             choices.append(
-                (OTHER_OPTION_ID, format_option_label(index, ui_text.OTHER_DESCRIBE_OPTION))
+                (OTHER_OPTION_ID, format_option_label(index, wording.OTHER_DESCRIBE_OPTION))
             )
         else:
             choices.append((option.id, format_option_label(index, option.label)))
@@ -133,7 +133,7 @@ def build_question_choices(
     has_other = any(option_id == OTHER_OPTION_ID for option_id, _ in choices)
     labels = [option.label for option in options]
     if choices and not has_other and should_add_other_option(prompt=prompt, option_labels=labels):
-        other_label = format_option_label(len(choices), ui_text.OTHER_DESCRIBE_OPTION)
+        other_label = format_option_label(len(choices), wording.OTHER_DESCRIBE_OPTION)
         choices.append((OTHER_OPTION_ID, other_label))
 
     return choices
@@ -141,7 +141,7 @@ def build_question_choices(
 
 def multi_select_prompt(prompt: str) -> str:
     """The multi-select question text as the dock shows it."""
-    return f"{prompt}\n{ui_text.MULTI_SELECT_HINT}"
+    return f"{prompt}\n{wording.MULTI_SELECT_HINT}"
 
 
 PLAN_PREVIEW_CHARS = 1200
@@ -149,7 +149,7 @@ PLAN_PREVIEW_CHARS = 1200
 
 def plan_prompt_text(params: Mapping[str, object]) -> str:
     """Body of the plan approval dock (`cursor/create_plan`)."""
-    name = truthy_text(params.get("name") or ui_text.PLAN_FALLBACK_NAME).strip()
+    name = truthy_text(params.get("name") or wording.PLAN_FALLBACK_NAME).strip()
     overview = truthy_text(params.get("overview")).strip()
     plan = truthy_text(params.get("plan")).strip()
     body = name

@@ -35,7 +35,7 @@ class PromptDock(Widget):
         self._request = request
         self._on_result: Callable[[object | None], None] | None = on_result
         self._selected_multi: set[str] = set()
-        self._closed = False
+        self._answered = False
 
     def compose(self) -> ComposeResult:
         yield Static(self._request.title or strings.PROMPT_DEFAULT_TITLE, classes="prompt-title")
@@ -170,9 +170,9 @@ class PromptDock(Widget):
         self._finish(None)
 
     def _finish(self, result: object | None) -> None:
-        if self._closed:
+        if self._answered:
             return
-        self._closed = True
+        self._answered = True
         callback = self._on_result
         self._on_result = None
         if callback is not None:

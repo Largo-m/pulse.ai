@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 from pulse.replies.acp_payloads import PermissionRequest
@@ -26,13 +25,7 @@ def test_prompt_bridge_request_roundtrip():
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(worker)
-        deadline = time.time() + 2
-        request = None
-        while time.time() < deadline:
-            request = bridge.poll()
-            if request is not None:
-                break
-            time.sleep(0.01)
+        request = bridge.poll(timeout=2)
         assert request is not None
         assert request.kind == PromptKind.SELECT
         assert request.future is not None
@@ -77,13 +70,7 @@ def test_textual_prompt_handler_permission_ask_uses_select():
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(worker)
-        deadline = time.time() + 2
-        request = None
-        while time.time() < deadline:
-            request = bridge.poll()
-            if request is not None:
-                break
-            time.sleep(0.01)
+        request = bridge.poll(timeout=2)
         assert request is not None
         assert request.kind == PromptKind.SELECT
         assert request.title == "Permissão"

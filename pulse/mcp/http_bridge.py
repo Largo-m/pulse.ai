@@ -11,6 +11,9 @@ from pulse.domain.ports import JsonObject, NullPromptPort, PromptPort
 from pulse.mcp.ask_protocol import dispatch_message
 
 ENDPOINT_PATH = "/mcp"
+FORBIDDEN = 403
+LOOPBACK = "127.0.0.1"
+LOCAL_HOSTNAMES = frozenset({LOOPBACK, "localhost"})
 
 
 class AskQuestionHttpServer:
@@ -19,11 +22,9 @@ class AskQuestionHttpServer:
         *,
         prompt_handler: PromptPort | None = None,
         on_question: Callable[[], None] | None = None,
-        host: str = "127.0.0.1",
     ) -> None:
         self._prompt_handler = prompt_handler or NullPromptPort()
         self._on_question = on_question
-        self._host = host
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._session_token = uuid.uuid4().hex
@@ -36,7 +37,7 @@ class AskQuestionHttpServer:
         return f"http://{host}:{port}{ENDPOINT_PATH}"
 
     def start(self) -> None:
-        self._httpd = ThreadingHTTPServer((self._host, 0), self._build_handler())
+        self._httpd = ThreadingHTTPServer((LOOPBACK, 0), self._build_handler())
         self._httpd.daemon_threads = True
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
@@ -61,6 +62,9 @@ class AskQuestionHttpServer:
                 pass
 
             def do_POST(self) -> None:
+                if _sent_by_a_web_page(self):
+                    bridge._send_empty(self, FORBIDDEN)
+                    return
                 bridge._handle_post(self)
 
             def do_GET(self) -> None:
@@ -70,6 +74,9 @@ class AskQuestionHttpServer:
                 self.end_headers()
 
             def do_DELETE(self) -> None:
+                if _sent_by_a_web_page(self):
+                    bridge._send_empty(self, FORBIDDEN)
+                    return
                 self.send_response(200)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -145,3 +152,15 @@ class AskQuestionHttpServer:
         handler.send_response(status)
         handler.send_header("Content-Length", "0")
         handler.end_headers()
+
+
+def _sent_by_a_web_page(handler: BaseHTTPRequestHandler) -> bool:
+    """The MCP spec requires validating `Origin` on a local HTTP transport.
+
+    Agent CLIs send neither `Origin` nor a foreign `Host`; a browser page sends
+    `Origin`, and a DNS-rebinding page sends its own hostname as `Host`.
+    """
+    if handler.headers.get("Origin") is not None:
+        return True
+    hostname = (handler.headers.get("Host") or "").rsplit(":", 1)[0]
+    return hostname not in LOCAL_HOSTNAMES

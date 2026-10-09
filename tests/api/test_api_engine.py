@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +10,7 @@ from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
 from pulse.domain.control import RUN_STOPPED
 from pulse.domain.run import StepRecord
+from tests.conftest import wait_for_event
 
 
 def test_status_and_workflows():
@@ -107,15 +107,10 @@ def test_start_run_and_prompt_correlator(monkeypatch, tmp_path: Path):
     assert watcher.is_alive() is False
     assert "id" in prompt_id
 
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        payload = client.get(f"/api/runs/{run_id}").json()
-        if payload.get("exit_code") is not None:
-            assert payload["exit_code"] == 0
-            assert captured["workspace"] == tmp_path
-            return
-        time.sleep(0.05)
-    raise AssertionError("run did not finish")
+    wait_for_event(state.bus, "run.finished")
+    payload = client.get(f"/api/runs/{run_id}").json()
+    assert payload["exit_code"] == 0
+    assert captured["workspace"] == tmp_path
 
 
 def test_unknown_workflow_returns_404():
@@ -160,10 +155,8 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch, tmp_path: Path):
     def fake_run_workflow(**kwargs):
         control = kwargs["control"]
         entered.set()
-        while True:
-            if not control.checkpoint():
-                return RUN_STOPPED
-            time.sleep(0.01)
+        wait_for_event(manager.get(kwargs["run_id"]).bus, "run.stopped")
+        return 0 if control.checkpoint() else RUN_STOPPED
 
     monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
@@ -175,15 +168,10 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch, tmp_path: Path):
 
     assert client.post(f"/api/runs/{run_id}/cancel").status_code == 200
 
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        payload = client.get(f"/api/runs/{run_id}").json()
-        if payload.get("exit_code") is not None:
-            assert payload["exit_code"] == RUN_STOPPED
-            assert payload["status"] == "stopped", "stopping is not failing"
-            return
-        time.sleep(0.05)
-    raise AssertionError("run did not finish after stop")
+    wait_for_event(manager.get(run_id).bus, "run.finished")
+    payload = client.get(f"/api/runs/{run_id}").json()
+    assert payload["exit_code"] == RUN_STOPPED
+    assert payload["status"] == "stopped", "stopping is not failing"
 
 
 def test_control_endpoints_404_for_unknown_run():
@@ -270,14 +258,9 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     assert listed[0]["prompt"] == "tarefa"
 
     release.set()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        listed = client.get("/api/runs").json()["runs"]
-        if listed[0]["awaiting_prompt"]:
-            break
-        time.sleep(0.05)
-    else:
-        raise AssertionError("the run never showed up awaiting an answer")
+    wait_for_event(manager.get(run_id).bus, "prompt.request")
+    listed = client.get("/api/runs").json()["runs"]
+    assert listed[0]["awaiting_prompt"] is True
 
     assert listed[0]["status"] == "awaiting_input"
     assert listed[0]["awaiting_since"] is not None
@@ -356,16 +339,12 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
     state = manager.get(run_id)
     assert state is not None
     assert state.correlator is not None
-    deadline = time.monotonic() + 5
-    while not state.correlator.pending() and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_for_event(state.bus, "prompt.request")
     assert state.correlator.pending()
 
     assert client.post(f"/api/runs/{run_id}/cancel").json() == {"ok": True}
 
-    deadline = time.monotonic() + 5
-    while state.is_active() and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_for_event(state.bus, "run.finished")
     assert not state.is_active()
     assert answer == [None]
 
@@ -441,9 +420,7 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
     monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **kwargs: 0)
 
     first = client.post("/api/workflows/default/runs", json={"prompt": "a"}).json()["id"]
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and manager.get(first).finished_at is None:
-        time.sleep(0.02)
+    wait_for_event(manager.get(first).bus, "run.finished")
     assert manager.get(first).finished_at is not None
 
     assert first in {item["id"] for item in manager.list_runs()}

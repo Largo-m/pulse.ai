@@ -319,8 +319,8 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
 
 
 def test_a_locked_database_skips_the_poll_and_keeps_the_list(tmp_path: Path, monkeypatch):
-    """The background poll must survive a busy SQLite: the list stays as it was
-    and the next poll retries, instead of the worker erroring the app."""
+    """The background poll must survive a busy SQLite in the daemon (a 500): the
+    list stays as it was and the next poll retries, instead of the worker erroring the app."""
     import sqlite3
 
     _finished_run(tmp_path, "run-login", "Adicionar login social")
@@ -340,10 +340,10 @@ def test_a_locked_database_skips_the_poll_and_keeps_the_list(tmp_path: Path, mon
             screen = app.screen
             assert isinstance(screen, HistoryListScreen)
 
-            def _locked(_query: str = "") -> list:
+            def _locked(*_args: object) -> list:
                 raise sqlite3.OperationalError("database is locked")
 
-            monkeypatch.setattr(screen._catalog, "search", _locked)
+            monkeypatch.setattr("pulse.history.catalog.HistoryCatalog.list_items", _locked)
             screen._fetch()
             await pilot.pause()
 

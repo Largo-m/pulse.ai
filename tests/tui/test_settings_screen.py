@@ -68,7 +68,8 @@ def test_settings_model_picker_uses_runtime(tmp_path: Path, monkeypatch: pytest.
             return ["claude-opus-4.8"]
         return ["gpt-5.5", "composer-2.5"]
 
-    monkeypatch.setattr("pulse.tui.screens.settings.collect_available_models", fake_models)
+    # Listing models spawns each runtime's ACP CLI; the daemon route is real.
+    monkeypatch.setattr("pulse.api.settings_routes.collect_available_models", fake_models)
 
     async def run() -> None:
         from textual.app import App
@@ -87,6 +88,7 @@ def test_settings_model_picker_uses_runtime(tmp_path: Path, monkeypatch: pytest.
             assert isinstance(screen, SettingsScreen)
             upsert_agent_settings(project.project_id, "default", runtime="claude")
             screen._workflow_id = "default"
+            screen._show_workflow_fields()
             screen._load_models()
             for _ in range(20):
                 await pilot.pause(0.05)
@@ -149,7 +151,7 @@ def test_global_settings_menu_saves_each_field(tmp_path: Path, monkeypatch: pyte
     """Each global row opens its picker and the pick lands in the project config."""
     init_project_config(tmp_path)
     monkeypatch.setattr(
-        "pulse.tui.screens.settings.collect_available_models",
+        "pulse.api.settings_routes.collect_available_models",
         lambda cwd, agent_name=None: ["model-a", "model-b"],
     )
     picked: dict[str, str] = {}
@@ -192,7 +194,7 @@ def test_agent_settings_menu_saves_per_agent(tmp_path: Path, monkeypatch: pytest
 
     init_project_config(tmp_path)
     monkeypatch.setattr(
-        "pulse.tui.screens.settings.collect_available_models",
+        "pulse.api.settings_routes.collect_available_models",
         lambda cwd, agent_name=None: ["model-x"],
     )
     picked: dict[str, str] = {}
@@ -233,8 +235,9 @@ def test_agent_settings_menu_saves_per_agent(tmp_path: Path, monkeypatch: pytest
 def test_worktree_and_doctor_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """The worktree row toggles the project flag; doctor shows a report and goes back."""
     init_project_config(tmp_path)
-    monkeypatch.setattr("pulse.tui.screens.settings.vcs.is_repo", lambda root: True)
-    monkeypatch.setattr("pulse.tui.screens.settings.run_environment_checks", lambda: [])
+    _git_init(tmp_path)
+    # The doctor runs every runtime's CLI; what matters here is the report row.
+    monkeypatch.setattr("pulse.api.system_routes.run_doctor_checks", lambda: [])
 
     async def scenario(pilot, screen: SettingsScreen) -> None:
         root = ["global", "agents", "worktree", "doctor", "back"]
@@ -250,3 +253,9 @@ def test_worktree_and_doctor_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     project = load_project_config(tmp_path)
     assert project is not None
     assert project.use_worktree is True
+
+
+def _git_init(path: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(path)], check=True)  # noqa: S603, S607 - fixed argv, test repo

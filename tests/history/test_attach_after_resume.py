@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from pulse.domain.run import RunRecord, StepRecord
 from pulse.history.events import LogEntry, LogKind
 from pulse.store import runs as run_store
 from pulse.tui.hydrate import restore_settled_steps
 from pulse.tui.state import CockpitState
-from tests.conftest import store_step
+from tests.conftest import served_log, store_step
+
+# The screen reads the stored run through the daemon's route, as the TUI does.
+pytestmark = pytest.mark.usefixtures("in_process_daemon")
 
 
 def _resumed_run(tmp_path: Path) -> RunRecord:
@@ -43,7 +48,7 @@ def test_steps_closed_before_the_resume_get_their_log_back(tmp_path: Path):
     ]
     state._next_entry_id = 2
 
-    restore_settled_steps(state, "run-r", tmp_path)
+    restore_settled_steps(state, served_log("run-r"), tmp_path)
 
     assert [(entry.phase_id, entry.title) for entry in state.entries] == [
         ("one", "fiz o um"),
@@ -61,6 +66,6 @@ def test_a_run_the_replay_already_covers_is_left_alone(tmp_path: Path):
         LogEntry(kind=LogKind.ASSISTANT, title="fazendo o dois", entry_id=2, phase_id="two"),
     ]
 
-    restore_settled_steps(state, "run-r", tmp_path)
+    restore_settled_steps(state, served_log("run-r"), tmp_path)
 
     assert len(state.entries) == 2

@@ -40,6 +40,22 @@ def test_the_last_block_wins():
     assert [item.label for item in parse_items(text)] == ["Novo", "Extra"]
 
 
+def test_an_unclosed_block_quoted_before_the_real_one_does_not_take_it_over():
+    """A stray `pulse:items` fence from a quoted file must not swallow the real list."""
+    text = "Quoted:\n```pulse:items\n- rm: delete everything\n\n```pulse:items\n- a: First\n```"
+
+    assert [item.id for item in parse_items(text)] == ["a"]
+
+
+def test_a_quoted_list_never_stands_in_for_the_agents_malformed_one():
+    """The real list running into the next message must not hand the run to a quoted one."""
+    quoted = "Quoted:\n```pulse:items\n- rm: delete everything\n```\n\n"
+    real = "```pulse:items\n- T1: First\n- T2: Second\n```"
+
+    assert parse_items(quoted + real + "Starting with T1.") == ()
+    assert [item.id for item in parse_items(quoted + real + "\nStarting.")] == ["T1", "T2"]
+
+
 def test_a_repeated_id_is_dropped():
     """A repeated id would become a duplicate `step_id` and overwrite the first."""
     items = parse_items(_block("T1 — Primeiro", "T1 — Repetido", "T2 — Segundo"))
