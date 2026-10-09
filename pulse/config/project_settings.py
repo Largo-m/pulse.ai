@@ -18,7 +18,9 @@ from pulse.config.project_config import (
     load_project_config,
     update_project_defaults,
 )
+from pulse.config.resolved import DEFAULT_PERMISSION_POLICY
 from pulse.domain.workflow import AgentDef
+from pulse.runtimes import DEFAULT_RUNTIME_ID
 from pulse.store.agent_settings import (
     apply_setting_to_all_agents,
     load_agent_settings,
@@ -30,9 +32,7 @@ AgentField = Literal["runtime", "model", "permission_policy"]
 AGENT_FIELDS: tuple[AgentField, ...] = get_args(AgentField)
 
 # What the screen shows when neither the project nor the machine chose.
-FALLBACK_RUNTIME = "cursor"
 FALLBACK_MODEL = "Auto"
-FALLBACK_POLICY = "ask"
 
 
 @dataclass(frozen=True)
@@ -91,11 +91,11 @@ def effective_defaults(workspace: Path) -> AgentFields:
     return AgentFields(
         runtime=(project and project.default_agent)
         or (machine and machine.default_agent)
-        or FALLBACK_RUNTIME,
+        or DEFAULT_RUNTIME_ID,
         model=(project and project.model) or (machine and machine.model) or FALLBACK_MODEL,
         permission_policy=(project and project.permission_policy)
         or (machine and machine.permission_policy)
-        or FALLBACK_POLICY,
+        or DEFAULT_PERMISSION_POLICY,
     )
 
 

@@ -8,6 +8,7 @@ an older Pulse notice it was opening a database a newer one had changed.
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,47 @@ def test_a_database_from_before_versioning_gets_the_missing_columns(tmp_path: Pa
         assert schema_version(connection) == LATEST
         assert "carried_seconds" in _columns(connection, "run_steps")
         assert "branch" in _columns(connection, "runs")
+
+
+def _unversioned(path: Path) -> None:
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("ALTER TABLE runs DROP COLUMN branch")
+        connection.execute("PRAGMA user_version = 0")
+
+
+def _open_together(path: Path, workers: int) -> list[sqlite3.Error]:
+    start = threading.Barrier(workers, timeout=5)
+    errors: list[sqlite3.Error] = []
+
+    def open_database() -> None:
+        start.wait()
+        try:
+            connect(path).close()
+        except sqlite3.Error as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=open_database) for _ in range(workers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    return errors
+
+
+def test_connections_opened_together_on_an_old_database_migrate_it_once(tmp_path: Path) -> None:
+    """The first daemon start after an upgrade serves concurrent requests, and each
+    one opens the database: a migration that two of them run at once must not fail
+    either request nor apply its change twice.
+    """
+    for attempt in range(5):
+        path = tmp_path / f"old-{attempt}.db"
+        _unversioned(path)
+
+        assert _open_together(path, workers=4) == []
+        with _raw(path) as connection:
+            assert schema_version(connection) == LATEST
+            assert "branch" in _columns(connection, "runs")
 
 
 def test_a_migration_already_applied_is_not_run_again(tmp_path: Path) -> None:

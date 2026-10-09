@@ -65,7 +65,7 @@ class HistoryListScreen(Screen[None]):
         query = self._query
         try:
             items = engine.history(self._workspace, query)
-        except engine.EngineUnavailable:
+        except engine.EngineError:
             # A busy daemon skips this poll; the next one retries.
             return
         # The app already exited while the poll was in flight.
@@ -78,8 +78,8 @@ class HistoryListScreen(Screen[None]):
     def _refresh(self) -> None:
         try:
             items = engine.history(self._workspace, self._query)
-        except engine.EngineUnavailable as error:
-            self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+        except engine.EngineError as error:
+            self.notify(error.describe())
             items = []
         self._apply(items, self._query, force=True)
 
@@ -163,8 +163,8 @@ class HistoryListScreen(Screen[None]):
                 return
             try:
                 removed = engine.delete_history_item(self._workspace, item.item_id)
-            except engine.EngineUnavailable as error:
-                self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+            except engine.EngineError as error:
+                self.notify(error.describe())
                 return
             self._refresh()
             self.query_one("#history-options", OptionList).focus()

@@ -28,14 +28,12 @@ class EngineClient:
         self,
         *,
         prefer_uds: bool = True,
-        http_base: str | None = None,
         socket_path: Path | None = None,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._prefer_uds = prefer_uds
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
-        self._http_base = http_base
         self._timeout = timeout
         self._transport = transport
         self._client: httpx.Client | None = None
@@ -202,10 +200,6 @@ class EngineClient:
         meta = read_daemon_meta() or {}
         host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
         port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        daemon = httpx.URL(f"http://{host}:{port}")
-        if self._http_base:
-            self._client = self._tcp_client(httpx.URL(self._http_base.rstrip("/")), daemon, meta)
-            return self._client
         if self._prefer_uds and self._socket_path.exists():
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
             self._client = httpx.Client(
@@ -214,17 +208,11 @@ class EngineClient:
                 timeout=self._timeout,
             )
             return self._client
-        self._client = self._tcp_client(daemon, daemon, meta)
-        return self._client
-
-    def _tcp_client(
-        self, base_url: httpx.URL, daemon: httpx.URL, meta: dict[str, Any]
-    ) -> httpx.Client:
-        """TCP needs the daemon's token from its private meta; the socket never sends it.
-
-        Only the listener in the meta gets it: any other server could replay it.
-        """
+        # TCP needs the daemon's token from its private meta, and only dials the
+        # listener that meta names; the socket never sends it.
         token = meta.get("token")
-        at_daemon = (base_url.host, base_url.port) == (daemon.host, daemon.port)
-        headers = {"Authorization": f"Bearer {token}"} if token and at_daemon else {}
-        return httpx.Client(base_url=base_url, headers=headers, timeout=self._timeout)
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._client = httpx.Client(
+            base_url=f"http://{host}:{port}", headers=headers, timeout=self._timeout
+        )
+        return self._client

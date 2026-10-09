@@ -244,7 +244,9 @@ class SchemaTooNewError(RuntimeError):
 # Version 1 is every column added before the schema had a version: databases
 # from then report `user_version = 0` and may hold any subset of them. Append
 # new migrations here and add the change to SCHEMA too, which builds fresh
-# databases at the latest version without replaying history.
+# databases at the latest version without replaying history. SCHEMA also runs
+# on existing databases before their migrations, so an index on a column a
+# migration adds belongs in that migration, not in SCHEMA.
 MIGRATIONS: tuple[Migration, ...] = (Migration(version=1, apply=_apply_added_columns),)
 
 
@@ -278,8 +280,13 @@ def migrate(
         if migration.version <= current:
             continue
         # sqlite3 opens no implicit transaction before DDL, so an `ALTER` would
-        # autocommit and survive a rollback.
-        connection.execute("BEGIN")
+        # autocommit and survive a rollback. IMMEDIATE takes the write lock up
+        # front: two connections that both read first and then `ALTER` deadlock,
+        # and SQLite fails one of them instead of waiting.
+        connection.execute("BEGIN IMMEDIATE")
+        if schema_version(connection) >= migration.version:
+            connection.rollback()
+            continue
         try:
             added |= migration.apply(connection)
             _set_version(connection, migration.version)

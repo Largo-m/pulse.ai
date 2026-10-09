@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from pulse.client.engine_client import EngineClient
-from pulse.tui import engine
+from pulse.config.project_config import init_project_config
+from pulse.tui import engine, strings
 
 
 def _refused(_self: object) -> None:
@@ -25,14 +26,43 @@ def test_an_unreachable_daemon_is_engine_unavailable(monkeypatch, tmp_path: Path
         engine.history(tmp_path)
 
 
-def test_a_daemon_error_is_engine_unavailable(monkeypatch, tmp_path: Path) -> None:
+def test_a_daemon_that_fails_the_request_refused_it_with_its_reason(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The daemon answered, so it is not unavailable: the screen shows what went wrong."""
+
     def broken(*_args: object) -> list:
         raise OSError("disk gone")
 
     monkeypatch.setattr("pulse.history.catalog.HistoryCatalog.list_items", broken)
 
-    with pytest.raises(engine.EngineUnavailable):
+    with pytest.raises(engine.EngineRefused, match="disk gone") as caught:
         engine.history(tmp_path)
+
+    assert not isinstance(caught.value, engine.EngineUnavailable)
+
+
+def test_a_rejected_value_is_refused_with_the_daemons_detail(
+    tmp_path: Path, in_process_daemon
+) -> None:
+    init_project_config(tmp_path)
+
+    with pytest.raises(engine.EngineRefused) as caught:
+        engine.save_default(tmp_path, "permission_policy", "nope")
+
+    assert str(caught.value) == "unknown policy: nope"
+    assert caught.value.describe() == strings.ENGINE_REFUSED.format(error="unknown policy: nope")
+
+
+def test_an_unreachable_daemon_describes_itself_as_unavailable(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(EngineClient, "ensure_daemon", _refused)
+
+    with pytest.raises(engine.EngineUnavailable) as caught:
+        engine.history(tmp_path)
+
+    assert caught.value.describe() == strings.ENGINE_UNAVAILABLE.format(
+        error="could not connect to pulse-engine"
+    )
 
 
 def test_unknown_ids_are_none(tmp_path: Path) -> None:

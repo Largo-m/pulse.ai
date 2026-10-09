@@ -20,7 +20,10 @@ Resolução de config: `defaults do código` → tabela `machine` → tabelas
 `PRAGMA user_version` guarda a versão do schema; `MIGRATIONS` em
 [`pulse/store/db.py`](../pulse/store/db.py) lista as mudanças em ordem. Ao
 abrir o banco, `migrate` aplica só as pendentes, cada uma numa transação junto
-com o novo número — uma falha no meio deixa gravada a última versão boa.
+com o novo número — uma falha no meio deixa gravada a última versão boa. A
+transação é `BEGIN IMMEDIATE` e relê a versão: duas conexões abertas juntas
+num banco antigo (o primeiro start do daemon depois de um upgrade) migram uma
+vez só, a segunda espera e pula.
 
 - Banco novo nasce na última versão: `SCHEMA` já tem todas as mudanças.
 - Versão 0 é todo banco anterior ao versionamento; a migração 1 adiciona as
@@ -29,7 +32,8 @@ com o novo número — uma falha no meio deixa gravada a última versão boa.
   recusado com `SchemaTooNewError`, em vez de ser escrito por um schema que
   este código não conhece.
 - Mudança nova: acrescente uma `Migration` ao fim e a mesma mudança em
-  `SCHEMA`. Os reconciliadores da fábrica (`backfill_default_prompts`,
+  `SCHEMA`. `SCHEMA` roda antes das migrações num banco existente, então um
+  índice sobre coluna que a migração cria fica na migração, não no `SCHEMA`. Os reconciliadores da fábrica (`backfill_default_prompts`,
   `drop_approval_from_unattended_steps`, …) são de dados, idempotentes, e
   continuam rodando a cada abertura.
 

@@ -420,7 +420,7 @@ Só tela e interação. Não executa workflow no próprio processo.
 | Caminho | Função |
 |---------|--------|
 | [`pulse/tui/app.py`](pulse/tui/app.py) | App Textual; abre home, cockpit, settings, onboarding, history |
-| [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable` |
+| [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable`, erro respondido pelo daemon vira `EngineRefused` (base comum `EngineError`) |
 | [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows que o daemon serve |
 | [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
 | [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings` |

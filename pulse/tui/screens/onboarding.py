@@ -13,7 +13,7 @@ from textual.widgets.option_list import Option
 
 from pulse.client.runtime_login import run_login
 from pulse.tui import engine, strings
-from pulse.tui.engine import EngineUnavailable, RuntimeInfo, SetupState
+from pulse.tui.engine import EngineError, EngineUnavailable, RuntimeInfo, SetupState
 
 DEFAULT_MODEL = "Auto"
 DEFAULT_POLICY = "ask"
@@ -34,7 +34,6 @@ class OnboardingScreen(Screen[int]):
         self._setup: SetupState | None = None
         self._auth_method = ""
         self._acp_ok = False
-        self._models: list[str] = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="onboard-content"):
@@ -55,7 +54,7 @@ class OnboardingScreen(Screen[int]):
         try:
             self._setup = engine.setup_state(self._workspace)
             default_id, runtimes = engine.runtimes()
-        except EngineUnavailable as error:
+        except EngineError as error:
             self._step = "engine_fail"
             self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
             self._set_report(str(error))
@@ -184,7 +183,7 @@ class OnboardingScreen(Screen[int]):
             return
         try:
             self._route_option(option_id)
-        except EngineUnavailable as error:
+        except EngineError as error:
             self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
             self._set_report(str(error))
 
@@ -232,7 +231,7 @@ class OnboardingScreen(Screen[int]):
         code = run_login(runtime.login_command)
         try:
             auth = engine.runtime_checks(runtime.id)[-1]
-        except EngineUnavailable as error:
+        except EngineError as error:
             self.app.call_from_thread(self._login_unverified, str(error))
             return
 
@@ -257,13 +256,6 @@ class OnboardingScreen(Screen[int]):
         self.app.call_from_thread(self._set_status, strings.ONBOARD_TESTING_ACP)
         runtime = self._chosen()
         probe = self._probe_through_engine(runtime)
-        models = [str(model) for model in probe.get("available_models") or []]
-        if not models:
-            try:
-                models = engine.models(self._workspace, runtime.id)
-            except EngineUnavailable:
-                models = list(runtime.default_models)
-        self._models = models
         self._acp_ok = bool(probe.get("ok"))
         message = str(probe.get("message") or "")
 
@@ -289,27 +281,8 @@ class OnboardingScreen(Screen[int]):
         """An unreachable engine is a failed probe, so the user can still continue."""
         try:
             return engine.acp_probe(self._workspace, runtime.id)
-        except EngineUnavailable as error:
+        except EngineError as error:
             return {"ok": False, "message": strings.ONBOARD_ENGINE_UNAVAILABLE, "error": str(error)}
-
-    def _ask_model(self) -> None:
-        self._step = "model"
-        self._set_status(strings.ONBOARD_MODEL)
-        unique: list[str] = []
-        for item in self._models:
-            if item not in unique:
-                unique.append(item)
-        self._set_options([(f"model:{m}", m) for m in unique])
-
-    def _ask_policy(self) -> None:
-        self._step = "policy"
-        self._set_status(strings.ONBOARD_POLICY)
-        self._set_options(
-            [
-                (f"policy:{key}", strings.PERMISSION_LABELS.get(key, key))
-                for key in (self._setup.permission_policies if self._setup else ())
-            ]
-        )
 
     def _finish(self) -> None:
         try:
@@ -321,7 +294,7 @@ class OnboardingScreen(Screen[int]):
                 auth_method=self._auth_method,
                 acp_test_passed=self._acp_ok,
             )
-        except EngineUnavailable as error:
+        except EngineError as error:
             self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
             self._set_report(str(error))
             self._set_options([("quit", strings.CANCEL)])

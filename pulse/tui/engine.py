@@ -2,8 +2,9 @@
 
 The TUI is a thin client (AGENTS.md §2.1): it never opens SQLite, resolves
 config or runs a doctor check itself. Each call parses the response at this
-boundary into the values the screens use; a daemon that cannot be reached
-raises `EngineUnavailable`, which a screen shows instead of crashing.
+boundary into the values the screens use. A daemon that cannot be reached
+raises `EngineUnavailable` and one that answers with an error `EngineRefused`;
+a screen catches their base `EngineError` and shows it instead of crashing.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ import httpx
 from pulse.client.engine_client import EngineClient
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
+from pulse.tui import strings
 
 T = TypeVar("T")
 AgentField = Literal["runtime", "model", "permission_policy"]
@@ -25,8 +27,23 @@ NOT_FOUND = 404
 CONFLICT = 409
 
 
-class EngineUnavailable(RuntimeError):
+class EngineError(RuntimeError):
+    """The daemon did not do what the screen asked; `describe` says why, on screen."""
+
+    template = strings.ENGINE_UNAVAILABLE
+
+    def describe(self) -> str:
+        return self.template.format(error=self)
+
+
+class EngineUnavailable(EngineError):
     """The daemon could not be started or did not answer."""
+
+
+class EngineRefused(EngineError):
+    """The daemon answered with an error; its `detail` is the reason."""
+
+    template = strings.ENGINE_REFUSED
 
 
 class WorktreeInUse(Exception):
@@ -40,7 +57,6 @@ class SetupState:
     ready: bool
     workspace_dir: str
     database: str
-    permission_policies: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -52,7 +68,6 @@ class RuntimeInfo:
     login_command: tuple[str, ...]
     auth_env_var: str
     auth_method_label: str
-    default_models: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -115,10 +130,29 @@ def _call(request: Callable[[EngineClient], T]) -> T:
     try:
         client.ensure_daemon()
         return request(client)
+    except httpx.HTTPStatusError as error:
+        raise EngineRefused(_detail(error.response)) from error
     except (httpx.HTTPError, RuntimeError) as error:
         raise EngineUnavailable(str(error)) from error
     finally:
         client.close()
+
+
+def optional(read: Callable[[], T | None]) -> T | None:
+    """A read that only enriches a screen: without an answer the screen draws without it."""
+    try:
+        return read()
+    except EngineError:
+        return None
+
+
+def _detail(response: httpx.Response) -> str:
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return str(detail) if detail else f"HTTP {response.status_code}"
 
 
 def _found(request: Callable[[EngineClient], T]) -> T | None:
@@ -158,7 +192,6 @@ def setup_state(workspace: Path) -> SetupState:
         ready=bool(data.get("ready")),
         workspace_dir=str(data.get("workspace_dir") or ""),
         database=str(data.get("database") or ""),
-        permission_policies=_strings(data.get("permission_policies")),
     )
 
 
@@ -174,7 +207,6 @@ def runtimes() -> tuple[str, tuple[RuntimeInfo, ...]]:
             login_command=_strings(item.get("login_command")),
             auth_env_var=str(item.get("auth_env_var") or ""),
             auth_method_label=str(item.get("auth_method_label") or ""),
-            default_models=_strings(item.get("default_models")),
         )
         for item in data.get("runtimes") or ()
     )

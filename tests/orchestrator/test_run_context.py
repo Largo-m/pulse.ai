@@ -48,7 +48,7 @@ def _replayed(bus: EventBus) -> list[dict]:
 
 def test_daemon_sink_publishes_the_context():
     bus = EventBus()
-    ApiStreamSink(bus).set_context(cwd="/repo/wt", branch="pulse/demo-abc")
+    ApiStreamSink(bus, run_id="r1").set_context(cwd="/repo/wt", branch="pulse/demo-abc")
     assert {"type": "run.context", "cwd": "/repo/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
 
 

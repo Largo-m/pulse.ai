@@ -80,7 +80,8 @@ class CockpitScreen(Screen[None]):
         self.resume_run_id = resume_run_id
         self.attach_run_id = attach_run_id
         self.state = CockpitState()
-        shape = _workflow_shape(workflow_id)
+        # Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
+        shape = engine.optional(lambda: engine.workflow(workflow_id))
         self.state.configure_workflow(
             workflow_id,
             label=shape.label if shape else "",
@@ -148,14 +149,12 @@ class CockpitScreen(Screen[None]):
         Attach does not use this: it is rebuilt by the bus replay plus
         `restore_settled_steps` in `_on_replay_end`.
         """
-        if self.attach_run_id or not self.resume_run_id:
+        resume_run_id = self.resume_run_id
+        if self.attach_run_id or not resume_run_id:
             return
         from pulse.tui.hydrate import restore_run
 
-        try:
-            log = engine.run_log(self.resume_run_id)
-        except engine.EngineUnavailable:
-            return
+        log = engine.optional(lambda: engine.run_log(resume_run_id))
         if log is None:
             return
         exec_root = restore_run(self.state, log, Path(self._workspace))
@@ -168,14 +167,12 @@ class CockpitScreen(Screen[None]):
 
         Replayed `phase.begin` events stamp "now" as each step's start.
         """
-        if not self.attach_run_id:
+        attach_run_id = self.attach_run_id
+        if not attach_run_id:
             return
         from pulse.tui.hydrate import restore_settled_steps, stamp_live_elapsed
 
-        try:
-            log = engine.run_log(self.attach_run_id)
-        except engine.EngineUnavailable:
-            log = None
+        log = engine.optional(lambda: engine.run_log(attach_run_id))
         if log is not None:
             restore_settled_steps(self.state, log, Path(self._workspace))
             stamp_live_elapsed(self.state, log)
@@ -364,7 +361,7 @@ class CockpitScreen(Screen[None]):
                 listed: list[HistoryItem] = [item] if item is not None else []
             else:
                 listed = engine.history(workspace)
-        except engine.EngineUnavailable:
+        except engine.EngineError:
             return None
         pending = [
             item for item in listed if item.status is not HistoryStatus.DONE and item.is_incomplete
@@ -477,14 +474,3 @@ class CockpitScreen(Screen[None]):
                 session.detach()
             self.bridge.abandon()
         self.app.pop_screen()
-
-
-def _workflow_shape(workflow_id: str) -> engine.WorkflowShape | None:
-    """The workflow's steps, to draw the sidebar before the run reports them.
-
-    Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
-    """
-    try:
-        return engine.workflow(workflow_id)
-    except engine.EngineUnavailable:
-        return None

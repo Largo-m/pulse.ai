@@ -43,7 +43,7 @@ def _session_workflows() -> list[engine.WorkflowShape]:
     """
     try:
         listed = engine.workflows()
-    except engine.EngineUnavailable:
+    except engine.EngineError:
         return []
     return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
 
@@ -52,7 +52,7 @@ def _setup() -> engine.SetupState | None:
     """Where the first run stands; `None` when the daemon cannot say."""
     try:
         return engine.setup_state(Path.cwd())
-    except engine.EngineUnavailable:
+    except engine.EngineError:
         return None
 
 

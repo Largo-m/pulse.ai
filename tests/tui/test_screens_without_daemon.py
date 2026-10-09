@@ -86,3 +86,41 @@ def test_home_offers_the_setup_when_it_cannot_tell_the_machine_is_ready() -> Non
         assert _options(app) == ["init", "exit"]
 
     _run(HomeScreen(), check)
+
+
+def test_settings_going_back_from_a_picker_reports_a_daemon_gone_meanwhile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, in_process_daemon: object
+) -> None:
+    """Going back redraws the previous menu from the daemon; losing it while a picker
+    is open must leave a message, not a traceback.
+    """
+
+    async def run() -> None:
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(SettingsScreen(cwd=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            screen._show_global_fields()
+            screen._show_permissions()
+            await pilot.pause()
+
+            def refuse(_self: object) -> None:
+                raise RuntimeError(REFUSED)
+
+            monkeypatch.setattr(EngineClient, "ensure_daemon", refuse)
+            await pilot.press("escape")
+            await pilot.pause()
+
+            report = str(screen.query_one("#settings-report", Static).render())
+            assert report == strings.ENGINE_UNAVAILABLE.format(error=REFUSED)
+            assert app.screen is screen
+
+        assert app.return_code is None
+
+    asyncio.run(run())

@@ -92,7 +92,6 @@ def _probe_on_screen(monkeypatch, tmp_path, *, probe=None, unreachable=False):
             await app.workers.wait_for_complete()
             await pilot.pause()
             outcome["step"] = screen._step
-            outcome["models"] = list(screen._models)
             outcome["report"] = str(screen.query_one("#onboard-report", Static).render())
             outcome["runtime"] = screen._chosen().id
 
@@ -110,7 +109,6 @@ def test_onboarding_probes_the_chosen_runtime_through_the_engine(monkeypatch, tm
 
     assert _Probe.calls == [{"workspace": tmp_path, "runtime": outcome["runtime"]}]
     assert outcome["step"] == "acp_fail"
-    assert outcome["models"] == ["m1"]
     assert outcome["report"] == "auth"
 
 

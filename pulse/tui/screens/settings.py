@@ -11,7 +11,7 @@ from textual.widgets import Footer, OptionList, Static
 from textual.widgets.option_list import Option
 
 from pulse.tui import engine, strings
-from pulse.tui.engine import AgentField, EngineUnavailable, Fields, ProjectSettings
+from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
 
 
 class SettingsScreen(Screen[None]):
@@ -48,6 +48,12 @@ class SettingsScreen(Screen[None]):
         if self._mode == "root":
             self.app.pop_screen()
             return
+        try:
+            self._show_previous_menu()
+        except EngineError as error:
+            self._set_report(error.describe())
+
+    def _show_previous_menu(self) -> None:
         if self._mode in {"pick_model", "pick_permission", "pick_agent"}:
             if self._target == "global":
                 self._show_global_fields()
@@ -88,8 +94,8 @@ class SettingsScreen(Screen[None]):
         ]
         try:
             settings = self._load()
-        except EngineUnavailable as error:
-            self._set_report(strings.ENGINE_UNAVAILABLE.format(error=error))
+        except EngineError as error:
+            self._set_report(error.describe())
             self._set_options([("back", strings.BACK)])
             return
         if settings.is_repo:
@@ -131,8 +137,8 @@ class SettingsScreen(Screen[None]):
             return
         try:
             route(value)
-        except EngineUnavailable as error:
-            self._set_report(strings.ENGINE_UNAVAILABLE.format(error=error))
+        except EngineError as error:
+            self._set_report(error.describe())
 
     def _option_routes(self) -> dict[tuple[str, str], Callable[[str], object]]:
         """What each option does, keyed by the menu showing it and its id.
@@ -168,10 +174,8 @@ class SettingsScreen(Screen[None]):
         runtime = self._current_fields().runtime
         try:
             models = engine.models(self._cwd, runtime)
-        except EngineUnavailable as error:
-            self.app.call_from_thread(
-                self._set_report, strings.ENGINE_UNAVAILABLE.format(error=error)
-            )
+        except EngineError as error:
+            self.app.call_from_thread(self._set_report, error.describe())
             return
 
         def apply() -> None:

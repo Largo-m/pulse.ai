@@ -8,7 +8,6 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 
 from pulse.history.models import HistoryItem
-from pulse.history.run_log import RunLog
 from pulse.tui import engine, strings
 from pulse.tui.hydrate import hydrate_history_item
 from pulse.tui.screens.confirm import ConfirmScreen
@@ -50,8 +49,10 @@ class HistoryDetailScreen(Screen[None]):
         self.item = item
         self._workspace = Path(workspace or Path.cwd())
         self._cwd = item.worktree_path or str(self._workspace)
-        self.state = hydrate_history_item(item, Path(self._cwd), _run_log(item.run_id))
-        shape = _workflow_shape(item.workflow_id)
+        self.state = hydrate_history_item(
+            item, Path(self._cwd), engine.optional(lambda: engine.run_log(item.run_id))
+        )
+        shape = engine.optional(lambda: engine.workflow(item.workflow_id))
         if shape is not None:
             self.state.base_labels = dict(shape.steps)
         self._pending = _pending_run(item)
@@ -99,8 +100,8 @@ class HistoryDetailScreen(Screen[None]):
             return
         try:
             worktree = engine.worktree_state(self._workspace, self.item.item_id)
-        except engine.EngineUnavailable as error:
-            self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+        except engine.EngineError as error:
+            self.notify(error.describe())
             return
         if worktree is None or not worktree.exists:
             return
@@ -130,8 +131,8 @@ class HistoryDetailScreen(Screen[None]):
         except engine.WorktreeInUse:
             self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
             return
-        except engine.EngineUnavailable as error:
-            self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+        except engine.EngineError as error:
+            self.notify(error.describe())
             return
         if not removed:
             self.notify(strings.WORKTREE_GIT_REFUSED)
@@ -270,18 +271,3 @@ def _pending_run(item: HistoryItem) -> tuple[str, str] | None:
     if not item.is_incomplete:
         return None
     return item.run_id, resume_summary(item)
-
-
-def _run_log(run_id: str) -> RunLog | None:
-    """The run's persisted log; without the daemon, the steps show without it."""
-    try:
-        return engine.run_log(run_id)
-    except engine.EngineUnavailable:
-        return None
-
-
-def _workflow_shape(workflow_id: str) -> engine.WorkflowShape | None:
-    try:
-        return engine.workflow(workflow_id)
-    except engine.EngineUnavailable:
-        return None

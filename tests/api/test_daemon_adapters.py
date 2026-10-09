@@ -26,7 +26,7 @@ def _replayed(bus: EventBus) -> list[dict]:
 def test_the_api_sink_and_prompt_port_implement_the_ports():
     bus = EventBus()
 
-    assert isinstance(ApiStreamSink(bus), StreamSink)
+    assert isinstance(ApiStreamSink(bus, run_id="r1"), StreamSink)
     assert isinstance(ApiPromptPort(PromptCorrelator(bus)), PromptPort)
 
 
@@ -34,7 +34,7 @@ def test_phase_statuses_go_out_as_one_sync_event_with_every_list():
     """The client rebuilds the sidebar from this event alone, so no list may be missing."""
     bus = EventBus()
 
-    ApiStreamSink(bus).apply_phase_statuses(
+    ApiStreamSink(bus, run_id="r1").apply_phase_statuses(
         steps=[{"id": "one", "label": "Um", "rounds": 2}],
         done_ids=("one",),
     )

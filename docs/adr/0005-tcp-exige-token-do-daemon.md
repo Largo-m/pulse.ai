@@ -47,8 +47,8 @@ kernel recusa o `connect` de outro usuário. O TCP não tem nada equivalente.
    `secrets.compare_digest`. O UDS segue sem token: o SO já protege, e não
    mandar o token por ali diminui por onde ele passa.
 3. **O cliente apresenta o token só por TCP.** `EngineClient` lê o token do
-   meta quando cai no TCP, e só o manda ao host e à porta do meta: um `http_base`
-   apontando para outro servidor não recebe o token. Pelo socket não envia nada.
+   meta quando cai no TCP e só disca o host e a porta desse meta, então o token
+   não vai a outro servidor. Pelo socket não envia nada.
 4. **`ENGINE_PROTOCOL` 8.** Um cliente novo reinicia um daemon anterior ao
    token, que seguiria aceitando TCP sem autenticação.
 

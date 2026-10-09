@@ -19,7 +19,7 @@ _log = logging.getLogger(__name__)
 
 
 class ApiStreamSink:
-    def __init__(self, bus: EventBus, *, run_id: str = "") -> None:
+    def __init__(self, bus: EventBus, *, run_id: str) -> None:
         self._bus = bus
         self._run_id = run_id
         self._agent_text = ""

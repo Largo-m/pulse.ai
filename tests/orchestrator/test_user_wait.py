@@ -209,7 +209,7 @@ def _port_and_bus():
     runner = AcpSessionRunner(
         ["echo"],
         cwd=str(Path.cwd()),
-        stream=ApiStreamSink(bus),
+        stream=ApiStreamSink(bus, run_id="r1"),
         prompt_handler=ApiPromptPort(correlator),
         runtime=get_runtime("cursor"),
         session_log=RecordedSessionLog(),
@@ -455,7 +455,7 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
     from pulse.daemon.events import EventBus
 
     bus = EventBus()
-    sink = _runner(ApiStreamSink(bus), _Port())
+    sink = _runner(ApiStreamSink(bus, run_id="r1"), _Port())
     sink._prompt_handler.ask_text("e agora?")
 
     published = [event for event in bus._history if event["type"] == "run.awaiting"]

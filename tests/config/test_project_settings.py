@@ -12,8 +12,6 @@ from pulse.config.global_config import mark_onboarding_complete
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.config.project_settings import (
     FALLBACK_MODEL,
-    FALLBACK_POLICY,
-    FALLBACK_RUNTIME,
     AgentFields,
     agent_fields,
     effective_defaults,
@@ -21,6 +19,8 @@ from pulse.config.project_settings import (
     set_agent_field,
     set_project_default,
 )
+from pulse.config.resolved import DEFAULT_PERMISSION_POLICY
+from pulse.runtimes import DEFAULT_RUNTIME_ID
 from pulse.store.workflow_defs import list_agents
 
 
@@ -39,7 +39,7 @@ def _machine(workspace: Path, *, model: str = "machine-model") -> None:
 
 def test_without_any_choice_the_defaults_are_pulse_s_own(tmp_path: Path) -> None:
     assert effective_defaults(tmp_path) == AgentFields(
-        FALLBACK_RUNTIME, FALLBACK_MODEL, FALLBACK_POLICY
+        DEFAULT_RUNTIME_ID, FALLBACK_MODEL, DEFAULT_PERMISSION_POLICY
     )
 
 
@@ -60,7 +60,7 @@ def test_an_agent_s_own_setting_wins_over_the_project_default(tmp_path: Path) ->
     set_agent_field(tmp_path, first.id, "model", "only-me")
 
     assert agent_fields(tmp_path, first.id) == AgentFields(
-        FALLBACK_RUNTIME, "only-me", FALLBACK_POLICY
+        DEFAULT_RUNTIME_ID, "only-me", DEFAULT_PERMISSION_POLICY
     )
     second_fields = agent_fields(tmp_path, second.id)
     assert second_fields is not None
