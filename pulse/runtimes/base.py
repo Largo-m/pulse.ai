@@ -174,15 +174,6 @@ class AgentRuntime:
         results.append(self.check_auth())
         return results
 
-    def login(self) -> int:
-        if not self.login_command:
-            return 1
-        try:
-            # login_command is a class constant of the runtime; interactive, so no timeout.
-            return subprocess.run(list(self.login_command), check=False).returncode  # noqa: S603
-        except OSError:
-            return 1
-
     def auth_method(self, advertised: Sequence[str]) -> str | None:
         """`methodId` for `authenticate`, or None to skip the call.
 
