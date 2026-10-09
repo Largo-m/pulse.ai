@@ -458,7 +458,7 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); recusa `--host` fora de loopback; ancora o cwd em `~/.pulse`; no SIGTERM para as runs antes de sair (`GracefulServer`) |
+| [`pulse/daemon/server.py`](pulse/daemon/server.py) | Sobe Uvicorn em TCP + UDS (socket `0600` desde o `bind`); recusa `--host` fora de `127.0.0.1`/`localhost`; ancora o cwd em `~/.pulse`; no SIGTERM para as runs antes de sair (`GracefulServer`) |
 | [`pulse/daemon/runs.py`](pulse/daemon/runs.py) | `RunManager`: uma thread por run (N simultâneas); listar, cancelar, podar as encerradas, parar todas no desligamento (`shutdown`). `run_engine` monta as portas do motor |
 | [`pulse/daemon/events.py`](pulse/daemon/events.py) | Barramento de eventos + correlator de prompts |
 | [`pulse/daemon/logs.py`](pulse/daemon/logs.py) | Log operacional do daemon: uma linha por fato da run, com `run_id` ([docs/logs.md](docs/logs.md)) |

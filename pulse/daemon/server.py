@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import ipaddress
 import logging
 import os
 import secrets
@@ -32,7 +31,9 @@ from pulse.store.paths import (
 
 SOCKET_MODE = 0o600
 USAGE_ERROR = 2
-LOCALHOST = "localhost"
+# Loopback, and named in the API's `TRUSTED_HOSTS`: another loopback address
+# would start a daemon that answers 400 to every request.
+LISTEN_HOSTS = (DEFAULT_HTTP_HOST, "localhost")
 TOKEN_BYTES = 32
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
@@ -175,15 +176,6 @@ def run_daemon(
         _log.info("daemon.stopped pid=%d", pid)
 
 
-def is_loopback(host: str) -> bool:
-    if host == LOCALHOST:
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "serve":
@@ -202,8 +194,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         i += 1
     # Off loopback the token would cross the network in clear text, and anyone on it could try it.
-    if not is_loopback(host):
-        sys.stderr.write(f"pulse-engine: refusing to listen on non-loopback host {host!r}\n")
+    if host not in LISTEN_HOSTS:
+        sys.stderr.write(
+            f"pulse-engine: refusing to listen on {host!r} (use one of {', '.join(LISTEN_HOSTS)})\n"
+        )
         return USAGE_ERROR
     run_daemon(host=host, port=port)
     return 0
