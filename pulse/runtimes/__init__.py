@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
+from pulse.runtimes.base import AgentRuntime, RuntimeCheck
 from pulse.runtimes.claude import ClaudeRuntime
 from pulse.runtimes.cursor import CursorRuntime
 
@@ -28,13 +28,16 @@ def all_runtimes() -> list[AgentRuntime]:
     return list(RUNTIMES.values())
 
 
-def get_runtime(name: str | None) -> AgentRuntime:
-    """Runtime by id; falls back to the default for `default`/unknown ids."""
-    if name:
-        runtime = RUNTIMES.get(name.strip().lower())
-        if runtime is not None:
-            return runtime
-    return RUNTIMES[DEFAULT_RUNTIME_ID]
+class UnknownRuntime(LookupError):
+    """A runtime id missing from `RUNTIMES`."""
+
+
+def get_runtime(name: str) -> AgentRuntime:
+    """Runtime by id. An unknown id does not exist: falling back would start another CLI."""
+    runtime = find_runtime(name)
+    if runtime is None:
+        raise UnknownRuntime(f"unknown runtime: {name!r}")
+    return runtime
 
 
 def find_runtime(name: str | None) -> AgentRuntime | None:
@@ -69,8 +72,8 @@ __all__ = [
     "DEFAULT_RUNTIME_ID",
     "RUNTIMES",
     "AgentRuntime",
-    "ModelRequest",
     "RuntimeCheck",
+    "UnknownRuntime",
     "all_runtimes",
     "find_runtime",
     "get_runtime",

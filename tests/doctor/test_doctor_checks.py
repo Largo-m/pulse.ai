@@ -1,10 +1,14 @@
+from __future__ import annotations
+
+import pytest
+
 from pulse.doctor.checks import (
     check_agent_in_path,
     check_auth,
     run_agent_checks,
     run_environment_checks,
 )
-from pulse.runtimes import all_runtimes, get_runtime
+from pulse.runtimes import UnknownRuntime, all_runtimes, get_runtime
 
 
 class Completed:
@@ -100,7 +104,6 @@ def test_run_agent_checks_routes_by_runtime(monkeypatch):
     _which(monkeypatch, None)
     assert run_agent_checks("cursor")[0].name == "Cursor CLI"
     assert run_agent_checks("claude")[0].name == "Claude Code CLI"
-    assert run_agent_checks("default")[0].name == "Cursor CLI"
 
 
 def test_run_environment_checks_covers_every_runtime(monkeypatch):
@@ -110,7 +113,13 @@ def test_run_environment_checks_covers_every_runtime(monkeypatch):
         assert f"{runtime.label} CLI" in names
 
 
-def test_get_runtime_falls_back_to_cursor():
-    assert get_runtime("inexistente").id == "cursor"
-    assert get_runtime(None).id == "cursor"
+def test_a_runtime_id_is_found_whatever_its_case():
     assert get_runtime("CLAUDE").id == "claude"
+    assert get_runtime(" cursor ").id == "cursor"
+
+
+@pytest.mark.parametrize("name", ["inexistente", "default", ""])
+def test_an_unknown_runtime_id_does_not_exist(name: str):
+    """Falling back to the default would start another CLI over a typo in the config."""
+    with pytest.raises(UnknownRuntime):
+        get_runtime(name)

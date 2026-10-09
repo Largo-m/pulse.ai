@@ -201,19 +201,20 @@ def update_project_defaults(
     config = _load_project(root.resolve(), db_path=db_path)
     if config is None:
         return root.resolve()
-    updates: dict[str, str | bool | None] = {}
-    if model is not None:
-        updates["model"] = model
-    if permission_policy is not None:
-        if permission_policy not in PERMISSION_POLICIES:
-            raise ValueError(f"Invalid permission policy: {permission_policy}")
-        updates["permission_policy"] = permission_policy
-    if agent is not None:
-        updates["default_agent"] = agent
-    if use_worktree is not None:
-        updates["use_worktree"] = bool(use_worktree)
-    if updates:
-        _save_project(replace(config, **updates), db_path=db_path)
+    if permission_policy is not None and permission_policy not in PERMISSION_POLICIES:
+        raise ValueError(f"Invalid permission policy: {permission_policy}")
+    if (model, permission_policy, agent, use_worktree) == (None, None, None, None):
+        return root.resolve()
+    updated = replace(
+        config,
+        model=config.model if model is None else model,
+        permission_policy=config.permission_policy
+        if permission_policy is None
+        else permission_policy,
+        default_agent=config.default_agent if agent is None else agent,
+        use_worktree=config.use_worktree if use_worktree is None else bool(use_worktree),
+    )
+    _save_project(updated, db_path=db_path)
     return root.resolve()
 
 

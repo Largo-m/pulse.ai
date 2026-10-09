@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -11,6 +10,7 @@ from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
 from pulse.domain.control import RUN_STOPPED
 from pulse.domain.run import StepRecord
+from tests.conftest import wait_for_event
 
 
 def test_status_and_workflows():
@@ -44,7 +44,7 @@ def test_doctor_endpoint():
     assert "checks" in response.json()
 
 
-def test_start_run_and_prompt_correlator(monkeypatch):
+def test_start_run_and_prompt_correlator(monkeypatch, tmp_path: Path):
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app, base_url="http://127.0.0.1")
@@ -77,11 +77,11 @@ def test_start_run_and_prompt_correlator(monkeypatch):
         assert answer["outcome"]["outcome"] == "selected"
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     created = client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp"},
+        json={"prompt": "x", "workspace": str(tmp_path)},
     )
     assert created.status_code == 200
     run_id = created.json()["id"]
@@ -107,15 +107,10 @@ def test_start_run_and_prompt_correlator(monkeypatch):
     assert watcher.is_alive() is False
     assert "id" in prompt_id
 
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        payload = client.get(f"/api/runs/{run_id}").json()
-        if payload.get("exit_code") is not None:
-            assert payload["exit_code"] == 0
-            assert captured["workspace"] == Path("/tmp")
-            return
-        time.sleep(0.05)
-    raise AssertionError("run did not finish")
+    wait_for_event(state.bus, "run.finished")
+    payload = client.get(f"/api/runs/{run_id}").json()
+    assert payload["exit_code"] == 0
+    assert captured["workspace"] == tmp_path
 
 
 def test_unknown_workflow_returns_404():
@@ -123,9 +118,10 @@ def test_unknown_workflow_returns_404():
     client = TestClient(app, base_url="http://127.0.0.1")
     response = client.post("/api/workflows/nope/runs", json={"prompt": "x"})
     assert response.status_code == 404
+    assert response.json() == {"detail": "unknown workflow: nope"}
 
 
-def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
+def test_resume_carries_the_previous_run_into_the_flow(monkeypatch, tmp_path: Path):
     """Resuming is a new run over the same record; the flow receives the id."""
     manager = RunManager()
     app = create_app(manager)
@@ -138,11 +134,11 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
         entered.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp", "resume_run_id": "run-anterior"},
+        json={"prompt": "x", "workspace": str(tmp_path), "resume_run_id": "run-anterior"},
     )
     assert entered.wait(timeout=5)
 
@@ -150,7 +146,7 @@ def test_resume_carries_the_previous_run_into_the_flow(monkeypatch):
     assert "restart" not in seen, "there is no restart from scratch, only resume"
 
 
-def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
+def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch, tmp_path: Path):
     manager = RunManager()
     app = create_app(manager)
     client = TestClient(app, base_url="http://127.0.0.1")
@@ -159,35 +155,44 @@ def test_stop_ends_the_run_as_stopped_not_failed(monkeypatch):
     def fake_run_workflow(**kwargs):
         control = kwargs["control"]
         entered.set()
-        while True:
-            if not control.checkpoint():
-                return RUN_STOPPED
-            time.sleep(0.01)
+        wait_for_event(manager.get(kwargs["run_id"]).bus, "run.stopped")
+        return 0 if control.checkpoint() else RUN_STOPPED
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
 
     run_id = client.post(
         "/api/workflows/default/runs",
-        json={"prompt": "x", "workspace": "/tmp"},
+        json={"prompt": "x", "workspace": str(tmp_path)},
     ).json()["id"]
     assert entered.wait(timeout=5)
 
     assert client.post(f"/api/runs/{run_id}/cancel").status_code == 200
 
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        payload = client.get(f"/api/runs/{run_id}").json()
-        if payload.get("exit_code") is not None:
-            assert payload["exit_code"] == RUN_STOPPED
-            assert payload["status"] == "stopped", "stopping is not failing"
-            return
-        time.sleep(0.05)
-    raise AssertionError("run did not finish after stop")
+    wait_for_event(manager.get(run_id).bus, "run.finished")
+    payload = client.get(f"/api/runs/{run_id}").json()
+    assert payload["exit_code"] == RUN_STOPPED
+    assert payload["status"] == "stopped", "stopping is not failing"
 
 
 def test_control_endpoints_404_for_unknown_run():
     client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
     assert client.post("/api/runs/nao-existe/cancel").status_code == 404
+
+
+def test_an_unknown_run_is_reported_in_english_on_every_route():
+    """Errors are part of the API contract and, unlike screen copy, are in English;
+    a client logging the detail must read the same words on every route."""
+    client = TestClient(create_app(RunManager()), base_url="http://127.0.0.1")
+
+    responses = [
+        client.get("/api/runs/nao-existe"),
+        client.post("/api/runs/nao-existe/cancel"),
+        client.get("/api/runs/nao-existe/events"),
+    ]
+
+    assert [(response.status_code, response.json()) for response in responses] == [
+        (404, {"detail": "run not found"})
+    ] * 3
 
 
 def test_history_delete_endpoint(tmp_path: Path):
@@ -222,7 +227,7 @@ def test_the_run_has_one_id_on_the_api_and_in_the_database(monkeypatch):
         entered.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert entered.wait(timeout=5)
     assert seen["run_id"] == run_id
@@ -240,7 +245,7 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
         kwargs["prompt_handler"].ask_text("e agora?")
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asking.wait(timeout=5)
 
@@ -253,14 +258,9 @@ def test_listing_runs_shows_what_is_alive_and_what_it_waits_for(monkeypatch):
     assert listed[0]["prompt"] == "tarefa"
 
     release.set()
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline:
-        listed = client.get("/api/runs").json()["runs"]
-        if listed[0]["awaiting_prompt"]:
-            break
-        time.sleep(0.05)
-    else:
-        raise AssertionError("the run never showed up awaiting an answer")
+    wait_for_event(manager.get(run_id).bus, "prompt.request")
+    listed = client.get("/api/runs").json()["runs"]
+    assert listed[0]["awaiting_prompt"] is True
 
     assert listed[0]["status"] == "awaiting_input"
     assert listed[0]["awaiting_since"] is not None
@@ -302,7 +302,7 @@ def test_a_run_with_nobody_watching_does_not_stop_on_a_policy_permission(monkeyp
         done.set()
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
 
     assert done.wait(timeout=5), "the run hung on a permission the policy resolves"
@@ -332,23 +332,19 @@ def test_cancelling_a_run_that_is_waiting_for_an_answer_frees_it(monkeypatch):
         answer.append(kwargs["prompt_handler"].ask_text("e agora?"))
         return RUN_STOPPED
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "tarefa"}).json()["id"]
     assert asked.wait(timeout=5)
 
     state = manager.get(run_id)
     assert state is not None
     assert state.correlator is not None
-    deadline = time.monotonic() + 5
-    while not state.correlator.pending() and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_for_event(state.bus, "prompt.request")
     assert state.correlator.pending()
 
     assert client.post(f"/api/runs/{run_id}/cancel").json() == {"ok": True}
 
-    deadline = time.monotonic() + 5
-    while state.is_active() and time.monotonic() < deadline:
-        time.sleep(0.01)
+    wait_for_event(state.bus, "run.finished")
     assert not state.is_active()
     assert answer == [None]
 
@@ -365,7 +361,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
         release.wait(timeout=5)
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert entered.wait(timeout=5)
 
@@ -374,6 +370,7 @@ def test_resuming_a_run_that_is_still_running_is_refused(monkeypatch):
         json={"prompt": "x", "resume_run_id": run_id},
     )
     assert again.status_code == 409
+    assert again.json() == {"detail": f"run is already running: {run_id}"}
     release.set()
 
 
@@ -392,7 +389,7 @@ def test_attaching_replays_the_run_and_marks_where_the_past_ends(monkeypatch):
         release.wait(timeout=5)
         return 0
 
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", fake_run_workflow)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", fake_run_workflow)
     run_id = client.post("/api/workflows/default/runs", json={"prompt": "x"}).json()["id"]
     assert streamed.wait(timeout=5)
 
@@ -420,12 +417,10 @@ def test_finished_runs_stay_attachable_for_a_while_then_go(monkeypatch):
 
     manager = RunManager()
     client = TestClient(create_app(manager), base_url="http://127.0.0.1")
-    monkeypatch.setattr("pulse.daemon.runs.run_workflow", lambda **kwargs: 0)
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", lambda **kwargs: 0)
 
     first = client.post("/api/workflows/default/runs", json={"prompt": "a"}).json()["id"]
-    deadline = time.monotonic() + 5
-    while time.monotonic() < deadline and manager.get(first).finished_at is None:
-        time.sleep(0.02)
+    wait_for_event(manager.get(first).bus, "run.finished")
     assert manager.get(first).finished_at is not None
 
     assert first in {item["id"] for item in manager.list_runs()}
@@ -479,3 +474,4 @@ def test_acp_probe_of_an_unknown_runtime_is_not_found(monkeypatch):
     response = client.post("/api/doctor/acp-probe", params={"runtime": "nope"})
 
     assert response.status_code == 404
+    assert response.json() == {"detail": "unknown runtime: nope"}

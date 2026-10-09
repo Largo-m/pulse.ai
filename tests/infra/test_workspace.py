@@ -1,0 +1,95 @@
+"""`Workspace`: the git adapter and the in-memory fake keep the same promise.
+
+Engine tests open worktrees on the fake; these assertions run on both, against
+a real repository for the git side.
+"""
+
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from pulse import vcs
+from pulse.domain.ports import Workspace, WorkspaceError
+from pulse.vcs.workspace import GitWorkspace
+from tests.fakes import FakeWorkspace
+from tests.infra.test_worktree import make_repo
+
+pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
+
+
+def _git(tmp_path: Path, *, repo: bool) -> GitWorkspace:
+    root = make_repo(tmp_path / "repo") if repo else tmp_path / "repo"
+    root.mkdir(exist_ok=True)
+    return GitWorkspace(root, worktrees=tmp_path / "worktrees")
+
+
+def _fake(tmp_path: Path, *, repo: bool) -> FakeWorkspace:
+    return FakeWorkspace(tmp_path / "repo", repo=repo)
+
+
+def _lose(workspace: Workspace, path: Path) -> None:
+    if isinstance(workspace, FakeWorkspace):
+        workspace.lose_worktree(path)
+    else:
+        shutil.rmtree(path)
+
+
+@pytest.fixture(params=[_git, _fake], ids=["git", "fake"])
+def make(request, tmp_path: Path):
+    return lambda *, repo=True: request.param(tmp_path, repo=repo)
+
+
+def test_both_adapters_implement_the_port(make):
+    assert isinstance(make(), Workspace)
+
+
+def test_a_repository_reports_its_branch(make):
+    workspace = make()
+
+    assert workspace.is_repo() is True
+    assert workspace.current_branch() == "main"
+    assert workspace.has_branch("main") is True
+    assert workspace.has_branch("nope") is False
+
+
+def test_a_new_worktree_never_reuses_a_branch(make):
+    """Two runs on one branch would write to the same history."""
+    workspace = make()
+
+    first, first_branch = workspace.add_worktree("run-a", "pulse/demo")
+    second, second_branch = workspace.add_worktree("run-b", "pulse/demo")
+
+    assert (first_branch, second_branch) == ("pulse/demo", "pulse/demo-2")
+    assert first != second
+    assert first.name == "run-a"
+    assert workspace.worktree_exists(str(first)) is True
+    assert workspace.current_branch() == "main", "the project root stays where it was"
+
+
+def test_a_lost_worktree_reopens_on_its_branch(make):
+    """Finished steps' work lives on the branch; a new one from HEAD would leave it out."""
+    workspace = make()
+    target, branch = workspace.add_worktree("run-a", "pulse/demo")
+    _lose(workspace, target)
+    assert workspace.worktree_exists(str(target)) is False
+
+    reopened = workspace.attach_worktree("run-a", branch)
+
+    assert reopened == target
+    assert workspace.worktree_exists(str(target)) is True
+
+
+def test_outside_a_repository_nothing_is_opened(make):
+    workspace = make(repo=False)
+
+    assert workspace.is_repo() is False
+    assert workspace.current_branch() == ""
+    with pytest.raises(WorkspaceError):
+        workspace.add_worktree("run-a", "pulse/demo")
+
+
+def test_no_path_is_no_worktree(make):
+    assert make().worktree_exists("") is False

@@ -417,10 +417,10 @@ class RunRecord:
 
     def reopen_loop(self, step_ids: list[str], *, opener_id: str) -> None:
         """Start another loop round on these steps; only the opener counts it."""
-        for step_id in step_ids:
-            record = self.step(step_id)
-            if record is not None:
-                record.reopen_round(opener=step_id == opener_id)
+        records = self._records(step_ids)
+        self._require_none_running(records, "reopen the loop")
+        for record in records:
+            record.reopen_round(opener=record.step_id == opener_id)
 
     def close_loop(self, step_ids: list[str], *, opener_id: str) -> None:
         """Settle the loop's remaining steps without running them.
@@ -429,22 +429,40 @@ class RunRecord:
         """
         opener = self.step(opener_id)
         ran_before = opener is not None and opener.rounds > 1
-        for step_id in step_ids:
-            record = self.step(step_id)
-            if record is not None and not record.settled:
-                record.close_with_loop(ran_before=ran_before)
+        records = [record for record in self._records(step_ids) if not record.settled]
+        self._require_none_running(records, "close the loop")
+        for record in records:
+            record.close_with_loop(ran_before=ran_before)
 
     def retire_steps_outside(self, defined_ids: set[str]) -> None:
         """Skip the unsettled steps of a definition edited since the run started.
 
         Fan-out children belong to their defined base step and are kept.
         """
+        dropped = []
         for item in self.steps:
             base, separator, _item = item.step_id.rpartition(FAN_OUT_SEPARATOR)
             if item.step_id in defined_ids or (separator and base in defined_ids):
                 continue
             if not item.settled:
-                item.retire()
+                dropped.append(item)
+        self._require_none_running(dropped, "retire steps")
+        for item in dropped:
+            item.retire()
+
+    def _records(self, step_ids: list[str]) -> list[StepRecord]:
+        """Each listed step once: a repeated id must not change its step twice."""
+        unique = dict.fromkeys(step_ids)
+        return [record for step_id in unique if (record := self.step(step_id)) is not None]
+
+    def _require_none_running(self, records: list[StepRecord], action: str) -> None:
+        """Checked before any step changes, so a refused change leaves the run as it was.
+
+        A half-applied change would be persisted by the next save.
+        """
+        running = [record.step_id for record in records if record.status == StepStatus.RUNNING]
+        if running:
+            raise InvalidTransition(f"run {self.id}: cannot {action} while {running} runs")
 
     def complete(self) -> None:
         """Every step settled; the workflow is over."""

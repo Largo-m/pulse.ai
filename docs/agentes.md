@@ -239,24 +239,32 @@ Uma função pública: [`run_workflow`](../pulse/orchestrator/engine.py). Nenhum
 
 ### 4.1 Pré-voo (antes de gastar qualquer sessão)
 
+A primeira metade é do daemon, que monta as portas
+([`run_engine`](../pulse/daemon/runs.py)); a segunda, do motor:
+
 ```
-run_workflow(workflow_id, user_prompt, workspace, stream, prompt_handler, control)
+run_engine(workflow_id, user_prompt, workspace, stream, prompt_handler, control)
   │
-  ├─ 1. is_cockpit_stream / is_interactive   sem terminal e sem Engine → erro
-  ├─ 2. get_workflow(id)                     None → UnknownWorkflow (API: 404)
-  ├─ 3. definição sem steps                  → erro explícito
-  ├─ 4. resolve_config(workflow=id)          runtime, model, policy, workspace
-  ├─ 5. check_runtime_ready(runtime.id)      só `fail` bloqueia; `warn` passa
-  ├─ 6. _resolve_run(...)                    cria ou retoma a run
-  └─ 7. AcpSessionRunner(...)  +  bind_run(run.id)
+  ├─ 1. get_workflow(id)                     None → UnknownWorkflow (API: 404)
+  ├─ 2. resolve_config(workflow=id)          runtime, model, policy, workspace
+  ├─ 3. check_runtime_ready(runtime.id)      só `fail` bloqueia; `warn` passa
+  ├─ 4. AcpSessionRunner(...) + adapters     EnginePorts(session, stream, runs, workspace, agents)
+  └─ run_workflow(definition, ports, …)
+       ├─ 5. definição sem steps             → EmptyWorkflow
+       ├─ 6. _resolve_run(...)               cria ou retoma a run (ports.runs)
+       ├─ 7. prepare_workspace(...)          raiz ou worktree (ports.workspace)
+       └─ 8. session.bind_run(run.id)
 ```
+
+Toda recusa do pré-voo é exceção para quem chamou: o motor não sabe se há um
+terminal ou uma tela do outro lado, e quem mostra a recusa é o adapter.
 
 O passo 6 tem dois modos:
 
 | Chamada | Efeito |
 | --- | --- |
-| sem `resume_run_id` | `create_run`: linha em `runs` + N em `run_steps`, todas `pending` |
-| `resume_run_id` | `load_run`: volta a run existente; steps `done`/`skipped` são pulados |
+| sem `resume_run_id` | `runs.create`: linha em `runs` + N em `run_steps`, todas `pending` |
+| `resume_run_id` | `runs.load`: volta a run existente; steps `done`/`skipped` são pulados |
 
 Não há "refazer do zero". Rodar o pipeline inteiro de novo é começar uma run
 nova — que é o que o usuário quer dizer quando pede isso, e deixa a tentativa
@@ -271,9 +279,8 @@ o fan-out cabe no meio (4001, 4002…) sem renumerar o resto.
 ### 4.2 O laço
 
 ```
-runner.start()          ← sobe o subprocesso ACP + a ponte MCP AskQuestion
-runner.initialize()     ← handshake ACP, coleta authMethods
-runner.authenticate()   ← só se o agente anunciar authMethods
+session.open(cwd)       ← sobe o subprocesso ACP + a ponte MCP AskQuestion
+                          no worktree da run, faz o handshake e o login
 _sync_steps()           ← manda a lista de fases para o painel
 
 para cada definition_step em definition.steps:
@@ -293,8 +300,8 @@ para cada definition_step em definition.steps:
        └─ exit_code ≠ 0 → grava status e sai
 
 run.retire_steps_outside(ids da definição)  ← step que saiu da definição vira skipped
-run.complete(); run_store.save(run)
-finally: runner.close()
+run.complete(); runs.save(run)
+finally: session.close()
 ```
 
 Note que o `AcpSessionRunner` é **um só para a run inteira** — o subprocesso do
@@ -302,15 +309,15 @@ runtime sobe uma vez e fica de pé. O que muda por step é a *sessão* dentro de
 
 ### 4.3 O que muda por step
 
-[`_activate_agent`](../pulse/orchestrator/engine.py) roda antes de cada
-tentativa:
+Antes de cada tentativa, o motor pede o perfil do agente à porta
+`AgentProfiles` (adapter [`ConfiguredAgentProfiles`](../pulse/config/agent_profiles.py)):
 
 ```
-resolve_config(workspace, pulse_agent=step.agent_id)
+agents.profile(step.agent_id)          ← resolve_config(pulse_agent=…) + agent_defs
   │
-  ├─ runner.use_agent(agent_id, permission_policy)   ← política deste step
-  ├─ model  = resolved.model or fallback_model       ← aplicado na sessão nova
-  └─ instructions = get_agent(agent_id).instructions ← prefixo do prompt
+  ├─ session.use_agent(profile)        ← política deste step (texto desconhecido → ask)
+  ├─ profile.model                     ← model do agente, ou o da run; aplicado na sessão nova
+  └─ profile.instructions              ← prefixo do prompt
 ```
 
 > **Nuance importante:** a resolução devolve também um `runtime`, mas ele **não é
@@ -328,8 +335,8 @@ resolve_config(workspace, pulse_agent=step.agent_id)
 ```
 step.requires_approval ?
    │
-   ├─ SIM → runner.run_isolated_phase(...)     conversa com questionário
-   └─ NÃO → runner.run_isolated_prompt(...)    um turno, e acabou
+   ├─ SIM → session.run_isolated_phase(...)    conversa com questionário
+   └─ NÃO → session.run_isolated_prompt(...)   um turno, e acabou
 ```
 
 Ambos, em [`session_runner.py`](../pulse/acp/session_runner.py), fazem a mesma
@@ -451,7 +458,7 @@ Bloqueio é o último recurso, não o jeito de pedir informação.
 | `cancel` / não aprovado / `stopReason` ruim | — | cai no menu de retry |
 | `status: blocked` (ou sem bloco) | `blocked` | cai no menu de bloqueio |
 
-O menu de falha ([`_offer_retry`](../pulse/orchestrator/engine.py)):
+O menu de falha ([`_offer_retry`](../pulse/orchestrator/menus.py)):
 
 ```
 Refazer                      → nova tentativa, mesmo prompt
@@ -459,7 +466,7 @@ Outro — dizer o que fazer    → ask_text() → guidance_block() no prompt seg
 Parar                        → status FAILED, run encerra com exit 1
 ```
 
-O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/engine.py)) tem uma
+O menu de bloqueio ([`_offer_blocked`](../pulse/orchestrator/menus.py)) tem uma
 opção a mais, porque bloqueio costuma ser legítimo e às vezes a resposta certa é
 seguir sem aquele step:
 
@@ -562,13 +569,14 @@ stdout do runtime (uma linha = um JSON-RPC)
   │
   ├─ method = session/update           → notificação:
   │     stream.handle_update(params)   → cockpit / SSE
-  │     _record_run_event(params)      → run_events + run_artifacts
+  │     session_log.update(params)     → run_events + run_artifacts
   │
   └─ só id                            → resposta a um request nosso (fila)
 ```
 
 **Como artefato é descoberto:** um `tool_call` com `kind` ∈ {`edit`, `write`,
-`create`} faz o runner extrair o caminho de `locations[].path` ou do `rawInput`
+`create`} faz o log da sessão ([`RecordedSessionLog`](../pulse/history/session_log.py),
+injetado pelo daemon) extrair o caminho de `locations[].path` ou do `rawInput`
 (chaves `path`, `file_path`, `target_file`, `filePath`, `abs_path` — cada runtime
 reporta de um jeito) e gravar em `run_artifacts`. Não há convenção de pasta, nome
 ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
@@ -639,9 +647,9 @@ Config, doctor, onboarding e session runner passam a enxergá-lo sem mudanças.
  3. Home lista os workflows de `workflow_defs`; usuário escolhe e descreve a tarefa
  4. Cockpit monta a sidebar de `workflow_steps` (mesmo caminho do motor)
  5. cliente → POST /api/workflows/{id}/runs
- 6. daemon/runs.py abre uma thread com RunControl próprio → run_workflow
- 7. pré-voo: definição, config, doctor do runtime, criação da run
- 8. runner.start(): sobe o subprocesso ACP + a ponte MCP AskQuestion
+ 6. daemon/runs.py abre uma thread com RunControl próprio → run_engine
+ 7. pré-voo: definição, config, doctor do runtime, portas; o motor cria a run
+ 8. session.open(cwd): sobe o subprocesso ACP + a ponte MCP AskQuestion
  9. por step: resolve o agente, monta instructions + prompt, abre sessão nova
 10. agente trabalha → session/update → SSE → cockpit
       write/edit → run_artifacts     tudo → run_events

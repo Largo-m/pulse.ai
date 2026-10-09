@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from enum import Enum
 
+AWAITING_YOU = "precisa de você"
+RUNNING = "executando"
 STATUS_LABELS: dict[str, str] = {
     "pending": "pendente",
-    "in_progress": "executando",
-    "running": "executando",
-    "awaiting_input": "precisa de você",
-    "awaiting_approval": "precisa de você",
+    "in_progress": RUNNING,
+    "running": RUNNING,
+    "awaiting_input": AWAITING_YOU,
+    "awaiting_approval": AWAITING_YOU,
     "approved": "aprovado",
     "blocked": "bloqueado",
     "stopped": "parado",

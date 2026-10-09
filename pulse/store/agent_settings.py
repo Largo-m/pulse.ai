@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pulse.store.db import connect, default_db_path
 
 
-def load_agent_settings(project_id: str, agent_id: str, *, db_path=None) -> dict[str, str | None]:
+def load_agent_settings(
+    project_id: str, agent_id: str, *, db_path: Path | None = None
+) -> dict[str, str | None]:
     connection = connect(db_path or default_db_path())
     try:
         row = connection.execute(
@@ -34,7 +38,7 @@ def apply_setting_to_all_agents(
     field: str,
     value: str,
     agent_ids: list[str] | tuple[str, ...] = (),
-    db_path=None,
+    db_path: Path | None = None,
 ) -> None:
     """Write a global value into every agent of the project.
 
@@ -64,7 +68,7 @@ def apply_setting_to_all_agents(
                 (project_id, agent_id),
             )
             connection.execute(
-                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ? AND agent_id = ?",  # noqa: S608
+                f"UPDATE agent_settings SET {field} = ? WHERE project_id = ? AND agent_id = ?",  # noqa: S608  # `field` passed GLOBAL_FIELDS
                 (value, project_id, agent_id),
             )
         connection.commit()
@@ -79,7 +83,7 @@ def upsert_agent_settings(
     runtime: str | None = None,
     model: str | None = None,
     permission_policy: str | None = None,
-    db_path=None,
+    db_path: Path | None = None,
 ) -> None:
     current = load_agent_settings(project_id, agent_id, db_path=db_path)
     next_runtime = runtime if runtime is not None else current.get("runtime")
