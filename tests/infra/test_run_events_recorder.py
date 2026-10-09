@@ -46,7 +46,7 @@ def run(tmp_path: Path) -> None:
 @pytest.fixture
 def log(run: None, tmp_path: Path) -> RecordedSessionLog:
     """The adapter as the daemon wires it, inside the `plan` step of session `sess-1`."""
-    recorded = RecordedSessionLog()
+    recorded = RecordedSessionLog(project_root=tmp_path)
     recorded.bind_run(RUN_ID)
     recorded.enter_step("plan")
     recorded.enter_session("sess-1", pulse_session_id="pulse-1", cwd=str(tmp_path), agent_id=None)
@@ -83,7 +83,7 @@ def _tool(update_kind: str = "tool_call", **fields: Any) -> dict[str, Any]:
 @pytest.mark.usefixtures("run")
 def test_an_unbound_log_records_nothing():
     """Probes and doctor runs have no run to log to."""
-    unbound = RecordedSessionLog()
+    unbound = RecordedSessionLog(project_root=Path("/repo"))
 
     unbound.update(_chunk("hello"))
     unbound.update(_tool(toolCallId="t-1", title="Run tests", kind="execute", locations=[]))
@@ -327,7 +327,7 @@ def test_an_unbound_runner_does_not_log_dialogs(tmp_path: Path, monkeypatch):
         cwd=str(tmp_path),
         prompt_handler=_Port(),
         runtime=get_runtime("cursor"),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=tmp_path),
     )
 
     assert unbound.prompts.ask_text("Where?") == "start with the signup"

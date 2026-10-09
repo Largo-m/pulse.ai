@@ -16,11 +16,12 @@ from types import SimpleNamespace
 import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.config.project_config import init_project_config
+from pulse.config.project_config import init_project_config, load_project_config
 from pulse.domain.run import StepRecord
 from pulse.history.session_log import RecordedSessionLog
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
+from pulse.store.db import connect, default_db_path
 from tests.conftest import make_workflow
 
 
@@ -38,7 +39,7 @@ def _run(workspace: Path) -> str:
 
 def _runner(workspace: Path, run_id: str, port: object | None = None) -> AcpSessionRunner:
     """A runner inside an open session, as the engine leaves it before a turn."""
-    log = RecordedSessionLog()
+    log = RecordedSessionLog(project_root=workspace)
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd=str(workspace),
@@ -183,3 +184,27 @@ def test_a_runtime_session_the_database_refuses_is_reported_in_the_log(
     assert _events(run_id) == [
         ("Info", "Runtime session not recorded", "OperationalError: database is locked")
     ]
+
+
+def test_a_session_in_the_runs_worktree_is_recorded_under_its_project(tmp_path: Path):
+    """The worktree lives under `~/.pulse/worktrees`, outside the project (invariant 10).
+
+    Resolving the project from the session's `cwd` found none there, so every
+    agent session of an isolated run went unrecorded without a trace.
+    """
+    project_root = tmp_path / "repo"
+    worktree = tmp_path / "worktrees" / "run-1"
+    worktree.mkdir(parents=True)
+    init_project_config(project_root)
+    project = load_project_config(project_root)
+    assert project is not None
+    log = RecordedSessionLog(project_root=project_root)
+
+    log.enter_session("sess-1", pulse_session_id="pulse-1", cwd=str(worktree), agent_id="tester")
+
+    connection = connect(default_db_path())
+    rows = connection.execute(
+        "SELECT project_id, acp_session_id, agent_id FROM agent_sessions"
+    ).fetchall()
+    connection.close()
+    assert [tuple(row) for row in rows] == [(project.project_id, "sess-1", "tester")]

@@ -151,7 +151,7 @@ def _runner(**kwargs: Any) -> AcpSessionRunner:
         cwd="/repo",
         **kwargs,
         runtime=get_runtime("cursor"),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=Path("/repo")),
     )
 
 

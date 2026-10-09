@@ -45,7 +45,7 @@ def _runner(
     step_id: str = "plan",
     port: object | None = None,
 ) -> AcpSessionRunner:
-    log = RecordedSessionLog()
+    log = RecordedSessionLog(project_root=workspace)
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd=str(workspace),

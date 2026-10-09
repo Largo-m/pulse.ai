@@ -6,6 +6,8 @@ runtime reported, and that is what the pane and history show.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain.run import StepRecord
 from pulse.history.session_log import RecordedSessionLog
@@ -15,7 +17,7 @@ from pulse.store import runs as run_store
 
 def _runner(run_id: str = "run-1", step_id: str = "one") -> AcpSessionRunner:
     """A runner inside an open session, as the engine leaves it before a turn."""
-    log = RecordedSessionLog()
+    log = RecordedSessionLog(project_root=Path("/repo"))
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd="/repo",
@@ -114,7 +116,7 @@ def test_an_unbound_runner_records_nothing(tmp_path):
         ["agent", "acp"],
         cwd="/repo",
         runtime=get_runtime("cursor"),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=Path("/repo")),
     )
 
     runner._log.update(_write_call(locations=[{"path": "/repo/docs/PLANO.md"}]))

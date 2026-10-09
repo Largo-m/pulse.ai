@@ -138,7 +138,7 @@ def run_engine(
         runtime=runtime,
         control=control,
         questions=McpQuestionChannel(),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=resolved.workspace_dir),
     )
     ports = EnginePorts(
         session=session,

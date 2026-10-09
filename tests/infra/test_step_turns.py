@@ -201,7 +201,7 @@ def connect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
             stream=stream,
             prompt_handler=sheet,
             runtime=get_runtime("cursor"),
-            session_log=RecordedSessionLog(),
+            session_log=RecordedSessionLog(project_root=tmp_path),
         )
         runner.start()
         runner.initialize()

@@ -27,9 +27,14 @@ _TOOL_UPDATES = frozenset({"tool_call", "tool_call_update", "tool_result"})
 
 
 class RecordedSessionLog:
-    """Records into the Pulse database; nothing happens until a run is bound."""
+    """Records into the Pulse database; nothing happens until a run is bound.
 
-    def __init__(self) -> None:
+    `project_root` names the project the agent sessions belong to: a session's
+    `cwd` may be the run's worktree under `~/.pulse/worktrees` (invariant 10).
+    """
+
+    def __init__(self, *, project_root: Path) -> None:
+        self._project_root = project_root
         self._run_id = ""
         self._step_id = ""
         self._session_id = ""
@@ -55,7 +60,7 @@ class RecordedSessionLog:
         self._session_id = session_id
         self._cwd = cwd
         try:
-            project = load_project_config(Path(cwd))
+            project = load_project_config(self._project_root)
             if project is not None:
                 persist_runtime_session(
                     project.project_id,

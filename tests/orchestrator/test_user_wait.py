@@ -212,7 +212,7 @@ def _port_and_bus():
         stream=ApiStreamSink(bus, run_id="r1"),
         prompt_handler=ApiPromptPort(correlator),
         runtime=get_runtime("cursor"),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=Path.cwd()),
     )
     return runner._prompt_handler, correlator, bus
 
@@ -339,7 +339,7 @@ def _runner(sink: _Sink, port: _Port) -> AcpSessionRunner:
         stream=sink,
         prompt_handler=port,
         runtime=get_runtime("cursor"),
-        session_log=RecordedSessionLog(),
+        session_log=RecordedSessionLog(project_root=Path.cwd()),
     )
 
 
