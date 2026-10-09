@@ -128,7 +128,7 @@ class HistoryDetailScreen(Screen[None]):
             return
         try:
             removed = engine.remove_worktree(self._workspace, self.item.item_id)
-        except engine.WorktreeInUse:
+        except engine.RunInUse:
             self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
             return
         except engine.EngineError as error:

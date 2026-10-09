@@ -193,6 +193,40 @@ def test_the_worktree_of_a_run_the_daemon_executes_is_kept(history_run, monkeypa
     assert stored.worktree_path == str(worktree)
 
 
+def test_a_run_the_daemon_executes_is_not_deleted_from_history(history_run, monkeypatch, tmp_path):
+    """Deleting the run also removes its worktree and the rows the engine still writes."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    record = run_store.load_run("run-hist")
+    assert record is not None
+    record.work_in(worktree_path=str(worktree), branch="pulse/run-hist")
+    run_store.save(record)
+    make_workflow("default")
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    manager = RunManager()
+    client = _client(manager)
+    params = {"workspace": str(history_run)}
+    item_id = client.get("/api/history", params=params).json()["items"][0]["id"]
+    state = manager.start_run(
+        workflow_id="default", prompt="x", workspace=str(history_run), resume_run_id="run-hist"
+    )
+    try:
+        refused = client.delete(f"/api/history/{item_id}", params=params)
+    finally:
+        release.set()
+        state.ended.wait(5)
+
+    assert (refused.status_code, refused.json()) == (409, {"detail": "run is active"})
+    assert worktree.exists()
+    assert run_store.load_run("run-hist") is not None
+
+
 def test_answering_an_unknown_prompt_is_not_found():
     """Another window answered first; the late answer must not land anywhere."""
     response = _client().post("/api/prompts/nope/answer", json={"answer": {"index": 1}})

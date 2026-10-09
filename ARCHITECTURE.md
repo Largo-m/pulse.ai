@@ -373,8 +373,10 @@ branch onde foi escrito. Sai pelo detalhe do histórico (`w`), ou junto quando a
 run é apagada, e em nenhum dos dois com `--force`: worktree com mudança não
 commitada é mantido, porque quem apaga uma linha do histórico não está pedindo
 para jogar trabalho fora. A branch sempre fica. Enquanto o daemon executa a
-run, o `w` não remove: o agente trabalha ali, e é o daemon quem salva o
-agregado. O histórico só limpa a coluna do caminho (`run_store.clear_worktree`),
+run, nem o `w` nem apagar a run removem nada (409): o agente trabalha ali, e é
+o daemon quem salva o agregado. Quem decide é a memória do daemon, não o status
+gravado, então uma run que ficou `running` depois de um crash continua
+apagável (`ENGINE_PROTOCOL` 9). O histórico só limpa a coluna do caminho (`run_store.clear_worktree`),
 nunca grava a run inteira por cima do que o daemon acabou de salvar.
 
 O git falado aqui é o CLI por `subprocess`, em [`pulse/vcs/`](pulse/vcs/).
@@ -513,7 +515,7 @@ rota. O cliente só manda o token por TCP
 | Workflows | `GET /workflows` (do banco, com os steps), `POST /workflows/{id}/runs` |
 | Runs | `GET /runs` (o que está vivo), `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=N` (SSE) |
 | Prompts | Engine emite `prompt.request` no SSE; cliente responde `POST /prompts/{id}/answer` |
-| History | `GET /history`, `GET /history/{id}`, `GET`/`DELETE /history/{id}/worktree`, `GET /runs/{id}/log` |
+| History | `GET /history`, `GET`/`DELETE /history/{id}`, `GET`/`DELETE /history/{id}/worktree`, `GET /runs/{id}/log` |
 | Setup e settings | `GET /setup`, `POST /setup/onboarding`, `GET /runtimes`, `GET /runtimes/{id}/checks`, `GET /models`, `GET /settings`, `PATCH /settings/defaults`, `PATCH /settings/agents/{id}`, `PUT /settings/worktree` |
 
 #### Eventos no SSE

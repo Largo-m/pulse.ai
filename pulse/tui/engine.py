@@ -50,8 +50,8 @@ class EngineRefused(EngineError):
     headline = strings.ENGINE_REFUSED_HEADLINE
 
 
-class WorktreeInUse(Exception):
-    """The daemon still executes the run, so its agent works in that worktree."""
+class RunInUse(Exception):
+    """The daemon still executes the run, so its agent works in its worktree."""
 
 
 @dataclass(frozen=True)
@@ -366,10 +366,25 @@ def history_item(workspace: Path, item_id: str) -> HistoryItem | None:
     return HistoryItem.from_dict(data) if data is not None else None
 
 
+def _refused_while_running(
+    item_id: str, path: str, params: dict[str, str]
+) -> Callable[[EngineClient], dict[str, Any]]:
+    def delete(client: EngineClient) -> dict[str, Any]:
+        try:
+            return client.delete(path, params=params)
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == CONFLICT:
+                raise RunInUse(item_id) from error
+            raise
+
+    return delete
+
+
 def delete_history_item(workspace: Path, item_id: str) -> bool:
+    """`False` when the run is already gone; raises `RunInUse` while the daemon executes it."""
     params = {"workspace": str(workspace)}
-    deleted = _found(lambda client: client.delete(f"/api/history/{item_id}", params=params))
-    return deleted is not None
+    delete = _refused_while_running(item_id, f"/api/history/{item_id}", params)
+    return _found(delete) is not None
 
 
 def worktree_state(workspace: Path, item_id: str) -> WorktreeState | None:
@@ -386,17 +401,9 @@ def worktree_state(workspace: Path, item_id: str) -> WorktreeState | None:
 
 
 def remove_worktree(workspace: Path, item_id: str) -> bool:
-    """`False` when git refused; raises `WorktreeInUse` while the daemon executes the run."""
+    """`False` when git refused; raises `RunInUse` while the daemon executes the run."""
     params = {"workspace": str(workspace)}
-
-    def delete(client: EngineClient) -> dict[str, Any]:
-        try:
-            return client.delete(f"/api/history/{item_id}/worktree", params=params)
-        except httpx.HTTPStatusError as error:
-            if error.response.status_code == CONFLICT:
-                raise WorktreeInUse(item_id) from error
-            raise
-
+    delete = _refused_while_running(item_id, f"/api/history/{item_id}/worktree", params)
     data = _found(delete, timeout=PROBE_TIMEOUT_SECONDS)
     return bool(data and data.get("removed"))
 

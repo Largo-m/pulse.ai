@@ -40,9 +40,11 @@ def history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
 
 
 @router.delete("/api/history/{item_id}")
-def delete_history_item(item_id: str, workspace: str | None = None) -> dict[str, Any]:
-    if not HistoryCatalog(project_root(workspace)).delete(item_id):
-        raise HTTPException(status_code=404, detail="item not found")
+def delete_history_item(item_id: str, runs: Runs, workspace: str | None = None) -> dict[str, Any]:
+    """A run the daemon still executes stays: its agent works in the worktree that goes too."""
+    catalog, item = _known_item(item_id, workspace)
+    _refuse_executing(runs, item)
+    catalog.delete(item_id)
     return {"ok": True}
 
 
@@ -50,6 +52,11 @@ def _executing(runs: Runs, run_id: str) -> bool:
     """The daemon's memory decides, not the stored status: a crash leaves runs `running`."""
     state = runs.get(run_id)
     return state is not None and state.is_active()
+
+
+def _refuse_executing(runs: Runs, item: HistoryItem) -> None:
+    if _executing(runs, item.run_id):
+        raise HTTPException(status_code=WORKTREE_IN_USE, detail="run is active")
 
 
 @router.get("/api/history/{item_id}/worktree")
@@ -73,8 +80,7 @@ def remove_worktree(item_id: str, runs: Runs, workspace: str | None = None) -> d
     A run the daemon still executes keeps it: its agent works there.
     """
     catalog, item = _known_item(item_id, workspace)
-    if _executing(runs, item.run_id):
-        raise HTTPException(status_code=WORKTREE_IN_USE, detail="run is active")
+    _refuse_executing(runs, item)
     return {"removed": catalog.remove_worktree(item)}
 
 

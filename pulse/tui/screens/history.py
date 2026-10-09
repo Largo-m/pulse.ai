@@ -163,6 +163,9 @@ class HistoryListScreen(Screen[None]):
                 return
             try:
                 removed = engine.delete_history_item(self._workspace, item.item_id)
+            except engine.RunInUse:
+                self.notify(strings.HISTORY_RUN_IN_USE)
+                return
             except engine.EngineError as error:
                 self.notify(error.describe())
                 return
@@ -198,8 +201,9 @@ class HistoryListScreen(Screen[None]):
 def _delete_warning(item: HistoryItem) -> str:
     """Describe what deletion removes, plus a warning when the run looks live.
 
-    Live runs are deliberately not blocked: a run stuck as running after its
-    process died must still be removable.
+    The screen does not block live-looking runs: one stuck as running after
+    its process died must stay removable. Only the daemon knows which runs it
+    still executes, and it refuses those.
     """
     lines = [
         item.title,

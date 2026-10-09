@@ -96,10 +96,11 @@ def test_workflows_come_back_with_their_steps_in_order() -> None:
     assert (shape.label, shape.steps) == ("Demo", (("plan", "Planejar"), ("run", "Implementar")))
 
 
-def test_a_worktree_the_daemon_still_uses_is_refused_as_in_use(
-    monkeypatch, tmp_path: Path, in_process_daemon
+@pytest.mark.parametrize("remove", [engine.remove_worktree, engine.delete_history_item])
+def test_a_run_the_daemon_still_executes_is_refused_as_in_use(
+    remove, monkeypatch, tmp_path: Path, in_process_daemon
 ) -> None:
-    """A 409 is the daemon keeping the worktree for a live run, not an unreachable daemon."""
+    """A 409 is the daemon keeping a live run and its worktree, not an unreachable daemon."""
     import threading
 
     from pulse.domain.run import StepRecord
@@ -126,8 +127,8 @@ def test_a_worktree_the_daemon_still_uses_is_refused_as_in_use(
     )
     item_id = engine.history(tmp_path)[0].item_id
     try:
-        with pytest.raises(engine.WorktreeInUse):
-            engine.remove_worktree(tmp_path, item_id)
+        with pytest.raises(engine.RunInUse):
+            remove(tmp_path, item_id)
     finally:
         release.set()
 

@@ -159,6 +159,7 @@ HISTORY_HINT = "/ busca  ·  Enter abre  ·  d remove"
 HISTORY_EMPTY = "Nenhuma run encontrada"
 HISTORY_RUN_REMOVED = "Run removida: {title}"
 HISTORY_RUN_ALREADY_GONE = "Essa run já não estava mais no histórico"
+HISTORY_RUN_IN_USE = "Run mantida no histórico: ela ainda está em andamento"
 HISTORY_REMOVE_DETAIL = (
     "Apaga a run, os logs e a lista de artefatos. Os arquivos no workspace ficam."
 )

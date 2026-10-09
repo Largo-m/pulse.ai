@@ -217,6 +217,8 @@ paths:
           description: Removed
         "404":
           description: Not found
+        "409":
+          description: The daemon still executes the run; its agent works in the worktree
   /api/history/{item_id}/worktree:
     get:
       summary: What removing the run's worktree would throw away
