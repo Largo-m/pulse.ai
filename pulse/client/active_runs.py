@@ -9,14 +9,12 @@ from typing import Any
 
 import httpx
 
-from pulse.client.engine_client import EngineClient
-
-_TIMEOUT = 2.0
+from pulse.client.engine_client import SCREEN_TIMEOUT_SECONDS, EngineClient
 
 
 def list_runs() -> list[dict[str, Any]]:
     """Everything the daemon holds in memory, active or recently finished."""
-    client = EngineClient(timeout=_TIMEOUT)
+    client = EngineClient(timeout=SCREEN_TIMEOUT_SECONDS)
     try:
         return client.list_runs()
     except (httpx.HTTPError, ValueError):

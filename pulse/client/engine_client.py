@@ -22,6 +22,9 @@ from pulse.store.paths import (
     read_daemon_meta,
 )
 
+# How long a screen waits for a quick daemon answer before calling it unavailable.
+SCREEN_TIMEOUT_SECONDS = 2.0
+
 
 class EngineClient:
     def __init__(

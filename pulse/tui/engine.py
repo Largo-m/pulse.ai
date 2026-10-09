@@ -16,7 +16,7 @@ from typing import Any, Literal, TypeVar
 
 import httpx
 
-from pulse.client.engine_client import EngineClient
+from pulse.client.engine_client import SCREEN_TIMEOUT_SECONDS, EngineClient
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
 from pulse.tui import strings
@@ -25,6 +25,8 @@ T = TypeVar("T")
 AgentField = Literal["runtime", "model", "permission_policy"]
 NOT_FOUND = 404
 CONFLICT = 409
+# Doctor checks, the ACP probe and the model list spawn agents; removing a worktree runs git.
+PROBE_TIMEOUT_SECONDS = 30.0
 
 
 class EngineError(RuntimeError):
@@ -127,10 +129,10 @@ class WorktreeState:
     active: bool
 
 
-def _call(request: Callable[[EngineClient], T]) -> T:
+def _call(request: Callable[[EngineClient], T], *, timeout: float = SCREEN_TIMEOUT_SECONDS) -> T:
     # No `ensure_daemon`: screens call this on the event loop, and starting a
     # daemon polls for up to 20s. The CLI starts it before the first screen.
-    client = EngineClient()
+    client = EngineClient(timeout=timeout)
     try:
         return request(client)
     except httpx.HTTPStatusError as error:
@@ -172,7 +174,13 @@ def _detail(response: httpx.Response) -> str:
     return str(detail) if detail else f"HTTP {response.status_code}"
 
 
-def _found(request: Callable[[EngineClient], T]) -> T | None:
+def _probe(request: Callable[[EngineClient], T]) -> T:
+    return _call(request, timeout=PROBE_TIMEOUT_SECONDS)
+
+
+def _found(
+    request: Callable[[EngineClient], T], *, timeout: float = SCREEN_TIMEOUT_SECONDS
+) -> T | None:
     """`None` for a 404: an unknown id does not exist, it is not a failure."""
 
     def guarded(client: EngineClient) -> T | None:
@@ -183,7 +191,7 @@ def _found(request: Callable[[EngineClient], T]) -> T | None:
                 return None
             raise
 
-    return _call(guarded)
+    return _call(guarded, timeout=timeout)
 
 
 def _fields(data: Mapping[str, Any]) -> Fields:
@@ -242,15 +250,15 @@ def _checks(data: Mapping[str, Any]) -> list[Check]:
 
 
 def runtime_checks(runtime_id: str) -> list[Check]:
-    return _checks(_call(lambda client: client.get(f"/api/runtimes/{runtime_id}/checks")))
+    return _checks(_probe(lambda client: client.get(f"/api/runtimes/{runtime_id}/checks")))
 
 
 def doctor_checks() -> list[Check]:
-    return _checks(_call(lambda client: client.doctor()))
+    return _checks(_probe(lambda client: client.doctor()))
 
 
 def models(workspace: Path, runtime_id: str) -> list[str]:
-    data = _call(
+    data = _probe(
         lambda client: client.get(
             "/api/models", params={"workspace": str(workspace), "runtime": runtime_id}
         )
@@ -259,7 +267,7 @@ def models(workspace: Path, runtime_id: str) -> list[str]:
 
 
 def acp_probe(workspace: Path, runtime_id: str) -> dict[str, Any]:
-    return _call(lambda client: client.acp_probe(workspace=workspace, runtime=runtime_id))
+    return _probe(lambda client: client.acp_probe(workspace=workspace, runtime=runtime_id))
 
 
 def complete_onboarding(
@@ -389,7 +397,7 @@ def remove_worktree(workspace: Path, item_id: str) -> bool:
                 raise WorktreeInUse(item_id) from error
             raise
 
-    data = _found(delete)
+    data = _found(delete, timeout=PROBE_TIMEOUT_SECONDS)
     return bool(data and data.get("removed"))
 
 

@@ -7,10 +7,11 @@ transport exception that would crash a screen; an unknown id is `None`, not an e
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from pulse.client.engine_client import EngineClient
+from pulse.client.engine_client import SCREEN_TIMEOUT_SECONDS, EngineClient
 from pulse.config.project_config import init_project_config
 from pulse.tui import engine, strings
 from tests.tui.conftest import DAEMON_DOWN
@@ -129,3 +130,36 @@ def test_a_worktree_the_daemon_still_uses_is_refused_as_in_use(
             engine.remove_worktree(tmp_path, item_id)
     finally:
         release.set()
+
+
+def _timeouts_of(monkeypatch: pytest.MonkeyPatch, call: object) -> list[float]:
+    used: list[float] = []
+    build = EngineClient.__init__
+
+    def recording(self: EngineClient, **kwargs: Any) -> None:
+        used.append(kwargs.get("timeout", 30.0))
+        build(self, **kwargs)
+
+    monkeypatch.setattr(EngineClient, "__init__", recording)
+    with pytest.raises(engine.EngineUnavailable):
+        call()  # type: ignore[operator]  # a zero-argument gateway call
+    return used
+
+
+@pytest.mark.usefixtures("daemon_down")
+def test_a_screen_read_waits_only_the_screen_timeout(monkeypatch, tmp_path: Path) -> None:
+    """Screens read on the event loop: a slow daemon froze them for the client's 30s."""
+    assert _timeouts_of(monkeypatch, lambda: engine.history(tmp_path)) == [SCREEN_TIMEOUT_SECONDS]
+    assert _timeouts_of(monkeypatch, lambda: engine.setup_state(tmp_path)) == [
+        SCREEN_TIMEOUT_SECONDS
+    ]
+
+
+@pytest.mark.usefixtures("daemon_down")
+def test_a_probe_keeps_the_time_its_checks_need(monkeypatch, tmp_path: Path) -> None:
+    """Doctor checks and the ACP probe spawn agents; the screen timeout would cut them short."""
+    assert _timeouts_of(monkeypatch, engine.doctor_checks) == [engine.PROBE_TIMEOUT_SECONDS]
+    assert _timeouts_of(monkeypatch, lambda: engine.acp_probe(tmp_path, "claude")) == [
+        engine.PROBE_TIMEOUT_SECONDS
+    ]
+    assert engine.PROBE_TIMEOUT_SECONDS > SCREEN_TIMEOUT_SECONDS
