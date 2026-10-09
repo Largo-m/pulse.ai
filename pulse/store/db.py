@@ -291,9 +291,10 @@ def migrate(
             added |= migration.apply(connection)
             _set_version(connection, migration.version)
             connection.commit()
-        except sqlite3.Error:
-            connection.rollback()
-            raise
+        finally:
+            # Any failure, not only sqlite3's: an open transaction keeps the write lock.
+            if connection.in_transaction:
+                connection.rollback()
     return added
 
 

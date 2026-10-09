@@ -136,6 +136,31 @@ def test_a_failed_migration_keeps_the_last_good_version(tmp_path: Path) -> None:
     assert "half_done" not in _columns(connection, "runs")
 
 
+def test_a_migration_failing_outside_sqlite_releases_the_database(tmp_path: Path) -> None:
+    """A bug in `apply` (a `KeyError`) left the write lock held until garbage collection.
+
+    Every other connection, the daemon's included, then failed with `database is locked`.
+    """
+    path = tmp_path / "db.sqlite"
+    connection = _raw(path)
+    migrate(connection)
+
+    def adds_then_bugs(conn: sqlite3.Connection) -> set[tuple[str, str]]:
+        conn.execute("ALTER TABLE runs ADD COLUMN half_done TEXT")
+        raise KeyError("bug in a migration")
+
+    with pytest.raises(KeyError):
+        migrate(connection, (*MIGRATIONS, Migration(version=LATEST + 1, apply=adds_then_bugs)))
+
+    assert not connection.in_transaction
+    other = sqlite3.connect(str(path), timeout=0)
+    other.execute("BEGIN IMMEDIATE")
+    other.rollback()
+    other.close()
+    assert "half_done" not in _columns(connection, "runs")
+    assert schema_version(connection) == LATEST
+
+
 def test_an_older_pulse_refuses_a_database_a_newer_one_migrated(tmp_path: Path) -> None:
     """Writing through a schema it does not know could corrupt the user's runs."""
     path = tmp_path / "future.db"
