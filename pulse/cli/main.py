@@ -113,7 +113,7 @@ def _doctor_via_engine(*, test_acp: bool) -> int:
             if not probe.get("ok"):
                 failed = True
         return 1 if failed else 0
-    except (RuntimeError, OSError, httpx.HTTPError) as error:
+    except (RuntimeError, OSError, httpx.HTTPError, ValueError) as error:
         print(f"[pulse] Engine unavailable ({error}); using the local doctor")
         return run_doctor(test_acp=test_acp)
     finally:

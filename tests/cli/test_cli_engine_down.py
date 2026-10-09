@@ -75,6 +75,25 @@ def test_doctor_falls_back_to_local_when_the_engine_errors(monkeypatch, capsys):
     assert "500" in capsys.readouterr().out
 
 
+def test_doctor_falls_back_to_local_when_the_engine_answers_without_json(monkeypatch, capsys):
+    """A non-JSON body means no usable engine, as `EngineClient.ping` already reads it."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/status":
+            return httpx.Response(200, json={"ok": True, "protocol": ENGINE_PROTOCOL})
+        return httpx.Response(200, text="<html>not the engine</html>")
+
+    monkeypatch.setattr(
+        cli_main, "EngineClient", lambda: EngineClient(transport=httpx.MockTransport(handler))
+    )
+    calls = _record_local_doctor(monkeypatch)
+
+    assert main(["doctor"]) == 0
+
+    assert calls == [False]
+    assert "using the local doctor" in capsys.readouterr().out
+
+
 def test_doctor_does_not_hide_a_bug_as_an_engine_outage(monkeypatch):
     """Only engine failures fall back; a programming error must surface as itself."""
     monkeypatch.setattr(cli_main, "EngineClient", lambda: _UnstartableEngine(KeyError("bug")))
