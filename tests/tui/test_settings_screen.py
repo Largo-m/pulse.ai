@@ -255,6 +255,31 @@ def test_worktree_and_doctor_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert project.use_worktree is True
 
 
+def test_the_doctor_report_shows_its_check_marks_as_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """`[ok]` and `[FAIL]` are the report's own words, not markup to strip."""
+    from textual.widgets import Static
+
+    from pulse.doctor.checks import CheckResult
+
+    init_project_config(tmp_path)
+    checks = [
+        CheckResult(name="cli", status="ok", message="agent 1.0", detail=""),
+        CheckResult(name="auth", status="fail", message="not logged in", detail=""),
+    ]
+    monkeypatch.setattr("pulse.api.system_routes.run_doctor_checks", lambda: checks)
+    shown: list[str] = []
+
+    async def scenario(pilot, screen: SettingsScreen) -> None:
+        await _select(pilot, screen, "doctor")
+        report = screen.query_one("#settings-report", Static)
+        shown.append(str(report.render()))
+
+    _run_settings(tmp_path, scenario)
+    assert shown[0].splitlines()[:2] == ["[ok] agent 1.0", "[FAIL] not logged in"]
+
+
 def _git_init(path: Path) -> None:
     import subprocess
 

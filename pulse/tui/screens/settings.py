@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -71,7 +72,8 @@ class SettingsScreen(Screen[None]):
 
     def _set_report(self, text: str) -> None:
         widget = self.query_one("#settings-report", Static)
-        widget.update(text)
+        # Plain text: check tags like `[ok]` and daemon errors are not Rich markup.
+        widget.update(Text(text))
         widget.display = bool(text)
 
     def _set_options(self, options: list[tuple[str, str]]) -> None:
