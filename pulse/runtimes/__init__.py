@@ -11,12 +11,13 @@ from pathlib import Path
 
 from pulse.runtimes.base import AgentRuntime, RuntimeCheck
 from pulse.runtimes.claude import ClaudeRuntime
+from pulse.runtimes.codex import CodexRuntime
 from pulse.runtimes.cursor import CursorRuntime
 
 DEFAULT_RUNTIME_ID = "cursor"
 
 RUNTIMES: dict[str, AgentRuntime] = {
-    runtime.id: runtime for runtime in (CursorRuntime(), ClaudeRuntime())
+    runtime.id: runtime for runtime in (CursorRuntime(), ClaudeRuntime(), CodexRuntime())
 }
 
 

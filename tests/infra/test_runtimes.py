@@ -43,7 +43,7 @@ CLAUDE_SESSION = {
 
 
 def test_registry_exposes_both_runtimes():
-    assert {runtime.id for runtime in all_runtimes()} == {"cursor", "claude"}
+    assert {runtime.id for runtime in all_runtimes()} == {"cursor", "claude", "codex"}
 
 
 def test_claude_runs_through_the_npm_adapter():
@@ -63,7 +63,7 @@ def test_runtime_for_command_maps_back():
 
 def test_default_agents_come_from_the_registry():
     agents = default_global_agents()
-    assert set(agents) == {"cursor", "claude"}
+    assert set(agents) == {"cursor", "claude", "codex"}
     assert agents["claude"].acp_command == get_runtime("claude").acp_command
     assert agents["claude"].binary == "claude"
 

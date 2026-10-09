@@ -21,7 +21,7 @@ Você digita `pulse`
         │
         ▼
    CLI / TUI  ───HTTP/UDS──►  Engine (daemon)  ───ACP──►  runtime
-   (só tela)                  (orquestrador)              (cursor | claude)
+   (só tela)                  (orquestrador)              (cursor | claude | codex)
                                     │                          │
                                     ▼                          ▼
                               ~/.pulse/pulse.db          arquivos no workspace
@@ -580,7 +580,7 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/acp/reply_clock.py`](pulse/acp/reply_clock.py) | Prazo de resposta de cada request: silêncio em `session/prompt`, fixo nos demais |
 | [`pulse/acp/watched_prompts.py`](pulse/acp/watched_prompts.py) | Proxy do `PromptPort`: aplica a política de permissão e mede a espera do usuário |
 | [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
-| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude`; cada um é um `RuntimeDialect` |
+| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor`, `claude` e `codex` (via `@agentclientprotocol/codex-acp`); cada um é um `RuntimeDialect` |
 | [`pulse/replies/session_models.py`](pulse/replies/session_models.py) | O catálogo de modelos da resposta ao `session/new` (ACP puro e o dialeto do Claude), lido igual pelo runner e pelos runtimes |
 | [`pulse/mcp/channel.py`](pulse/mcp/channel.py) | `McpQuestionChannel`: a ponte MCP `AskQuestion` como `QuestionChannel` |
 | [`pulse/history/session_log.py`](pulse/history/session_log.py) | `RecordedSessionLog`: o `SessionLog` que grava `run_events`, `run_artifacts` e o ponteiro de sessão |
@@ -797,7 +797,7 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
 | **Step** | Um passo: um agente, um prompt, uma sessão ACP isolada |
 | **Run** | Uma execução concreta de um workflow |
 | **Agente** | Linha em `agent_defs`: runtime + model + política + instruções |
-| **Runtime** | O backend que executa um agente (`cursor`, `claude`) |
+| **Runtime** | O backend que executa um agente (`cursor`, `claude`, `codex`) |
 | **Artefato** | Arquivo que o agente escreveu, descoberto por tool-call |
 | **Worktree** | Cópia de trabalho isolada do repositório, uma por run, em branch própria |
 | **Daemon** | Processo em background (o Engine) |

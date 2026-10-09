@@ -32,7 +32,7 @@ or domain term, it is the wrong change.
 ### 2.1 Layers and allowed dependencies
 
 ```
-CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
+CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude | codex)
 (thin client)             (composition root)
 ```
 
