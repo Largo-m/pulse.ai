@@ -13,7 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pulse.api.app import create_app
-from pulse.config.global_config import load_global_config
+from pulse.config.agents import AgentConfig
+from pulse.config.global_config import GlobalConfig, load_global_config, save_global_config
 from pulse.config.project_config import init_project_config, load_project_config
 from pulse.daemon.runs import RunManager
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
@@ -80,6 +81,41 @@ def test_onboarding_refuses_an_unknown_runtime_or_policy(
 
     assert response.status_code == status
     assert load_global_config() is None
+
+
+def test_settings_lists_a_runtime_saved_before_it_was_registered(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """The picker reads `/api/settings`, which used to repeat `machine_agents` as saved."""
+    save_global_config(
+        GlobalConfig(
+            version=1,
+            agent_binary="agent",
+            acp_command=["agent", "acp"],
+            auth_method="cursor_login",
+            workspace_dir=tmp_path,
+            model="Auto",
+            permission_policy="ask",
+            completed_at="2026-06-21T12:00:00+00:00",
+            default_agent="cursor",
+            agents={
+                "cursor": AgentConfig(
+                    name="cursor",
+                    binary="custom-agent",
+                    acp_command=["custom-agent", "acp"],
+                    models=["Auto"],
+                ),
+            },
+        )
+    )
+    init_project_config(tmp_path)
+
+    payload = client.get("/api/settings", params={"workspace": str(tmp_path)}).json()
+
+    runtimes = {item["id"]: item["binary"] for item in payload["runtimes"]}
+    assert {runtime.id for runtime in all_runtimes()} <= set(runtimes)
+    assert runtimes["codex"] == get_runtime("codex").binary
+    assert runtimes["cursor"] == "custom-agent"
 
 
 def test_runtimes_list_every_registered_runtime_with_its_login(client: TestClient) -> None:

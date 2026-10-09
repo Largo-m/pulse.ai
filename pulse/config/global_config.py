@@ -10,6 +10,7 @@ from pulse.config.agents import (
     WorkflowConfig,
     default_global_agents,
     default_global_workflows,
+    include_registered_runtimes,
 )
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
@@ -55,8 +56,7 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
                 acp_command=load_list(agent_row["acp_command"]),
                 models=load_list(agent_row["models"]),
             )
-        if not agents:
-            agents = default_global_agents()
+        agents = include_registered_runtimes(agents)
         workflows: dict[str, WorkflowConfig] = {}
         for workflow_row in connection.execute("SELECT * FROM machine_workflows"):
             workflows[workflow_row["workflow_id"]] = WorkflowConfig(

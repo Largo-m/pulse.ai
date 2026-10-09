@@ -57,6 +57,8 @@ Tabelas `machine`, `machine_agents`, `machine_workflows`.
 
 Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace,
 permission_policy), onboarding, lista de runtimes e overrides por workflow.
+Um runtime registrado depois do onboarding entra nessa lista na leitura;
+a linha já gravada (binário, comando, modelos) não é substituída.
 
 Escrita em `pulse init` (`mark_onboarding_complete`) e no menu de configurações
 (`update_global_defaults`, `update_global_agent`, `update_global_workflow`).
