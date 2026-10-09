@@ -465,6 +465,7 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 | [`pulse/daemon/adapters.py`](pulse/daemon/adapters.py) | `StreamSink`/`PromptPort` do domínio → eventos SSE |
 | [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
 | [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
+| [`pulse/api/token_guard.py`](pulse/api/token_guard.py) | Só no listener TCP: recusa (`401`) request sem o token do daemon ([ADR 0005](docs/adr/0005-tcp-exige-token-do-daemon.md)) |
 | [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
 
 **Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
@@ -491,6 +492,12 @@ com `Origin` recebe `403` e `Host` precisa ser local. Um POST `no-cors` de uma
 página não tem preflight — CORS só esconderia a resposta, a rota rodaria. O
 bridge MCP `AskQuestion` segue a mesma regra
 ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)).
+
+Loopback não separa usuários do SO. O socket é `0600`; o TCP cobra
+`Authorization: Bearer <token>`, um token gerado a cada início do daemon e
+gravado em `~/.pulse/daemon.json` (`0600`). Sem ele, `401` antes de qualquer
+rota. O cliente só manda o token por TCP
+([ADR 0005](docs/adr/0005-tcp-exige-token-do-daemon.md)).
 
 #### API (`/api`)
 

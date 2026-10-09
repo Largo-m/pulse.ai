@@ -4,6 +4,7 @@ import contextlib
 import ipaddress
 import logging
 import os
+import secrets
 import signal
 import socket
 import sys
@@ -13,8 +14,10 @@ from pathlib import Path
 from types import FrameType
 
 import uvicorn
+from fastapi import FastAPI
 
 from pulse.api.app import create_app
+from pulse.api.token_guard import TokenGuard
 from pulse.daemon.logs import configure_logging
 from pulse.daemon.runs import RunManager
 from pulse.domain.control import SHUTDOWN_GRACE_SECONDS
@@ -30,6 +33,7 @@ from pulse.store.paths import (
 SOCKET_MODE = 0o600
 USAGE_ERROR = 2
 LOCALHOST = "localhost"
+TOKEN_BYTES = 32
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
 _log = logging.getLogger(__name__)
@@ -98,6 +102,19 @@ def stop_runs(manager: RunManager, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> 
         _log.warning("shutdown: runs still running after the grace period: %s", ", ".join(left))
 
 
+def listener_configs(
+    app: FastAPI, *, host: str, port: int, socket_path: Path, token: str
+) -> tuple[uvicorn.Config, uvicorn.Config]:
+    """The TCP and Unix-socket listeners: one app, a token only where the OS can't guard.
+
+    The socket's `0600` already keeps other users out; TCP on loopback does
+    not, so it demands the token kept in the `0600` meta file (ADR 0005).
+    """
+    tcp = uvicorn.Config(TokenGuard(app, token), host=host, port=port, log_level="warning")
+    uds = uvicorn.Config(app, uds=str(socket_path), log_level="warning")
+    return tcp, uds
+
+
 def run_daemon(
     *,
     host: str = DEFAULT_HTTP_HOST,
@@ -111,12 +128,14 @@ def run_daemon(
     manager = RunManager()
     app = create_app(manager)
     pid = os.getpid()
+    token = secrets.token_urlsafe(TOKEN_BYTES)
 
-    config_tcp = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    config_uds = uvicorn.Config(app, uds=str(sock), log_level="warning")
+    config_tcp, config_uds = listener_configs(
+        app, host=host, port=port, socket_path=sock, token=token
+    )
     tcp_socket = config_tcp.bind_socket()
     uds_socket = bind_private_socket(sock)
-    write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock)
+    write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock, token=token)
     _log.info("daemon.started pid=%d http=%s:%d socket=%s", pid, host, port, sock)
 
     def _cleanup(*_args: object) -> None:
@@ -166,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
             continue
         i += 1
-    # The TCP API is unauthenticated; off loopback anyone on the network could drive runs.
+    # Off loopback the token would cross the network in clear text, and anyone on it could try it.
     if not is_loopback(host):
         sys.stderr.write(f"pulse-engine: refusing to listen on non-loopback host {host!r}\n")
         return USAGE_ERROR
