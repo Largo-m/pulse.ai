@@ -89,11 +89,27 @@ class GracefulServer(uvicorn.Server):
     def __init__(self, config: uvicorn.Config, *, before_exit: Callable[[], None]) -> None:
         super().__init__(config)
         self._before_exit = before_exit
+        self._stopping = False
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        if self._stopping:
+            # The handler runs on the main thread, inside the wait for the runs:
+            # only an exception gets out of that wait.
+            self.force_exit = True
+            raise _StopWaiting
         if not self.should_exit:
-            self._before_exit()
+            self._stopping = True
+            try:
+                self._before_exit()
+            except _StopWaiting:
+                _log.warning("shutdown: forced before the runs stopped")
+            finally:
+                self._stopping = False
         super().handle_exit(sig, frame)
+
+
+class _StopWaiting(Exception):
+    """A second signal arrived while the runs were stopping."""
 
 
 def stop_runs(manager: RunManager, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> None:

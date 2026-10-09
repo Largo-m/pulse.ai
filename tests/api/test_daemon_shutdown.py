@@ -117,6 +117,27 @@ def test_a_second_signal_forces_the_exit_without_stopping_again() -> None:
     assert server.force_exit
 
 
+def test_a_signal_arriving_while_the_runs_stop_forces_the_exit() -> None:
+    """The stop blocks the main thread for up to the grace period, and the handler
+    re-enters there: the second Ctrl-C must force the exit, not start a second stop."""
+    calls: list[int] = []
+    server: GracefulServer
+
+    def stop_interrupted_by_a_second_signal() -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            server.handle_exit(signal.SIGINT, None)
+
+    server = GracefulServer(
+        uvicorn.Config(create_app(RunManager())), before_exit=stop_interrupted_by_a_second_signal
+    )
+
+    server.handle_exit(signal.SIGINT, None)
+
+    assert calls == [1]
+    assert server.force_exit
+
+
 def test_a_run_left_behind_is_logged_by_id(monkeypatch, tmp_path, caplog) -> None:
     from pulse.daemon import server as server_module
 
