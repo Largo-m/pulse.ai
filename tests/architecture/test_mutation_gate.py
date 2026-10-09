@@ -28,3 +28,11 @@ def test_the_gate_fails_below_the_floor(tmp_path: Path, monkeypatch, killed: int
     monkeypatch.setattr(mutation_gate, "STATS", stats)
 
     assert mutation_gate.main(["--min", "80"]) == code
+
+
+@pytest.mark.parametrize(
+    "stats", [{"total": 0, "killed": 0}, {"total": 3, "killed": 0, "skipped": 3}]
+)
+def test_a_run_that_measured_nothing_fails_the_gate(stats: dict[str, int]):
+    """A glob that stops matching the parsers must not read as a perfect score."""
+    assert score(stats) == 0.0

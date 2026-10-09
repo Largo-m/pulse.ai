@@ -2,7 +2,8 @@
 
 Reads the stats `mutmut export-cicd-stats` writes after `mutmut run`. A mutant
 that times out counts as killed: the tests noticed it. One with no test
-covering it counts as survived, since nothing would notice that change either.
+covering it counts as survived, since nothing would notice that change either,
+and a run that measured no mutant scores 0: it proves nothing about the parsers.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ STATS = Path("mutants/mutmut-cicd-stats.json")
 def score(stats: dict[str, int]) -> float:
     total = stats["total"] - stats.get("skipped", 0)
     caught = stats["killed"] + stats.get("timeout", 0)
-    return 100.0 * caught / total if total else 100.0
+    return 100.0 * caught / total if total else 0.0
 
 
 def main(argv: list[str] | None = None) -> int:
