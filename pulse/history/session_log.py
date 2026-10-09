@@ -102,7 +102,7 @@ class RecordedSessionLog:
         self._record_artifacts(merged, log_kind)
 
     def phase(self, label: str, *, turn: int = 1) -> None:
-        title = log_wording.continuation_label(label, turn) if turn > 1 else label
+        title = log_wording.phase_title(label, turn)
         self._save(kind="Info", title=title, detail=title)
 
     def dialog(

@@ -14,6 +14,6 @@ ANSWER_NO = "Não"
 QUESTIONNAIRE_NOTICE = "Questionário interativo"
 
 
-def continuation_label(phase_label: str, turn: int) -> str:
-    """The marker of a phase's later turn; `turn` counts from 1, the phase itself."""
-    return f"{phase_label} — continuação ({turn})"
+def phase_title(phase_label: str, turn: int = 1) -> str:
+    """The phase's log title; `turn` counts from 1, the phase itself, and later turns say so."""
+    return f"{phase_label} — continuação ({turn})" if turn > 1 else phase_label

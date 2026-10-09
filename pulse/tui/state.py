@@ -127,8 +127,7 @@ class CockpitState(ArtifactTab):
             if matched_index is not None and self._follow_live:
                 self.selected_phase_index = matched_index
                 self.follow_artifact = True
-        shown = log_wording.continuation_label(title, turn) if turn > 1 else title
-        self.surface_title = shown.upper()
+        self.surface_title = log_wording.phase_title(title, turn).upper()
         self.running = True
         self.notify()
 

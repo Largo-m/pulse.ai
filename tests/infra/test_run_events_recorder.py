@@ -250,7 +250,7 @@ def test_a_new_phase_flushes_the_speech_before_its_marker(runner, log):
 
     runner._begin_phase("Plan", turn=2)
 
-    marker = log_wording.continuation_label("Plan", 2)
+    marker = log_wording.phase_title("Plan", 2)
     assert _events() == [
         ("Assistant", "first turn talk", "first turn talk"),
         ("Info", marker, marker),

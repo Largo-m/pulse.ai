@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pulse.domain.ports import StepRow
-from pulse.history.log_wording import QUESTIONNAIRE_NOTICE
+from pulse.history.log_wording import QUESTIONNAIRE_NOTICE, phase_title
 from pulse.history.tool_detail import (
     build_tool_labels,
     extract_paths,
@@ -205,7 +205,7 @@ class CockpitSink:
         if self._pending_session_phase and self._state.acp_sessions:
             self._state.acp_sessions[-1]["phase_id"] = self._state._entry_phase_id()
             self._pending_session_phase = False
-        self._state.add_info(title)
+        self._state.add_info(phase_title(title, turn))
         self._emit()
 
     def apply_phase_statuses(

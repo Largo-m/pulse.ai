@@ -590,3 +590,17 @@ def test_tool_result_for_unseen_tool_is_shown_as_finished():
     assert entry.kind == LogKind.READ
     assert entry.title.endswith("NOTES.md")
     assert entry.pending is False
+
+
+def test_a_later_turn_logs_the_same_continuation_marker_history_records():
+    """The live log and the recorded run must read the same, or a reopened run differs."""
+    state = CockpitState()
+    make_workflow("demo", steps=FOUR)
+    configure_from_db(state, "demo")
+    sink = CockpitSink(state)
+
+    sink.begin_phase("Um")
+    sink.begin_phase("Um", turn=2)
+
+    infos = [entry.title for entry in state.entries if entry.kind == LogKind.INFO]
+    assert infos == ["Um", "Um — continuação (2)"]
