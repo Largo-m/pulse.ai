@@ -24,6 +24,7 @@ from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
+    LOOPBACK_HOSTS,
     clear_daemon_meta,
     ensure_global_dir,
     write_daemon_meta,
@@ -31,9 +32,6 @@ from pulse.store.paths import (
 
 SOCKET_MODE = 0o600
 USAGE_ERROR = 2
-# Loopback, and named in the API's `TRUSTED_HOSTS`: another loopback address
-# would start a daemon that answers 400 to every request.
-LISTEN_HOSTS = (DEFAULT_HTTP_HOST, "localhost")
 TOKEN_BYTES = 32
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
@@ -193,10 +191,9 @@ def main(argv: list[str] | None = None) -> int:
             continue
         i += 1
     # Off loopback the token would cross the network in clear text, and anyone on it could try it.
-    if host not in LISTEN_HOSTS:
-        sys.stderr.write(
-            f"pulse-engine: refusing to listen on {host!r} (use one of {', '.join(LISTEN_HOSTS)})\n"
-        )
+    if host not in LOOPBACK_HOSTS:
+        allowed = ", ".join(LOOPBACK_HOSTS)
+        sys.stderr.write(f"pulse-engine: refusing to listen on {host!r} (use one of {allowed})\n")
         return USAGE_ERROR
     run_daemon(host=host, port=port)
     return 0

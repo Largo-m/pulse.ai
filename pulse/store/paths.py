@@ -18,6 +18,9 @@ DAEMON_SOCKET = GLOBAL_DIR / "daemon.sock"
 DAEMON_META_FILE = GLOBAL_DIR / "daemon.json"
 DAEMON_LOG_FILE = GLOBAL_DIR / "daemon.log"
 DEFAULT_HTTP_HOST = "127.0.0.1"
+# The names the TCP listener answers to; the UDS socket answers to `UDS_HOST`.
+LOOPBACK_HOSTS = (DEFAULT_HTTP_HOST, "localhost")
+UDS_HOST = "pulse"
 DEFAULT_HTTP_PORT = 8787
 META_MODE = 0o600
 

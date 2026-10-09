@@ -10,8 +10,9 @@ from pulse import __version__
 from pulse.api import config_routes, history_routes, run_routes, settings_routes, system_routes
 from pulse.api.browser_guard import BrowserGuard
 from pulse.daemon.runs import RunManager
+from pulse.store.paths import LOOPBACK_HOSTS, UDS_HOST
 
-TRUSTED_HOSTS = ("127.0.0.1", "localhost", "pulse")
+TRUSTED_HOSTS = (*LOOPBACK_HOSTS, UDS_HOST)
 _log = logging.getLogger(__name__)
 ROUTERS = (
     system_routes.router,

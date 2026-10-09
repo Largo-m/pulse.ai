@@ -18,6 +18,7 @@ from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
     DEFAULT_HTTP_PORT,
+    UDS_HOST,
     ensure_global_dir,
     read_daemon_meta,
 )
@@ -197,7 +198,7 @@ class EngineClient:
             return self._client
         if self._transport is not None:
             self._client = httpx.Client(
-                transport=self._transport, base_url="http://pulse", timeout=self._timeout
+                transport=self._transport, base_url=f"http://{UDS_HOST}", timeout=self._timeout
             )
             return self._client
         if not self._over_tcp:
@@ -207,7 +208,7 @@ class EngineClient:
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
             self._client = httpx.Client(
                 transport=transport,
-                base_url="http://pulse",
+                base_url=f"http://{UDS_HOST}",
                 timeout=self._timeout,
             )
             return self._client

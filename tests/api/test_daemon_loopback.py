@@ -43,4 +43,4 @@ def test_a_loopback_host_is_served(daemon_starts, host):
 
 
 def test_every_host_the_daemon_listens_on_passes_the_host_check():
-    assert set(server.LISTEN_HOSTS) <= set(TRUSTED_HOSTS)
+    assert set(server.LOOPBACK_HOSTS) <= set(TRUSTED_HOSTS)
