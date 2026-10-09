@@ -31,6 +31,7 @@ class EngineError(RuntimeError):
     """The daemon did not do what the screen asked; `describe` says why, on screen."""
 
     template = strings.ENGINE_UNAVAILABLE
+    headline = strings.ENGINE_UNAVAILABLE_HEADLINE
 
     def describe(self) -> str:
         return self.template.format(error=self)
@@ -44,6 +45,7 @@ class EngineRefused(EngineError):
     """The daemon answered with an error; its `detail` is the reason."""
 
     template = strings.ENGINE_REFUSED
+    headline = strings.ENGINE_REFUSED_HEADLINE
 
 
 class WorktreeInUse(Exception):

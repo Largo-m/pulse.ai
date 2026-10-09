@@ -273,7 +273,7 @@ def test_a_daemon_gone_after_the_login_keeps_the_wizard_on_the_auth_step(monkeyp
             await app.workers.wait_for_complete()
             await pilot.pause()
 
-            assert _status(screen) == strings.ONBOARD_ENGINE_UNAVAILABLE
+            assert _status(screen) == strings.ENGINE_UNAVAILABLE_HEADLINE
             assert _report(screen) == "daemon died"
             assert _option_ids(screen) == ["auth_login", "auth_skip", "quit"]
 
@@ -281,6 +281,31 @@ def test_a_daemon_gone_after_the_login_keeps_the_wizard_on_the_auth_step(monkeyp
 
     assert env.logins == [0]
     assert results == []
+
+
+def test_a_daemon_that_refuses_the_check_is_not_reported_as_unavailable(monkeypatch):
+    """The daemon answered: telling the user it is down sends them to restart the wrong thing."""
+    _Env(monkeypatch, [[OK_CLI, LOGGED_OUT]]).login_codes = [0]
+    screen = OnboardingScreen()
+
+    def refused(_runtime_id: str) -> list[CheckResult]:
+        raise onboarding.engine.EngineRefused("database is newer than this Pulse")
+
+    async def run() -> None:
+        app = _app(screen, [])
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            await _choose(pilot, screen, f"runtime:{DEFAULT_RUNTIME_ID}")
+            monkeypatch.setattr(onboarding.engine, "runtime_checks", refused)
+
+            await _choose(pilot, screen, "auth_login")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            assert _status(screen) == strings.ENGINE_REFUSED_HEADLINE
+            assert _report(screen) == "database is newer than this Pulse"
+
+    asyncio.run(run())
 
 
 def test_skipping_login_tells_which_key_to_export_and_ends_the_wizard(monkeypatch):

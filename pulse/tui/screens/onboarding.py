@@ -56,7 +56,7 @@ class OnboardingScreen(Screen[int]):
             default_id, runtimes = engine.runtimes()
         except EngineError as error:
             self._step = "engine_fail"
-            self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
+            self._set_status(error.headline)
             self._set_report(str(error))
             self._set_options([("quit", strings.CANCEL)])
             return
@@ -184,7 +184,7 @@ class OnboardingScreen(Screen[int]):
         try:
             self._route_option(option_id)
         except EngineError as error:
-            self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
+            self._set_status(error.headline)
             self._set_report(str(error))
 
     def _route_option(self, option_id: str) -> None:
@@ -232,7 +232,7 @@ class OnboardingScreen(Screen[int]):
         try:
             auth = engine.runtime_checks(runtime.id)[-1]
         except EngineError as error:
-            self.app.call_from_thread(self._login_unverified, str(error))
+            self.app.call_from_thread(self._login_unverified, error)
             return
 
         def apply() -> None:
@@ -246,9 +246,9 @@ class OnboardingScreen(Screen[int]):
 
         self.app.call_from_thread(apply)
 
-    def _login_unverified(self, error: str) -> None:
-        self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
-        self._set_report(error)
+    def _login_unverified(self, error: EngineError) -> None:
+        self._set_status(error.headline)
+        self._set_report(str(error))
         self._set_options(self._auth_options(retry=True))
 
     @work(thread=True)
@@ -282,7 +282,7 @@ class OnboardingScreen(Screen[int]):
         try:
             return engine.acp_probe(self._workspace, runtime.id)
         except EngineError as error:
-            return {"ok": False, "message": strings.ONBOARD_ENGINE_UNAVAILABLE, "error": str(error)}
+            return {"ok": False, "message": error.headline, "error": str(error)}
 
     def _finish(self) -> None:
         try:
@@ -295,7 +295,7 @@ class OnboardingScreen(Screen[int]):
                 acp_test_passed=self._acp_ok,
             )
         except EngineError as error:
-            self._set_status(strings.ONBOARD_ENGINE_UNAVAILABLE)
+            self._set_status(error.headline)
             self._set_report(str(error))
             self._set_options([("quit", strings.CANCEL)])
             return
