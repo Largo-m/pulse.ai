@@ -9,10 +9,12 @@ from pulse.domain.control import RUN_STOPPED
 from pulse.history import log_wording
 from pulse.history.events import (
     ArtifactItem,
+    ContextUsage,
     LogEntry,
     LogKind,
     PhaseItem,
     PhaseStatus,
+    format_tokens,
 )
 from pulse.tui import strings
 from pulse.tui.artifact_tab import ArtifactTab
@@ -309,6 +311,28 @@ class CockpitState(ArtifactTab):
         if changed:
             self.notify()
         return changed
+
+    def record_context_usage(self, usage: ContextUsage) -> bool:
+        active = self._active_phase()
+        if active is None or active.context == usage:
+            return False
+        active.context = usage
+        self.notify()
+        return True
+
+    def context_total(self) -> int:
+        """Sum of each step's last reading: one ACP session per step, none shared."""
+        return sum(phase.context.used for phase in self.phases if phase.context is not None)
+
+    def run_context_label(self) -> str:
+        total = self.context_total()
+        return strings.CONTEXT_LABEL.format(tokens=format_tokens(total)) if total else ""
+
+    @staticmethod
+    def context_label(phase: PhaseItem) -> str:
+        if phase.context is None:
+            return ""
+        return strings.CONTEXT_LABEL.format(tokens=format_tokens(phase.context.used))
 
     def record_issue(self, key: str) -> bool:
         active = self._active_phase()
