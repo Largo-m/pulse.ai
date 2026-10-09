@@ -11,9 +11,9 @@ entrar aqui; os corrigidos têm o teste que falhava antes da correção.
 
 | Área | Nota | Leitura |
 |---|---|---|
-| Arquitetura (`software-architect`, 53 itens) | **26,5/53 — 50 % (D)**; 66 % (C) sem os 13 itens de operação que não cabem numa CLI local | Fronteiras, contratos e invariantes de dados fortes; observabilidade e confiabilidade operacional fracas. D é forçado pelo item STOP-SHIP F1 (abaixo) |
+| Arquitetura (`software-architect`, 53 itens) | **26,5/53 — 50 % (D)**; 66 % (C) sem os 13 itens de operação que não cabem numa CLI local | Fronteiras, contratos e invariantes de dados fortes; observabilidade e confiabilidade operacional fracas. D era forçado pelo item STOP-SHIP F1 (abaixo), fechado depois pelo [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md) |
 | Domínio (`tactical-ddd`, 0 = rico … 7+ = anêmico) | **Leve, ~2** | Núcleo rico (`RunRecord`, `Outcome`, definições, `RunControl`); anemia nas bordas (`ResolvedConfig` 5) |
-| Segurança (`security-audit`) | **3 vulnerabilidades corrigidas, 1 em aberto** | SAST, segredos, dependências e CORS limpos; CSRF em loopback e bind fora de loopback corrigidos |
+| Segurança (`security-audit`) | **4 vulnerabilidades corrigidas** (F1 depois da auditoria, [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md)) | SAST, segredos, dependências e CORS limpos; CSRF em loopback e bind fora de loopback corrigidos |
 | Qualidade (`python-quality`) | **Tudo verde** | ruff, format, mypy estrito, vulture, 8 contratos de import, 93 % de cobertura por branch, 98,1 % de mutantes mortos |
 
 ## 1. Arquitetura — `software-architect`
@@ -28,7 +28,7 @@ FAIL 0; A ≥ 90 %, B 75–89 %, C 60–74 %, D < 60 %.
 | C Contratos | 3,5/5 | `ENGINE_PROTOCOL`, teste de contrato OpenAPI; eventos SSE só em prosa |
 | D Dados | 2,5/5 | Run gravada numa transação; migrações só adicionam colunas, sem versão; sem backup; TUI ainda escreve tabelas |
 | E Confiabilidade | 1/6 | Timeouts em git e CLIs; SIGTERM não cancela runs nem encerra os processos ACP |
-| F Segurança | 5/8 | SQL parametrizado, subprocess em lista, socket `0600`, guarda de navegador, scanners no CI. **F1 FAIL**: TCP sem autenticação contra outro usuário local |
+| F Segurança | 5/8 | SQL parametrizado, subprocess em lista, socket `0600`, guarda de navegador, scanners no CI. **F1 FAIL** na auditoria: TCP sem autenticação contra outro usuário local; fechado depois pelo [ADR 0005](adr/0005-tcp-exige-token-do-daemon.md) |
 | G Observabilidade | 0,5/7 | Só `pulse doctor` e `docs/logs.md`; o primeiro `logging` do pacote entrou neste PR (traceback de 500) |
 | H Testes e entrega | 3/6 | 1 751 testes, cobertura por branch 93 %, mutação 98 %, 3 rodadas aleatórias no CI, matriz 3.11–3.14; sem feature flags nem baseline de performance |
 | I IA / agentes | 4,5/7 | Permissão nega por padrão, aprovação humana, `max_rounds`, `parse_outcome` falha seguro; sem harness de avaliação, orçamento de custo ou versão de prompt |
@@ -70,7 +70,7 @@ domínio fora da semente de fábrica, nenhum `if workflow_id == …`.
 
 Decisão registrada em [ADR 0003](adr/0003-listeners-locais-recusam-navegador.md).
 
-### Corrigido depois (branch `fix/tcp-daemon-token`)
+### Corrigido depois da auditoria (ADR 0005)
 
 | Sev. | CWE | Achado | Correção | Teste |
 |---|---|---|---|---|

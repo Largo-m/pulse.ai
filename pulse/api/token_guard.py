@@ -47,6 +47,6 @@ class TokenGuard:
                 continue
             scheme, _, credential = value.partition(b" ")
             return scheme.lower() == BEARER.encode() and secrets.compare_digest(
-                credential, self._token
+                credential.lstrip(b" "), self._token
             )
         return False

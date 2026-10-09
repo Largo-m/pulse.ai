@@ -200,8 +200,11 @@ class EngineClient:
             )
             return self._client
         meta = read_daemon_meta() or {}
+        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
+        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
+        daemon = httpx.URL(f"http://{host}:{port}")
         if self._http_base:
-            self._client = self._tcp_client(self._http_base.rstrip("/"), meta)
+            self._client = self._tcp_client(httpx.URL(self._http_base.rstrip("/")), daemon, meta)
             return self._client
         if self._prefer_uds and self._socket_path.exists():
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
@@ -211,13 +214,17 @@ class EngineClient:
                 timeout=self._timeout,
             )
             return self._client
-        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
-        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        self._client = self._tcp_client(f"http://{host}:{port}", meta)
+        self._client = self._tcp_client(daemon, daemon, meta)
         return self._client
 
-    def _tcp_client(self, base_url: str, meta: dict[str, Any]) -> httpx.Client:
-        """TCP needs the daemon's token from its private meta; the socket never sends it."""
+    def _tcp_client(
+        self, base_url: httpx.URL, daemon: httpx.URL, meta: dict[str, Any]
+    ) -> httpx.Client:
+        """TCP needs the daemon's token from its private meta; the socket never sends it.
+
+        Only the listener in the meta gets it: any other server could replay it.
+        """
         token = meta.get("token")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        at_daemon = (base_url.host, base_url.port) == (daemon.host, daemon.port)
+        headers = {"Authorization": f"Bearer {token}"} if token and at_daemon else {}
         return httpx.Client(base_url=base_url, headers=headers, timeout=self._timeout)

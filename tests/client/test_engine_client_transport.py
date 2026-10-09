@@ -502,13 +502,28 @@ def test_tcp_presents_the_token_from_the_meta(tcp_server, tmp_path: Path, monkey
     client.close()
 
 
-def test_an_explicit_http_base_also_presents_the_token(tcp_server, tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: {"token": "daemon-token"})
+def test_an_explicit_http_base_at_the_daemon_presents_the_token(
+    tcp_server, tmp_path: Path, monkeypatch
+):
+    meta = {"http_host": "127.0.0.1", "http_port": _port(tcp_server), "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
     client = EngineClient(
         http_base=f"http://127.0.0.1:{_port(tcp_server)}", socket_path=tmp_path / "none.sock"
     )
 
     assert client.get("/api/status")["auth"] == "Bearer daemon-token"
+    client.close()
+
+
+def test_an_http_base_elsewhere_never_receives_the_token(tcp_server, tmp_path: Path, monkeypatch):
+    """The token belongs to the listener in the meta; any other server could replay it."""
+    meta = {"http_host": "127.0.0.1", "http_port": 1, "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
+    client = EngineClient(
+        http_base=f"http://127.0.0.1:{_port(tcp_server)}", socket_path=tmp_path / "none.sock"
+    )
+
+    assert client.get("/api/status")["auth"] is None
     client.close()
 
 

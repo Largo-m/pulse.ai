@@ -65,6 +65,13 @@ def test_the_daemon_token_is_accepted(tcp_client: TestClient):
     assert response.json()["ok"] is True
 
 
+def test_several_spaces_may_separate_the_scheme_from_the_token(tcp_client: TestClient):
+    """RFC 6750 §2.1: `credentials = "Bearer" 1*SP b64token`."""
+    response = tcp_client.get("/api/status", headers={"Authorization": f"Bearer   {TOKEN}"})
+
+    assert response.status_code == 200
+
+
 def test_the_scheme_is_case_insensitive(tcp_client: TestClient):
     """RFC 9110 §11.1: the auth scheme is case-insensitive; the token is not."""
     ok = tcp_client.get("/api/status", headers={"Authorization": f"bearer {TOKEN}"})
