@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import pytest
 
-from pulse.acp import session_runner as session_runner_module
+from pulse.acp import reply_clock
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.domain.control import RunControl
+from pulse.runtimes import get_runtime
 
 
 def _runner(control: RunControl) -> tuple[AcpSessionRunner, list[dict]]:
     """A runner without a process: just enough to exercise `_request`."""
-    runner = AcpSessionRunner(["fake-agent"], cwd="/repo", control=control)
+    runner = AcpSessionRunner(
+        ["fake-agent"], cwd="/repo", control=control, runtime=get_runtime("cursor")
+    )
     sent: list[dict] = []
-    runner._send = sent.append  # type: ignore[method-assign]
+    runner._send = sent.append  # type: ignore[method-assign]  # records instead of writing
     runner._session_id = "sess-1"
     return runner, sent
 
@@ -23,7 +26,7 @@ def _reply(runner: AcpSessionRunner, request_id: int, result: dict) -> None:
 
 def test_stop_cancels_the_turn_in_flight(monkeypatch):
     """Stopping sends `session/cancel` and returns the turn as cancelled."""
-    monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 0.3)
+    monkeypatch.setattr(reply_clock, "CANCEL_GRACE_SECONDS", 0.3)
     control = RunControl()
     control.stop()
     runner, sent = _runner(control)
@@ -38,7 +41,7 @@ def test_stop_cancels_the_turn_in_flight(monkeypatch):
 
 
 def test_cancel_is_sent_once_even_while_waiting_for_the_agent(monkeypatch):
-    monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 0.5)
+    monkeypatch.setattr(reply_clock, "CANCEL_GRACE_SECONDS", 0.5)
     control = RunControl()
     control.stop()
     runner, sent = _runner(control)
@@ -50,7 +53,7 @@ def test_cancel_is_sent_once_even_while_waiting_for_the_agent(monkeypatch):
 
 def test_agent_answer_to_the_cancelled_turn_wins(monkeypatch):
     """If the agent closes the turn on its own, its answer wins."""
-    monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 5.0)
+    monkeypatch.setattr(reply_clock, "CANCEL_GRACE_SECONDS", 5.0)
     control = RunControl()
     control.stop()
     runner, sent = _runner(control)
@@ -73,7 +76,7 @@ def test_without_a_stop_the_turn_proceeds_normally():
 
 def test_stop_does_not_cut_short_protocol_requests(monkeypatch):
     """`initialize`, `session/new` and the like are not cancelled midway."""
-    monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 0.2)
+    monkeypatch.setattr(reply_clock, "CANCEL_GRACE_SECONDS", 0.2)
     control = RunControl()
     control.stop()
     runner, sent = _runner(control)
@@ -87,7 +90,7 @@ def test_stop_does_not_cut_short_protocol_requests(monkeypatch):
 
 def test_an_error_to_the_cancelled_turn_still_reads_as_cancelled(monkeypatch):
     """An agent may answer `session/cancel` by failing the turn: that is a stop, not a crash."""
-    monkeypatch.setattr(session_runner_module, "CANCEL_GRACE_SECONDS", 5.0)
+    monkeypatch.setattr(reply_clock, "CANCEL_GRACE_SECONDS", 5.0)
     control = RunControl()
     control.stop()
     runner, _sent = _runner(control)

@@ -12,17 +12,22 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pulse.acp.session_runner import AcpSessionRunner, _WatchedPrompts
+import pytest
+
+from pulse.acp.session_runner import AcpSessionRunner
+from pulse.acp.watched_prompts import WatchedPrompts
 from pulse.domain.control import RUN_STOPPED
 from pulse.domain.ports import NullPromptPort
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
 from pulse.history.events import PhaseItem, PhaseStatus
+from pulse.history.session_log import RecordedSessionLog
 from pulse.orchestrator.waits import RunWaits
+from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from pulse.tui.hydrate import _stamp_elapsed
 from pulse.tui.state import CockpitState
-from tests.conftest import store_step, wait_for_event
+from tests.conftest import served_log, store_step, wait_for_event
 from tests.orchestrator.test_run_context import _ReplayClient
 
 
@@ -149,6 +154,8 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
 
     raw = sqlite3.connect(str(db_path))
     raw.execute("ALTER TABLE run_steps DROP COLUMN waiting_seconds")
+    # A database from before the column also predates the schema version.
+    raw.execute("PRAGMA user_version = 0")
     raw.commit()
     raw.close()
 
@@ -164,6 +171,7 @@ def test_a_database_from_before_the_column_gains_it_on_open(tmp_path: Path):
     assert record.steps[0].waiting_seconds == 0.0
 
 
+@pytest.mark.usefixtures("in_process_daemon")
 def test_history_duration_discounts_the_wait():
     run = _run_with_step()
     step = run.steps[0]
@@ -175,7 +183,7 @@ def test_history_duration_discounts_the_wait():
 
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.DONE)]
-    _stamp_elapsed(state, run.id)
+    _stamp_elapsed(state, served_log(run.id))
     assert state.phases[0].elapsed_label() == "01:00"
 
 
@@ -201,8 +209,10 @@ def _port_and_bus():
     runner = AcpSessionRunner(
         ["echo"],
         cwd=str(Path.cwd()),
-        stream=ApiStreamSink(bus),
+        stream=ApiStreamSink(bus, run_id="r1"),
         prompt_handler=ApiPromptPort(correlator),
+        runtime=get_runtime("cursor"),
+        session_log=RecordedSessionLog(project_root=Path.cwd()),
     )
     return runner._prompt_handler, correlator, bus
 
@@ -265,7 +275,8 @@ def test_a_permission_that_needs_a_person_still_waits():
 
 def test_waiting_runs_come_oldest_first_and_say_how_long(monkeypatch):
     import pulse.client.active_runs as active_runs_module
-    from pulse.client.active_runs import awaiting_runs, describe, waiting_for
+    from pulse.client.active_runs import awaiting_runs
+    from pulse.history.run_lines import describe, waiting_for
 
     now = 1_000_000.0
     runs = [
@@ -322,7 +333,14 @@ class _Port:
 
 
 def _runner(sink: _Sink, port: _Port) -> AcpSessionRunner:
-    return AcpSessionRunner(["echo"], cwd=str(Path.cwd()), stream=sink, prompt_handler=port)
+    return AcpSessionRunner(
+        ["echo"],
+        cwd=str(Path.cwd()),
+        stream=sink,
+        prompt_handler=port,
+        runtime=get_runtime("cursor"),
+        session_log=RecordedSessionLog(project_root=Path.cwd()),
+    )
 
 
 def test_every_question_opens_and_closes_exactly_one_wait():
@@ -359,7 +377,7 @@ class _StatusProbe(_Port):
 def _bound(run: RunRecord, port: _Port) -> AcpSessionRunner:
     runner = _runner(_Sink(), port)
     runner.bind_run(run.id, RunWaits(run, SqliteRunRepository()))
-    runner._phase_id = run.steps[0].step_id
+    runner._enter_phase(run.steps[0].step_id)
     return runner
 
 
@@ -437,7 +455,7 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
     from pulse.daemon.events import EventBus
 
     bus = EventBus()
-    sink = _runner(ApiStreamSink(bus), _Port())
+    sink = _runner(ApiStreamSink(bus, run_id="r1"), _Port())
     sink._prompt_handler.ask_text("e agora?")
 
     published = [event for event in bus._history if event["type"] == "run.awaiting"]
@@ -460,11 +478,12 @@ def test_the_wait_travels_from_the_runner_to_the_screen():
 
 def test_the_proxy_still_hides_nothing_from_whoever_asks():
     """The proxy forwards, it does not invent: a method the port lacks stays missing."""
-    proxy = _WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
+    proxy = WatchedPrompts(object(), on_enter=lambda: None, on_exit=lambda: None)
 
     assert not hasattr(proxy, "select_choice")
 
 
+@pytest.mark.usefixtures("in_process_daemon")
 def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
     """A step started 10min ago, worked 2 and has waited 8: a reattach must show
     `02:00` frozen, not `10:00`, which would count the wait as agent work."""
@@ -488,6 +507,6 @@ def test_reattaching_mid_wait_freezes_the_clock_where_the_run_stopped():
         client=_ReplayClient([]),
     )
     session._dispatch({"type": "run.awaiting", "waiting": True, "since": time.time() - 8 * 60})
-    stamp_live_elapsed(state, run.id)
+    stamp_live_elapsed(state, served_log(run.id))
 
     assert state.phases[0].elapsed_label() == "02:00"

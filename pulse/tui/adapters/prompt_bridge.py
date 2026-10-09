@@ -6,11 +6,6 @@ from enum import StrEnum
 from queue import Empty, Queue
 
 from pulse.domain.ports import Choice, JsonObject
-from pulse.domain.ui_text import (
-    DEFAULT_QUESTIONNAIRE_TITLE,
-    FREE_TEXT_ANSWER_PREFIX,
-    PLAN_APPROVAL_TITLE,
-)
 from pulse.replies.acp_payloads import (
     AskQuestionRequest,
     PermissionRequest,
@@ -42,6 +37,11 @@ from pulse.replies.text_questionnaire import (
     TextQuestionnaire,
     format_questionnaire_answers,
     parse_text_questionnaire,
+)
+from pulse.replies.wording import (
+    DEFAULT_QUESTIONNAIRE_TITLE,
+    FREE_TEXT_ANSWER_PREFIX,
+    PLAN_APPROVAL_TITLE,
 )
 from pulse.tui import strings
 

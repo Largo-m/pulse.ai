@@ -231,6 +231,8 @@ def test_db_seeded_before_the_column_gets_the_task_on_migration(tmp_path: Path):
 
     raw = sqlite3.connect(str(db_path))
     raw.execute("ALTER TABLE workflow_defs DROP COLUMN default_prompt")
+    # A database from before the column also predates the schema version.
+    raw.execute("PRAGMA user_version = 0")
     raw.commit()
     raw.close()
 
@@ -406,7 +408,7 @@ def test_only_review_offers_skip():
     Label and engine must agree: `classify_outcome` maps the choice to `skipped`
     by substring, so a label without "Pular" would promise what the engine won't do.
     """
-    from pulse.replies.approval import SKIP, classify_outcome
+    from pulse.replies.approval import ApprovalOutcome, classify_outcome
 
     workflows = {item.id: item for item in list_workflows()}
     offering = [
@@ -422,7 +424,7 @@ def test_only_review_offers_skip():
     option = next(
         line.strip() for line in step.prompt_template.splitlines() if line.strip().startswith("C)")
     )
-    assert classify_outcome(f"→ {option}") == SKIP
+    assert classify_outcome(f"→ {option}") == ApprovalOutcome.SKIP
 
 
 def test_merge_layer_is_a_capped_loop():

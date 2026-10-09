@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ DAEMON_META_FILE = GLOBAL_DIR / "daemon.json"
 DAEMON_LOG_FILE = GLOBAL_DIR / "daemon.log"
 DEFAULT_HTTP_HOST = "127.0.0.1"
 DEFAULT_HTTP_PORT = 8787
+META_MODE = 0o600
 
 
 def global_state_dir() -> Path:
@@ -59,15 +61,32 @@ def worktrees_dir() -> Path:
     return global_state_dir() / "worktrees"
 
 
-def write_daemon_meta(*, pid: int, http_host: str, http_port: int, socket_path: Path) -> None:
+def write_daemon_meta(
+    *, pid: int, http_host: str, http_port: int, socket_path: Path, token: str
+) -> None:
+    """Record where the daemon listens and the token its TCP listener demands.
+
+    Whoever reads the token can drive runs over TCP (ADR 0005), so each write is
+    a new `0600` file renamed over the old one: an older daemon left it `0644`,
+    and tightening that inode would not revoke a descriptor already open on it.
+    """
     ensure_global_dir()
     payload = {
         "pid": pid,
         "http_host": http_host,
         "http_port": http_port,
         "socket": str(socket_path),
+        "token": token,
     }
-    DAEMON_META_FILE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    descriptor, staged = tempfile.mkstemp(dir=DAEMON_META_FILE.parent, prefix=".daemon-")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as meta:
+            os.fchmod(meta.fileno(), META_MODE)
+            meta.write(json.dumps(payload, indent=2) + "\n")
+        os.replace(staged, DAEMON_META_FILE)
+    except OSError:
+        Path(staged).unlink(missing_ok=True)
+        raise
 
 
 def read_daemon_meta() -> dict[str, Any] | None:

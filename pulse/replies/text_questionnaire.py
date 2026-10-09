@@ -5,8 +5,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 
 from pulse.domain.ports import JsonObject
-from pulse.domain.ui_text import DEFAULT_QUESTIONNAIRE_TITLE
 from pulse.replies.acp_payloads import items_of, truthy_text
+from pulse.replies.wording import DEFAULT_QUESTIONNAIRE_TITLE
 
 _HEADER_PATTERN = re.compile(
     r"(?:^|\n)(Preciso de algumas informações[^\n]*|I need some information[^\n]*)",

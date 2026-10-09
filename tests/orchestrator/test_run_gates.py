@@ -8,7 +8,8 @@ import pytest
 
 from pulse.domain.ports import WorkspaceError
 from pulse.domain.workflow import WorkflowDef
-from pulse.orchestrator.engine import EmptyWorkflow, EnginePorts, run_workflow
+from pulse.orchestrator.engine import EmptyWorkflow, run_workflow
+from pulse.orchestrator.wiring import EnginePorts
 from pulse.store.workflow_defs import save_workflow
 from tests.conftest import make_workflow
 from tests.fakes import FakeAgentSession, FakeWorkspace

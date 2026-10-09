@@ -6,6 +6,8 @@ without a client noticing.
 
 from __future__ import annotations
 
+import logging
+import threading
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,7 @@ from pulse.config.project_config import init_project_config, update_project_defa
 from pulse.daemon.runs import RunManager
 from pulse.domain.run import StepRecord
 from pulse.store import runs as run_store
+from tests.conftest import make_workflow
 
 
 def _client(manager: RunManager | None = None) -> TestClient:
@@ -133,7 +136,9 @@ def test_history_lists_and_searches_the_runs_of_a_project(history_run):
 
     assert [item["run_id"] for item in listed] == ["run-hist"]
     assert listed[0]["prompt"] == "corrigir login"
-    assert listed[0]["steps"] == [{"id": "one", "label": "Um", "status": "pending"}]
+    assert listed[0]["steps"] == [
+        {"id": "one", "label": "Um", "status": "pending", "acp_session_id": ""}
+    ]
     assert [item["run_id"] for item in found] == ["run-hist"]
     assert missed == []
 
@@ -148,6 +153,44 @@ def test_history_item_is_found_by_id_and_unknown_is_not_found(history_run):
 
     assert item.json()["run_id"] == "run-hist"
     assert (missing.status_code, missing.json()) == (404, {"detail": "item not found"})
+
+
+def test_the_worktree_of_a_run_the_daemon_executes_is_kept(history_run, monkeypatch, tmp_path):
+    """The agent works in that directory: any client, not only the TUI, must be refused."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    record = run_store.load_run("run-hist")
+    assert record is not None
+    record.work_in(worktree_path=str(worktree), branch="pulse/run-hist")
+    run_store.save(record)
+    make_workflow("default")
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    manager = RunManager()
+    client = _client(manager)
+    params = {"workspace": str(history_run)}
+    item_id = client.get("/api/history", params=params).json()["items"][0]["id"]
+    state = manager.start_run(
+        workflow_id="default", prompt="x", workspace=str(history_run), resume_run_id="run-hist"
+    )
+    try:
+        shown = client.get(f"/api/history/{item_id}/worktree", params=params).json()
+        refused = client.delete(f"/api/history/{item_id}/worktree", params=params)
+    finally:
+        release.set()
+        state.ended.wait(5)
+
+    assert shown["active"] is True
+    assert refused.status_code == 409
+    assert worktree.exists()
+    stored = run_store.load_run("run-hist")
+    assert stored is not None
+    assert stored.worktree_path == str(worktree)
 
 
 def test_answering_an_unknown_prompt_is_not_found():
@@ -171,3 +214,24 @@ def test_an_unexpected_failure_is_a_500_with_its_message(monkeypatch):
     response = client.get("/api/runs")
 
     assert (response.status_code, response.json()) == (500, {"detail": "store unreadable"})
+
+
+def test_an_unexpected_failure_leaves_its_traceback_in_the_daemon_log(monkeypatch, caplog):
+    """The client only sees the message; whoever debugs the daemon needs the stack."""
+    manager = RunManager()
+
+    def broken() -> list[dict[str, object]]:
+        raise RuntimeError("store unreadable")
+
+    monkeypatch.setattr(manager, "list_runs", broken)
+    client = TestClient(
+        create_app(manager), base_url="http://127.0.0.1", raise_server_exceptions=False
+    )
+
+    with caplog.at_level(logging.ERROR, logger="pulse.api.app"):
+        client.get("/api/runs")
+
+    [record] = caplog.records
+    assert record.getMessage() == "GET /api/runs failed"
+    assert record.exc_info is not None
+    assert str(record.exc_info[1]) == "store unreadable"

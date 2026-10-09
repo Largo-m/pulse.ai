@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.runtimes.base import AgentRuntime, ModelRequest, RuntimeCheck
+from pulse.runtimes.base import AgentRuntime, RuntimeCheck
 from pulse.runtimes.claude import ClaudeRuntime
 from pulse.runtimes.cursor import CursorRuntime
 
@@ -72,7 +72,6 @@ __all__ = [
     "DEFAULT_RUNTIME_ID",
     "RUNTIMES",
     "AgentRuntime",
-    "ModelRequest",
     "RuntimeCheck",
     "UnknownRuntime",
     "all_runtimes",

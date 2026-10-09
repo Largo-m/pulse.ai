@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
-import traceback
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,10 +14,13 @@ from pulse.config.agent_profiles import ConfiguredAgentProfiles
 from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.doctor.checks import check_runtime_ready
-from pulse.domain.control import RunControl
+from pulse.domain.control import SHUTDOWN_GRACE_SECONDS, RunControl
 from pulse.domain.ports import PromptPort, StreamSink
 from pulse.domain.run import RunStatus
-from pulse.orchestrator.engine import EnginePorts, run_workflow
+from pulse.history.session_log import RecordedSessionLog
+from pulse.mcp.channel import McpQuestionChannel
+from pulse.orchestrator.engine import run_workflow
+from pulse.orchestrator.wiring import EnginePorts
 from pulse.replies.permission import parse_policy
 from pulse.store import runs as run_store
 from pulse.store.paths import safe_cwd, worktrees_dir
@@ -27,6 +30,7 @@ from pulse.vcs.workspace import GitWorkspace
 
 FINISHED_TTL = 15 * 60.0
 FINISHED_KEEP = 10
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,6 +47,7 @@ class RunState:
     resume_run_id: str | None = None
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+    ended: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
 
     @classmethod
     def open(
@@ -81,6 +86,7 @@ class RunState:
         self.exit_code = exit_code
         self.status = RunStatus.for_exit_code(exit_code)
         self.finished_at = time.time()
+        self.ended.set()
 
 
 class RunAlreadyActive(Exception):
@@ -89,6 +95,10 @@ class RunAlreadyActive(Exception):
 
 class UnknownWorkflow(ValueError):
     """Id that does not exist in `workflow_defs`."""
+
+
+class DaemonShuttingDown(RuntimeError):
+    """A run asked for after shutdown began; nobody would stop it before the daemon exits."""
 
 
 def run_engine(
@@ -127,6 +137,8 @@ def run_engine(
         prompt_handler=prompt_handler,
         runtime=runtime,
         control=control,
+        questions=McpQuestionChannel(),
+        session_log=RecordedSessionLog(project_root=resolved.workspace_dir),
     )
     ports = EnginePorts(
         session=session,
@@ -150,6 +162,7 @@ class RunManager:
     def __init__(self) -> None:
         self._runs: dict[str, RunState] = {}
         self._lock = threading.Lock()
+        self._closing = False
 
     def list_workflows(self) -> list[dict[str, Any]]:
         return [
@@ -187,6 +200,8 @@ class RunManager:
             resume_run_id=resume_run_id,
         )
         with self._lock:
+            if self._closing:
+                raise DaemonShuttingDown("the daemon is shutting down")
             existing = self._runs.get(run_id)
             if existing is not None and existing.is_active():
                 raise RunAlreadyActive(f"run is already running: {run_id}")
@@ -271,10 +286,35 @@ class RunManager:
         state = self.get(run_id)
         if state is None:
             return False
+        self._stop(state)
+        return True
+
+    def shutdown(self, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> list[str]:
+        """Stop every active run and wait for each to end; return the ids still running.
+
+        A stop is what ends a run cleanly: the engine records `RUN_STOPPED`, puts
+        the step back to pending (resumable later) and closes the agent session,
+        which terminates the ACP process. Without it, the daemon exited with
+        runs left `running` and their agent processes orphaned.
+        """
+        with self._lock:
+            self._closing = True
+            active = [state for state in self._runs.values() if state.is_active()]
+        for state in active:
+            self._stop(state)
+        deadline = time.monotonic() + grace
+        return [
+            state.id
+            for state in active
+            if not state.ended.wait(max(0.0, deadline - time.monotonic()))
+        ]
+
+    @staticmethod
+    def _stop(state: RunState) -> None:
+        _log.info("run.cancel_requested run_id=%s", state.id)
         state.correlator.cancel_all()
         state.control.stop()
         state.bus.publish({"type": "run.cancel_requested", "run_id": state.id})
-        return True
 
     def answer_prompt(self, prompt_id: str, answer: object) -> bool:
         with self._lock:
@@ -285,8 +325,14 @@ class RunManager:
         return False
 
     def _execute(self, state: RunState) -> None:
-        stream = ApiStreamSink(state.bus)
+        stream = ApiStreamSink(state.bus, run_id=state.id)
         prompt_handler = ApiPromptPort(state.correlator)
+        _log.info(
+            "run.started run_id=%s workflow=%s resumed=%s",
+            state.id,
+            state.workflow_id,
+            state.resume_run_id is not None,
+        )
         state.bus.publish(
             {
                 "type": "run.started",
@@ -306,7 +352,7 @@ class RunManager:
                 run_id=state.id,
             )
         except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
-            traceback.print_exc()
+            _log.exception("run.failed run_id=%s workflow=%s", state.id, state.workflow_id)
             state.finish(1)
             state.bus.publish(
                 {
@@ -319,6 +365,13 @@ class RunManager:
             state.bus.close()
             return
         state.finish(exit_code)
+        _log.info(
+            "run.finished run_id=%s status=%s exit_code=%d seconds=%.1f",
+            state.id,
+            state.status,
+            exit_code,
+            (state.finished_at or state.started_at) - state.started_at,
+        )
         state.bus.publish(
             {
                 "type": "run.finished",

@@ -39,12 +39,13 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 | Layer | Packages | May depend on | Must NOT depend on |
 |---|---|---|---|
 | Entry | `cli/`, `__main__.py` | `client/`, `tui/`, `config/`, `doctor/` | `orchestrator/` to execute runs |
-| UI | `tui/` | `client/`, `domain/`, `replies/`, `history/` (read) | `orchestrator/`, `acp/` to execute |
+| UI | `tui/` | `client/`, `domain/`, `replies/`, the pure models of `history/` | `orchestrator/`, `acp/`, and `store/`, `config/`, `doctor/`, `runtimes/`, `vcs/` even indirectly |
 | Client | `client/` | HTTP contract only (`client/protocol.py`) | domain internals |
 | Composition root | `daemon/`, `api/` | everything | — |
 | Domain | `domain/` (run, workflow, outcome, control, ports), `replies/` | nothing else in `pulse/` | any other package, Textual, FastAPI |
 | Orchestration | `orchestrator/` | `domain/`, `replies/`; everything else through the ports in `domain/ports.py` | `acp/`, `store/`, `vcs/`, `doctor/` (even indirectly), Textual, FastAPI |
-| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, stdlib, third-party libs | `tui/` |
+| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, `replies/`, stdlib, third-party libs | `tui/`, each other (even indirectly) |
+| History | `history/` | `domain/`, `replies/`; only `catalog.py` (`store/`, `vcs/`) and `session_log.py` (`store/`, `config/`) touch the database | every other package, even indirectly |
 
 The package root holds only `__init__.py` and `__main__.py`; every other module
 lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-dominio.md).
@@ -61,7 +62,8 @@ lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-domin
 - **Ports & Adapters**: the domain and the engine depend on the ports in
   [`pulse/domain/ports.py`](pulse/domain/ports.py) (`StreamSink`, `PromptPort`,
   `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace`), not on
-  Textual, HTTP, SQLite, git or ACP. `run_workflow` receives them as
+  Textual, HTTP, SQLite, git or ACP. Adapters reach each other the same way
+  (`RuntimeDialect`, `QuestionChannel`, `SessionLog`), wired in `daemon/runs.py`. `run_workflow` receives them as
   `EnginePorts`; only `daemon/runs.py` picks the adapters. New I/O needs a port
   first, then adapters (production, `Null*`, and a fake in `tests/fakes.py`
   checked by a contract test). Why: [ADR 0002](docs/adr/0002-engine-depends-on-ports.md).
@@ -157,6 +159,11 @@ adapters.
 - **Code, identifiers, comments, docstrings, test names and log/error messages
   are in English.** User-facing docs (`README.md`, `ARCHITECTURE.md`, `docs/`)
   and factory playbooks may stay in Portuguese.
+- **Screen copy lives with the layer that composes it** (`tui/strings.py`,
+  `orchestrator/wording.py`, `replies/wording.py`, `history/log_wording.py`),
+  never in `domain/`. What crosses layers travels as data (a field, an event),
+  not as a sentence another layer parses back. Why:
+  [ADR 0004](docs/adr/0004-texto-de-tela-mora-com-quem-o-compoe.md).
 - Python ≥ 3.11, `from __future__ import annotations`, full type hints on public
   functions. Use `X | None`, `list[str]`, `Protocol` — not `Optional`, `List`,
   `ABC` when a protocol suffices.
@@ -180,9 +187,9 @@ Good docstrings state the contract and the reason, like the ones in
 
 - **Code judo over rearranging.** Prefer the reframing that deletes branches,
   flags or layers over one that moves complexity around.
-- **File size**: no file crosses **1000 lines**. `orchestrator/engine.py`,
-  `tui/state.py` and `acp/session_runner.py` are close — extract a focused
-  module (as `loops.py` / `fanout.py` were) before adding to them.
+- **File size**: no file crosses **700 lines**. When one gets close, extract a
+  focused module (as `loops.py`, `menus.py`, `step_turns.py` and
+  `artifact_tab.py` were) before adding to it.
   `tests/architecture/test_file_size.py` enforces it; its exception list caps
   each oversized file at its current size and only shrinks.
 - **No spaghetti growth**: no one-off booleans, nullable modes or special cases
@@ -209,7 +216,8 @@ Good docstrings state the contract and the reason, like the ones in
 
 Every `# noqa`, `# type: ignore` or `pytest.mark.skip` needs a rule code and a
 justification on the same line or the line above. A naked suppression is a
-defect. Never add `--no-verify`, `|| true`, or CI-only branches to make a check
+defect; `tests/architecture/test_suppressions_carry_a_reason.py` rejects one.
+Never add `--no-verify`, `|| true`, or CI-only branches to make a check
 pass.
 
 ---
@@ -258,8 +266,9 @@ depend on the factory seed.
   (`test_text_without_the_block_is_not_a_delivery`); the docstring says why the
   behavior matters.
 - **Architecture invariants are tests.** They live in `tests/architecture/`:
-  factory seed, OpenAPI contract, import contracts, file size, markdown links,
-  modules cited in `ARCHITECTURE.md` and `tests/` mirroring `pulse/`. Keep
+  factory seed, OpenAPI contract, import contracts, file size, suppression
+  reasons, markdown links, modules cited in `ARCHITECTURE.md` and `tests/`
+  mirroring `pulse/`. Keep
   them, and extend them when adding a rule.
 - No `skip`, `xfail` or weakened assertions to make CI green.
 
@@ -269,21 +278,28 @@ depend on the factory seed.
 pip install -e ".[dev]" && pre-commit install   # once per clone
 
 pytest tests/<package>/      # nearest tests first while iterating
-pytest --cov                 # whole suite + coverage floor, must be green
+pytest --cov                 # whole suite + branch coverage floor, must be green
+coverage report --include="pulse/domain/*" --fail-under=90
 ruff check . && ruff format --check .
 mypy
 vulture                      # dead code
 lint-imports                 # import contracts with the offending chains (also run by pytest)
+mutmut run && mutmut export-cicd-stats && python scripts/mutation_gate.py --min 80
 ```
 
 CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
-the suite three more times in random order, plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
+the suite three more times in random order, the parsers' mutation score,
+plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
 must be green to merge. Complexity (`C901`, at most 10 per function) is part of
 `ruff check`, and `vulture` blocks too: split a function or delete dead code
 instead of suppressing them.
 
-- **Coverage floor** is `fail_under` in `pyproject.toml`. Each phase raises
-  it; never lower it.
+- **Coverage floor** is `fail_under` in `pyproject.toml`, measured on
+  branches; `pulse/domain/` must stay at 90% or more. Each phase raises the
+  floor; never lower it.
+- **Mutation score**: the parsers that read agent text (`[tool.mutmut]` in
+  `pyproject.toml`) must kill at least 80% of mutmut's mutants. A surviving
+  mutant is a behavior no test pins: add the test, don't widen the exclusions.
 - **No baseline exceptions.** ruff `per-file-ignores` hold only the policy
   entries (tests, modules that write to the terminal) and mypy has no
   `disable_error_code` overrides; `tests/architecture/test_lint_baseline.py`

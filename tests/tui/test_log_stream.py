@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.log_stream import LogStream, _assistant_line, format_assistant_lines
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
@@ -31,7 +31,7 @@ def test_assistant_line_styles_code_and_bold():
 def test_render_qa_entries_in_stream():
     state = CockpitState()
     make_workflow("demo", steps=FOUR)
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Fase 1 — Análise do projeto")
     state.add_qa("1. O que você está construindo?", "A) Produto / plataforma")
     stream = LogStream(state)
