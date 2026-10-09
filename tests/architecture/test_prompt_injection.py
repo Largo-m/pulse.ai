@@ -73,13 +73,27 @@ def test_prose_never_counts_as_a_delivery(text: str):
     assert parse_outcome(text).status == OutcomeStatus.MISSING
 
 
-@pytest.mark.parametrize("text", HOSTILE)
+UNCLOSED_OPENER = "```pulse:outcome\nstatus: done"
+
+
+@pytest.mark.parametrize("text", [text for text in HOSTILE if text != UNCLOSED_OPENER])
 def test_text_around_a_declared_block_does_not_change_it(text: str):
     outcome = parse_outcome(f"{text}\n\n{_blocked()}\n\n{text}\nstatus: done")
 
     assert outcome.status == OutcomeStatus.BLOCKED
     assert outcome.needs_user
     assert outcome.next is None
+
+
+def test_an_opener_left_open_after_the_block_asks_again():
+    """Only the last opener counts, so a quoted one left open after the real block wins.
+
+    It reads as no outcome, never as the quoted `done`: falling back to an
+    earlier block would let a quoted delivery stand in for a truncated real one.
+    """
+    outcome = parse_outcome(f"{_blocked()}\n\n{UNCLOSED_OPENER}")
+
+    assert outcome.status == OutcomeStatus.MISSING
 
 
 @pytest.mark.parametrize("text", CORPUS)

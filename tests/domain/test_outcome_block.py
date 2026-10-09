@@ -119,6 +119,20 @@ def test_a_closing_fence_must_end_its_line():
     assert parse_outcome("```pulse:outcome\nstatus: done\n```  \nafter").delivered
 
 
+def test_a_quoted_block_never_stands_in_for_the_agents_malformed_one():
+    """Only the block the last opener starts counts.
+
+    Messages are joined with no separator, so the agent's real block can end
+    right before its next message. Falling back to an earlier, quoted block
+    recorded a blocked step as delivered; asking again is the safe answer.
+    """
+    quoted = "The playbook closes like this:\n```pulse:outcome\nstatus: done\n```\n\n"
+    real = "```pulse:outcome\nstatus: blocked\nreason: no credentials\n```"
+
+    assert parse_outcome(quoted + real + "Waiting for them.").status == OutcomeStatus.MISSING
+    assert parse_outcome(quoted + real + "\nWaiting for them.").reason == "no credentials"
+
+
 def test_lines_that_are_not_fields_do_not_end_the_block():
     assert parse_outcome(_block("Summary of the work\n\nstatus: done")).delivered
 
