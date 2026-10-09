@@ -461,7 +461,11 @@ def _unblock_continuation(step: StepDef) -> PromptContinuation:
 def _blocked_reason(declared: Outcome) -> str:
     if declared.status == OutcomeStatus.MISSING:
         return wording.OUTCOME_NOT_DECLARED
-    return declared.reason or wording.BLOCKED_WITHOUT_REASON
+    if declared.reason:
+        return declared.reason
+    if declared.unknown_status:
+        return wording.unknown_outcome(declared.unknown_status)
+    return wording.BLOCKED_WITHOUT_REASON
 
 
 def _fail(wiring: Wiring, run: RunRecord, record: StepRecord) -> None:

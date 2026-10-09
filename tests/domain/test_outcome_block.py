@@ -151,12 +151,12 @@ def test_a_bare_block_keeps_reason_and_needs_empty():
     assert parse_outcome(_block("status: blocked")) == Outcome(status=OutcomeStatus.BLOCKED)
 
 
-def test_an_unknown_status_blocks_and_says_why():
-    """A word Pulse does not know is not a delivery; the person sees which word it was."""
+def test_an_unknown_status_blocks_and_keeps_the_word():
+    """A word Pulse does not know is not a delivery; the word travels as data, not as a sentence."""
     assert parse_outcome(_block("status: maybe\nneeds: user")) == Outcome(
         status=OutcomeStatus.BLOCKED,
-        reason="the agent declared an outcome Pulse does not know: `maybe`",
         needs="user",
+        unknown_status="maybe",
     )
 
 

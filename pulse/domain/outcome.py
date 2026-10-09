@@ -71,6 +71,7 @@ class Outcome:
     reason: str = ""
     needs: str = ""
     next: LoopSignal | None = None
+    unknown_status: str = ""
 
     @property
     def delivered(self) -> bool:
@@ -153,9 +154,7 @@ def parse_outcome(text: str) -> Outcome:
     if not raw_status:
         return Outcome(status=OutcomeStatus.MISSING)
     return Outcome(
-        status=OutcomeStatus.BLOCKED,
-        reason=reason or f"the agent declared an outcome Pulse does not know: `{raw_status}`",
-        needs=needs,
+        status=OutcomeStatus.BLOCKED, reason=reason, needs=needs, unknown_status=raw_status
     )
 
 

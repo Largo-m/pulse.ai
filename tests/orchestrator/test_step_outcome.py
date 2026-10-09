@@ -78,6 +78,24 @@ def test_a_declared_block_stops_the_run_instead_of_cascading(wired, monkeypatch,
     assert [step.status for step in record.steps] == ["blocked", "pending"]
 
 
+def test_an_unknown_outcome_word_reaches_the_user_in_the_engine_wording(wired):
+    """The menu says which word the agent used, in the language of the menu (ADR 0004)."""
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
+    turn = {
+        "stopReason": "end_turn",
+        "phaseSummary": "```pulse:outcome\nstatus: maybe\nneeds: user\n```",
+    }
+    runner = FakeAgentSession([turn])
+    runner.prompts.choice = "stop"
+
+    code = wired.run(runner, workflow_id="demo", user_prompt="x")
+
+    assert code == RUN_BLOCKED
+    assert runner.prompts.prompts == [
+        "o agente declarou um desfecho que o Pulse não conhece: `maybe`"
+    ]
+
+
 def test_a_blocked_step_gets_one_shot_at_unblocking_itself(wired, monkeypatch, tmp_path: Path):
     """What the agent can fix itself does not wake anyone up.
 

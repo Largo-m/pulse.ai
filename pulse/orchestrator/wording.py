@@ -83,6 +83,10 @@ OUTCOME_NOT_DECLARED = (
 BLOCKED_WITHOUT_REASON = "o agente declarou bloqueio sem dizer o motivo"
 
 
+def unknown_outcome(status: str) -> str:
+    return f"o agente declarou um desfecho que o Pulse não conhece: `{status}`"
+
+
 def agent_stopped_responding(detail: str) -> str:
     return f"o agente parou de responder — {detail}"
 
