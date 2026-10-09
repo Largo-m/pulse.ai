@@ -77,6 +77,15 @@ Os dois textos que cruzavam camadas viraram campos do contrato:
 
 `ENGINE_PROTOCOL` sobe para 7: um daemon antigo mandaria o título montado.
 
+**Diagnóstico não é cópia de tela.** As mensagens dos checks de runtime
+(`RuntimeCheck.message`), do doctor e do teste de conexão ACP são compostas
+pelos adaptadores e servem a dois leitores: `pulse doctor` no terminal e as telas
+de onboarding e configurações. Ficam em inglês, como erro e log (AGENTS.md
+§4.1). A tela dá o contexto em português — o cabeçalho (`Ambiente — Cursor`,
+`Conexão ACP`) e a decisão a partir do `status` — e mostra a mensagem como o
+detalhe técnico, sem traduzir. Traduzi-las pediria códigos de mensagem com
+parâmetros no contrato `/api/*`, que é a opção 2 acima.
+
 ## Consequências
 
 - Boas: nenhum módulo de texto é importado por todas as camadas; mudar uma

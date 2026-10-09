@@ -162,7 +162,9 @@ adapters.
 - **Screen copy lives with the layer that composes it** (`tui/strings.py`,
   `orchestrator/wording.py`, `replies/wording.py`, `history/log_wording.py`),
   never in `domain/`. What crosses layers travels as data (a field, an event),
-  not as a sentence another layer parses back. Why:
+  not as a sentence another layer parses back. Diagnostics (runtime checks,
+  doctor, ACP probe) are not screen copy: they stay in English and screens show
+  them under a Portuguese heading. Why:
   [ADR 0004](docs/adr/0004-texto-de-tela-mora-com-quem-o-compoe.md).
 - Python ≥ 3.11, `from __future__ import annotations`, full type hints on public
   functions. Use `X | None`, `list[str]`, `Protocol` — not `Optional`, `List`,
