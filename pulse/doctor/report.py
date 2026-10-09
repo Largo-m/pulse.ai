@@ -4,7 +4,6 @@ from pulse.acp.client import probe_acp_connection
 from pulse.config import load_global_config, load_project_config
 from pulse.config.resolved import ResolvedConfig, resolve_config
 from pulse.doctor.checks import CheckResult, run_doctor_checks
-from pulse.runtimes import get_runtime
 from pulse.store.paths import GLOBAL_DB_FILE, safe_cwd
 
 
@@ -107,8 +106,3 @@ def run_doctor(*, test_acp: bool = False) -> int:
         checks.append(acp_check)
     print_doctor_report(checks, acp_probe_message=acp_message)
     return 1 if _failed(checks) else 0
-
-
-def run_agent_login(runtime: str = "cursor") -> int:
-    """Start the runtime login flow (`agent login`, `claude /login`, ...)."""
-    return get_runtime(runtime).login()

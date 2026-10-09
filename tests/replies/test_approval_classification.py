@@ -9,13 +9,8 @@ from __future__ import annotations
 import pytest
 
 from pulse.replies.approval import (
-    ADJUST,
-    APPROVE,
-    CANCEL,
-    CONTINUE,
-    SKIP,
     SUMMARY_MAX_CHARS,
-    UNKNOWN,
+    ApprovalOutcome,
     answer_needs_description,
     chosen_options,
     classify_outcome,
@@ -72,13 +67,13 @@ def test_a_negative_answer_does_not_hide_a_later_approval(answers: str, positive
 @pytest.mark.parametrize(
     ("answers", "outcome"),
     [
-        ("no arrow at all", UNKNOWN),
-        ("→ C) Cancelar workflow", CANCEL),
-        ("→ D) Pular este step", SKIP),
-        ("→ A) Sim, aprovar e continuar", APPROVE),
-        ("→ B) Não, preciso de ajustes", ADJUST),
-        ("→ B) Usar Postgres", CONTINUE),
-        ("→ Outro — cancel nothing, just approve later", CONTINUE),
+        ("no arrow at all", ApprovalOutcome.UNKNOWN),
+        ("→ C) Cancelar workflow", ApprovalOutcome.CANCEL),
+        ("→ D) Pular este step", ApprovalOutcome.SKIP),
+        ("→ A) Sim, aprovar e continuar", ApprovalOutcome.APPROVE),
+        ("→ B) Não, preciso de ajustes", ApprovalOutcome.ADJUST),
+        ("→ B) Usar Postgres", ApprovalOutcome.CONTINUE),
+        ("→ Outro — cancel nothing, just approve later", ApprovalOutcome.CONTINUE),
     ],
 )
 def test_each_answer_maps_to_one_outcome(answers: str, outcome: str):

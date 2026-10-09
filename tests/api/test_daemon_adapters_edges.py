@@ -58,7 +58,7 @@ def _chunk(text: str, *, content_type: str = "text", kind: str = "agent_message_
 
 def test_agent_text_accumulates_only_agent_text_chunks():
     """The captured text feeds outcome parsing; thoughts or images must not leak into it."""
-    sink = ApiStreamSink(EventBus())
+    sink = ApiStreamSink(EventBus(), run_id="r1")
 
     sink.handle_update(_chunk("Hello "))
     sink.handle_update(_chunk("ignored", content_type="image"))
@@ -73,14 +73,14 @@ def test_every_update_is_published_even_when_not_captured():
     bus = EventBus()
     params = _chunk("thinking", kind="agent_thought_chunk")
 
-    ApiStreamSink(bus).handle_update(params)
+    ApiStreamSink(bus, run_id="r1").handle_update(params)
 
     assert _without_seq(_replayed(bus)) == [{"type": "session.update", "params": params}]
 
 
 def test_reset_capture_starts_a_fresh_agent_text():
     """Each step's outcome is parsed from its own text, not the previous step's."""
-    sink = ApiStreamSink(EventBus())
+    sink = ApiStreamSink(EventBus(), run_id="r1")
     sink.handle_update(_chunk("old"))
 
     sink.reset_capture()
@@ -93,9 +93,11 @@ def test_sink_calls_publish_their_events_in_order(monkeypatch: pytest.MonkeyPatc
     """Replay rebuilds the cockpit from these events, so each carries its fields."""
     monkeypatch.setattr(adapters_module.time, "time", lambda: 1234.5)
     bus = EventBus()
-    sink = ApiStreamSink(bus)
+    sink = ApiStreamSink(bus, run_id="r1")
 
     sink.begin_phase("Plan")
+    sink.begin_phase("Plan", turn=2)
+    sink.set_model("GPT 5.5")
     sink.info("note")
     sink.error("Build", "exit 2")
     sink.error("Lint")
@@ -107,7 +109,9 @@ def test_sink_calls_publish_their_events_in_order(monkeypatch: pytest.MonkeyPatc
     sink.finish()
 
     assert _without_seq(_replayed(bus)) == [
-        {"type": "phase.begin", "title": "Plan"},
+        {"type": "phase.begin", "title": "Plan", "turn": 1},
+        {"type": "phase.begin", "title": "Plan", "turn": 2},
+        {"type": "session.model", "model": "GPT 5.5"},
         {"type": "phase.info", "title": "note"},
         {"type": "phase.error", "title": "Build", "reason": "exit 2"},
         {"type": "phase.error", "title": "Lint", "reason": ""},

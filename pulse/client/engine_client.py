@@ -28,14 +28,12 @@ class EngineClient:
         self,
         *,
         prefer_uds: bool = True,
-        http_base: str | None = None,
         socket_path: Path | None = None,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self._prefer_uds = prefer_uds
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
-        self._http_base = http_base
         self._timeout = timeout
         self._transport = transport
         self._client: httpx.Client | None = None
@@ -85,6 +83,16 @@ class EngineClient:
 
     def patch(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         response = self._http().patch(path, json=body or {})
+        response.raise_for_status()
+        return response.json()
+
+    def put(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self._http().put(path, json=body or {})
+        response.raise_for_status()
+        return response.json()
+
+    def delete(self, path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        response = self._http().delete(path, params=params)
         response.raise_for_status()
         return response.json()
 
@@ -147,7 +155,7 @@ class EngineClient:
             "/api/doctor/acp-probe", params={"workspace": str(workspace), "runtime": runtime}
         )
 
-    def workflows(self) -> list[dict[str, str]]:
+    def workflows(self) -> list[dict[str, Any]]:
         return list(self.get("/api/workflows").get("workflows", []))
 
     def _protocol_ok(self) -> bool:
@@ -189,9 +197,9 @@ class EngineClient:
                 transport=self._transport, base_url="http://pulse", timeout=self._timeout
             )
             return self._client
-        if self._http_base:
-            self._client = httpx.Client(base_url=self._http_base.rstrip("/"), timeout=self._timeout)
-            return self._client
+        meta = read_daemon_meta() or {}
+        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
+        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
         if self._prefer_uds and self._socket_path.exists():
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
             self._client = httpx.Client(
@@ -200,8 +208,11 @@ class EngineClient:
                 timeout=self._timeout,
             )
             return self._client
-        meta = read_daemon_meta() or {}
-        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
-        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        self._client = httpx.Client(base_url=f"http://{host}:{port}", timeout=self._timeout)
+        # TCP needs the daemon's token from its private meta, and only dials the
+        # listener that meta names; the socket never sends it.
+        token = meta.get("token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        self._client = httpx.Client(
+            base_url=f"http://{host}:{port}", headers=headers, timeout=self._timeout
+        )
         return self._client

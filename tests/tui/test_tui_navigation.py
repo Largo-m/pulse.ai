@@ -11,7 +11,7 @@ pytest.importorskip("textual")
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow, onboard_machine
 
 
 def test_home_root_options_open_their_screens(monkeypatch):
@@ -73,10 +73,8 @@ def _selected(option_id: str):
 
 def test_home_hides_the_loops_behind_new_session(monkeypatch):
     """The root menu does not grow with the database: loops live one level below."""
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -117,10 +115,8 @@ def test_home_hides_the_loops_behind_new_session(monkeypatch):
 
 
 def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -160,10 +156,8 @@ def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
 
 def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
     """Esc goes one step at a time: closes the input, then returns to the root."""
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -198,10 +192,8 @@ def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
 
 def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatch):
     """Short description on the item; the long step chain goes in the hint."""
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -247,7 +239,7 @@ def test_the_sidebar_nests_the_fan_out_items_under_the_step_name():
 
     make_workflow("demo", steps=[("plan", "Planejar"), ("run", "Implementar")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.apply_phase_statuses(
         steps=[
             {"id": "plan", "label": "Planejar"},
@@ -295,10 +287,8 @@ def test_loop_with_builtin_task_starts_without_asking_for_text(monkeypatch):
     Asking for a task description there had no meaningful answer, so Enter
     starts the run immediately.
     """
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -344,10 +334,8 @@ def test_loop_with_builtin_task_starts_without_asking_for_text(monkeypatch):
 
 
 def test_hint_says_enter_starts_these_loops(monkeypatch):
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -400,10 +388,8 @@ def _waiting_run(run_id: str = "run-7", *, held: float = 180.0) -> dict:
 
 def test_home_announces_the_sessions_waiting_for_the_user(monkeypatch):
     """Leaving the cockpit with an open question must not hide that the run is waiting."""
-    import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
 
     async def run() -> None:
         from textual.app import App, ComposeResult
@@ -534,8 +520,7 @@ def test_home_alert_poll_finishing_after_the_app_exited_does_not_crash(monkeypat
 
     import pulse.tui.screens.home as home_module
 
-    monkeypatch.setattr(home_module, "global_config_exists", lambda: True)
-    monkeypatch.setattr(home_module, "is_pulse_ready", lambda: True)
+    onboard_machine()
     monkeypatch.setattr(home_module, "awaiting_runs", lambda: [_waiting_run()])
 
     async def run() -> None:

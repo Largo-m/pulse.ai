@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,6 @@ from pulse.history.catalog import HistoryCatalog
 from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
 from pulse.tui import strings
-from pulse.tui.screens import history_detail
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.screens.resume_choice import ResumeChoiceScreen
@@ -52,6 +52,15 @@ def _stored_run(workspace: Path, *, done: tuple[str, ...], status: str) -> str:
     return record.id
 
 
+def _store_worktree(path: Path, *, branch: str = "", run_id: str = "run-1") -> None:
+    """The run worked in `path`: the daemon reads that from the stored run, not the screen."""
+    record = run_store.load_run(run_id)
+    assert record is not None
+    record.worktree_path = str(path)
+    record.branch = branch
+    run_store.save(record)
+
+
 def _item(workspace: Path, run_id: str = "run-1") -> HistoryItem:
     item = HistoryCatalog(workspace).get(run_id)
     assert item is not None
@@ -79,12 +88,6 @@ def _app(detail: HistoryDetailScreen):
             self.notes.append(message)
 
     return Harness()
-
-
-@pytest.fixture(autouse=True)
-def _no_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No run is live in a daemon unless a test says so; never dial a real socket."""
-    monkeypatch.setattr(history_detail, "active_run_ids", lambda: set())
 
 
 def test_an_unfinished_run_offers_resume_on_open_and_again_with_r(tmp_path):
@@ -153,10 +156,8 @@ def test_a_worktree_git_cannot_remove_is_kept_with_a_notice(tmp_path):
     _stored_run(tmp_path, done=("plan", "build"), status="completed")
     worktree = tmp_path / "loose-worktree"
     worktree.mkdir()
-    item = _item(tmp_path)
-    item.worktree_path = str(worktree)
-    item.branch = "pulse/demo"
-    detail = HistoryDetailScreen(item, workspace=tmp_path)
+    _store_worktree(worktree, branch="pulse/demo")
+    detail = HistoryDetailScreen(_item(tmp_path), workspace=tmp_path)
 
     async def run() -> None:
         app = _app(detail)
@@ -222,13 +223,22 @@ def test_a_clean_worktree_is_removed_only_after_confirmation(tmp_path):
     asyncio.run(run())
 
 
-def test_the_daemon_running_the_run_keeps_its_worktree(tmp_path, monkeypatch):
+def test_the_daemon_running_the_run_keeps_its_worktree(tmp_path, monkeypatch, in_process_daemon):
     _stored_run(tmp_path, done=("plan", "build"), status="completed")
     worktree = tmp_path / "wt"
     worktree.mkdir()
+    _store_worktree(worktree)
     item = _item(tmp_path)
-    item.worktree_path = str(worktree)
-    monkeypatch.setattr(history_detail, "active_run_ids", lambda: {item.run_id})
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    in_process_daemon.app.state.runs.start_run(
+        workflow_id="demo", prompt="x", workspace=str(tmp_path), resume_run_id=item.run_id
+    )
     detail = HistoryDetailScreen(item, workspace=tmp_path)
 
     async def run() -> None:
@@ -239,6 +249,43 @@ def test_the_daemon_running_the_run_keeps_its_worktree(tmp_path, monkeypatch):
             await pilot.pause()
             assert app.screen is detail
             assert app.notes == [strings.WORKTREE_KEPT_RUN_ACTIVE]
+
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
+
+
+@git_only
+def test_a_worktree_git_refused_can_be_removed_again_once_clean(tmp_path):
+    """git keeps a dirty worktree and so does the stored path; the screen must not forget it."""
+    repo = make_repo(tmp_path / "repo")
+    run_id = _stored_run(repo, done=("plan", "build"), status="completed")
+    record = run_store.load_run(run_id)
+    assert record is not None
+    exec_dir, _ = prepare(record, repo, use_worktree=True)
+    draft = exec_dir / "rascunho.md"
+    draft.write_text("não commitado\n", encoding="utf-8")
+    detail = HistoryDetailScreen(_item(repo), workspace=repo)
+
+    async def run() -> None:
+        app = _app(detail)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("w")
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert app.notes == [strings.WORKTREE_GIT_REFUSED]
+
+            draft.unlink()
+            await pilot.press("w")
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
+
+            assert app.notes == [strings.WORKTREE_GIT_REFUSED, strings.WORKTREE_REMOVED]
+            assert not exec_dir.exists()
 
     asyncio.run(run())
 

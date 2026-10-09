@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import uuid
 
-from pulse.domain import ui_text
 from pulse.domain.control import RUN_STOPPED, RunControl
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.domain.ports import (
@@ -29,6 +28,7 @@ from pulse.domain.ports import (
 )
 from pulse.domain.run import RunRecord, StepRecord
 from pulse.domain.workflow import StepDef, WorkflowDef
+from pulse.orchestrator import wording
 from pulse.orchestrator.agent_text import (
     build_continuation_prompt,
     build_outcome_reminder_prompt,
@@ -164,7 +164,7 @@ def _execute(wiring: Wiring, *, definition: WorkflowDef, run: RunRecord) -> int:
                     continue
 
                 if not wiring.control.checkpoint():
-                    notify(wiring, ui_text.RUN_STOPPED_BY_USER)
+                    notify(wiring, wording.RUN_STOPPED_BY_USER)
                     run.end(RUN_STOPPED)
                     wiring.runs.save(run)
                     return RUN_STOPPED
@@ -189,7 +189,7 @@ def _execute(wiring: Wiring, *, definition: WorkflowDef, run: RunRecord) -> int:
                     index = close_loop(run, definition, loop)
                     wiring.runs.save(run)
                     sync_steps(wiring, run)
-                    notify(wiring, ui_text.loop_closed(record.label))
+                    notify(wiring, wording.loop_closed(record.label))
                     break
 
                 if signal == LoopSignal.REPEAT and loop is not None and loop.closes(at):
@@ -249,9 +249,9 @@ def _run_step(
         revive_session(wiring)
         notify(
             wiring,
-            ui_text.retrying_step_with_guidance(record.label)
+            wording.retrying_step_with_guidance(record.label)
             if guidance
-            else ui_text.retrying_step(record.label),
+            else wording.retrying_step(record.label),
         )
 
 
@@ -352,14 +352,15 @@ def _judge_turn(
     """Settle, skip, fail or block the step from the agent's last turn."""
     if turn.cancelled:
         _fail(wiring, run, record)
-        return None, ui_text.STEP_CANCELLED
+        return None, wording.STEP_CANCELLED
 
     if turn.skipped:
         record.skip()
         wiring.runs.save(run)
         return None, ""
 
-    if may_close and not turn.approved and parse_outcome(turn.summary).closes:
+    outcome = parse_outcome(turn.summary)
+    if may_close and not turn.approved and outcome.closes:
         return _settle(wiring, run, record, LoopSignal.CLOSE)
 
     unfinished = _unfinished_reason(step, turn)
@@ -369,17 +370,17 @@ def _judge_turn(
 
     if not step.declares_outcome:
         return _settle(wiring, run, record, None)
-    return _judge_outcome(wiring, run, step, record, parse_outcome(turn.summary), may_close)
+    return _judge_outcome(wiring, run, step, record, outcome, may_close)
 
 
 def _unfinished_reason(step: StepDef, turn: TurnResult) -> str | None:
     """Why the turn does not count as finished: not approved, or not ended cleanly."""
     if step.requires_approval and not turn.approved:
         if not turn.has_approval_answers:
-            return ui_text.NO_APPROVAL_NOR_OUTCOME
-        return ui_text.STEP_NOT_APPROVED
+            return wording.NO_APPROVAL_NOR_OUTCOME
+        return wording.STEP_NOT_APPROVED
     if not step.requires_approval and not turn.ended_cleanly:
-        return turn.stop_reason or ui_text.AGENT_DID_NOT_COMPLETE
+        return turn.stop_reason or wording.AGENT_DID_NOT_COMPLETE
     return None
 
 
@@ -452,8 +453,8 @@ def _unblock_continuation(step: StepDef) -> PromptContinuation:
 
 def _blocked_reason(declared: Outcome) -> str:
     if declared.status == OutcomeStatus.MISSING:
-        return ui_text.OUTCOME_NOT_DECLARED
-    return declared.reason or ui_text.BLOCKED_WITHOUT_REASON
+        return wording.OUTCOME_NOT_DECLARED
+    return declared.reason or wording.BLOCKED_WITHOUT_REASON
 
 
 def _fail(wiring: Wiring, run: RunRecord, record: StepRecord) -> None:
@@ -518,12 +519,12 @@ def _release_step(
     if record.release():
         wiring.runs.save(run)
         sync_steps(wiring, run)
-    notify(wiring, ui_text.run_stopped_at(label) if label else ui_text.RUN_STOPPED_BY_USER)
+    notify(wiring, wording.run_stopped_at(label) if label else wording.RUN_STOPPED_BY_USER)
 
 
 def _session_error(error: BaseException) -> str:
     if isinstance(error, TimeoutError):
-        return ui_text.agent_stopped_responding(str(error))
+        return wording.agent_stopped_responding(str(error))
     if isinstance(error, RuntimeError | OSError):
-        return ui_text.agent_session_dropped(str(error))
-    return ui_text.step_crashed(f"{type(error).__name__}: {error}")
+        return wording.agent_session_dropped(str(error))
+    return wording.step_crashed(f"{type(error).__name__}: {error}")

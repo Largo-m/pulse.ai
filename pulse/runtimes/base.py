@@ -7,7 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from pulse.domain import ui_text
+from pulse.domain.ports import ModelRequest
+from pulse.replies.session_models import resolve_model_id
 
 
 @dataclass(frozen=True)
@@ -18,19 +19,6 @@ class RuntimeCheck:
     status: str
     message: str
     detail: str | None = None
-
-
-@dataclass(frozen=True)
-class ModelRequest:
-    """JSON-RPC call that applies a model to the session.
-
-    Not every ACP agent implements `session/set_model` (Claude exposes the model
-    as a config option), so each runtime returns the right call.
-    """
-
-    method: str
-    params: dict[str, Any]
-    model_id: str
 
 
 def run_cli(
@@ -144,13 +132,6 @@ class AgentRuntime:
         return results
 
     @property
-    def login_label(self) -> str:
-        """The onboarding action that opens this runtime's own login; empty without one."""
-        if not self.login_command:
-            return ""
-        return ui_text.run_login_label(" ".join(self.login_command))
-
-    @property
     def auth_check_name(self) -> str:
         return f"{self.label} authentication"
 
@@ -192,15 +173,6 @@ class AgentRuntime:
         results = [self.check_binary(), *self.check_dependencies()]
         results.append(self.check_auth())
         return results
-
-    def login(self) -> int:
-        if not self.login_command:
-            return 1
-        try:
-            # login_command is a class constant of the runtime; interactive, so no timeout.
-            return subprocess.run(list(self.login_command), check=False).returncode  # noqa: S603
-        except OSError:
-            return 1
 
     def auth_method(self, advertised: Sequence[str]) -> str | None:
         """`methodId` for `authenticate`, or None to skip the call.
@@ -245,8 +217,6 @@ class AgentRuntime:
         *,
         session_id: str,
     ) -> ModelRequest | None:
-        from pulse.acp.models import resolve_model_id
-
         model_id = resolve_model_id(session, preferred_model)
         if not model_id:
             return None

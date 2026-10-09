@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
+import logging
 import os
+import secrets
 import signal
 import socket
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
+from types import FrameType
 
 import uvicorn
+from fastapi import FastAPI
 
 from pulse.api.app import create_app
+from pulse.api.token_guard import TokenGuard
+from pulse.daemon.logs import configure_logging
 from pulse.daemon.runs import RunManager
+from pulse.domain.control import SHUTDOWN_GRACE_SECONDS
 from pulse.store.paths import (
     DAEMON_SOCKET,
     DEFAULT_HTTP_HOST,
@@ -22,8 +31,12 @@ from pulse.store.paths import (
 )
 
 SOCKET_MODE = 0o600
+USAGE_ERROR = 2
+LOCALHOST = "localhost"
+TOKEN_BYTES = 32
 # Masks every permission bit SOCKET_MODE does not grant.
 _SOCKET_UMASK = 0o777 & ~SOCKET_MODE
+_log = logging.getLogger(__name__)
 
 
 def _anchor_cwd() -> None:
@@ -63,6 +76,61 @@ def bind_private_socket(path: Path) -> socket.socket:
     return server
 
 
+class GracefulServer(uvicorn.Server):
+    """Runs `before_exit` on the first SIGTERM/SIGINT, then lets uvicorn shut down.
+
+    uvicorn replaces the process's signal handlers while it serves, and its
+    shutdown waits for open connections: an attached client's SSE stream only
+    ends when its run's bus closes. So the runs must stop first, or the daemon
+    either hangs or exits leaving them `running`. A second signal while
+    stopping keeps uvicorn's meaning: force the exit.
+    """
+
+    def __init__(self, config: uvicorn.Config, *, before_exit: Callable[[], None]) -> None:
+        super().__init__(config)
+        self._before_exit = before_exit
+        self._stopping = False
+
+    def handle_exit(self, sig: int, frame: FrameType | None) -> None:
+        if self._stopping:
+            # The handler runs on the main thread, inside the wait for the runs:
+            # only an exception gets out of that wait.
+            self.force_exit = True
+            raise _StopWaiting
+        if not self.should_exit:
+            self._stopping = True
+            try:
+                self._before_exit()
+            except _StopWaiting:
+                _log.warning("shutdown: forced before the runs stopped")
+            finally:
+                self._stopping = False
+        super().handle_exit(sig, frame)
+
+
+class _StopWaiting(Exception):
+    """A second signal arrived while the runs were stopping."""
+
+
+def stop_runs(manager: RunManager, *, grace: float = SHUTDOWN_GRACE_SECONDS) -> None:
+    left = manager.shutdown(grace=grace)
+    if left:
+        _log.warning("shutdown: runs still running after the grace period: %s", ", ".join(left))
+
+
+def listener_configs(
+    app: FastAPI, *, host: str, port: int, socket_path: Path, token: str
+) -> tuple[uvicorn.Config, uvicorn.Config]:
+    """The TCP and Unix-socket listeners: one app, a token only where the OS can't guard.
+
+    The socket's `0600` already keeps other users out; TCP on loopback does
+    not, so it demands the token kept in the `0600` meta file (ADR 0005).
+    """
+    tcp = uvicorn.Config(TokenGuard(app, token), host=host, port=port, log_level="warning")
+    uds = uvicorn.Config(app, uds=str(socket_path), log_level="warning")
+    return tcp, uds
+
+
 def run_daemon(
     *,
     host: str = DEFAULT_HTTP_HOST,
@@ -71,16 +139,20 @@ def run_daemon(
 ) -> None:
     ensure_global_dir()
     _anchor_cwd()
+    configure_logging()
     sock = socket_path or DAEMON_SOCKET
     manager = RunManager()
     app = create_app(manager)
     pid = os.getpid()
+    token = secrets.token_urlsafe(TOKEN_BYTES)
 
-    config_tcp = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    config_uds = uvicorn.Config(app, uds=str(sock), log_level="warning")
+    config_tcp, config_uds = listener_configs(
+        app, host=host, port=port, socket_path=sock, token=token
+    )
     tcp_socket = config_tcp.bind_socket()
     uds_socket = bind_private_socket(sock)
-    write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock)
+    write_daemon_meta(pid=pid, http_host=host, http_port=port, socket_path=sock, token=token)
+    _log.info("daemon.started pid=%d http=%s:%d socket=%s", pid, host, port, sock)
 
     def _cleanup(*_args: object) -> None:
         clear_daemon_meta(pid)
@@ -89,7 +161,7 @@ def run_daemon(
     signal.signal(signal.SIGTERM, _cleanup)
     signal.signal(signal.SIGINT, _cleanup)
 
-    server_tcp = uvicorn.Server(config_tcp)
+    server_tcp = GracefulServer(config_tcp, before_exit=lambda: stop_runs(manager))
     server_uds = uvicorn.Server(config_uds)
     uds_thread = threading.Thread(
         target=server_uds.run, kwargs={"sockets": [uds_socket]}, name="pulse-uds", daemon=True
@@ -100,6 +172,16 @@ def run_daemon(
     finally:
         server_uds.should_exit = True
         clear_daemon_meta(pid)
+        _log.info("daemon.stopped pid=%d", pid)
+
+
+def is_loopback(host: str) -> bool:
+    if host == LOCALHOST:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -119,5 +201,9 @@ def main(argv: list[str] | None = None) -> int:
             i += 2
             continue
         i += 1
+    # Off loopback the token would cross the network in clear text, and anyone on it could try it.
+    if not is_loopback(host):
+        sys.stderr.write(f"pulse-engine: refusing to listen on non-loopback host {host!r}\n")
+        return USAGE_ERROR
     run_daemon(host=host, port=port)
     return 0

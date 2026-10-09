@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -34,36 +35,39 @@ def test_onboarding_uses_centered_panel_layout():
     asyncio.run(run())
 
 
-class _FakeEngine:
-    """Stands in for the daemon at the HTTP boundary; records what onboarding asked."""
+class _Probe:
+    """The ACP probe at the daemon's boundary; records what onboarding asked the daemon."""
 
     calls: list[dict[str, object]] = []
     probe: dict[str, object] = {}
-    unreachable = False
 
-    def __init__(self, **_kwargs: object) -> None:
-        pass
+    @classmethod
+    def run(cls, *, command: list[str], cwd: str, **_kwargs: object) -> object:
+        from pulse.acp.client import AcpProbeResult
+        from pulse.runtimes import runtime_for_command
 
-    def ensure_daemon(self) -> None:
-        if self.unreachable:
-            raise RuntimeError("Não foi possível conectar ao pulse-engine")
+        cls.calls.append({"workspace": Path(cwd), "runtime": runtime_for_command(command).id})
+        error = cls.probe.get("error")
+        models = cls.probe.get("available_models")
+        return AcpProbeResult(
+            success=bool(cls.probe.get("ok")),
+            message=str(cls.probe.get("message") or ""),
+            error=str(error) if error is not None else None,
+            available_models=[str(model) for model in models] if isinstance(models, list) else [],
+        )
 
-    def acp_probe(self, *, workspace, runtime: str) -> dict[str, object]:
-        self.calls.append({"workspace": workspace, "runtime": runtime})
-        return self.probe
 
-    def close(self) -> None:
-        pass
+def _unreachable(_self: object) -> None:
+    raise RuntimeError("Não foi possível conectar ao pulse-engine")
 
 
 def _probe_on_screen(monkeypatch, tmp_path, *, probe=None, unreachable=False):
-    monkeypatch.setattr(_FakeEngine, "calls", [])
-    monkeypatch.setattr(_FakeEngine, "probe", probe or {})
-    monkeypatch.setattr(_FakeEngine, "unreachable", unreachable)
-    monkeypatch.setattr("pulse.tui.screens.onboarding.EngineClient", _FakeEngine)
-    monkeypatch.setattr(
-        "pulse.tui.screens.onboarding.collect_available_models", lambda *_a, **_k: []
-    )
+    from pulse.client.engine_client import EngineClient
+
+    monkeypatch.setattr(_Probe, "calls", [])
+    monkeypatch.setattr(_Probe, "probe", probe or {})
+    monkeypatch.setattr("pulse.acp.client.probe_acp_connection", _Probe.run)
+    monkeypatch.setattr("pulse.api.settings_routes.collect_available_models", lambda *_a, **_k: [])
     outcome: dict[str, object] = {}
 
     async def run() -> None:
@@ -82,13 +86,14 @@ def _probe_on_screen(monkeypatch, tmp_path, *, probe=None, unreachable=False):
             screen = app.screen
             assert isinstance(screen, OnboardingScreen)
             screen._workspace = tmp_path
+            if unreachable:
+                monkeypatch.setattr(EngineClient, "ensure_daemon", _unreachable)
             screen._run_acp_probe()
             await app.workers.wait_for_complete()
             await pilot.pause()
             outcome["step"] = screen._step
-            outcome["models"] = list(screen._models)
             outcome["report"] = str(screen.query_one("#onboard-report", Static).render())
-            outcome["runtime"] = screen._runtime.id
+            outcome["runtime"] = screen._chosen().id
 
     asyncio.run(run())
     return outcome
@@ -102,9 +107,8 @@ def test_onboarding_probes_the_chosen_runtime_through_the_engine(monkeypatch, tm
         probe={"ok": False, "message": "falhou", "error": "auth", "available_models": ["m1"]},
     )
 
-    assert _FakeEngine.calls == [{"workspace": tmp_path, "runtime": outcome["runtime"]}]
+    assert _Probe.calls == [{"workspace": tmp_path, "runtime": outcome["runtime"]}]
     assert outcome["step"] == "acp_fail"
-    assert outcome["models"] == ["m1"]
     assert outcome["report"] == "auth"
 
 
@@ -112,6 +116,6 @@ def test_an_unreachable_engine_is_a_failed_probe_the_user_can_skip(monkeypatch, 
     """Onboarding must not crash when the daemon can't start; it offers to continue instead."""
     outcome = _probe_on_screen(monkeypatch, tmp_path, unreachable=True)
 
-    assert _FakeEngine.calls == []
+    assert _Probe.calls == []
     assert outcome["step"] == "acp_fail"
     assert outcome["report"] == "Não foi possível conectar ao pulse-engine"

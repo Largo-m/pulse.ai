@@ -21,7 +21,7 @@ from pulse.cli.daemon_command import run_daemon_command
 from pulse.cli.main import main
 from pulse.client.engine_client import EngineClient
 from pulse.client.protocol import ENGINE_PROTOCOL
-from pulse.domain import ui_text
+from pulse.history import status_labels
 from pulse.tui.brand import PULSE_LINE, PULSE_WAVE
 
 
@@ -240,8 +240,8 @@ def test_status_of_a_live_daemon_without_endpoints_shows_defaults_and_runs(
     assert capsys.readouterr().out == (
         "pulse-engine: running\n"
         "  http: 127.0.0.1:8787\n"
-        f"  run: Ship · Build · {ui_text.RUNNING}\n"
-        f"  run: fix · {ui_text.AWAITING_YOU}\n"
+        f"  run: Ship · Build · {status_labels.RUNNING}\n"
+        f"  run: fix · {status_labels.AWAITING_YOU}\n"
     )
 
 

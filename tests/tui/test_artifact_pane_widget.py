@@ -14,7 +14,7 @@ from pulse.tui import strings
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.artifact_pane import ArtifactPane, ArtifactTabSelected
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 STEPS = [("one", "Um"), ("two", "Dois")]
 
@@ -22,7 +22,7 @@ STEPS = [("one", "Um"), ("two", "Dois")]
 def _state() -> CockpitState:
     make_workflow("demo", steps=STEPS)
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     return state
 
 

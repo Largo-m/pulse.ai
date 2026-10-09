@@ -123,17 +123,6 @@ name = "TUI and client are thin: they never import the engine"
 type = "forbidden"
 source_modules = ["pulse.tui", "pulse.client"]
 forbidden_modules = ["pulse.orchestrator", "pulse.acp", "pulse.daemon"]
-# Baseline: indirect chains that predate the contract; an entry that stops
-# matching fails the check, so this list can only shrink.
-ignore_imports = [
-    # Settings and onboarding still list models by spawning ACP locally;
-    # the fix is a models route in the daemon.
-    "pulse.config.model_catalog -> pulse.acp.client",
-    # Lazy import inside `model_request`, which only the session runner calls;
-    # the fix is moving model-id parsing out of `acp/`.
-    "pulse.runtimes.base -> pulse.acp.models",
-    "pulse.runtimes.claude -> pulse.acp.models",
-]
 
 [[tool.importlinter.contracts]]
 name = "Domain stays free of UI and web frameworks"
@@ -190,10 +179,96 @@ source_modules = [
 forbidden_modules = ["pulse.tui"]
 
 [[tool.importlinter.contracts]]
+name = "The TUI reaches persistence, config and runtimes only through the daemon"
+type = "forbidden"
+source_modules = ["pulse.tui"]
+forbidden_modules = [
+    "pulse.store",
+    "pulse.config",
+    "pulse.doctor",
+    "pulse.runtimes",
+    "pulse.vcs",
+    "pulse.mcp",
+    "pulse.api",
+]
+# Indirect chains count too: a screen that reaches SQLite through `history/`
+# or the client is as thick as one that imports it.
+ignore_imports = [
+    # Not debt: the `~/.pulse` layout (socket, daemon meta) is where client and
+    # daemon meet, shared by design (AGENTS.md §2.1). It imports nothing.
+    "pulse.client.* -> pulse.store.paths",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters depend on the domain, not on each other"
+type = "forbidden"
+source_modules = ["pulse.acp", "pulse.mcp", "pulse.runtimes", "pulse.store", "pulse.vcs"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.config",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.vcs",
+]
+
+# `history/` holds both the pure models the TUI may read and the two daemon-side
+# modules that touch the database; only those two may, and through these edges.
+[[tool.importlinter.contracts]]
+name = "History reaches the database only through its catalog and session log"
+type = "forbidden"
+source_modules = ["pulse.history"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
+ignore_imports = [
+    "pulse.history.catalog -> pulse.store.runs",
+    "pulse.history.catalog -> pulse.store.workflow_defs",
+    "pulse.history.catalog -> pulse.vcs",
+    "pulse.history.session_log -> pulse.config.project_config",
+    "pulse.history.session_log -> pulse.store.runs",
+    "pulse.history.session_log -> pulse.store.sessions",
+]
+
+[[tool.importlinter.contracts]]
 name = "Only store/db.py loads the factory seed"
 type = "protected"
 protected_modules = ["pulse.store.factory"]
 allowed_importers = ["pulse.store.db"]
+
+# Screen copy lives with the layer that composes it (docs/adr/0004): no shared
+# text module every layer imports, and each one read only by its owner and the
+# screens that draw the same words.
+[[tool.importlinter.contracts]]
+name = "Engine wording is the engine's own"
+type = "protected"
+protected_modules = ["pulse.orchestrator.wording"]
+allowed_importers = ["pulse.orchestrator"]
+
+[[tool.importlinter.contracts]]
+name = "Run log wording belongs to history and the screens that redraw it"
+type = "protected"
+protected_modules = ["pulse.history.log_wording"]
+allowed_importers = ["pulse.history", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Question wording belongs to the reply builders and the screens that ask"
+type = "protected"
+protected_modules = ["pulse.replies.wording"]
+allowed_importers = ["pulse.replies", "pulse.history", "pulse.tui"]
 
 # Mutation testing of the parsers that read agent text (AGENTS.md §5.1, §6.1):
 # `mutmut run`, `mutmut export-cicd-stats`, then `python scripts/mutation_gate.py --min 80`.

@@ -569,13 +569,14 @@ stdout do runtime (uma linha = um JSON-RPC)
   │
   ├─ method = session/update           → notificação:
   │     stream.handle_update(params)   → cockpit / SSE
-  │     _record_run_event(params)      → run_events + run_artifacts
+  │     session_log.update(params)     → run_events + run_artifacts
   │
   └─ só id                            → resposta a um request nosso (fila)
 ```
 
 **Como artefato é descoberto:** um `tool_call` com `kind` ∈ {`edit`, `write`,
-`create`} faz o runner extrair o caminho de `locations[].path` ou do `rawInput`
+`create`} faz o log da sessão ([`RecordedSessionLog`](../pulse/history/session_log.py),
+injetado pelo daemon) extrair o caminho de `locations[].path` ou do `rawInput`
 (chaves `path`, `file_path`, `target_file`, `filePath`, `abs_path` — cada runtime
 reporta de um jeito) e gravar em `run_artifacts`. Não há convenção de pasta, nome
 ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.

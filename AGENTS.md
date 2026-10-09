@@ -39,12 +39,13 @@ CLI / TUI  --HTTP/UDS-->  Engine daemon  --ACP-->  runtime (cursor | claude)
 | Layer | Packages | May depend on | Must NOT depend on |
 |---|---|---|---|
 | Entry | `cli/`, `__main__.py` | `client/`, `tui/`, `config/`, `doctor/` | `orchestrator/` to execute runs |
-| UI | `tui/` | `client/`, `domain/`, `replies/`, `history/` (read) | `orchestrator/`, `acp/` to execute |
+| UI | `tui/` | `client/`, `domain/`, `replies/`, the pure models of `history/` | `orchestrator/`, `acp/`, and `store/`, `config/`, `doctor/`, `runtimes/`, `vcs/` even indirectly |
 | Client | `client/` | HTTP contract only (`client/protocol.py`) | domain internals |
 | Composition root | `daemon/`, `api/` | everything | — |
 | Domain | `domain/` (run, workflow, outcome, control, ports), `replies/` | nothing else in `pulse/` | any other package, Textual, FastAPI |
 | Orchestration | `orchestrator/` | `domain/`, `replies/`; everything else through the ports in `domain/ports.py` | `acp/`, `store/`, `vcs/`, `doctor/` (even indirectly), Textual, FastAPI |
-| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, stdlib, third-party libs | `tui/` |
+| Infra / adapters | `acp/`, `runtimes/`, `store/`, `vcs/`, `mcp/` | `domain/`, `replies/`, stdlib, third-party libs | `tui/`, each other (even indirectly) |
+| History | `history/` | `domain/`, `replies/`; only `catalog.py` (`store/`, `vcs/`) and `session_log.py` (`store/`, `config/`) touch the database | every other package, even indirectly |
 
 The package root holds only `__init__.py` and `__main__.py`; every other module
 lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-dominio.md).
@@ -61,7 +62,8 @@ lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-domin
 - **Ports & Adapters**: the domain and the engine depend on the ports in
   [`pulse/domain/ports.py`](pulse/domain/ports.py) (`StreamSink`, `PromptPort`,
   `RunRepository`, `AgentSession`, `AgentProfiles`, `Workspace`), not on
-  Textual, HTTP, SQLite, git or ACP. `run_workflow` receives them as
+  Textual, HTTP, SQLite, git or ACP. Adapters reach each other the same way
+  (`RuntimeDialect`, `QuestionChannel`, `SessionLog`), wired in `daemon/runs.py`. `run_workflow` receives them as
   `EnginePorts`; only `daemon/runs.py` picks the adapters. New I/O needs a port
   first, then adapters (production, `Null*`, and a fake in `tests/fakes.py`
   checked by a contract test). Why: [ADR 0002](docs/adr/0002-engine-depends-on-ports.md).
@@ -157,6 +159,11 @@ adapters.
 - **Code, identifiers, comments, docstrings, test names and log/error messages
   are in English.** User-facing docs (`README.md`, `ARCHITECTURE.md`, `docs/`)
   and factory playbooks may stay in Portuguese.
+- **Screen copy lives with the layer that composes it** (`tui/strings.py`,
+  `orchestrator/wording.py`, `replies/wording.py`, `history/log_wording.py`),
+  never in `domain/`. What crosses layers travels as data (a field, an event),
+  not as a sentence another layer parses back. Why:
+  [ADR 0004](docs/adr/0004-texto-de-tela-mora-com-quem-o-compoe.md).
 - Python ≥ 3.11, `from __future__ import annotations`, full type hints on public
   functions. Use `X | None`, `list[str]`, `Protocol` — not `Optional`, `List`,
   `ABC` when a protocol suffices.

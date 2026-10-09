@@ -12,8 +12,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from pulse.domain import ui_text
 from pulse.domain.ports import JsonObject
+from pulse.replies import wording
 
 _EMPTY: Mapping[str, object] = {}
 
@@ -172,8 +172,8 @@ class PermissionOption:
         if self.name:
             return self.name
         kind = self.kind.lower().replace("-", "_")
-        return ui_text.PERMISSION_KIND_LABELS.get(
-            kind, kind.replace("_", " ").strip() or ui_text.OPTION_FALLBACK
+        return wording.PERMISSION_KIND_LABELS.get(
+            kind, kind.replace("_", " ").strip() or wording.OPTION_FALLBACK
         )
 
 

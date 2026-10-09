@@ -12,7 +12,6 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pulse.domain.ui_text import DEFAULT_QUESTIONNAIRE_TITLE
 from pulse.replies.text_questionnaire import (
     TextQuestion,
     TextQuestionnaire,
@@ -24,6 +23,7 @@ from pulse.replies.text_questionnaire import (
     split_questionnaire_answers,
     strip_questionnaire_block,
 )
+from pulse.replies.wording import DEFAULT_QUESTIONNAIRE_TITLE
 
 FENCED = (
     "Some context first.\n"

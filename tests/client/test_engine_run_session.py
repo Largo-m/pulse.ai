@@ -64,7 +64,7 @@ def test_engine_run_session_maps_events():
     session = EngineRunSession(stream=stream, prompt_handler=prompt_handler, client=client)
     code = session.run(workflow_id="spec", user_prompt="x", workspace=WORKSPACE)
     assert code == 0
-    stream.begin_phase.assert_called_with("Plan")
+    stream.begin_phase.assert_called_with("Plan", turn=1)
     stream.handle_update.assert_called()
     prompt_handler.respond_to_ask_question.assert_called_once()
     assert client.answers == [("p1", {"outcome": {"outcome": "selected", "optionId": "y"}})]
@@ -399,3 +399,30 @@ def test_a_ping_during_replay_ends_the_replay():
     )
     assert session.attach("run-1") == 0
     stream.replay_finished.assert_called_once_with()
+
+
+def test_a_later_turn_and_the_model_reach_the_screen_as_data():
+    """The daemon sends the turn and the model as fields; the client composes no text.
+
+    They used to travel as Portuguese titles the screen parsed back, which tied
+    the TUI to the wording `acp/` produced. A turn the daemon omits, or sends as
+    junk, is the phase's first.
+    """
+    from tests.fakes import RecordingStream
+
+    stream = RecordingStream()
+    events = [
+        {"type": "phase.begin", "title": "Plan"},
+        {"type": "session.model", "model": "GPT 5.5"},
+        {"type": "phase.begin", "title": "Plan", "turn": 2},
+        {"type": "phase.begin", "title": "Build", "turn": "two"},
+        {"type": "run.finished", "exit_code": 0},
+    ]
+    session = EngineRunSession(
+        stream=stream, prompt_handler=MagicMock(), client=_FakeClient(events)
+    )
+
+    assert session.run(workflow_id="demo", user_prompt="x", workspace=WORKSPACE) == 0
+    assert stream.phases == ["Plan", "Plan", "Build"]
+    assert stream.turns == [1, 2, 1]
+    assert stream.models == ["GPT 5.5"]

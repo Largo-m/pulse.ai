@@ -4,14 +4,10 @@ import time
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from pulse.domain.run import StepStatus
 
-class PhaseStatus(StrEnum):
-    PENDING = "pending"
-    RUNNING = "running"
-    DONE = "done"
-    SKIPPED = "skipped"
-    FAILED = "failed"
-    BLOCKED = "blocked"
+# The screen shows the persisted step states; one vocabulary, no translation.
+PhaseStatus = StepStatus
 
 
 class LogKind(StrEnum):
@@ -118,6 +114,32 @@ class PhaseItem:
         if self.status == PhaseStatus.RUNNING:
             self.status = PhaseStatus.DONE
 
+    def end_as(self, status: PhaseStatus, now: float) -> None:
+        """Move to a terminal `status`, stopping the clock if the step was running."""
+        if self.status == PhaseStatus.RUNNING and self.started_at is not None:
+            self.ended_at = now
+        self.status = status
+
+    def restart(self) -> None:
+        """Back to pending with no time spent: an interrupted step reruns from scratch."""
+        self.status = PhaseStatus.PENDING
+        self.started_at = None
+        self.ended_at = None
+        self.awaiting_since = None
+        self.waiting_total = 0.0
+
+    def show_closed(self, seconds: float) -> None:
+        """A fixed duration read from storage; it does not tick."""
+        self.started_at = 0.0
+        self.ended_at = seconds
+        self.waiting_total = 0.0
+
+    def resume_clock(self, started_at: float, waiting_total: float) -> None:
+        """Keep ticking a running step from where the persisted clock left it."""
+        self.started_at = started_at
+        self.ended_at = None
+        self.waiting_total = max(0.0, waiting_total)
+
 
 @dataclass
 class LogEntry:
@@ -138,24 +160,3 @@ class ArtifactItem:
     phase_id: str = ""
     ready: bool = False
     has_content: bool = False
-
-
-def workflow_steps(workflow_id: str) -> tuple[tuple[str, str], ...]:
-    """A workflow's steps, so the sidebar can render before ACP starts.
-
-    The shape comes from the database; an unknown workflow returns empty and the
-    sidebar fills in as steps start.
-    """
-    from pulse.store.workflow_defs import get_workflow
-
-    definition = get_workflow(workflow_id)
-    if definition is None:
-        return ()
-    return tuple((step.step_id, step.label or step.step_id) for step in definition.steps)
-
-
-def workflow_label(workflow_id: str) -> str:
-    from pulse.store.workflow_defs import get_workflow
-
-    definition = get_workflow(workflow_id)
-    return (definition.label if definition else workflow_id).upper()
