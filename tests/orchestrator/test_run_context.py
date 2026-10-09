@@ -15,10 +15,9 @@ from pulse.daemon.events import EventBus
 from pulse.domain.ports import NullPromptPort
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.state import CockpitState
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 from tests.fakes import FakeAgentSession
-from tests.orchestrator.harness import EngineHarness
-from tests.orchestrator.test_engine_steps import _approved
+from tests.orchestrator.harness import EngineHarness, approved_turn
 
 
 class _ReplayClient:
@@ -49,14 +48,14 @@ def _replayed(bus: EventBus) -> list[dict]:
 
 def test_daemon_sink_publishes_the_context():
     bus = EventBus()
-    ApiStreamSink(bus).set_context(cwd="/tmp/wt", branch="pulse/demo-abc")
-    assert {"type": "run.context", "cwd": "/tmp/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
+    ApiStreamSink(bus, run_id="r1").set_context(cwd="/repo/wt", branch="pulse/demo-abc")
+    assert {"type": "run.context", "cwd": "/repo/wt", "branch": "pulse/demo-abc"} in _replayed(bus)
 
 
 def test_engine_announces_the_context_before_any_step(tmp_path: Path):
     """The artifacts panel depends on this to know where to look for files."""
     make_workflow("demo", steps=[("one", "Um")])
-    runner = FakeAgentSession([_approved()])
+    runner = FakeAgentSession([approved_turn()])
     calls: list[str] = []
     runner.stream.set_context = lambda *, cwd, branch: calls.append(f"context:{cwd}")
     runner.stream.begin_phase = lambda title: calls.append(f"phase:{title}")
@@ -85,7 +84,7 @@ def _beginning_a_phase(runner: FakeAgentSession):
 def test_client_forwards_the_context_to_the_sink():
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/projeto")
     session = EngineRunSession(
         stream=sink,
@@ -106,7 +105,7 @@ def test_client_forwards_the_context_to_the_sink():
 def test_context_tells_the_screen_to_repoint_the_panel():
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     seen: list[str] = []
     sink = CockpitSink(state, cwd="/projeto", on_context=seen.append)
 
@@ -119,7 +118,7 @@ def test_context_without_worktree_only_sets_the_branch():
     """Run at the project root: the branch shows up, the cwd does not change."""
     state = CockpitState()
     make_workflow("demo")
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     sink = CockpitSink(state, cwd="/projeto")
 
     sink.set_context(cwd="/projeto", branch="main")

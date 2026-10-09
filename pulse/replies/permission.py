@@ -1,7 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from collections.abc import Mapping, Sequence
+from typing import Literal
 
+from pulse.domain.ports import JsonObject
+from pulse.replies import wording
+from pulse.replies.acp_payloads import PermissionOption, PermissionRequest
 from pulse.replies.ask_question import format_option_label
 
 PermissionPolicy = Literal["ask", "auto_approve", "deny_writes"]
@@ -18,109 +22,61 @@ def parse_policy(value: str) -> PermissionPolicy:
     return _POLICIES.get(value.strip(), "ask")
 
 
-_PATH_KEYS = frozenset({"path", "filepath", "file_path", "uri", "absolute_path"})
-
 _READ_ONLY_KINDS = frozenset({"read", "search", "fetch", "think"})
 _WRITE_KINDS = frozenset({"edit", "delete", "move"})
-
-_PERMISSION_KIND_LABELS = {
-    "allow_once": "Permitir esta vez",
-    "allow_always": "Sempre permitir",
-    "reject_once": "Recusar",
-    "reject_always": "Sempre recusar",
-}
+_TERMINAL_MARKERS = ("terminal", "shell", "bash", "command")
 
 
-def _permission_choice_label(option: dict[str, Any]) -> str:
-    name = str(option.get("name") or option.get("label") or "").strip()
-    if name:
-        return name
-    kind = str(option.get("kind", "")).lower().replace("-", "_")
-    return _PERMISSION_KIND_LABELS.get(kind, kind.replace("_", " ").strip() or "Opção")
-
-
-def build_permission_choices(options: list[Any]) -> list[tuple[str, str]]:
+def build_permission_choices(options: Sequence[PermissionOption]) -> list[tuple[str, str]]:
     """Permission request options, lettered as the dock shows them."""
-    choices: list[tuple[str, str]] = []
-    index = 0
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        option_id = str(option.get("optionId") or option.get("id") or "")
-        if not option_id:
-            continue
-        label = format_option_label(index, _permission_choice_label(option))
-        choices.append((option_id, label))
-        index += 1
-    if not choices:
+    shown = [option for option in options if option.choice_id]
+    if not shown:
         return [
-            ("allow-once", format_option_label(0, "Permitir esta vez")),
-            ("reject-once", format_option_label(1, "Recusar")),
+            ("allow-once", format_option_label(0, wording.ALLOW_ONCE)),
+            ("reject-once", format_option_label(1, wording.REJECT_ONCE)),
         ]
-    return choices
+    return [
+        (option.choice_id, format_option_label(index, option.label()))
+        for index, option in enumerate(shown)
+    ]
 
 
-def permission_prompt_text(permission: dict[str, Any], tool_call: dict[str, Any]) -> str:
-    title = str(permission.get("title") or "").strip()
-    description = str(permission.get("description") or "").strip()
-    tool_title = str(tool_call.get("title") or "").strip()
+def permission_prompt_text(request: PermissionRequest) -> str:
     parts: list[str] = []
-    for part in (title, description, tool_title):
+    for part in (request.title, request.description, request.tool_title):
         if part and part not in parts:
             parts.append(part)
     if not parts:
-        return "O agente pede permissão para continuar."
+        return wording.PERMISSION_PROMPT_FALLBACK
     return "\n".join(parts)
 
 
-def permission_selected(option_id: str) -> dict[str, Any]:
+def permission_selected(option_id: str) -> JsonObject:
     return {"outcome": {"outcome": "selected", "optionId": option_id}}
 
 
-def permission_cancelled() -> dict[str, Any]:
+def permission_cancelled() -> JsonObject:
     return {"outcome": {"outcome": "cancelled"}}
 
 
-def pick_permission_option(options: list[Any], *, prefer: str) -> str | None:
+def pick_permission_option(options: Sequence[PermissionOption], *, prefer: str) -> str | None:
     """First option matching `prefer`, with `*_once` ahead of `*_always`.
 
     `allow_always` makes the agent remember the choice (ACP), which would leak
     one step's policy into later steps of the session.
     """
-    matches: list[tuple[str, str]] = []
-    for option in options:
-        if not isinstance(option, dict):
-            continue
-        kind = str(option.get("kind", ""))
-        option_id = str(option.get("optionId", ""))
-        if option_id and kind.startswith(prefer):
-            matches.append((kind, option_id))
-    for kind, option_id in matches:
-        if kind.endswith("_once"):
-            return option_id
-    return matches[0][1] if matches else None
-
-
-def permission_kind(params: dict[str, Any]) -> str:
-    """What the agent wants to do, as ACP names it: `edit`, `execute`…"""
-    permission = params.get("permission")
-    if not isinstance(permission, dict):
-        permission = {}
-    kind = str(permission.get("kind", "")).lower()
-    if kind:
-        return kind
-    tool_call = params.get("toolCall")
-    if not isinstance(tool_call, dict):
-        tool_call = {}
-    return str(tool_call.get("kind", "")).lower()
+    matches = [option for option in options if option.option_id and option.kind.startswith(prefer)]
+    once = [option for option in matches if option.kind.endswith("_once")]
+    preferred = once or matches
+    return preferred[0].option_id if preferred else None
 
 
 def decide_permission(
-    params: dict[str, Any],
+    params: Mapping[str, object],
     *,
     policy: PermissionPolicy,
     allow_terminal: bool = False,
-) -> dict[str, Any] | None:
+) -> JsonObject | None:
     """The answer the policy gives on its own. `None` means a person must decide.
 
     Lives outside the TUI so the daemon applies policy where the run executes;
@@ -128,17 +84,15 @@ def decide_permission(
     already resolves. `None` always under `ask`, and under `deny_writes` when the
     kind does not say whether it writes (`execute`, unknown).
     """
-    options = params.get("options")
-    if not isinstance(options, list):
-        options = []
-    kind = permission_kind(params)
+    request = PermissionRequest.parse(params)
+    kind = request.kind
 
-    def chosen(prefer: str, fallback: str) -> dict[str, Any]:
-        return permission_selected(pick_permission_option(options, prefer=prefer) or fallback)
+    def chosen(prefer: str, fallback: str) -> JsonObject:
+        return permission_selected(
+            pick_permission_option(request.options, prefer=prefer) or fallback
+        )
 
-    if not allow_terminal and (
-        "terminal" in kind or "shell" in kind or "bash" in kind or "command" in kind
-    ):
+    if not allow_terminal and any(marker in kind for marker in _TERMINAL_MARKERS):
         return chosen("reject", "reject-once")
 
     if policy == "auto_approve":
@@ -154,32 +108,20 @@ def decide_permission(
     return None
 
 
-def permission_target_paths(params: dict[str, Any]) -> list[str]:
-    found: list[str] = []
-    seen: set[str] = set()
+def decide_permission_call(
+    args: Sequence[object], kwargs: Mapping[str, object]
+) -> JsonObject | None:
+    """`decide_permission` for a `respond_to_permission(params, *, policy, allow_terminal)` call.
 
-    def add(value: Any) -> None:
-        text = str(value or "").strip()
-        if not text or text in seen:
-            return
-        seen.add(text)
-        found.append(text)
-
-    def walk(node: Any, *, depth: int = 0) -> None:
-        if depth > 6 or node is None:
-            return
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if str(key).lower() in _PATH_KEYS:
-                    add(value)
-                walk(value, depth=depth + 1)
-            return
-        if isinstance(node, list):
-            for item in node:
-                walk(item, depth=depth + 1)
-
-    walk(params)
-    permission = params.get("permission")
-    if isinstance(permission, dict):
-        add(permission.get("title"))
-    return found
+    The live gate and the run log read the call through here, so the log never
+    shows as asked a permission the policy answered, nor drops one a person saw.
+    """
+    params = args[0] if args else kwargs.get("params")
+    if not isinstance(params, Mapping):
+        return None
+    policy = kwargs.get("policy")
+    return decide_permission(
+        params,
+        policy=parse_policy(policy) if isinstance(policy, str) else "ask",
+        allow_terminal=bool(kwargs.get("allow_terminal", False)),
+    )

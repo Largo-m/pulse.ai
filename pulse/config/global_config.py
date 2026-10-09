@@ -145,18 +145,19 @@ def update_global_defaults(
     config = load_global_config(path)
     if config is None:
         return None
-    updates: dict[str, str] = {}
-    if model is not None:
-        updates["model"] = model
-    if permission_policy is not None:
-        if permission_policy not in PERMISSION_POLICIES:
-            return None
-        updates["permission_policy"] = permission_policy
-    if agent is not None:
-        updates["default_agent"] = agent
-    if not updates:
+    if permission_policy is not None and permission_policy not in PERMISSION_POLICIES:
+        return None
+    if model is None and permission_policy is None and agent is None:
         return path or default_db_path()
-    return save_global_config(replace(config, **updates), path)
+    updated = replace(
+        config,
+        model=config.model if model is None else model,
+        permission_policy=config.permission_policy
+        if permission_policy is None
+        else permission_policy,
+        default_agent=config.default_agent if agent is None else agent,
+    )
+    return save_global_config(updated, path)
 
 
 def update_global_agent(

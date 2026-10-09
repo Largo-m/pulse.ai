@@ -1,4 +1,4 @@
-"""The domain and the engine are type-checked as `mypy --strict`, with no `Any` in their code.
+"""The domain, the engine and the reply parsers are `mypy --strict`, with no `Any`.
 
 `mypy` enforces it on every run; this test keeps the override from being
 weakened or dropped, which `mypy` itself would accept without a word.
@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-STRICT_PACKAGES = ("pulse.domain", "pulse.orchestrator")
+STRICT_PACKAGES = ("pulse.domain", "pulse.orchestrator", "pulse.replies")
 STRICT_MODULES = {module for package in STRICT_PACKAGES for module in (package, f"{package}.*")}
 # `--strict` flags that can be set per module, plus the three that ban written `Any`.
 REQUIRED_FLAGS = {
@@ -39,7 +39,7 @@ def _strict_override() -> dict[str, object]:
     return {}
 
 
-def test_the_domain_and_the_engine_are_checked_strictly_with_no_any() -> None:
+def test_the_domain_the_engine_and_the_replies_are_checked_strictly_with_no_any() -> None:
     override = _strict_override()
 
     assert {flag for flag in REQUIRED_FLAGS if override.get(flag) is not True} == set()

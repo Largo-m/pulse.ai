@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -10,13 +11,16 @@ from textual.css.query import NoMatches
 from textual.screen import Screen
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
+from pulse.history.models import HistoryItem, HistoryStatus
+from pulse.tui import engine, strings
 from pulse.tui.adapters.cockpit_sink import CockpitSink
 from pulse.tui.adapters.prompt_bridge import (
     PromptAbandoned,
     PromptBridge,
     TextualPromptHandler,
 )
-from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen
+from pulse.tui.screens.navigation import pulse_app
+from pulse.tui.screens.resume_choice import RESUME, ResumeChoiceScreen, resume_summary
 from pulse.tui.state import CockpitState
 from pulse.tui.widgets.app_footer import AppFooter
 from pulse.tui.widgets.app_header import AppHeader
@@ -28,6 +32,9 @@ from pulse.tui.widgets.artifact_pane import (
 )
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import NavSelected, PhaseSidebar
+
+if TYPE_CHECKING:
+    from pulse.client.run_session import EngineRunSession
 
 _PROMPT_BLOCKED = {
     "stop_run",
@@ -42,20 +49,20 @@ _PROMPT_BLOCKED = {
 
 class CockpitScreen(Screen[None]):
     BINDINGS = [
-        Binding("q", "back_to_menu", "Menu"),
-        Binding("b", "back_to_menu", "Menu"),
-        Binding("s", "stop_run", "Parar"),
-        Binding("tab", "toggle_focus", "Focus"),
-        Binding("a", "toggle_artifact_pane", "Artifacts"),
-        Binding("escape", "escape_back", "Back"),
-        Binding("left_square_bracket", "artifact_prev", "Prev file"),
-        Binding("right_square_bracket", "artifact_next", "Next file"),
-        Binding("left", "artifact_left", "Prev file"),
-        Binding("right", "artifact_right", "Next file"),
-        Binding("up", "nav_up", "Up", priority=True),
-        Binding("down", "nav_down", "Down", priority=True),
-        Binding("k", "nav_up", "Up", priority=True),
-        Binding("j", "nav_down", "Down", priority=True),
+        Binding("q", "back_to_menu", strings.BINDING_MENU),
+        Binding("b", "back_to_menu", strings.BINDING_MENU),
+        Binding("s", "stop_run", strings.BINDING_STOP),
+        Binding("tab", "toggle_focus", strings.BINDING_FOCUS),
+        Binding("a", "toggle_artifact_pane", strings.BINDING_ARTIFACTS),
+        Binding("escape", "escape_back", strings.BINDING_BACK),
+        Binding("left_square_bracket", "artifact_prev", strings.BINDING_PREV_FILE),
+        Binding("right_square_bracket", "artifact_next", strings.BINDING_NEXT_FILE),
+        Binding("left", "artifact_left", strings.BINDING_PREV_FILE),
+        Binding("right", "artifact_right", strings.BINDING_NEXT_FILE),
+        Binding("up", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("down", "nav_down", strings.BINDING_DOWN, priority=True),
+        Binding("k", "nav_up", strings.BINDING_UP, priority=True),
+        Binding("j", "nav_down", strings.BINDING_DOWN, priority=True),
     ]
 
     def __init__(
@@ -73,7 +80,13 @@ class CockpitScreen(Screen[None]):
         self.resume_run_id = resume_run_id
         self.attach_run_id = attach_run_id
         self.state = CockpitState()
-        self.state.configure_workflow(workflow_id)
+        # Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
+        shape = engine.optional(lambda: engine.workflow(workflow_id))
+        self.state.configure_workflow(
+            workflow_id,
+            label=shape.label if shape else "",
+            steps=shape.steps if shape else (),
+        )
         self.bridge = PromptBridge()
         self._workspace = str(workspace or Path.cwd())
         self._cwd = self._workspace
@@ -85,10 +98,9 @@ class CockpitScreen(Screen[None]):
             on_context=self._on_context,
         )
         self.prompt_handler = TextualPromptHandler(self.bridge)
-        self._worker = None
         self._dirty = False
         self._prompt_open = False
-        self._session = None
+        self._session: EngineRunSession | None = None
         self._detached = False
         self._run_over = False
 
@@ -106,7 +118,7 @@ class CockpitScreen(Screen[None]):
         self._apply_focus()
         self.set_interval(0.08, self._flush_ui)
         self.set_interval(0.1, self._poll_prompts)
-        self._worker = self.run_worker(self._run_workflow, exclusive=True, thread=True)
+        self.run_worker(self._run_workflow, exclusive=True, thread=True)
 
     def on_unmount(self) -> None:
         """Detach from a still-alive run instead of cancelling its pending prompts.
@@ -137,32 +149,33 @@ class CockpitScreen(Screen[None]):
         Attach does not use this: it is rebuilt by the bus replay plus
         `restore_settled_steps` in `_on_replay_end`.
         """
-        if self.attach_run_id or not self.resume_run_id:
+        resume_run_id = self.resume_run_id
+        if self.attach_run_id or not resume_run_id:
             return
         from pulse.tui.hydrate import restore_run
 
-        try:
-            exec_root = restore_run(self.state, self.resume_run_id, Path(self._workspace))
-            if exec_root:
-                self._cwd = exec_root
-                self.sink.set_cwd(exec_root)
-        except (OSError, ValueError):
-            pass
+        log = engine.optional(lambda: engine.run_log(resume_run_id))
+        if log is None:
+            return
+        exec_root = restore_run(self.state, log, Path(self._workspace))
+        if exec_root:
+            self._cwd = exec_root
+            self.sink.set_cwd(exec_root)
 
     def _on_replay_end(self) -> None:
         """Fix step timings after replay using the real times from `run_steps`.
 
         Replayed `phase.begin` events stamp "now" as each step's start.
         """
-        if not self.attach_run_id:
+        attach_run_id = self.attach_run_id
+        if not attach_run_id:
             return
         from pulse.tui.hydrate import restore_settled_steps, stamp_live_elapsed
 
-        try:
-            restore_settled_steps(self.state, self.attach_run_id, Path(self._workspace))
-            stamp_live_elapsed(self.state, self.attach_run_id)
-        except (OSError, ValueError):
-            pass
+        log = engine.optional(lambda: engine.run_log(attach_run_id))
+        if log is not None:
+            restore_settled_steps(self.state, log, Path(self._workspace))
+            stamp_live_elapsed(self.state, log)
         self._dirty = True
 
     def _on_context(self, cwd: str) -> None:
@@ -200,7 +213,7 @@ class CockpitScreen(Screen[None]):
         pane.sync_from_state(self.state, force=force)
         self.query_one(AppFooter).sync_from_state(self.state)
 
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+    def check_action(self, action: str, _parameters: tuple[object, ...]) -> bool | None:
         if self._prompt_open and action in _PROMPT_BLOCKED:
             return False
         if self._prompt_open and action in {"nav_up", "nav_down"}:
@@ -269,7 +282,7 @@ class CockpitScreen(Screen[None]):
         except Exception as error:  # noqa: BLE001
             if self._detached:
                 return
-            self.state.add_error("Workflow falhou", str(error))
+            self.state.add_error(strings.WORKFLOW_FAILED, str(error))
             self._dirty = True
             code = 1
         if code == DETACHED:
@@ -283,25 +296,25 @@ class CockpitScreen(Screen[None]):
 
     def _on_workflow_done(self, code: int) -> None:
         if code == 0:
-            self.state.add_info("Workflow concluído")
+            self.state.add_info(strings.WORKFLOW_DONE)
         elif code == RUN_STOPPED:
-            self.state.add_info("Run parada — dá para retomar de onde parou")
+            self.state.add_info(strings.RUN_STOPPED)
             self._sync_ui(force=True)
             self._offer_resume()
             return
         elif code == RUN_BLOCKED:
-            self.state.add_info("Run bloqueada — resolva o que o step pediu e retome de onde parou")
+            self.state.add_info(strings.RUN_BLOCKED)
             self._sync_ui(force=True)
             self._offer_resume()
             return
         else:
             if not self.state.has_error():
                 self.state.add_error(
-                    "Workflow falhou",
-                    f"O fluxo encerrou com código {code}.",
+                    strings.WORKFLOW_FAILED,
+                    strings.WORKFLOW_EXIT_CODE.format(code=code),
                 )
             if self._resumable_run() is not None:
-                self.state.add_info("Dá para retomar do step que falhou")
+                self.state.add_info(strings.RUN_RESUMABLE_FROM_FAILURE)
             self._sync_ui(force=True)
             self._offer_resume()
             return
@@ -313,7 +326,7 @@ class CockpitScreen(Screen[None]):
         if session is None or not self.state.running or not self.state.can_stop:
             return
         session.stop()
-        self.state.add_info("Parando — cortando o step em execução")
+        self.state.add_info(strings.RUN_STOPPING)
         self._sync_ui(force=True)
 
     def _offer_resume(self) -> None:
@@ -327,7 +340,7 @@ class CockpitScreen(Screen[None]):
             if mode != RESUME:
                 return
             self.app.pop_screen()
-            self.app.open_cockpit(
+            pulse_app(self).open_cockpit(
                 self.workflow_id,
                 self.user_prompt,
                 resume_run_id=run_id,
@@ -340,21 +353,23 @@ class CockpitScreen(Screen[None]):
 
     def _resumable_run(self) -> tuple[str, str] | None:
         """Resumable stopped run: this screen's run, or the most recent one."""
-        from pulse.store import runs as run_store
-
         known = self.attach_run_id or self.resume_run_id
+        workspace = Path(self._workspace)
         try:
             if known:
-                record = run_store.load_run(known)
-                pending = [record] if record is not None and record.is_incomplete() else []
+                item = engine.history_item(workspace, known)
+                listed: list[HistoryItem] = [item] if item is not None else []
             else:
-                pending = run_store.find_resumable(Path(self._workspace))
-        except (OSError, ValueError):
+                listed = engine.history(workspace)
+        except engine.EngineError:
             return None
+        pending = [
+            item for item in listed if item.status is not HistoryStatus.DONE and item.is_incomplete
+        ]
         if not pending:
             return None
-        newest = max(pending, key=lambda item: item.updated_at or item.created_at)
-        return newest.id, _run_summary(newest)
+        newest = max(pending, key=lambda item: item.updated_at)
+        return newest.run_id, resume_summary(newest)
 
     def _apply_focus(self) -> None:
         if self.state.focus_target == "phases":
@@ -459,10 +474,3 @@ class CockpitScreen(Screen[None]):
                 session.detach()
             self.bridge.abandon()
         self.app.pop_screen()
-
-
-def _run_summary(record) -> str:
-    """Where the run stopped, for the resume choice screen."""
-    done = sum(1 for step in record.steps if step.settled)
-    current = record.current_step or (record.steps[0].step_id if record.steps else "—")
-    return f"{current} · steps {done}/{len(record.steps)}"

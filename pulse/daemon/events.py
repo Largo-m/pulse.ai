@@ -6,30 +6,30 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from queue import Empty, Queue
-from typing import Any
 
 from pulse.client.protocol import PING, REPLAY_END
+from pulse.domain.ports import JsonObject
 
 
 @dataclass
 class PromptRequest:
     id: str
     kind: str
-    payload: dict[str, Any]
+    payload: JsonObject
     event: threading.Event = field(default_factory=threading.Event)
-    answer: Any = None
+    answer: object = None
     cancelled: bool = False
     created_at: float = field(default_factory=time.time)
 
 
 class EventBus:
     def __init__(self) -> None:
-        self._subscribers: list[Queue[dict[str, Any] | None]] = []
-        self._history: list[dict[str, Any]] = []
+        self._subscribers: list[Queue[JsonObject | None]] = []
+        self._history: list[JsonObject] = []
         self._lock = threading.Lock()
         self._closed = False
 
-    def publish(self, event: dict[str, Any]) -> None:
+    def publish(self, event: JsonObject) -> None:
         with self._lock:
             if self._closed:
                 return
@@ -37,14 +37,14 @@ class EventBus:
             for queue in self._subscribers:
                 queue.put_nowait(event)
 
-    def subscribe(self, *, after: int = 0, poll: float = 5.0) -> Iterator[dict[str, Any]]:
+    def subscribe(self, *, after: int = 0, poll: float = 5.0) -> Iterator[JsonObject]:
         """The run's past events, then live ones, in one sequence.
 
         `stream.replay_end` marks where the past ends, so a late attacher does not
         reopen an answered question. `stream.ping` is a heartbeat that gives the
         consumer a regular point to drop the stream.
         """
-        queue: Queue[dict[str, Any] | None] = Queue()
+        queue: Queue[JsonObject | None] = Queue()
         with self._lock:
             for event in self._history[after:]:
                 queue.put_nowait(event)
@@ -92,7 +92,7 @@ class PromptCorrelator:
             opened = [item.created_at for item in self._pending.values()]
         return min(opened) if opened else None
 
-    def request(self, kind: str, payload: dict[str, Any], *, timeout: float | None = None) -> Any:
+    def request(self, kind: str, payload: JsonObject, *, timeout: float | None = None) -> object:
         """Ask the client and wait, with no timeout by default.
 
         Runs keep waiting in the background until someone answers; only an
@@ -117,7 +117,7 @@ class PromptCorrelator:
             return None
         return req.answer
 
-    def answer(self, prompt_id: str, answer: Any) -> bool:
+    def answer(self, prompt_id: str, answer: object) -> bool:
         with self._lock:
             req = self._pending.get(prompt_id)
             if req is None:

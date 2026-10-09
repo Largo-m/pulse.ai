@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pulse.domain.run import RunRecord
 from pulse.domain.workflow import Loop, WorkflowDef
+from pulse.orchestrator import wording
 
 
 def repeat_loop(
@@ -24,16 +25,14 @@ def repeat_loop(
     opener = run.step(opener_id)
     following = loop.next_round(opener.rounds if opener is not None else 1)
     if following is None:
-        return None, (
-            f"{label}: teto de {loop.max_rounds} rodadas atingido — o que sobrou vai no relatório"
-        )
+        return None, wording.loop_ceiling_reached(label, loop.max_rounds)
     run.reopen_loop(
         [definition.steps[index].step_id for index in following.reopens], opener_id=opener_id
     )
     if not following.last:
-        return loop.start, f"{label} pediu a {following.number}ª rodada"
-    who = opener.label if opener else "o início do laço"
-    return loop.start, f"{label} pediu a {following.number}ª rodada — a última: só {who} roda"
+        return loop.start, wording.loop_round_requested(label, following.number)
+    who = opener.label if opener else wording.LOOP_START
+    return loop.start, wording.loop_last_round_requested(label, following.number, who)
 
 
 def close_loop(run: RunRecord, definition: WorkflowDef, loop: Loop) -> int:

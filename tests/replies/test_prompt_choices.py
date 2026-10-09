@@ -1,8 +1,8 @@
-import time
-
 import pytest
 
+from pulse.replies.acp_payloads import QuestionAnswer, QuestionOption
 from pulse.replies.approval import (
+    ApprovalOutcome,
     answer_needs_description,
     classify_outcome,
     picked_answers,
@@ -88,7 +88,7 @@ def test_handler_format_answer_with_follow_up_detail():
     )
     formatted = handler._format_answer(
         question,
-        {"selectedOptionIds": ["B::Incluir testes do interceptor"]},
+        QuestionAnswer("q1", ("B::Incluir testes do interceptor",)),
     )
     assert (
         formatted == "B) Não, preciso de ajustes (descreva abaixo) — Incluir testes do interceptor"
@@ -97,9 +97,9 @@ def test_handler_format_answer_with_follow_up_detail():
 
 def test_build_choices_suppresses_other_for_migration():
     options = [
-        {"id": "A", "label": "Reduzir o escopo"},
-        {"id": "B", "label": "Reutilizar o adapter"},
-        {"id": "C", "label": "Cancelar"},
+        QuestionOption("A", "Reduzir o escopo"),
+        QuestionOption("B", "Reutilizar o adapter"),
+        QuestionOption("C", "Cancelar"),
     ]
     choices = build_question_choices(
         options,
@@ -132,11 +132,11 @@ def test_should_not_add_other_when_label_already_exists():
 
 def test_build_choices_does_not_duplicate_existing_other():
     options = [
-        {"id": "A", "label": "Produto / plataforma com usuários"},
-        {"id": "B", "label": "API / serviço backend"},
-        {"id": "C", "label": "Biblioteca / pacote interno"},
-        {"id": "D", "label": "Automação / script / CLI"},
-        {"id": "E", "label": "Outro (descreva)"},
+        QuestionOption("A", "Produto / plataforma com usuários"),
+        QuestionOption("B", "API / serviço backend"),
+        QuestionOption("C", "Biblioteca / pacote interno"),
+        QuestionOption("D", "Automação / script / CLI"),
+        QuestionOption("E", "Outro (descreva)"),
     ]
     choices = build_question_choices(
         options,
@@ -149,8 +149,8 @@ def test_build_choices_does_not_duplicate_existing_other():
 
 def test_textual_build_choices_does_not_duplicate_existing_other():
     options = [
-        {"id": "A", "label": "Produto / plataforma com usuários"},
-        {"id": "E", "label": "Outro (descreva)"},
+        QuestionOption("A", "Produto / plataforma com usuários"),
+        QuestionOption("E", "Outro (descreva)"),
     ]
     choices = build_question_choices(
         options,
@@ -163,8 +163,8 @@ def test_textual_build_choices_does_not_duplicate_existing_other():
 
 def test_build_choices_adds_other_for_open_questions():
     options = [
-        {"id": "A", "label": "Paper trading"},
-        {"id": "B", "label": "Gestão de portfólio"},
+        QuestionOption("A", "Paper trading"),
+        QuestionOption("B", "Gestão de portfólio"),
     ]
     choices = build_question_choices(options, prompt="1. O que você está construindo?")
     assert any(choice[0] == "__other__" for choice in choices)
@@ -309,12 +309,9 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
 
     kinds: list[PromptKind] = []
     replies = ["B", "trocar a seção de cache"]
-    deadline = time.monotonic() + 5
-    while len(kinds) < 2 and time.monotonic() < deadline:
-        request = bridge.poll()
-        if request is None:
-            time.sleep(0.01)
-            continue
+    while len(kinds) < 2:
+        request = bridge.poll(timeout=5)
+        assert request is not None, f"no question after {kinds}"
         kinds.append(request.kind)
         request.future.set_result(replies[len(kinds) - 1])
 
@@ -333,12 +330,12 @@ def test_the_text_request_reaches_the_dock_queue_as_its_own_prompt():
     ],
 )
 def test_typed_text_never_cancels_or_skips_the_step(answers: str) -> None:
-    from pulse.replies.approval import CANCEL, SKIP, classify_outcome
+    from pulse.replies.approval import classify_outcome
 
-    assert classify_outcome(answers) not in {CANCEL, SKIP}
+    assert classify_outcome(answers) not in {ApprovalOutcome.CANCEL, ApprovalOutcome.SKIP}
 
 
 def test_picked_skip_option_still_skips() -> None:
-    from pulse.replies.approval import SKIP, classify_outcome
+    from pulse.replies.approval import classify_outcome
 
-    assert classify_outcome("→ C) Pular esta fase") == SKIP
+    assert classify_outcome("→ C) Pular esta fase") == ApprovalOutcome.SKIP

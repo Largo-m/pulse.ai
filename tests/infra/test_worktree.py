@@ -263,7 +263,7 @@ def test_deleted_run_branch_opens_another(tmp_path: Path) -> None:
     first, branch = prepare(run, repo, use_worktree=True)
     vcs.remove_worktree(repo, first)
     subprocess.run(  # noqa: S603 - fixed git argv on a temp repo
-        ["git", "branch", "-D", branch],  # noqa: S607
+        ["git", "branch", "-D", branch],  # noqa: S607 - git from PATH, as in production
         cwd=repo,
         check=True,
         capture_output=True,

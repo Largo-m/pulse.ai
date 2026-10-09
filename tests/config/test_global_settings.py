@@ -4,18 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.config.project_config import init_project_config, load_project_config
+from pulse.config.project_settings import AgentFields, effective_defaults, set_project_default
 from pulse.config.resolved import resolve_config
 from pulse.store.agent_settings import (
     apply_setting_to_all_agents,
     load_agent_settings,
     upsert_agent_settings,
 )
-from pulse.tui.screens.settings import SettingsScreen
 
 
 def _project_id(tmp_path: Path) -> str:
@@ -76,31 +72,23 @@ def test_unknown_field_is_ignored(tmp_path: Path):
 
 def test_saving_global_reaches_the_agent_used_by_the_run(tmp_path: Path):
     init_project_config(tmp_path)
-    screen = SettingsScreen(cwd=tmp_path)
-    screen._target = "global"
-    calls: list[str] = []
-    screen._show_global_fields = lambda: calls.append("back")  # type: ignore[method-assign]
 
-    screen._save_global(field="model", value="opus[1m]")
+    set_project_default(tmp_path, "model", "opus[1m]")
 
     project = load_project_config(tmp_path)
     assert project is not None
     assert project.model == "opus[1m]"
     assert resolve_config(tmp_path, pulse_agent="default").model == "opus[1m]"
-    assert calls == ["back"]
 
 
 def test_saving_global_permission_and_runtime_lands_on_the_project(tmp_path: Path):
     init_project_config(tmp_path)
-    screen = SettingsScreen(cwd=tmp_path)
-    screen._target = "global"
-    screen._show_global_fields = lambda: None  # type: ignore[method-assign]
 
-    screen._save_global(field="permission_policy", value="auto_approve")
-    screen._save_global(field="runtime", value="claude")
+    set_project_default(tmp_path, "permission_policy", "auto_approve")
+    set_project_default(tmp_path, "runtime", "claude")
 
     project = load_project_config(tmp_path)
     assert project is not None
     assert project.permission_policy == "auto_approve"
     assert project.default_agent == "claude"
-    assert screen._effective_global_fields() == ("claude", "Auto", "auto_approve")
+    assert effective_defaults(tmp_path) == AgentFields("claude", "Auto", "auto_approve")

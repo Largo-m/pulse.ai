@@ -20,9 +20,12 @@ def test_two_concurrent_resumes_start_only_one_run(monkeypatch):
         state.finished_at = time.time()
 
     real_bus = runs_module.EventBus
+    both_checked_in = threading.Barrier(2, timeout=5)
 
     def slow_bus():
-        time.sleep(0.05)
+        # Both requests are past the pre-lock setup before either takes the lock:
+        # the race window is held open on purpose, not hoped for.
+        both_checked_in.wait()
         return real_bus()
 
     monkeypatch.setattr(RunManager, "_execute", hold)

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from textual.app import App
 
+from pulse.tui import strings
 from pulse.tui.screens.cockpit import CockpitScreen
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.home import HomeScreen
@@ -14,7 +15,7 @@ from pulse.tui.theme import COCKPIT_CSS
 
 class PulseApp(App[None]):
     CSS = COCKPIT_CSS
-    TITLE = "Pulse // ACP Cockpit"
+    TITLE = strings.APP_TITLE
 
     def on_mount(self) -> None:
         self.push_screen(HomeScreen())
@@ -61,7 +62,7 @@ def run_pulse_app() -> int:
 def run_onboarding_app(*, force: bool = False) -> int:
     class OnboardApp(App[int]):
         CSS = COCKPIT_CSS
-        TITLE = "Pulse // Setup"
+        TITLE = strings.ONBOARDING_APP_TITLE
 
         def on_mount(self) -> None:
             def _done(result: int | None) -> None:

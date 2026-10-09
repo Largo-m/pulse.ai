@@ -55,7 +55,7 @@ def _write(args: list[str], *, cwd: Path | str) -> str:
         raise GitError(f"git {' '.join(args)}: {error}") from error
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        raise GitError(f"git {' '.join(args)}: {detail or 'falhou'}")
+        raise GitError(f"git {' '.join(args)}: {detail or 'failed'}")
     return result.stdout.strip()
 
 
@@ -119,7 +119,7 @@ def add_worktree(
             break
         name = f"{branch}-{attempt}"
     else:
-        raise GitError(f"não consegui um nome de branch livre a partir de `{branch}`")
+        raise GitError(f"could not find a free branch name starting from `{branch}`")
     _write(["worktree", "add", "-b", name, str(target), start], cwd=repo)
     return name
 

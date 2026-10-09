@@ -9,12 +9,7 @@ from pulse.orchestrator.fanout import MAX_ITEMS, parse_items
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 from tests.fakes import FakeAgentSession
-from tests.orchestrator.test_engine_steps import (  # noqa: F401
-    _approved,
-    _blocked,
-    _delivered,
-    wired,
-)
+from tests.orchestrator.harness import approved_turn, blocked_turn, delivered_turn
 
 
 def _block(*lines: str) -> str:
@@ -45,6 +40,22 @@ def test_the_last_block_wins():
     assert [item.label for item in parse_items(text)] == ["Novo", "Extra"]
 
 
+def test_an_unclosed_block_quoted_before_the_real_one_does_not_take_it_over():
+    """A stray `pulse:items` fence from a quoted file must not swallow the real list."""
+    text = "Quoted:\n```pulse:items\n- rm: delete everything\n\n```pulse:items\n- a: First\n```"
+
+    assert [item.id for item in parse_items(text)] == ["a"]
+
+
+def test_a_quoted_list_never_stands_in_for_the_agents_malformed_one():
+    """The real list running into the next message must not hand the run to a quoted one."""
+    quoted = "Quoted:\n```pulse:items\n- rm: delete everything\n```\n\n"
+    real = "```pulse:items\n- T1: First\n- T2: Second\n```"
+
+    assert parse_items(quoted + real + "Starting with T1.") == ()
+    assert [item.id for item in parse_items(quoted + real + "\nStarting.")] == ["T1", "T2"]
+
+
 def test_a_repeated_id_is_dropped():
     """A repeated id would become a duplicate `step_id` and overwrite the first."""
     items = parse_items(_block("T1 — Primeiro", "T1 — Repetido", "T2 — Segundo"))
@@ -69,9 +80,9 @@ def test_each_item_becomes_its_own_step_and_its_own_session(wired, monkeypatch, 
     )
     runner = FakeAgentSession(
         [
-            _approved(_block("T1 — Criar o endpoint", "T2 — Montar o CSV")),
-            _approved(),
-            _approved(),
+            approved_turn(_block("T1 — Criar o endpoint", "T2 — Montar o CSV")),
+            approved_turn(),
+            approved_turn(),
         ]
     )
 
@@ -99,7 +110,9 @@ def test_the_panel_receives_the_expanded_step_list(wired, monkeypatch, tmp_path:
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
-    runner = FakeAgentSession([_approved(_block("T1 — Um", "T2 — Dois")), _approved(), _approved()])
+    runner = FakeAgentSession(
+        [approved_turn(_block("T1 — Um", "T2 — Dois")), approved_turn(), approved_turn()]
+    )
 
     wired.run(
         runner,
@@ -119,7 +132,7 @@ def test_a_step_that_declares_nothing_still_runs_once(wired, monkeypatch, tmp_pa
         steps=[("plan", "Planejar"), ("run", "Implementar")],
         fan_out=("run",),
     )
-    runner = FakeAgentSession([_approved("Escrevi o plano, sem bloco."), _approved()])
+    runner = FakeAgentSession([approved_turn("Escrevi o plano, sem bloco."), approved_turn()])
 
     code = wired.run(
         runner,
@@ -141,7 +154,7 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
     )
     summary = _block("T1 — Um", "T2 — Dois")
     failing = FakeAgentSession(
-        [_approved(summary), _approved(), {"approved": False, "outcome": "approve"}]
+        [approved_turn(summary), approved_turn(), {"approved": False, "outcome": "approve"}]
     )
     assert (
         wired.run(
@@ -153,7 +166,7 @@ def test_resuming_does_not_redo_an_item_that_already_passed(wired, monkeypatch, 
     )
     run_id = wired.runs.only().id
 
-    resumed = FakeAgentSession([_approved()])
+    resumed = FakeAgentSession([approved_turn()])
     code = wired.run(
         resumed,
         workflow_id="demo",
@@ -181,7 +194,8 @@ def test_items_keep_their_order_beyond_nine(wired, monkeypatch, tmp_path: Path):
     )
     ids = [f"T{index}" for index in range(1, 12)]
     runner = FakeAgentSession(
-        [_approved(_block(*(f"{item} — Task {item}" for item in ids)))] + [_approved() for _ in ids]
+        [approved_turn(_block(*(f"{item} — Task {item}" for item in ids)))]
+        + [approved_turn() for _ in ids]
     )
 
     wired.run(
@@ -208,8 +222,8 @@ def test_every_item_is_recorded_before_the_first_one_runs(wired, monkeypatch, tm
     ids = [f"T{index}" for index in range(1, 11)]
     runner = FakeAgentSession(
         [
-            _approved(_block(*(f"{item} — Task {item}" for item in ids))),
-            _approved(),
+            approved_turn(_block(*(f"{item} — Task {item}" for item in ids))),
+            approved_turn(),
             RuntimeError("o processo do agente encerrou"),
         ]
     )
@@ -244,8 +258,8 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
     )
     first = FakeAgentSession(
         [
-            _approved(_block("T1 — Um", "T2 — Dois")),
-            _approved("terminei a T1, sem bloco de itens"),
+            approved_turn(_block("T1 — Um", "T2 — Dois")),
+            approved_turn("terminei a T1, sem bloco de itens"),
             RuntimeError("o processo do agente encerrou"),
         ]
     )
@@ -257,7 +271,7 @@ def test_resuming_keeps_the_fan_out_instead_of_redoing_the_parent_step(
     )
     run_id = wired.runs.only().id
 
-    resumed = FakeAgentSession([_approved()])
+    resumed = FakeAgentSession([approved_turn()])
     code = wired.run(
         resumed,
         workflow_id="demo",
@@ -289,9 +303,9 @@ def test_a_blocked_task_does_not_drag_the_next_ones_along(wired, monkeypatch, tm
     )
     runner = FakeAgentSession(
         [
-            _delivered(_block("T1 — Um", "T2 — Dois", "T3 — Três")),
-            _delivered(),
-            _blocked("a migration depende de uma decisão de schema", needs="user"),
+            delivered_turn(_block("T1 — Um", "T2 — Dois", "T3 — Três")),
+            delivered_turn(),
+            blocked_turn("a migration depende de uma decisão de schema", needs="user"),
         ]
     )
     runner.prompts.choice = "stop"

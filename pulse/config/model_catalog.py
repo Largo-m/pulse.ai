@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.acp.client import fetch_acp_available_models
-from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.resolved import resolve_config
 from pulse.store.paths import safe_cwd
 
@@ -21,12 +20,6 @@ def _default_models() -> list[str]:
 
 
 DEFAULT_MODELS = _default_models()
-
-PERMISSION_LABELS = {
-    "ask": "Perguntar antes de cada permissão",
-    "auto_approve": "Aprovar automaticamente",
-    "deny_writes": "Permitir leitura e artefatos Pulse, bloquear escrita de código",
-}
 
 
 def _merge_unique_models(models: list[str], items: list[str]) -> None:
@@ -73,7 +66,3 @@ def collect_available_models(
     if agent_name:
         return []
     return list(DEFAULT_MODELS)
-
-
-def permission_choices() -> list[tuple[str, str]]:
-    return [(key, PERMISSION_LABELS[key]) for key in PERMISSION_POLICIES]

@@ -41,7 +41,7 @@ def test_each_step_is_reported_once_when_it_settles():
     sink.apply_phase_statuses(steps=steps, done_ids=["one"])
     sink.apply_phase_statuses(steps=steps, done_ids=["one"], skipped_ids=["two"])
 
-    assert lines == ["✓ Um", "⏭  Dois pulado"]
+    assert lines == ["✓ Um", "⏭  Dois skipped"]
 
 
 def test_failed_and_blocked_steps_print_nothing_on_their_own():
