@@ -17,9 +17,9 @@ import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config.project_config import init_project_config, load_project_config
+from pulse.domain.ports import NullRuntimeDialect
 from pulse.domain.run import StepRecord
 from pulse.history.session_log import RecordedSessionLog
-from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.db import connect, default_db_path
 from tests.conftest import make_workflow
@@ -44,7 +44,7 @@ def _runner(workspace: Path, run_id: str, port: object | None = None) -> AcpSess
         ["agent", "acp"],
         cwd=str(workspace),
         prompt_handler=port,
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=log,
     )
     runner.bind_run(run_id)

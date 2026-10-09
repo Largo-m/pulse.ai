@@ -9,9 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.domain.ports import NullRuntimeDialect
 from pulse.domain.run import StepRecord
 from pulse.history.session_log import RecordedSessionLog
-from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 
 
@@ -21,7 +21,7 @@ def _runner(run_id: str = "run-1", step_id: str = "one") -> AcpSessionRunner:
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd="/repo",
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=log,
     )
     runner.bind_run(run_id)
@@ -115,7 +115,7 @@ def test_an_unbound_runner_records_nothing(tmp_path):
     runner = AcpSessionRunner(
         ["agent", "acp"],
         cwd="/repo",
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=RecordedSessionLog(project_root=Path("/repo")),
     )
 

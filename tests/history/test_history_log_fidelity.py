@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
+from pulse.domain.ports import NullRuntimeDialect
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.events import LogKind
 from pulse.history.log_wording import QUESTIONNAIRE_NOTICE
@@ -30,7 +31,6 @@ from pulse.replies.text_questionnaire import (
     format_questionnaire_answers,
     parse_text_questionnaire,
 )
-from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.tui.hydrate import hydrate_history_item
 from tests.conftest import make_workflow, served_log
@@ -50,7 +50,7 @@ def _runner(
         ["agent", "acp"],
         cwd=str(workspace),
         prompt_handler=port,
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=log,
     )
     runner.bind_run(run_id)

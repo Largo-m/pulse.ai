@@ -468,6 +468,21 @@ class NullQuestionChannel:
         return None
 
 
+class NullRuntimeDialect:
+    """Plain ACP, for a runtime with no dialect of its own: no auth, model or mode calls."""
+
+    def auth_method(self, advertised: Sequence[str]) -> str | None:
+        return None
+
+    def model_request(
+        self, session: JsonObject, preferred_model: str | None, *, session_id: str
+    ) -> ModelRequest | None:
+        return None
+
+    def resolve_mode(self, session: JsonObject, *, execute: bool) -> str | None:
+        return None
+
+
 class NullSessionLog:
     """No run bound (a probe, a test): nothing is recorded."""
 

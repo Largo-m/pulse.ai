@@ -13,11 +13,10 @@ from typing import Any
 import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
-from pulse.domain.ports import NullPromptPort
+from pulse.domain.ports import NullPromptPort, NullRuntimeDialect
 from pulse.domain.run import StepRecord
 from pulse.history import log_wording
 from pulse.history.session_log import RecordedSessionLog
-from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from tests.conftest import make_workflow
 from tests.fakes import RecordingStream
@@ -61,7 +60,7 @@ def runner(log: RecordedSessionLog, tmp_path: Path) -> AcpSessionRunner:
         cwd=str(tmp_path),
         stream=RecordingStream(),
         prompt_handler=_Port(),
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=log,
     )
 
@@ -326,7 +325,7 @@ def test_an_unbound_runner_does_not_log_dialogs(tmp_path: Path, monkeypatch):
         ["agent", "acp"],
         cwd=str(tmp_path),
         prompt_handler=_Port(),
-        runtime=get_runtime("cursor"),
+        runtime=NullRuntimeDialect(),
         session_log=RecordedSessionLog(project_root=tmp_path),
     )
 
