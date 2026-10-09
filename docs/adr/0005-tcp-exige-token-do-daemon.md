@@ -47,9 +47,13 @@ kernel recusa o `connect` de outro usuário. O TCP não tem nada equivalente.
    `WWW-Authenticate: Bearer`, e a rota não roda. A comparação usa
    `secrets.compare_digest`. O UDS segue sem token: o SO já protege, e não
    mandar o token por ali diminui por onde ele passa.
-3. **O cliente apresenta o token só por TCP.** `EngineClient` lê o token do
-   meta quando cai no TCP e só disca o host e a porta desse meta, então o token
-   não vai a outro servidor. Pelo socket não envia nada.
+3. **O cliente apresenta o token só por TCP, e a CLI e a TUI nunca caem nele.**
+   `EngineClient` fala só pelo socket; o TCP exige `over_tcp=True`, para
+   tooling. Sem socket, o cliente sobe o daemon em vez de discar a porta: outro
+   usuário pode estar nela depois que o daemon parou, receberia o token e
+   responderia às telas, inclusive com o argv de login que o onboarding
+   executa. Com `over_tcp=True`, o cliente lê o token do meta e só disca o host
+   e a porta desse meta. Pelo socket não envia nada.
 4. **`ENGINE_PROTOCOL` 8.** Um cliente novo reinicia um daemon anterior ao
    token, que seguiria aceitando TCP sem autenticação.
 

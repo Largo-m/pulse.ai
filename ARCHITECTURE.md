@@ -450,7 +450,7 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 
 | Arquivo | Função |
 |---------|--------|
-| [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (UDS preferido; TCP fallback); pode auto-iniciar o daemon |
+| [`pulse/client/engine_client.py`](pulse/client/engine_client.py) | Cliente HTTP (só o UDS; TCP apenas com `over_tcp=True`, para tooling); pode auto-iniciar o daemon |
 | [`pulse/client/run_session.py`](pulse/client/run_session.py) | Cria (ou **anexa**) → escuta SSE → responde `prompt.request` → devolve exit code |
 | [`pulse/client/active_runs.py`](pulse/client/active_runs.py) | O que está rodando agora, para o Histórico oferecer voltar |
 | [`pulse/client/daemon_process.py`](pulse/client/daemon_process.py) | O processo do daemon visto de fora: está vivo? parar — pelo arquivo de meta, sem importar o servidor |

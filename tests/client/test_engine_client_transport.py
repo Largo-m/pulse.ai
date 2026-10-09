@@ -470,13 +470,27 @@ def test_an_existing_socket_is_preferred(unix_socket: Path, monkeypatch):
     client.close()
 
 
-def test_without_a_socket_the_client_dials_the_meta_host_and_port(
+def test_without_a_socket_the_client_never_falls_back_to_tcp(
     tcp_server, tmp_path: Path, monkeypatch
 ):
+    """Loopback does not separate OS users: another one can hold the port of a stopped daemon.
+
+    Its answers would reach the screens, including the login argv onboarding
+    runs, and it would receive the daemon token. The `0600` socket is the one
+    listener only this user can be behind.
+    """
+    meta = {"http_port": _port(tcp_server), "token": "daemon-token"}
+    monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
+    client = EngineClient(socket_path=tmp_path / "missing.sock")
+
+    assert client.ping() is False
+
+
+def test_tcp_dials_the_meta_host_and_port(tcp_server, tmp_path: Path, monkeypatch):
     """The meta file is where the daemon says it listens; a stale default port would miss it."""
     meta = {"http_host": "127.0.0.1", "http_port": _port(tcp_server)}
     monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
-    client = EngineClient(socket_path=tmp_path / "missing.sock")
+    client = EngineClient(over_tcp=True, socket_path=tmp_path / "missing.sock")
 
     assert client.ping() is True
     assert client.get("/api/status")["via"] == "tcp"
@@ -487,7 +501,7 @@ def test_tcp_presents_the_token_from_the_meta(tcp_server, tmp_path: Path, monkey
     """The TCP listener refuses anyone who cannot read the daemon's private meta."""
     meta = {"http_port": _port(tcp_server), "token": "daemon-token"}
     monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
-    client = EngineClient(socket_path=tmp_path / "missing.sock")
+    client = EngineClient(over_tcp=True, socket_path=tmp_path / "missing.sock")
 
     assert client.get("/api/status")["auth"] == "Bearer daemon-token"
     client.close()
@@ -507,16 +521,16 @@ def test_a_meta_without_a_token_sends_no_credential(tcp_server, tmp_path: Path, 
     monkeypatch.setattr(
         engine_client_module, "read_daemon_meta", lambda: {"http_port": _port(tcp_server)}
     )
-    client = EngineClient(socket_path=tmp_path / "missing.sock")
+    client = EngineClient(over_tcp=True, socket_path=tmp_path / "missing.sock")
 
     assert client.get("/api/status")["auth"] is None
     client.close()
 
 
-def test_tcp_is_used_when_the_socket_is_not_preferred(unix_socket: Path, tcp_server, monkeypatch):
+def test_tcp_is_used_when_asked_for_even_with_a_socket(unix_socket: Path, tcp_server, monkeypatch):
     meta = {"http_port": _port(tcp_server)}
     monkeypatch.setattr(engine_client_module, "read_daemon_meta", lambda: meta)
-    client = EngineClient(prefer_uds=False, socket_path=unix_socket)
+    client = EngineClient(over_tcp=True, socket_path=unix_socket)
 
     assert client.get("/api/status")["via"] == "tcp"
     client.close()

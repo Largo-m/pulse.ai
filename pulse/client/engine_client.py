@@ -27,12 +27,12 @@ class EngineClient:
     def __init__(
         self,
         *,
-        prefer_uds: bool = True,
+        over_tcp: bool = False,
         socket_path: Path | None = None,
         timeout: float = 30.0,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
-        self._prefer_uds = prefer_uds
+        self._over_tcp = over_tcp
         self._socket_path = Path(socket_path or DAEMON_SOCKET)
         self._timeout = timeout
         self._transport = transport
@@ -197,10 +197,10 @@ class EngineClient:
                 transport=self._transport, base_url="http://pulse", timeout=self._timeout
             )
             return self._client
-        meta = read_daemon_meta() or {}
-        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
-        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
-        if self._prefer_uds and self._socket_path.exists():
+        if not self._over_tcp:
+            # Only the socket, never a TCP fallback: loopback does not separate OS
+            # users, so whoever holds the port of a stopped daemon would get the
+            # token and could answer with a login argv the client runs.
             transport = httpx.HTTPTransport(uds=str(self._socket_path))
             self._client = httpx.Client(
                 transport=transport,
@@ -208,6 +208,9 @@ class EngineClient:
                 timeout=self._timeout,
             )
             return self._client
+        meta = read_daemon_meta() or {}
+        host = str(meta.get("http_host") or DEFAULT_HTTP_HOST)
+        port = int(meta.get("http_port") or DEFAULT_HTTP_PORT)
         # TCP needs the daemon's token from its private meta, and only dials the
         # listener that meta names; the socket never sends it.
         token = meta.get("token")
