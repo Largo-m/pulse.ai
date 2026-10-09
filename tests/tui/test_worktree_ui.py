@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 pytest.importorskip("textual")
 
 from pulse import vcs
 from pulse.config.project_config import load_project_config, update_project_defaults
+from pulse.daemon.runs import RunManager
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
@@ -272,6 +275,7 @@ def test_removing_the_worktree_never_rewrites_the_steps_of_the_run(
 def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    in_process_daemon: TestClient,
     daemon_runs_it: bool,
     confirmation_offered: bool,
 ):
@@ -280,8 +284,6 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     A run left `running` by a dead process must stay removable, so the daemon
     decides, not the stored status.
     """
-    from pulse.tui.screens import history_detail
-
     repo = make_repo(tmp_path / "repo")
     make_workflow("demo", steps=[("plan", "Planejar")])
     live = run_store.create_run(
@@ -298,8 +300,18 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
     run_store.save(live)
     item = HistoryCatalog(repo).get(live.id)
     assert item is not None
-    active = {live.id} if daemon_runs_it else set()
-    monkeypatch.setattr(history_detail, "active_run_ids", lambda: active)
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    manager: RunManager = in_process_daemon.app.state.runs
+    if daemon_runs_it:
+        manager.start_run(
+            workflow_id="demo", prompt="x", workspace=str(repo), resume_run_id=live.id
+        )
 
     async def run() -> None:
         from textual.app import App
@@ -321,7 +333,10 @@ def test_worktree_removal_is_refused_only_while_the_daemon_runs_the_run(
             offered = any(isinstance(s, ConfirmScreen) for s in app.screen_stack)
             assert offered is confirmation_offered
 
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
     assert worktree.exists()
 
 

@@ -53,3 +53,39 @@ def test_workflows_come_back_with_their_steps_in_order() -> None:
 
     assert shape is not None
     assert (shape.label, shape.steps) == ("Demo", (("plan", "Planejar"), ("run", "Implementar")))
+
+
+def test_a_worktree_the_daemon_still_uses_is_refused_as_in_use(
+    monkeypatch, tmp_path: Path, in_process_daemon
+) -> None:
+    """A 409 is the daemon keeping the worktree for a live run, not an unreachable daemon."""
+    import threading
+
+    from pulse.domain.run import StepRecord
+    from pulse.store import runs as run_store
+    from tests.conftest import make_workflow
+
+    make_workflow("demo", steps=[("plan", "Planejar")])
+    record = run_store.create_run(
+        run_id="run-live",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="x",
+        steps=[StepRecord(step_id="plan", position=1, label="Planejar", agent_id="tester")],
+    )
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    in_process_daemon.app.state.runs.start_run(
+        workflow_id="demo", prompt="x", workspace=str(tmp_path), resume_run_id=record.id
+    )
+    item_id = engine.history(tmp_path)[0].item_id
+    try:
+        with pytest.raises(engine.WorktreeInUse):
+            engine.remove_worktree(tmp_path, item_id)
+    finally:
+        release.set()

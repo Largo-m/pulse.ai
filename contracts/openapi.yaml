@@ -233,7 +233,9 @@ paths:
             type: string
       responses:
         "200":
-          description: path, exists, and dirty (uncommitted work; true when git cannot tell)
+          description: >-
+            path, exists, dirty (uncommitted work; true when git cannot tell) and
+            active (the daemon still executes the run, so removal is refused)
         "404":
           description: Not found
     delete:
@@ -251,9 +253,11 @@ paths:
             type: string
       responses:
         "200":
-          description: removed is false when git refused; the stored path is cleared either way
+          description: removed is false when git refused, and the stored path is kept
         "404":
           description: Not found
+        "409":
+          description: The daemon still executes the run; its agent works in the worktree
   /api/runs/{run_id}/log:
     get:
       summary: The persisted run, so a screen can rebuild its steps, log and artifacts

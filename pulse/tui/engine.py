@@ -22,10 +22,15 @@ from pulse.history.run_log import RunLog
 T = TypeVar("T")
 AgentField = Literal["runtime", "model", "permission_policy"]
 NOT_FOUND = 404
+CONFLICT = 409
 
 
 class EngineUnavailable(RuntimeError):
     """The daemon could not be started or did not answer."""
+
+
+class WorktreeInUse(Exception):
+    """The daemon still executes the run, so its agent works in that worktree."""
 
 
 @dataclass(frozen=True)
@@ -102,6 +107,7 @@ class WorktreeState:
     path: str
     exists: bool
     dirty: bool
+    active: bool
 
 
 def _call(request: Callable[[EngineClient], T]) -> T:
@@ -318,12 +324,23 @@ def worktree_state(workspace: Path, item_id: str) -> WorktreeState | None:
         path=str(data.get("path") or ""),
         exists=bool(data.get("exists")),
         dirty=bool(data.get("dirty")),
+        active=bool(data.get("active")),
     )
 
 
 def remove_worktree(workspace: Path, item_id: str) -> bool:
+    """`False` when git refused; raises `WorktreeInUse` while the daemon executes the run."""
     params = {"workspace": str(workspace)}
-    data = _found(lambda client: client.delete(f"/api/history/{item_id}/worktree", params=params))
+
+    def delete(client: EngineClient) -> dict[str, Any]:
+        try:
+            return client.delete(f"/api/history/{item_id}/worktree", params=params)
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == CONFLICT:
+                raise WorktreeInUse(item_id) from error
+            raise
+
+    data = _found(delete)
     return bool(data and data.get("removed"))
 
 

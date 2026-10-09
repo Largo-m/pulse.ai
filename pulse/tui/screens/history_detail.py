@@ -7,7 +7,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
 
-from pulse.client.active_runs import active_run_ids
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
 from pulse.tui import engine, strings
@@ -105,7 +104,7 @@ class HistoryDetailScreen(Screen[None]):
             return
         if worktree is None or not worktree.exists:
             return
-        if self.item.run_id in active_run_ids():
+        if worktree.active:
             self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
             return
         detail = [worktree.path, strings.WORKTREE_BRANCH.format(branch=self.item.branch or "—")]
@@ -114,26 +113,31 @@ class HistoryDetailScreen(Screen[None]):
         else:
             detail.append(strings.WORKTREE_CLEAN)
 
-        def _answered(confirmed: bool | None) -> None:
-            if not confirmed:
-                return
-            try:
-                removed = engine.remove_worktree(self._workspace, self.item.item_id)
-            except engine.EngineUnavailable as error:
-                self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
-                return
-            # The daemon clears the stored path even when git refused.
-            self.item.worktree_path = ""
-            self.notify(strings.WORKTREE_REMOVED if removed else strings.WORKTREE_GIT_REFUSED)
-
         self.app.push_screen(
             ConfirmScreen(
                 title=strings.CONFIRM_TITLE_REMOVE_WORKTREE,
                 detail="\n".join(detail),
                 confirm_label=strings.REMOVE,
             ),
-            callback=_answered,
+            callback=self._remove_confirmed,
         )
+
+    def _remove_confirmed(self, confirmed: bool | None) -> None:
+        if not confirmed:
+            return
+        try:
+            removed = engine.remove_worktree(self._workspace, self.item.item_id)
+        except engine.WorktreeInUse:
+            self.notify(strings.WORKTREE_KEPT_RUN_ACTIVE)
+            return
+        except engine.EngineUnavailable as error:
+            self.notify(strings.ENGINE_UNAVAILABLE.format(error=error))
+            return
+        if not removed:
+            self.notify(strings.WORKTREE_GIT_REFUSED)
+            return
+        self.item.worktree_path = ""
+        self.notify(strings.WORKTREE_REMOVED)
 
     def _sync_ui(self, *, force: bool = False) -> None:
         body = self.query_one("#cockpit-body")

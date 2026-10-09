@@ -7,6 +7,7 @@ without a client noticing.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,7 @@ from pulse.config.project_config import init_project_config, update_project_defa
 from pulse.daemon.runs import RunManager
 from pulse.domain.run import StepRecord
 from pulse.store import runs as run_store
+from tests.conftest import make_workflow
 
 
 def _client(manager: RunManager | None = None) -> TestClient:
@@ -151,6 +153,44 @@ def test_history_item_is_found_by_id_and_unknown_is_not_found(history_run):
 
     assert item.json()["run_id"] == "run-hist"
     assert (missing.status_code, missing.json()) == (404, {"detail": "item not found"})
+
+
+def test_the_worktree_of_a_run_the_daemon_executes_is_kept(history_run, monkeypatch, tmp_path):
+    """The agent works in that directory: any client, not only the TUI, must be refused."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    record = run_store.load_run("run-hist")
+    assert record is not None
+    record.work_in(worktree_path=str(worktree), branch="pulse/run-hist")
+    run_store.save(record)
+    make_workflow("default")
+    release = threading.Event()
+
+    def engine_at_work(**_kwargs: object) -> int:
+        release.wait(5)
+        return 0
+
+    monkeypatch.setattr("pulse.daemon.runs.run_engine", engine_at_work)
+    manager = RunManager()
+    client = _client(manager)
+    params = {"workspace": str(history_run)}
+    item_id = client.get("/api/history", params=params).json()["items"][0]["id"]
+    state = manager.start_run(
+        workflow_id="default", prompt="x", workspace=str(history_run), resume_run_id="run-hist"
+    )
+    try:
+        shown = client.get(f"/api/history/{item_id}/worktree", params=params).json()
+        refused = client.delete(f"/api/history/{item_id}/worktree", params=params)
+    finally:
+        release.set()
+        state.ended.wait(5)
+
+    assert shown["active"] is True
+    assert refused.status_code == 409
+    assert worktree.exists()
+    stored = run_store.load_run("run-hist")
+    assert stored is not None
+    assert stored.worktree_path == str(worktree)
 
 
 def test_answering_an_unknown_prompt_is_not_found():
