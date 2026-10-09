@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus
 from pulse.store import runs as run_store
 from pulse.store.db import connect
-from pulse.store.runs import RunStatus, StepRecord, StepStatus
 from tests.conftest import store_run_status, store_step
 
 
-def _create(tmp_path: Path, run_id: str = "run-1") -> run_store.RunRecord:
+def _create(tmp_path: Path, run_id: str = "run-1") -> RunRecord:
     return run_store.create_run(
         run_id=run_id,
         workflow_id="demo",
@@ -159,7 +159,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
     record = _create(tmp_path)
     record.start_step("one").deliver()
     record.start_step("two")
-    record.work_in(worktree_path="/tmp/wt", branch="pulse/demo-1")
+    record.work_in(worktree_path="/workspace/wt", branch="pulse/demo-1")
 
     run_store.save(record)
 
@@ -167,7 +167,7 @@ def test_save_writes_the_run_and_its_steps_together(tmp_path: Path):
     assert loaded is not None
     assert (loaded.current_step, loaded.worktree_path, loaded.branch) == (
         "two",
-        "/tmp/wt",
+        "/workspace/wt",
         "pulse/demo-1",
     )
     assert [step.status for step in loaded.steps] == [StepStatus.DONE, StepStatus.RUNNING]

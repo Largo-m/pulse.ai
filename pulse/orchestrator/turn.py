@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
-from pulse.replies.approval import CANCEL, SKIP
+from pulse.domain.ports import JsonObject
+from pulse.replies.approval import ApprovalOutcome
 
 CANCELLED = "cancelled"
-_CANCEL_OUTCOMES = frozenset({CANCEL, CANCELLED})
+_CANCEL_OUTCOMES = frozenset({ApprovalOutcome.CANCEL, CANCELLED})
 _CLEAN_STOPS = frozenset({"end_turn", "end", "stop"})
 
 
@@ -27,7 +27,7 @@ class TurnResult:
     approval_answers: str = ""
 
     @classmethod
-    def parse(cls, raw: dict[str, Any]) -> TurnResult:
+    def parse(cls, raw: JsonObject) -> TurnResult:
         return cls(
             summary=str(raw.get("phaseSummary") or ""),
             outcome=str(raw.get("outcome") or ""),
@@ -43,7 +43,7 @@ class TurnResult:
     @property
     def skipped(self) -> bool:
         """The agent declared the step does not apply."""
-        return self.outcome == SKIP
+        return self.outcome == ApprovalOutcome.SKIP
 
     @property
     def ended_cleanly(self) -> bool:

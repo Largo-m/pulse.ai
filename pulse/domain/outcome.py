@@ -10,8 +10,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 
-BLOCK = re.compile(r"```pulse:outcome[ \t]*\n(.*?)```", re.DOTALL | re.IGNORECASE)
+OUTCOME_TAG = "outcome"
 FIELD = re.compile(
     r"^[ \t>*-]*(status|reason|needs|motivo|precisa|next|proximo|próximo)[ \t]*:[ \t]*(.*)$",
     re.IGNORECASE,
@@ -70,6 +71,7 @@ class Outcome:
     reason: str = ""
     needs: str = ""
     next: LoopSignal | None = None
+    unknown_status: str = ""
 
     @property
     def delivered(self) -> bool:
@@ -94,17 +96,40 @@ class Outcome:
         return self.needs in _NEEDS_USER
 
 
+@cache
+def _fence(tag: str) -> tuple[re.Pattern[str], re.Pattern[str]]:
+    opener = rf"```pulse:{re.escape(tag)}[ \t]*\n"
+    # The body never holds a fence and the closing fence ends its line, so a stray
+    # opener quoted from a file cannot run on and swallow the agent's real block.
+    block = rf"{opener}((?:(?!```).)*)```[ \t]*(?:\n|$)"
+    return re.compile(opener, re.IGNORECASE), re.compile(block, re.DOTALL | re.IGNORECASE)
+
+
+def last_fenced_block(text: str, tag: str) -> str | None:
+    """Body of the block the last `pulse:<tag>` opener starts; `None` if absent or malformed.
+
+    Only the last opener counts. When the agent's own block is malformed, an
+    earlier block quoted from a file must not stand in for it.
+    """
+    opener, block = _fence(tag)
+    openers = list(opener.finditer(text))
+    if not openers:
+        return None
+    match = block.match(text, openers[-1].start())
+    return match.group(1) if match else None
+
+
 def parse_outcome(text: str) -> Outcome:
     """Outcome of the last `pulse:outcome` block; `MISSING` when there is none.
 
     The last block wins because a continued step accumulates more than one.
     """
-    matches = BLOCK.findall(text or "")
-    if not matches:
+    body = last_fenced_block(text or "", OUTCOME_TAG)
+    if body is None:
         return Outcome(status=OutcomeStatus.MISSING)
 
     fields: dict[str, str] = {}
-    for line in matches[-1].splitlines():
+    for line in body.splitlines():
         match = FIELD.match(line.strip())
         if match is None:
             continue
@@ -129,9 +154,7 @@ def parse_outcome(text: str) -> Outcome:
     if not raw_status:
         return Outcome(status=OutcomeStatus.MISSING)
     return Outcome(
-        status=OutcomeStatus.BLOCKED,
-        reason=reason or f"o agente declarou um desfecho que o Pulse não conhece: `{raw_status}`",
-        needs=needs,
+        status=OutcomeStatus.BLOCKED, reason=reason, needs=needs, unknown_status=raw_status
     )
 
 

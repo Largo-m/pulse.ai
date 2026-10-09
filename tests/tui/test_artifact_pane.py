@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
-pytest.importorskip("textual")
-
 from pulse.tui.state import CockpitState
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.artifact_pane import ArtifactPane, ArtifactPaneClosed, ArtifactPaneOpened
-from tests.conftest import make_workflow
+from tests.conftest import configure_from_db, make_workflow
 
 FOUR = [("one", "Um"), ("two", "Dois"), ("three", "Três"), ("four", "Quatro")]
 
@@ -32,7 +28,7 @@ def test_artifact_pane_renders_markdown_and_tabs(tmp_path):
             def compose(self) -> ComposeResult:
                 state = CockpitState()
                 make_workflow("demo", steps=FOUR)
-                state.configure_workflow("demo")
+                configure_from_db(state, "demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
@@ -92,7 +88,7 @@ def test_artifact_pane_appends_tab_without_duplicate_ids(tmp_path):
             def compose(self) -> ComposeResult:
                 state = CockpitState()
                 make_workflow("demo", steps=FOUR)
-                state.configure_workflow("demo")
+                configure_from_db(state, "demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
@@ -140,7 +136,7 @@ def test_artifact_pane_close_control_hides_pane(tmp_path):
             def compose(self) -> ComposeResult:
                 state = CockpitState()
                 make_workflow("demo", steps=FOUR)
-                state.configure_workflow("demo")
+                configure_from_db(state, "demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
@@ -206,7 +202,7 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
             def compose(self) -> ComposeResult:
                 state = CockpitState()
                 make_workflow("demo", steps=FOUR)
-                state.configure_workflow("demo")
+                configure_from_db(state, "demo")
                 holder["state"] = state
                 with Horizontal(id="cockpit-body"):
                     yield ArtifactPane(state, cwd=str(tmp_path), id="artifact-pane")
@@ -243,3 +239,32 @@ def test_open_rail_only_when_selected_phase_has_artifacts(tmp_path):
             assert app.query_one("#artifact-open").display is True
 
     asyncio.run(run())
+
+
+def test_unmounted_pane_ignores_scroll_mode_and_reload():
+    """Calls that reach the pane before `compose` must be no-ops, not crashes:
+    the cockpit syncs state on timers that can fire before the pane mounts."""
+    make_workflow("demo", steps=FOUR)
+    state = CockpitState()
+    configure_from_db(state, "demo")
+    state.open_artifact_pane()
+    pane = ArtifactPane(state)
+
+    pane.scroll_by(1)
+    pane._apply_mode(expanded=True, collapsed=False)
+    pane._load_selected(force=True)
+
+    assert pane._loaded_key is None
+
+
+def test_click_on_an_unmounted_pane_selects_nothing():
+    """Without the close button or the tab row there is nothing to hit."""
+    from textual.events import Click
+
+    pane = ArtifactPane(CockpitState())
+    posted: list = []
+    pane.post_message = posted.append  # type: ignore[method-assign]  # records the message
+
+    pane.on_click(Click(pane, 1, 1, 0, 0, 1, False, False, False, screen_x=1, screen_y=1))
+
+    assert posted == []

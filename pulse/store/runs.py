@@ -11,32 +11,19 @@ initialized and skip onboarding.
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from pulse.domain.run import (
-    SETTLED,
-    InvalidTransition,
     RunRecord,
     RunStatus,
     StepRecord,
     StepStatus,
-    fan_out_child_id,
     utc_now,
 )
 from pulse.store.db import connect, default_db_path
-
-__all__ = [
-    "SETTLED",
-    "InvalidTransition",
-    "RunRecord",
-    "RunStatus",
-    "StepRecord",
-    "StepStatus",
-    "fan_out_child_id",
-    "utc_now",
-]
 
 MAX_DETAIL = 20_000
 
@@ -49,7 +36,7 @@ def _now_text() -> str:
     return utc_now().isoformat()
 
 
-def _stamp(value: Any) -> datetime | None:
+def _stamp(value: object) -> datetime | None:
     """Stamp read from storage; empty or unreadable is no stamp, naive is UTC.
 
     Older rows were written by hand-rolled code; a bad value must not break history.
@@ -68,7 +55,7 @@ def _stamp_text(value: datetime | None) -> str:
     return value.isoformat() if value is not None else ""
 
 
-def _step(row: Any) -> StepRecord:
+def _step(row: sqlite3.Row) -> StepRecord:
     return StepRecord(
         step_id=str(row["step_id"]),
         position=int(row["position"] or 0),
@@ -85,7 +72,7 @@ def _step(row: Any) -> StepRecord:
     )
 
 
-def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
+def _run(row: sqlite3.Row, steps: list[StepRecord]) -> RunRecord:
     return RunRecord(
         id=str(row["id"]),
         workflow_id=str(row["workflow_id"]),
@@ -101,7 +88,7 @@ def _run(row: Any, steps: list[StepRecord]) -> RunRecord:
     )
 
 
-def _steps_for(connection: Any, run_id: str) -> list[StepRecord]:
+def _steps_for(connection: sqlite3.Connection, run_id: str) -> list[StepRecord]:
     rows = connection.execute(
         "SELECT * FROM run_steps WHERE run_id = ? ORDER BY position, step_id",
         (run_id,),
@@ -242,7 +229,7 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
     run.forget_removed_steps()
 
 
-def _upsert_step(connection: Any, run_id: str, step: StepRecord) -> None:
+def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) -> None:
     connection.execute(
         """
         INSERT INTO run_steps
@@ -449,3 +436,37 @@ def list_sessions(run_id: str, *, db_path: Path | None = None) -> list[dict[str,
         }
         for row in rows
     ]
+
+
+class SqliteRunRepository:
+    """[pulse.domain.ports.RunRepository] over the Pulse database."""
+
+    def __init__(self, db_path: Path | None = None) -> None:
+        self._db_path = db_path
+
+    def create(
+        self,
+        *,
+        run_id: str,
+        workflow_id: str,
+        workspace: Path,
+        user_prompt: str,
+        steps: Sequence[StepRecord],
+    ) -> RunRecord:
+        return create_run(
+            run_id=run_id,
+            workflow_id=workflow_id,
+            workspace=workspace,
+            user_prompt=user_prompt,
+            steps=list(steps),
+            db_path=self._db_path,
+        )
+
+    def load(self, run_id: str) -> RunRecord | None:
+        return load_run(run_id, db_path=self._db_path)
+
+    def save(self, run: RunRecord) -> None:
+        save(run, db_path=self._db_path)
+
+    def artifacts(self, run_id: str) -> list[str]:
+        return [entry["path"] for entry in list_artifacts(run_id, db_path=self._db_path)]

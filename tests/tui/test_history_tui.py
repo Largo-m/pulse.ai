@@ -3,13 +3,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-import pytest
-
-pytest.importorskip("textual")
-
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.state import PhaseStatus
@@ -17,6 +13,7 @@ from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.log_stream import LogStream
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
 from tests.conftest import make_workflow, store_run_status, store_step
+from tests.tui.conftest import wait_until
 
 
 def _finished_run(workspace: Path, run_id: str, prompt: str) -> str:
@@ -307,12 +304,79 @@ def test_history_list_follows_status_changes_without_reopening(tmp_path: Path, m
             before = screen._items["run-live"].status
 
             store_run_status("run-live", "completed")
-            for _ in range(40):
-                await pilot.pause(0.05)
-                if screen._items["run-live"].status != before:
-                    break
+            await wait_until(pilot, lambda: screen._items["run-live"].status != before)
 
             assert screen._items["run-live"].status != before
             assert options.get_option_at_index(options.highlighted).id == "run-old"
 
     asyncio.run(run())
+
+
+def test_a_locked_database_skips_the_poll_and_keeps_the_list(tmp_path: Path, monkeypatch):
+    """The background poll must survive a busy SQLite in the daemon (a 500): the
+    list stays as it was and the next poll retries, instead of the worker erroring the app."""
+    import sqlite3
+
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+
+            def _locked(*_args: object) -> list:
+                raise sqlite3.OperationalError("database is locked")
+
+            monkeypatch.setattr("pulse.history.catalog.HistoryCatalog.list_items", _locked)
+            screen._fetch()
+            await pilot.pause()
+
+            assert set(screen._items) == {"run-login"}
+
+    asyncio.run(run())
+
+
+def test_a_poll_answered_after_the_app_exited_is_dropped(tmp_path: Path, monkeypatch):
+    """When the app can no longer take the result (`call_from_thread` raises
+    `RuntimeError`), the poll ends quietly."""
+    _finished_run(tmp_path, "run-login", "Adicionar login social")
+
+    async def run() -> None:
+        from textual.app import App
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def on_mount(self) -> None:
+                self.push_screen(HistoryListScreen(workspace=tmp_path))
+
+        app = Harness()
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, HistoryListScreen)
+
+            def _app_gone(*_args) -> None:
+                raise RuntimeError("App is not running")
+
+            monkeypatch.setattr(app, "call_from_thread", _app_gone)
+            screen._fetch()
+
+            assert set(screen._items) == {"run-login"}
+
+    asyncio.run(run())
+
+
+def test_an_unmounted_history_list_has_no_highlighted_run(tmp_path: Path):
+    """Actions fired before the list is composed act on nothing rather than crash."""
+    assert HistoryListScreen(workspace=tmp_path)._highlighted() is None

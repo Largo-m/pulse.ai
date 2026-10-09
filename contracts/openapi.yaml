@@ -2,6 +2,13 @@ openapi: 3.0.3
 info:
   title: Pulse Engine API
   version: 0.1.0
+  description: >-
+    Local clients only. Any request carrying an `Origin` header (a browser) is
+    refused with 403 before routing, and `Host` must be 127.0.0.1, localhost or
+    pulse (400 otherwise). See docs/adr/0003-listeners-locais-recusam-navegador.md.
+    Over TCP every request must carry `Authorization: Bearer <token>`, the
+    per-daemon token in ~/.pulse/daemon.json (401 otherwise); the Unix socket
+    is user-only and needs none. See docs/adr/0005-tcp-exige-token-do-daemon.md.
 paths:
   /api/status:
     get:
@@ -76,6 +83,8 @@ paths:
           description: Unknown workflow id
         "409":
           description: That run is already executing
+        "503":
+          description: The daemon is shutting down and starts no new run
   /api/runs:
     get:
       summary: Runs the engine holds in memory, active ones first
@@ -208,9 +217,230 @@ paths:
           description: Removed
         "404":
           description: Not found
+        "409":
+          description: The daemon still executes the run; its agent works in the worktree
+  /api/history/{item_id}/worktree:
+    get:
+      summary: What removing the run's worktree would throw away
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            path, exists, dirty (uncommitted work; true when git cannot tell) and
+            active (the daemon still executes the run, so removal is refused)
+        "404":
+          description: Not found
+    delete:
+      summary: Remove the run's worktree; a dirty one is never forced, the branch stays
+      parameters:
+        - name: item_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: removed is false when git refused, and the stored path is kept
+        "404":
+          description: Not found
+        "409":
+          description: The daemon still executes the run; its agent works in the worktree
+  /api/runs/{run_id}/log:
+    get:
+      summary: The persisted run, so a screen can rebuild its steps, log and artifacts
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            RunLog (pulse/history/run_log.py): exec_root, branch, steps with
+            their timings, events and artifacts
+        "404":
+          description: Unknown run
+  /api/setup:
+    get:
+      summary: Where the first run stands
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: configured, onboarded, ready, workspace_dir, database and permission_policies
+  /api/setup/onboarding:
+    post:
+      summary: Save what the setup wizard collected and open the workspace as a project
+      description: >-
+        The runtime's binary and ACP command come from its registered class,
+        never from the request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [runtime, workspace, model, permission_policy, auth_method]
+              properties:
+                runtime:
+                  type: string
+                workspace:
+                  type: string
+                model:
+                  type: string
+                permission_policy:
+                  type: string
+                auth_method:
+                  type: string
+                acp_test_passed:
+                  type: boolean
+      responses:
+        "200":
+          description: ok and the database path
+        "404":
+          description: Unknown runtime
+        "422":
+          description: Unknown permission policy
+  /api/runtimes:
+    get:
+      summary: Every registered runtime, with its login command, and the default one
+      responses:
+        "200":
+          description: default and runtimes
+  /api/runtimes/{runtime_id}/checks:
+    get:
+      summary: The runtime's CLI checks, then its login check
+      parameters:
+        - name: runtime_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: checks
+        "404":
+          description: Unknown runtime
+  /api/models:
+    get:
+      summary: Models an agent offers
+      description: >-
+        Advertised over ACP, else declared by its runtime, else Pulse's list.
+        Opens the agent's ACP command, so it can take seconds.
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+          description: A configured agent name; may be a custom ACP command
+      responses:
+        "200":
+          description: models
+  /api/settings:
+    get:
+      summary: What the settings screen shows for a project
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            is_repo, use_worktree, the effective defaults, each agent's
+            effective runtime, model and policy, the runtimes to pick from and
+            the permission policies
+  /api/settings/defaults:
+    patch:
+      summary: Set a project-wide runtime, model or policy; written into every agent too
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldBody"
+      responses:
+        "200":
+          description: Saved
+        "422":
+          description: Unknown field or policy, or an empty value
+  /api/settings/agents/{agent_id}:
+    patch:
+      summary: Set one agent's runtime, model or policy in this project
+      parameters:
+        - name: agent_id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldBody"
+      responses:
+        "200":
+          description: Saved
+        "404":
+          description: Unknown agent
+        "422":
+          description: Unknown field or policy, or an empty value
+  /api/settings/worktree:
+    put:
+      summary: Turn the per-run worktree on or off for a project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace, enabled]
+              properties:
+                workspace:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
   /api/config:
     get:
       summary: Global and project config
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Project whose config is returned; the engine's own directory otherwise
       responses:
         "200":
           description: >-
@@ -262,7 +492,7 @@ paths:
           description: ok and the machine config after the change
   /api/config/project:
     post:
-      summary: Register a directory as a Pulse project
+      summary: Register a directory as a Pulse project, with its workflow rows; idempotent
       requestBody:
         required: true
         content:
@@ -276,3 +506,21 @@ paths:
       responses:
         "200":
           description: ok and the project root
+components:
+  securitySchemes:
+    daemonToken:
+      type: http
+      scheme: bearer
+      description: Required on the TCP listener only; read from ~/.pulse/daemon.json.
+  schemas:
+    FieldBody:
+      type: object
+      required: [workspace, field, value]
+      properties:
+        workspace:
+          type: string
+        field:
+          type: string
+          enum: [runtime, model, permission_policy]
+        value:
+          type: string

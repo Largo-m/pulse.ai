@@ -20,6 +20,8 @@ jobs:
   test:
     name: pytest (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    # A hung test fails the job instead of holding a runner for hours.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -31,12 +33,46 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install -e ".[dev]"
-      # The floor lives in [tool.coverage.report] fail_under.
+      # Branch coverage; the total floor lives in [tool.coverage.report] fail_under.
       - run: pytest --cov --cov-report=term
+      # The domain holds the rules every run depends on: it gets a higher floor.
+      - run: coverage report --include="pulse/domain/*" --fail-under=90
+
+  random-order:
+    name: pytest in random order (3 runs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # pytest-randomly shuffles the order with a new seed per run and prints it
+      # in the header; rerun a failure with `pytest -p randomly --randomly-seed=<seed>`.
+      - run: for attempt in 1 2 3; do pytest -p no:cacheprovider || exit 1; done
+
+  mutation:
+    name: mutation score of the parsers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # What gets mutated, and which tests run, is [tool.mutmut] in pyproject.toml.
+      - run: mutmut run
+      - run: mutmut export-cicd-stats
+      - run: python scripts/mutation_gate.py --min 80
 
   lint:
     name: lint and types
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -52,17 +88,14 @@ jobs:
         run: mypy
       - name: architecture invariants (AGENTS.md §2)
         run: pytest -q tests/architecture
-      # Advisory until the baseline is paid down; they report but never block.
-      - name: complexity C901 (advisory)
-        continue-on-error: true
-        run: ruff check --select C901 --output-format github pulse
-      - name: dead code (advisory)
-        continue-on-error: true
+      # Complexity (C901, max 10) is selected in ruff, so `ruff check` above blocks on it.
+      - name: dead code
         run: vulture
 
   security:
     name: security scans
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

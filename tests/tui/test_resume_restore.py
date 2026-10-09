@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pulse.domain.run import StepRecord, StepStatus
 from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
 from pulse.tui.hydrate import restore_run
 from pulse.tui.state import CockpitState, PhaseStatus
-from tests.conftest import make_workflow, store_step
+from tests.conftest import configure_from_db, make_workflow, served_log, store_step
 
 
 def _run_with_history(workspace: Path) -> str:
@@ -43,7 +43,7 @@ def _run_with_history(workspace: Path) -> str:
 def _state() -> CockpitState:
     make_workflow("demo", steps=[("plan", "Planejar"), ("build", "Construir")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     return state
 
 
@@ -51,7 +51,7 @@ def test_resume_brings_back_log_tool_and_duration_of_previous_steps(tmp_path: Pa
     run_id = _run_with_history(tmp_path)
     state = _state()
 
-    restore_run(state, run_id, tmp_path)
+    restore_run(state, served_log(run_id), tmp_path)
 
     titles = [entry.title for entry in state.entries]
     assert "Plano pronto" in titles
@@ -68,7 +68,7 @@ def test_the_live_run_appends_instead_of_rewriting_what_came_back(tmp_path: Path
     run_id = _run_with_history(tmp_path)
     state = _state()
 
-    restore_run(state, run_id, tmp_path)
+    restore_run(state, served_log(run_id), tmp_path)
     restored = len(state.entries)
     state.add_info("Retomando Construir")
 
@@ -87,7 +87,7 @@ def test_a_step_interrupted_by_a_crash_comes_back_as_pending(tmp_path: Path):
     store_step(run_id, build)
 
     state = _state()
-    restore_run(state, run_id, tmp_path)
+    restore_run(state, served_log(run_id), tmp_path)
 
     assert state.phases[1].status == PhaseStatus.PENDING
     assert state.phases[1].elapsed_label() == ""
@@ -95,21 +95,20 @@ def test_a_step_interrupted_by_a_crash_comes_back_as_pending(tmp_path: Path):
 
 def test_a_missing_run_leaves_the_screen_as_it_was(tmp_path: Path):
     """History is context, not a requirement: the new run can still run."""
-    state = _state()
+    from pulse.tui.screens.cockpit import CockpitScreen
 
-    restore_run(state, "nao-existe", tmp_path)
+    make_workflow("demo", steps=[("plan", "Planejar"), ("build", "Construir")])
+    screen = CockpitScreen("demo", "x", workspace=tmp_path, resume_run_id="nao-existe")
 
-    assert state.entries == []
-    assert [phase.status for phase in state.phases] == [PhaseStatus.PENDING] * 2
+    screen._restore_previous_run()
+
+    assert screen.state.entries == []
+    assert [phase.status for phase in screen.state.phases] == [PhaseStatus.PENDING] * 2
 
 
 def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Path, monkeypatch):
     """The screen, not just the state: the cockpit `on_mount` calls the restore."""
     import asyncio
-
-    import pytest
-
-    pytest.importorskip("textual")
 
     from pulse.tui.screens.cockpit import CockpitScreen
     from pulse.tui.theme import COCKPIT_CSS
@@ -140,10 +139,6 @@ def test_the_cockpit_reopens_with_the_past_before_the_run_restarts(tmp_path: Pat
 def test_the_choice_offers_back_instead_of_view_only():
     """ "Só visualizar" promised a screen; "Voltar" says what the key does."""
     import asyncio
-
-    import pytest
-
-    pytest.importorskip("textual")
 
     from pulse.tui.screens.resume_choice import BACK, RESUME, ResumeChoiceScreen
     from pulse.tui.theme import COCKPIT_CSS

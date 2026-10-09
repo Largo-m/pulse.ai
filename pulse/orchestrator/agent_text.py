@@ -5,7 +5,7 @@ Everything else in the prompt comes from the user (`workflow_steps.prompt_templa
 
 from __future__ import annotations
 
-from pulse.replies.approval import ADJUST, format_summary
+from pulse.replies.approval import ApprovalOutcome, format_summary
 
 _CONTINUATION = """\
 ## Continuação do step `{step_id}`
@@ -41,7 +41,9 @@ def build_continuation_prompt(
         step_id=step_id,
         summary=format_summary(summary) or "(Sem resumo anterior.)",
         answers=answers.strip() or "(Sem respostas.)",
-        instruction=_ADJUST_INSTRUCTION if outcome == ADJUST else _CONTINUE_INSTRUCTION,
+        instruction=_ADJUST_INSTRUCTION
+        if outcome == ApprovalOutcome.ADJUST
+        else _CONTINUE_INSTRUCTION,
     )
 
 

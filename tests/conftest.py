@@ -1,11 +1,24 @@
+import os
 from pathlib import Path
+from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
+from hypothesis import settings
 
+from pulse.client.protocol import PING
+from pulse.daemon.events import EventBus
+from pulse.domain.ports import JsonObject
+from pulse.domain.run import RunStatus, StepRecord
 from pulse.domain.workflow import AgentDef, RepeatRule, StepDef, WorkflowDef
 from pulse.store import runs as run_store
-from pulse.store.runs import RunStatus, StepRecord
-from pulse.store.workflow_defs import save_agent, save_workflow
+from pulse.store.workflow_defs import get_workflow, save_agent, save_workflow
+
+# Property tests replay the same examples for a given Hypothesis and Python version
+# (AGENTS.md §5.1): a failure reproduces on the CI job with the same versions,
+# and no example database is left on disk.
+settings.register_profile("pulse", derandomize=True, database=None)
+settings.load_profile("pulse")
 
 
 @pytest.fixture(autouse=True)
@@ -76,3 +89,75 @@ def store_run_status(run_id: str, status: str) -> None:
     assert record is not None, run_id
     record.status = RunStatus(status)
     run_store.save(record)
+
+
+def wait_for_event(bus: EventBus, event_type: str, *, timeout: float = 5.0) -> JsonObject:
+    """The first `event_type` on a run's bus, replayed or live.
+
+    Waiting on the bus instead of polling state with `sleep` makes the test wake
+    exactly when the daemon says so. A heartbeat means `timeout` seconds passed
+    in silence, which is a failure here, not a reason to keep waiting.
+    """
+    for event in bus.subscribe(poll=timeout):
+        if event["type"] == event_type:
+            return event
+        if event["type"] == PING:
+            raise AssertionError(f"no {event_type} within {timeout}s")
+    raise AssertionError(f"the bus closed before {event_type}")
+
+
+@pytest.fixture
+def in_process_daemon(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """Every `EngineClient` talks to a daemon app in this process.
+
+    The routes and the test's SQLite are real; only the socket is skipped, so a
+    screen exercises the same `/api/*` contract it uses against `pulse-engine`
+    without spawning one.
+    """
+    from pulse.api.app import create_app
+    from pulse.client.engine_client import EngineClient
+    from pulse.daemon.runs import RunManager
+
+    # Not entered as a context manager: the app has no lifespan to run, and a
+    # long-lived portal would hang on teardown in tests that freeze the clock.
+    # A failing route answers 500, as the real daemon does, instead of raising here.
+    daemon = TestClient(
+        create_app(RunManager()), base_url="http://127.0.0.1", raise_server_exceptions=False
+    )
+    monkeypatch.setattr(EngineClient, "_http", lambda _self: daemon)
+    monkeypatch.setattr(EngineClient, "close", lambda _self: None)
+    return daemon
+
+
+def configure_from_db(state: Any, workflow_id: str) -> None:
+    """Hand a seeded workflow's shape to a `CockpitState`, as the cockpit does from the daemon."""
+    definition = get_workflow(workflow_id)
+    state.configure_workflow(
+        workflow_id,
+        label=definition.label if definition else "",
+        steps=[(step.step_id, step.label) for step in definition.steps] if definition else (),
+    )
+
+
+def onboard_machine() -> None:
+    """Finish the setup wizard in the test database: Home then offers sessions."""
+    from pulse.config.global_config import mark_onboarding_complete
+
+    mark_onboarding_complete(
+        agent_binary="agent",
+        acp_command=["agent", "acp"],
+        auth_method="login",
+        workspace_dir=Path(os.environ["PULSE_DB"]).parent,
+        model="Auto",
+        permission_policy="ask",
+        acp_test_passed=True,
+    )
+
+
+def served_log(run_id: str) -> Any:
+    """A stored run's `RunLog` as the daemon serves it; needs `in_process_daemon`."""
+    from pulse.tui import engine
+
+    log = engine.run_log(run_id)
+    assert log is not None, run_id
+    return log

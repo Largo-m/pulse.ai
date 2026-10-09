@@ -6,7 +6,14 @@ from pathlib import Path
 from pulse.config.agents import DEFAULT_AGENT_NAME, AgentConfig
 from pulse.config.global_config import GlobalConfig, load_global_config
 from pulse.config.project_config import ProjectConfig, load_project_config
-from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, find_runtime, get_runtime
+from pulse.runtimes import (
+    DEFAULT_RUNTIME_ID,
+    AgentRuntime,
+    all_runtimes,
+    find_runtime,
+    get_runtime,
+    runtime_for_command,
+)
 from pulse.store.paths import safe_cwd
 
 _DEFAULT_RUNTIME = get_runtime(DEFAULT_RUNTIME_ID)
@@ -34,6 +41,15 @@ class ResolvedConfig:
     sources: dict[str, str] = field(default_factory=dict)
     global_config: GlobalConfig | None = None
     project_config: ProjectConfig | None = None
+
+    @property
+    def runtime(self) -> AgentRuntime:
+        """The runtime behind the configured agent.
+
+        `agent_name` is a runtime id or a config agent (`default`, a custom
+        one); those are known by the command they run.
+        """
+        return find_runtime(self.agent_name) or runtime_for_command(self.acp_command)
 
 
 def _merge_agents(
@@ -259,7 +275,7 @@ def _available_runtime_fallback(
     does not reject a run over an unused runtime. The model is kept; if the id
     is unknown to the new runtime, the agent falls back to its own default.
     """
-    if get_runtime(runtime).is_available():
+    if _runtime_named(runtime).is_available():
         return None
 
     preferred = None
@@ -272,6 +288,11 @@ def _available_runtime_fallback(
     for candidate in candidates:
         if not candidate or candidate == runtime:
             continue
-        if get_runtime(candidate).is_available():
+        if _runtime_named(candidate).is_available():
             return candidate
     return None
+
+
+def _runtime_named(name: str) -> AgentRuntime:
+    """A config agent name: `default` and custom agents run the default runtime."""
+    return find_runtime(name) or _DEFAULT_RUNTIME

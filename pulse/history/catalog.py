@@ -9,9 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse import vcs
+from pulse.domain.run import RunRecord, RunStatus
 from pulse.history.models import LIVE_STATUSES, HistoryItem, HistoryStatus, HistoryStep
 from pulse.store import runs as run_store
-from pulse.store.runs import RunStatus
 from pulse.store.workflow_defs import get_workflow
 
 _RUN_TO_HISTORY = {
@@ -89,7 +89,7 @@ def search_history(workspace: Path, query: str = "") -> list[HistoryItem]:
     return HistoryCatalog(workspace).search(query)
 
 
-def _item(record: run_store.RunRecord) -> HistoryItem:
+def _item(record: RunRecord) -> HistoryItem:
     definition = get_workflow(record.workflow_id)
     return HistoryItem(
         run_id=record.id,

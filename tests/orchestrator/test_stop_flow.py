@@ -1,79 +1,57 @@
 from __future__ import annotations
 
 from pulse.domain.control import RUN_STOPPED, RunControl
-from pulse.orchestrator.engine import _release_step
-from pulse.store import runs as run_store
-from pulse.store.runs import StepRecord, StepStatus
+from pulse.domain.run import StepStatus
 from pulse.tui.state import CockpitState
-from tests.conftest import make_workflow, store_step
+from tests.conftest import configure_from_db, make_workflow
+from tests.fakes import FakeAgentSession
+from tests.orchestrator.harness import EngineHarness
 
 
-class _FakeStream:
-    """Only the stream surface used when cutting a run."""
+def _stopping_at(step_id: str, control: RunControl):
+    """The user stops while `step_id` is in flight: the agent's turn comes back cancelled."""
 
-    def __init__(self) -> None:
-        self.messages: list[str] = []
-        self.synced: list[dict] = []
+    def turn(current: str) -> dict | None:
+        if current != step_id:
+            return None
+        control.stop()
+        return {"stopReason": "cancelled"}
 
-    def info(self, title: str) -> None:
-        self.messages.append(title)
-
-    def apply_phase_statuses(self, **kwargs) -> None:
-        self.synced.append(kwargs)
-
-
-class _FakeRunner:
-    def __init__(self, control: RunControl) -> None:
-        self.control = control
-        self._stream = _FakeStream()
-
-
-def _run(tmp_path) -> tuple[run_store.RunRecord, StepRecord]:
-    record = run_store.create_run(
-        run_id="run-1",
-        workflow_id="demo",
-        workspace=tmp_path,
-        user_prompt="fazer algo",
-        steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
-    )
-    step = record.steps[0]
-    step.status = StepStatus.RUNNING
-    store_step(record.id, step)
-    return record, step
+    return turn
 
 
 def test_stop_returns_the_cut_step_to_pending(tmp_path):
     """The interrupted step neither finished nor failed: it goes back to pending."""
+    make_workflow("demo", steps=[("one", "Um")], requires_approval=False)
     control = RunControl()
-    control.stop()
-    runner = _FakeRunner(control)
-    record, step = _run(tmp_path)
+    session = FakeAgentSession([], control=control, before_turn=_stopping_at("one", control))
+    harness = EngineHarness(tmp_path)
 
-    _release_step(runner, run=record, record=step, label="Um")
+    code = harness.run(session, workflow_id="demo", user_prompt="x")
 
-    assert step.status == StepStatus.PENDING
-    reloaded = run_store.load_run(record.id)
-    assert reloaded.step("one").status == StepStatus.PENDING
-    assert runner._stream.messages == ["Run parada em Um"]
+    assert code == RUN_STOPPED
+    assert harness.runs.only().step("one").status == StepStatus.PENDING
+    assert session.stream.messages == ["Run parada em Um"]
 
 
 def test_settled_step_is_not_reopened_by_stop(tmp_path):
+    make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")], requires_approval=False)
     control = RunControl()
-    control.stop()
-    runner = _FakeRunner(control)
-    record, step = _run(tmp_path)
-    step.status = "done"
-    store_step(record.id, step)
+    done = {"stopReason": "end_turn", "phaseSummary": "```pulse:outcome\nstatus: done\n```"}
+    session = FakeAgentSession([done], control=control, before_turn=_stopping_at("two", control))
+    harness = EngineHarness(tmp_path)
 
-    _release_step(runner, run=record, record=step, label="Um")
+    harness.run(session, workflow_id="demo", user_prompt="x")
 
-    assert step.status == "done", "a settled step does not go back to pending"
+    record = harness.runs.only()
+    assert record.step("one").status == StepStatus.DONE, "a settled step does not go back"
+    assert record.step("two").status == StepStatus.PENDING
 
 
 def test_stop_does_not_mark_failure_in_sidebar():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Um")
     running = state.phases[0]
     assert running.status.value == "running"
@@ -90,7 +68,7 @@ def test_stop_does_not_mark_failure_in_sidebar():
 def test_real_failure_still_marks_failure():
     make_workflow("demo", steps=[("one", "Um"), ("two", "Dois")])
     state = CockpitState()
-    state.configure_workflow("demo")
+    configure_from_db(state, "demo")
     state.begin_phase("Um")
 
     state.mark_finished(1)
@@ -103,6 +81,6 @@ def test_every_workflow_can_stop():
     """The ACP session is isolated per step: there is always a place to cut."""
     make_workflow("qualquer", steps=[("only", "Único")])
     state = CockpitState()
-    state.configure_workflow("qualquer")
+    configure_from_db(state, "qualquer")
 
     assert state.can_stop is True
