@@ -541,9 +541,11 @@ cockpit. Além do texto e das tools, ele lê o `used` do `usage_update` como
 `ContextUsage` (`history/events.py`): quantos tokens o contexto do step ocupa
 agora. A barra lateral mostra `42k tokens` ao lado do tempo de cada step e o
 cabeçalho, a soma da última leitura de cada step. Como o
-`session.update` é reenviado no replay, voltar à run reconstrói os números; o
-daemon não guarda nada disso. Runtime que não emite `usage_update` não mostra o
-indicador.
+`session.update` é reenviado no replay, voltar à run reconstrói os números. O
+`RecordedSessionLog` grava a última leitura de cada step em
+`run_steps.context_tokens`, e o histórico reabre a run com ela; o `save` do
+motor não escreve essa coluna, para não apagar uma leitura mais nova. Runtime
+que não emite `usage_update` não mostra o indicador.
 
 Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o
 passado reenviado acaba (ver §Sair, voltar e parar) e `stream.ping` é o

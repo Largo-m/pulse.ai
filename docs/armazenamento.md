@@ -93,6 +93,10 @@ inicializado e faria o onboarding parar de rodar.
 `run_steps` copia `label` e `position` da definição no início da run: editar o
 workflow depois não reescreve o que já aconteceu.
 
+`run_steps.context_tokens` guarda a última leitura de tokens no contexto do step
+(`usage_update` do agente). Quem escreve é o log da sessão, não o `save` do
+motor, que deixa a coluna de fora para não sobrescrever uma leitura mais nova.
+
 `run_events` existe porque ler o log do runtime não serve — só o Cursor tem um, e
 o Pulse é agnóstico ao agente.
 

@@ -150,6 +150,7 @@ CREATE TABLE IF NOT EXISTS run_steps (
   waiting_seconds REAL NOT NULL DEFAULT 0,
   rounds INTEGER NOT NULL DEFAULT 1,
   carried_seconds REAL NOT NULL DEFAULT 0,
+  context_tokens INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (run_id, step_id)
 );
 
@@ -205,6 +206,7 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
     ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
     ("run_steps", "carried_seconds", "REAL NOT NULL DEFAULT 0"),
+    ("run_steps", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 

@@ -584,7 +584,8 @@ ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
 **Contexto ocupado:** um `session/update` com `sessionUpdate: "usage_update"`
 (`used`) vira o indicador `42k tokens` ao lado do tempo do step na barra lateral
 e a soma no cabeçalho da run, ao vivo. O adaptador do Claude emite esse evento; runtime que
-não emite simplesmente não mostra o indicador. Nada disso é gravado no banco.
+não emite simplesmente não mostra o indicador. A última leitura de cada step fica
+em `run_steps.context_tokens`, e o histórico mostra os mesmos números.
 
 **Por que o Pulse mantém log próprio (`run_events`):** ler o store do runtime não
 serve — só o Cursor tem um, e o Pulse é agnóstico ao agente. Gravar eventos é
