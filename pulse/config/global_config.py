@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import shutil
-import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,20 +10,9 @@ from pulse.config.agents import (
     WorkflowConfig,
     default_global_agents,
     default_global_workflows,
-    parse_agents,
-    parse_workflows,
 )
-from pulse.config.paths import (
-    GLOBAL_CONFIG_DIR,
-    GLOBAL_CONFIG_FILE,
-    LEGACY_GLOBAL_CONFIG_FILE,
-)
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
-
+from pulse.store.codec import dump_list, load_list
+from pulse.store.db import connect, default_db_path
 
 PERMISSION_POLICIES = ("ask", "auto_approve", "deny_writes")
 
@@ -49,118 +36,103 @@ class GlobalConfig:
     def is_onboarded(self) -> bool:
         return self.completed_at is not None
 
-    def to_toml(self) -> str:
-        acp = ", ".join(f'"{part}"' for part in self.acp_command)
-        completed = f'"{self.completed_at}"' if self.completed_at else "null"
-        acp_passed = "true" if self.acp_test_passed else "false"
-        workspace = str(self.workspace_dir).replace("\\", "\\\\")
-        toml = (
-            f'version = {self.version}\n\n'
-            f"[agent]\n"
-            f'binary = "{self.agent_binary}"\n'
-            f"acp_command = [{acp}]\n\n"
-            f'[auth]\n'
-            f'method = "{self.auth_method}"\n\n'
-            f"[defaults]\n"
-            f'agent = "{self.default_agent}"\n'
-            f'workspace_dir = "{workspace}"\n'
-            f'model = "{self.model}"\n'
-            f'permission_policy = "{self.permission_policy}"\n\n'
-            f"[onboarding]\n"
-            f"completed_at = {completed}\n"
-            f"acp_test_passed = {acp_passed}\n"
-        )
-        toml += self._agents_toml()
-        toml += self._workflows_toml()
-        return toml
-
-    def _agents_toml(self) -> str:
-        blocks = ""
-        for name, agent in self.agents.items():
-            command = ", ".join(f'"{part}"' for part in agent.acp_command)
-            models = ", ".join(f'"{model}"' for model in agent.models)
-            blocks += (
-                f"\n[agents.{name}]\n"
-                f'binary = "{agent.binary}"\n'
-                f"acp_command = [{command}]\n"
-                f"models = [{models}]\n"
-            )
-        return blocks
-
-    def _workflows_toml(self) -> str:
-        blocks = ""
-        for workflow_id, workflow in self.workflows.items():
-            blocks += f"\n[workflows.{workflow_id}]\n"
-            if workflow.agent:
-                blocks += f'agent = "{workflow.agent}"\n'
-            if workflow.model:
-                blocks += f'model = "{workflow.model}"\n'
-        return blocks
-
-
-def migrate_legacy_global_config() -> bool:
-    if GLOBAL_CONFIG_FILE.exists():
-        return False
-    if not LEGACY_GLOBAL_CONFIG_FILE.exists():
-        return False
-    GLOBAL_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(LEGACY_GLOBAL_CONFIG_FILE, GLOBAL_CONFIG_FILE)
-    return True
-
 
 def global_config_exists(path: Path | None = None) -> bool:
-    if path is None:
-        migrate_legacy_global_config()
-        return GLOBAL_CONFIG_FILE.is_file()
-    return path.is_file()
+    return load_global_config(path) is not None
 
 
 def load_global_config(path: Path | None = None) -> GlobalConfig | None:
-    if path is None:
-        migrate_legacy_global_config()
-    config_path = path or GLOBAL_CONFIG_FILE
-    if not config_path.is_file():
-        return None
-
-    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    agent = data.get("agent", {})
-    auth = data.get("auth", {})
-    defaults = data.get("defaults", {})
-    onboarding = data.get("onboarding", {})
-
-    policy = defaults.get("permission_policy", "ask")
-    if policy not in PERMISSION_POLICIES:
-        policy = "ask"
-
-    agents = parse_agents(data.get("agents"))
-    if not agents:
-        agents = default_global_agents()
-
-    workflows = parse_workflows(data.get("workflows"))
-    if not workflows:
-        workflows = default_global_workflows()
-
-    return GlobalConfig(
-        version=int(data.get("version", 1)),
-        agent_binary=str(agent.get("binary", "agent")),
-        acp_command=[str(part) for part in agent.get("acp_command", ["agent", "acp"])],
-        auth_method=str(auth.get("method", "cursor_login")),
-        workspace_dir=Path(str(defaults.get("workspace_dir", Path.home()))).expanduser(),
-        model=str(defaults.get("model", "auto")),
-        permission_policy=policy,
-        completed_at=onboarding.get("completed_at"),
-        acp_test_passed=bool(onboarding.get("acp_test_passed", False)),
-        default_agent=str(defaults.get("agent", DEFAULT_AGENT_NAME)),
-        agents=agents,
-        workflows=workflows,
-    )
+    connection = connect(path)
+    try:
+        row = connection.execute("SELECT * FROM machine WHERE id = 1").fetchone()
+        if row is None:
+            return None
+        agents: dict[str, AgentConfig] = {}
+        for agent_row in connection.execute("SELECT * FROM machine_agents"):
+            agents[agent_row["name"]] = AgentConfig(
+                name=agent_row["name"],
+                binary=agent_row["binary"],
+                acp_command=load_list(agent_row["acp_command"]),
+                models=load_list(agent_row["models"]),
+            )
+        if not agents:
+            agents = default_global_agents()
+        workflows: dict[str, WorkflowConfig] = {}
+        for workflow_row in connection.execute("SELECT * FROM machine_workflows"):
+            workflows[workflow_row["workflow_id"]] = WorkflowConfig(
+                agent=workflow_row["agent"],
+                model=workflow_row["model"],
+            )
+        if not workflows:
+            workflows = default_global_workflows()
+        policy = row["permission_policy"]
+        if policy not in PERMISSION_POLICIES:
+            policy = "ask"
+        return GlobalConfig(
+            version=int(row["version"]),
+            agent_binary=str(row["agent_binary"]),
+            acp_command=load_list(row["acp_command"]),
+            auth_method=str(row["auth_method"]),
+            workspace_dir=Path(str(row["workspace_dir"])).expanduser(),
+            model=str(row["model"]),
+            permission_policy=policy,
+            completed_at=row["completed_at"],
+            acp_test_passed=bool(row["acp_test_passed"]),
+            default_agent=str(row["default_agent"]),
+            agents=agents,
+            workflows=workflows,
+        )
+    finally:
+        connection.close()
 
 
 def save_global_config(config: GlobalConfig, path: Path | None = None) -> Path:
-    config_path = path or GLOBAL_CONFIG_FILE
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(config.to_toml(), encoding="utf-8")
-    return config_path
+    db_path = path or default_db_path()
+    connection = connect(db_path)
+    try:
+        connection.execute("DELETE FROM machine_workflows")
+        connection.execute("DELETE FROM machine_agents")
+        connection.execute("DELETE FROM machine")
+        connection.execute(
+            """
+            INSERT INTO machine (
+              id, version, agent_binary, acp_command, auth_method, workspace_dir,
+              model, permission_policy, completed_at, acp_test_passed, default_agent
+            ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                config.version,
+                config.agent_binary,
+                dump_list(config.acp_command),
+                config.auth_method,
+                str(config.workspace_dir.expanduser().resolve()),
+                config.model,
+                config.permission_policy,
+                config.completed_at,
+                1 if config.acp_test_passed else 0,
+                config.default_agent,
+            ),
+        )
+        for agent in config.agents.values():
+            connection.execute(
+                """
+                INSERT INTO machine_agents (name, binary, acp_command, models)
+                VALUES (?, ?, ?, ?)
+                """,
+                (agent.name, agent.binary, dump_list(agent.acp_command), dump_list(agent.models)),
+            )
+        for workflow_id, workflow in config.workflows.items():
+            connection.execute(
+                """
+                INSERT INTO machine_workflows (workflow_id, agent, model)
+                VALUES (?, ?, ?)
+                """,
+                (workflow_id, workflow.agent, workflow.model),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    return db_path
 
 
 def update_global_defaults(
@@ -173,22 +145,19 @@ def update_global_defaults(
     config = load_global_config(path)
     if config is None:
         return None
-
-    from dataclasses import replace
-
-    updates: dict[str, str] = {}
-    if model is not None:
-        updates["model"] = model
-    if permission_policy is not None:
-        if permission_policy not in PERMISSION_POLICIES:
-            return None
-        updates["permission_policy"] = permission_policy
-    if agent is not None:
-        updates["default_agent"] = agent
-    if not updates:
-        return path or GLOBAL_CONFIG_FILE
-
-    return save_global_config(replace(config, **updates), path)
+    if permission_policy is not None and permission_policy not in PERMISSION_POLICIES:
+        return None
+    if model is None and permission_policy is None and agent is None:
+        return path or default_db_path()
+    updated = replace(
+        config,
+        model=config.model if model is None else model,
+        permission_policy=config.permission_policy
+        if permission_policy is None
+        else permission_policy,
+        default_agent=config.default_agent if agent is None else agent,
+    )
+    return save_global_config(updated, path)
 
 
 def update_global_agent(
@@ -202,16 +171,11 @@ def update_global_agent(
     config = load_global_config(path)
     if config is None:
         return None
-
-    from dataclasses import replace
-
     agents = dict(config.agents)
     existing = agents.get(agent_name)
     next_binary = binary if binary is not None else (existing.binary if existing else agent_name)
     next_models = (
-        list(models)
-        if models is not None
-        else (list(existing.models) if existing else [])
+        list(models) if models is not None else (list(existing.models) if existing else [])
     )
     if acp_command is not None:
         next_command = list(acp_command)
@@ -219,7 +183,6 @@ def update_global_agent(
         next_command = list(existing.acp_command)
     else:
         next_command = [next_binary, "acp"]
-
     agents[agent_name] = AgentConfig(
         name=agent_name,
         binary=next_binary,
@@ -239,9 +202,6 @@ def update_global_workflow(
     config = load_global_config(path)
     if config is None:
         return None
-
-    from dataclasses import replace
-
     workflows = dict(config.workflows)
     existing = workflows.get(workflow_id, WorkflowConfig())
     workflows[workflow_id] = WorkflowConfig(
@@ -260,6 +220,7 @@ def mark_onboarding_complete(
     model: str,
     permission_policy: str,
     acp_test_passed: bool,
+    default_agent: str = "cursor",
     path: Path | None = None,
 ) -> Path:
     config = GlobalConfig(
@@ -272,7 +233,7 @@ def mark_onboarding_complete(
         permission_policy=permission_policy,
         completed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
         acp_test_passed=acp_test_passed,
-        default_agent="cursor",
+        default_agent=default_agent,
         agents=default_global_agents(),
         workflows=default_global_workflows(),
     )

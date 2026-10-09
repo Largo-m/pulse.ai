@@ -9,6 +9,14 @@ _CURSOR_DIR = Path.home() / ".cursor"
 _ACP_SESSIONS = _CURSOR_DIR / "acp-sessions"
 _CHATS = _CURSOR_DIR / "chats"
 
+# Cursor's store is a foreign format: a blob may be a non-bytes value (`TypeError`
+# from `bytes`), not UTF-8 or not JSON. Such rows are skipped, not fatal.
+_UNREADABLE_BLOB = (TypeError, UnicodeDecodeError, json.JSONDecodeError)
+
+_AGENT_ROLES = frozenset({"", "assistant"})
+_TEXT_ITEM_TYPES = frozenset({"assistant", "text"})
+_EVENT_TITLE_LIMIT = 80
+
 
 def find_session_store(session_id: str) -> Path | None:
     if not session_id:
@@ -95,40 +103,97 @@ class CursorStoreIndex:
         self._args_by_id = _load_tool_args(path)
 
 
-def _load_tool_args(db_path: Path) -> dict[str, dict[str, Any]]:
-    found: dict[str, dict[str, Any]] = {}
+def _read_blobs(db_path: Path) -> list[dict[str, Any]]:
+    """Decode every blob that holds a JSON object; anything else is skipped."""
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     except sqlite3.Error:
-        return found
+        return []
     try:
         rows = con.execute("SELECT data FROM blobs").fetchall()
     except sqlite3.Error:
+        return []
+    finally:
         con.close()
-        return found
+    blobs: list[dict[str, Any]] = []
     for (data,) in rows:
         try:
-            raw = bytes(data)
-            text = raw.decode("utf-8")
-            obj = json.loads(text)
-        except Exception:
+            obj = json.loads(bytes(data).decode("utf-8"))
+        except _UNREADABLE_BLOB:
             continue
-        content = obj.get("content")
-        if not isinstance(content, list):
-            continue
-        for item in content:
-            if not isinstance(item, dict) or item.get("type") != "tool-call":
+        if isinstance(obj, dict):
+            blobs.append(obj)
+    return blobs
+
+
+def _content_items(blob: dict[str, Any]) -> list[dict[str, Any]]:
+    content = blob.get("content")
+    if not isinstance(content, list):
+        return []
+    return [item for item in content if isinstance(item, dict)]
+
+
+def _tool_call_args(item: dict[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    if item.get("type") != "tool-call":
+        return None
+    tool_id = item.get("toolCallId")
+    args = item.get("args")
+    if not isinstance(tool_id, str) or not tool_id:
+        return None
+    if not isinstance(args, dict) or not args:
+        return None
+    return tool_id, normalize_tool_args(args)
+
+
+def _load_tool_args(db_path: Path) -> dict[str, dict[str, Any]]:
+    found: dict[str, dict[str, Any]] = {}
+    for blob in _read_blobs(db_path):
+        for item in _content_items(blob):
+            call = _tool_call_args(item)
+            if call is None:
                 continue
-            tool_id = item.get("toolCallId")
-            args = item.get("args")
-            if not isinstance(tool_id, str) or not tool_id:
-                continue
-            if not isinstance(args, dict) or not args:
-                continue
-            normalized = normalize_tool_args(args)
+            tool_id, normalized = call
             found[tool_id] = normalized
             prefix = tool_id.split("\n", 1)[0]
             if prefix and prefix not in found:
                 found[prefix] = normalized
-    con.close()
     return found
+
+
+def _tool_event(item: dict[str, Any]) -> dict[str, Any]:
+    raw_args = item.get("args")
+    args = raw_args if isinstance(raw_args, dict) else {}
+    title = item.get("title") or item.get("toolName") or item.get("toolCallId") or "tool"
+    return {
+        "kind": "Tool",
+        "title": str(title),
+        "tool_id": str(item.get("toolCallId") or ""),
+        "detail": str(args.get("path") or args.get("file_path") or ""),
+    }
+
+
+def _session_event(item: dict[str, Any]) -> dict[str, Any] | None:
+    kind = str(item.get("type", ""))
+    if kind == "tool-call":
+        return _tool_event(item)
+    if kind not in _TEXT_ITEM_TYPES:
+        return None
+    text = item.get("text") or item.get("content") or ""
+    if not text:
+        return None
+    return {"kind": "Assistant", "title": str(text)[:_EVENT_TITLE_LIMIT], "detail": str(text)}
+
+
+def list_session_events(session_id: str) -> list[dict[str, Any]]:
+    path = find_session_store(session_id)
+    if path is None:
+        return []
+    events: list[dict[str, Any]] = []
+    for blob in _read_blobs(path):
+        if str(blob.get("role") or "") not in _AGENT_ROLES:
+            continue
+        for item in _content_items(blob):
+            event = _session_event(item)
+            if event is not None:
+                events.append(event)
+    return events

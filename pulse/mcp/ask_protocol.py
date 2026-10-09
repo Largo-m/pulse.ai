@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeAlias
 
-from pulse.presentation.prompt.handler import PromptHandler
+from pulse.domain.ports import PromptPort
 
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 TOOL_NAME = "AskQuestion"
 SERVER_NAME = "pulse-ask"
 SERVER_VERSION = "0.1.0"
+
+RequestId: TypeAlias = int | str | None
+"""A JSON-RPC id; `None` for a notification."""
 
 
 def tool_definition() -> dict[str, Any]:
@@ -54,18 +57,18 @@ def tool_definition() -> dict[str, Any]:
     }
 
 
-def _result(request_id: Any, payload: dict[str, Any]) -> dict[str, Any]:
+def _result(request_id: RequestId, payload: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": payload}
 
 
-def _error(request_id: Any, code: int, message: str) -> dict[str, Any]:
+def _error(request_id: RequestId, code: int, message: str) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
 
 
 def _handle_tools_call(
-    request_id: Any,
+    request_id: RequestId,
     params: dict[str, Any],
-    prompt_handler: PromptHandler,
+    prompt_handler: PromptPort,
     on_question: Callable[[], None] | None,
 ) -> dict[str, Any]:
     arguments = params.get("arguments", {})
@@ -88,7 +91,7 @@ def _handle_tools_call(
 def dispatch_message(
     message: dict[str, Any],
     *,
-    prompt_handler: PromptHandler,
+    prompt_handler: PromptPort,
     on_question: Callable[[], None] | None = None,
     protocol_version: str = DEFAULT_PROTOCOL_VERSION,
 ) -> dict[str, Any] | None:
@@ -118,5 +121,5 @@ def dispatch_message(
     if method == "tools/call":
         return _handle_tools_call(request_id, params, prompt_handler, on_question)
     if request_id is not None:
-        return _error(request_id, -32601, f"Método não suportado: {method}")
+        return _error(request_id, -32601, f"Method not supported: {method}")
     return None

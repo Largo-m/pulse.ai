@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from pulse.tui.state import NAV_PHASE, NAV_TASK, CockpitState, PhaseItem, PhaseStatus
+from pulse.history.status_labels import status_color, status_icon, status_label
+from pulse.tui import strings
+from pulse.tui.state import NAV_PHASE, CockpitState, PhaseItem, PhaseStatus
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 
 class NavSelected(Message):
@@ -22,12 +31,21 @@ class NavSelected(Message):
 
 PhaseSelected = NavSelected
 
+_ATTENTION = frozenset(
+    {
+        PhaseStatus.RUNNING.value,
+        PhaseStatus.FAILED.value,
+        PhaseStatus.BLOCKED.value,
+        "awaiting_input",
+    }
+)
+
 
 class PhaseSidebar(Widget):
     can_focus = True
     selected_index: reactive[int] = reactive(0)
 
-    def __init__(self, state: CockpitState, **kwargs) -> None:
+    def __init__(self, state: CockpitState, **kwargs: Unpack[WidgetOptions]) -> None:
         super().__init__(**kwargs)
         self._state = state
         self._slots: list[tuple[int, int, str, int]] = []
@@ -49,11 +67,11 @@ class PhaseSidebar(Widget):
         self.refresh_phases()
 
     def on_click(self, event: Click) -> None:
-        if not self._state.phases and not self._state.tasks:
+        if not self._state.phases:
             return
         try:
             content = self.query_one("#phase-content", Static)
-        except Exception:
+        except NoMatches:
             return
         y = event.screen_y - content.region.y
         if y < 0:
@@ -70,42 +88,69 @@ class PhaseSidebar(Widget):
         now = time.monotonic()
         line = 0
         if not state.phases:
-            output.append("Nenhum step configurado\n", style="#888888")
+            output.append(f"{strings.SIDEBAR_NO_STEPS}\n", style="#888888")
             return output
 
-        for index, phase in enumerate(state.phases):
-            nested = phase.id == "execute" and bool(state.tasks)
-            height = 2 if nested else 3
-            self._slots.append((line, line + height - 1, NAV_PHASE, index))
-            selected = state.selected_nav_kind == NAV_PHASE and index == state.selected_phase_index
-            output.append_text(
-                self._render_item(
-                    state,
-                    phase,
-                    selected=selected,
-                    now=now,
-                    trailing_blank=not nested,
-                )
-            )
-            line += height
-            if not nested:
-                continue
-            for task_index, task in enumerate(state.tasks):
-                self._slots.append((line, line + 1, NAV_TASK, task_index))
-                selected = (
-                    state.selected_nav_kind == NAV_TASK and task_index == state.selected_task_index
-                )
+        for key, members in state.phase_groups():
+            if key:
+                output.append_text(self._render_group(state, key, members))
+                line += 2
+            for index, phase in members:
+                self._slots.append((line, line + 2, NAV_PHASE, index))
                 output.append_text(
                     self._render_item(
                         state,
-                        task,
-                        selected=selected,
+                        phase,
+                        selected=index == state.selected_phase_index,
                         now=now,
-                        nested=True,
-                        trailing_blank=False,
+                        nested=bool(key),
+                        trailing_blank=True,
                     )
                 )
-                line += 2
+                line += 3
+        return output
+
+    def _render_group(
+        self,
+        state: CockpitState,
+        key: str,
+        members: list[tuple[int, PhaseItem]],
+    ) -> Text:
+        """Fan-out header: the step name and how many tasks have settled."""
+        statuses = [phase.status for _index, phase in members]
+        done = sum(1 for status in statuses if status in {PhaseStatus.DONE, PhaseStatus.SKIPPED})
+        if PhaseStatus.FAILED in statuses:
+            status = PhaseStatus.FAILED
+        elif PhaseStatus.BLOCKED in statuses:
+            status = PhaseStatus.BLOCKED
+        elif PhaseStatus.RUNNING in statuses:
+            status = PhaseStatus.RUNNING
+        elif done == len(statuses):
+            status = PhaseStatus.DONE
+        else:
+            status = PhaseStatus.PENDING
+
+        shown = (
+            "awaiting_input"
+            if any(phase.awaiting_since is not None for _index, phase in members)
+            else status.value
+        )
+
+        output = Text()
+        if status == PhaseStatus.RUNNING:
+            output.append("▌ ", style="#D4AF37")
+        else:
+            output.append("  ", style="#333333")
+        tone = status_color(shown)
+        name_style = tone if shown in _ATTENTION else "#E0E0E0"
+        label = f"{status_icon(shown)} {state.base_step_label(key) or key}"
+        if len(label) > 28:
+            label = f"{label[:27]}…"
+        output.append(label, style=name_style)
+        output.append("\n")
+        output.append("   ")
+        output.append(status_label(shown), style=tone)
+        output.append(f" · {done}/{len(members)}\n", style="#888888")
         return output
 
     def _render_item(
@@ -132,26 +177,23 @@ class PhaseSidebar(Widget):
         else:
             output.append(f"{indent}  ", style="#333333")
 
-        if item.status == PhaseStatus.RUNNING:
-            prefix = "▸ "
-        elif item.status == PhaseStatus.PENDING:
-            prefix = "Ⅱ "
-        elif item.status == PhaseStatus.SKIPPED:
-            prefix = "⏭ "
-        else:
-            prefix = "✓ "
-
-        name_style = "#A2D729" if running else ("#E0E0E0" if accent else "#888888")
-        label = f"{prefix}{self._item_label(item, nested=nested)}"
-        max_len = 24 if nested else 28
+        shown = item.display_status()
+        tone = status_color(shown)
+        name_style = tone if shown in _ATTENTION else ("#E0E0E0" if accent else "#888888")
+        rounds = f" ×{item.rounds}" if item.rounds > 1 else ""
+        label = f"{status_icon(shown)} {self._item_label(item, nested=nested)}"
+        max_len = (24 if nested else 28) - len(rounds)
         if len(label) > max_len:
             label = f"{label[: max_len - 1]}…"
         output.append(label, style=name_style)
+        if rounds:
+            output.append(rounds, style="#D4AF37")
         output.append("\n")
-        status = item.status.value.upper()
         timer = item.elapsed_label(now) or "--:--"
         meta_indent = "     " if nested else "   "
-        output.append(f"{meta_indent}{status} · {timer}\n", style="#888888")
+        output.append(meta_indent)
+        output.append(status_label(shown), style=tone)
+        output.append(f" · {timer}\n", style="#888888")
         if trailing_blank:
             output.append("\n")
         return output
@@ -160,6 +202,7 @@ class PhaseSidebar(Widget):
     def _item_label(item: PhaseItem, *, nested: bool) -> str:
         if not nested:
             return item.label
-        if item.label == item.id or item.label.startswith(f"{item.id} "):
-            return item.label
-        return f"{item.id} · {item.label}"
+        _base, _sep, task_id = item.id.partition(":")
+        if not task_id or item.label == task_id or item.label.startswith(f"{task_id} "):
+            return item.label or task_id
+        return f"{task_id} · {item.label}"

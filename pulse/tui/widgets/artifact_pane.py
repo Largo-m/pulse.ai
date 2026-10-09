@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, VerticalScroll
+from textual.css.query import NoMatches
 from textual.events import Click
 from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Markdown, Static
 
+from pulse.tui import strings
 from pulse.tui.artifacts import read_artifact_markdown
 from pulse.tui.state import ArtifactItem, CockpitState
+
+if TYPE_CHECKING:
+    from typing import Unpack
+
+    from pulse.tui.widgets.options import WidgetOptions
 
 
 class ArtifactTabSelected(Message):
@@ -31,15 +39,30 @@ class ArtifactPaneOpened(Message):
 class ArtifactPane(Widget):
     can_focus = True
 
-    def __init__(self, state: CockpitState, *, cwd: str | None = None, **kwargs) -> None:
+    def __init__(
+        self, state: CockpitState, *, cwd: str | None = None, **kwargs: Unpack[WidgetOptions]
+    ) -> None:
         super().__init__(**kwargs)
         self._state = state
         self._cwd = cwd
         self._fingerprint: tuple[object, ...] | None = None
         self._loaded_key: tuple[str, float, bool] | None = None
 
+    def set_cwd(self, cwd: str | None) -> None:
+        """Repoint the directory where artifacts are looked up.
+
+        The run may work in a worktree only known once `run.context` arrives.
+        `_loaded_key` is reset too, since it caches the mtime of the file read
+        from the old path.
+        """
+        if cwd == self._cwd:
+            return
+        self._cwd = cwd
+        self._loaded_key = None
+        self._fingerprint = None
+
     def compose(self) -> ComposeResult:
-        yield Static("▸\nABRIR", id="artifact-open")
+        yield Static(strings.ARTIFACT_OPEN_RAIL, id="artifact-open")
         with Horizontal(id="artifact-title-row"):
             yield Static("", id="artifact-header")
             yield Static("✕", id="artifact-close")
@@ -77,13 +100,13 @@ class ArtifactPane(Widget):
             self.query_one("#artifact-meta", Static).display = expanded
             self.query_one("#artifact-tabs", Horizontal).display = expanded
             self.query_one("#artifact-body", VerticalScroll).display = expanded
-        except Exception:
+        except NoMatches:
             return
 
     def scroll_by(self, direction: int) -> None:
         try:
             body = self.query_one("#artifact-body", VerticalScroll)
-        except Exception:
+        except NoMatches:
             return
         if direction < 0:
             body.scroll_up(animate=False)
@@ -97,15 +120,19 @@ class ArtifactPane(Widget):
             return
         try:
             close = self.query_one("#artifact-close", Static)
-        except Exception:
+        except NoMatches:
             close = None
-        if close is not None and close.display and close.region.contains(event.screen_x, event.screen_y):
+        if (
+            close is not None
+            and close.display
+            and close.region.contains(event.screen_x, event.screen_y)
+        ):
             event.stop()
             self.post_message(ArtifactPaneClosed())
             return
         try:
             row = self.query_one("#artifact-tabs", Horizontal)
-        except Exception:
+        except NoMatches:
             return
         for child in row.children:
             if not isinstance(child, Static):
@@ -126,15 +153,17 @@ class ArtifactPane(Widget):
         visible = state.visible_artifacts()
         header = self.query_one("#artifact-header", Static)
         meta = self.query_one("#artifact-meta", Static)
-        header.update(Text(f"ARTEFATOS  {len(visible)}", style="#A2D729 bold"))
+        header.update(
+            Text(strings.ARTIFACT_HEADER.format(count=len(visible)), style="#A2D729 bold")
+        )
         selected = state.selected_artifact()
         if selected is None:
-            meta.update(Text("Nenhum artefato nesta fase", style="#888888"))
+            meta.update(Text(strings.ARTIFACT_NONE_IN_PHASE, style="#888888"))
             return
         name = Path(selected.path).name
-        suffix = "live" if state.follow_artifact else "paused"
+        suffix = strings.ARTIFACT_LIVE if state.follow_artifact else strings.ARTIFACT_PAUSED
         if not selected.ready:
-            suffix = "escrevendo"
+            suffix = strings.ARTIFACT_WRITING
         meta.update(Text(f"{name} · {suffix}", style="#888888"))
 
     def _refresh_tabs(self, state: CockpitState) -> None:
@@ -171,13 +200,13 @@ class ArtifactPane(Widget):
         selected = self._state.selected_artifact()
         try:
             markdown = self.query_one("#artifact-markdown", Markdown)
-        except Exception:
+        except NoMatches:
             return
         if selected is None:
             key = ("", 0.0, False)
             if force or self._loaded_key != key:
                 self._loaded_key = key
-                markdown.update("_Nenhum artefato nesta fase._")
+                markdown.update(strings.ARTIFACT_NONE_IN_PHASE_MARKDOWN)
             return
         text, mtime, exists = read_artifact_markdown(selected.path, self._cwd)
         key = (selected.path, mtime, selected.ready)
@@ -186,10 +215,10 @@ class ArtifactPane(Widget):
         self._loaded_key = key
         name = Path(selected.path).name
         if not exists:
-            markdown.update(f"_Escrevendo `{name}`…_")
+            markdown.update(strings.ARTIFACT_WRITING_MARKDOWN.format(name=name))
             return
         if not text.strip():
-            markdown.update(f"_`{name}` está vazio._")
+            markdown.update(strings.ARTIFACT_EMPTY_MARKDOWN.format(name=name))
             return
         markdown.update(text)
 
@@ -209,7 +238,5 @@ class ArtifactPane(Widget):
             selected.path if selected is not None else "",
             state.follow_artifact,
             state.selected_phase_index,
-            state.selected_task_index,
-            state.selected_nav_kind,
             state.focus_target,
         )

@@ -1,0 +1,590 @@
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+import re
+import sys
+from dataclasses import dataclass, asdict
+from typing import Iterable, Iterator
+
+SKIP_DIRS = {
+    ".git", "node_modules", "venv", ".venv", "env", "__pycache__",
+    "dist", "build", ".mypy_cache", ".pytest_cache", "site-packages",
+}
+
+SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+
+# A reviewed finding carries the ruff/bandit code of the same check, so one
+# justified `# noqa: S608` silences both tools. Bare `# nosec` is not honored:
+# ruff ignores it, so it would silence this tool alone with no code or reason.
+SUPPRESSION_CODES = {
+    "py.eval-exec": {"S102", "S307"},
+    "py.compile": {"S102"},
+    "py.os-system": {"S605"},
+    "py.subprocess-shell": {"S602"},
+    "py.insecure-deserialization": {"S301"},
+    "py.yaml-load": {"S506"},
+    "py.weak-hash": {"S324"},
+    "py.tls-verify-disabled": {"S501"},
+    "py.request-no-timeout": {"S113"},
+    "py.insecure-temp": {"S306"},
+    "py.flask-debug": {"S201"},
+    "py.jinja-autoescape": {"S701"},
+    "py.sql-injection": {"S608"},
+    "py.hardcoded-secret": {"S105", "S106", "S107"},
+    "py.insecure-random": {"S311"},
+    "py.assert-security": {"S101"},
+}
+_NOQA = re.compile(r"#\s*noqa:\s*([A-Z0-9,\s]+)")
+
+
+@dataclass
+class Issue:
+    rule_id: str
+    cwe: str
+    message: str
+    severity: str
+    path: str
+    line: int
+    col: int
+    snippet: str
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def _attr_chain(node: ast.AST) -> str:
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return ".".join(reversed(parts)) if parts else ""
+
+
+def _kw(call: ast.Call, name: str):
+    for kw in call.keywords:
+        if kw.arg == name:
+            return kw.value
+    return None
+
+
+def _is_const_true(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Constant) and node.value is True
+
+
+def _is_const_false(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Constant) and node.value is False
+
+
+def _is_string_constant(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+
+PASSWORD_NAMES = {
+    "password", "passwd", "pwd", "secret", "token", "api_key", "apikey",
+    "access_key", "secret_key", "private_key", "auth_token",
+}
+
+SECURITY_VALUE_NAMES = (
+    "token", "password", "passwd", "pwd", "secret", "otp", "nonce", "salt",
+    "apikey", "api_key", "session",
+)
+
+RANDOM_BARE_FUNCS = {"random", "randint", "randrange", "getrandbits", "uniform"}
+
+OS_SHELL_FUNCS = {"system", "popen"}
+REQUEST_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
+
+
+def _random_call(node: ast.AST) -> str:
+    """Return the name of a `random` call, or "" for anything else.
+
+    A bare call is only treated as `random` when the name is unambiguous:
+    `choice` on its own is just as likely to be someone's own helper, while
+    `secrets.choice` must never match.
+    """
+    if not isinstance(node, ast.Call):
+        return ""
+    chain = _attr_chain(node.func)
+    if chain.startswith("random."):
+        return chain
+    if isinstance(node.func, ast.Name) and node.func.id in RANDOM_BARE_FUNCS:
+        return node.func.id
+    return ""
+
+
+class SecurityVisitor(ast.NodeVisitor):
+    def __init__(self, path: str, source_lines: list[str]):
+        self.path = path
+        self.lines = source_lines
+        self.issues: list[Issue] = []
+        self.os_aliases: set[str] = {"os"}
+        self.os_shell_funcs: set[str] = set()
+        self.requests_aliases: set[str] = {"requests"}
+        self.requests_sessions: set[str] = set()
+        self.urllib_request_aliases: set[str] = {"urllib.request"}
+        self.urlopen_funcs: set[str] = set()
+        self.httpx_aliases: set[str] = {"httpx"}
+        self.httpx_clients: set[str] = set()
+
+    def visit_Import(self, node: ast.Import):
+        for alias in node.names:
+            if alias.name == "os":
+                self.os_aliases.add(alias.asname or "os")
+            elif alias.name == "requests":
+                self.requests_aliases.add(alias.asname or "requests")
+            elif alias.name == "urllib.request":
+                self.urllib_request_aliases.add(alias.asname or "urllib.request")
+            elif alias.name == "httpx":
+                self.httpx_aliases.add(alias.asname or "httpx")
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        if node.module == "os":
+            for alias in node.names:
+                if alias.name in OS_SHELL_FUNCS:
+                    self.os_shell_funcs.add(alias.asname or alias.name)
+        elif node.module == "urllib":
+            for alias in node.names:
+                if alias.name == "request":
+                    self.urllib_request_aliases.add(alias.asname or "request")
+        elif node.module == "urllib.request":
+            for alias in node.names:
+                if alias.name == "urlopen":
+                    self.urlopen_funcs.add(alias.asname or "urlopen")
+        self.generic_visit(node)
+
+    def _is_os_shell_call(self, target: str) -> bool:
+        head, _, fn = target.rpartition(".")
+        if head:
+            return head in self.os_aliases and fn in OS_SHELL_FUNCS
+        return target in self.os_shell_funcs
+
+    def _is_requests_session(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.requests_sessions
+        if isinstance(node, ast.Call):
+            head, _, name = _attr_chain(node.func).rpartition(".")
+            return head in self.requests_aliases and name in ("Session", "session")
+        return False
+
+    def _is_httpx_client(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Name):
+            return node.id in self.httpx_clients
+        if isinstance(node, ast.Call):
+            head, _, name = _attr_chain(node.func).rpartition(".")
+            return head in self.httpx_aliases and name in ("Client", "AsyncClient")
+        return False
+
+    def _suppressed(self, node: ast.AST, rule_id: str) -> bool:
+        first = getattr(node, "lineno", 0)
+        last = getattr(node, "end_lineno", None) or first
+        codes = SUPPRESSION_CODES.get(rule_id, set())
+        for text in self.lines[max(first - 1, 0):last]:
+            match = _NOQA.search(text)
+            if match and codes & set(re.findall(r"[A-Z]+[0-9]+", match.group(1))):
+                return True
+        return False
+
+    def _add(self, node: ast.AST, rule_id: str, cwe: str, msg: str, sev: str):
+        if self._suppressed(node, rule_id):
+            return
+        line = getattr(node, "lineno", 0)
+        col = getattr(node, "col_offset", 0)
+        snippet = self.lines[line - 1].strip() if 0 < line <= len(self.lines) else ""
+        self.issues.append(Issue(rule_id, cwe, msg, sev, self.path, line,
+                                 col + 1, snippet[:200]))
+
+    def visit_Call(self, node: ast.Call):
+        target = ""
+        if isinstance(node.func, ast.Name):
+            target = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            target = _attr_chain(node.func)
+        last = target.split(".")[-1] if target else ""
+
+        if isinstance(node.func, ast.Attribute) and node.func.attr in REQUEST_METHODS:
+            receiver = node.func.value
+            is_requests = (
+                isinstance(receiver, ast.Name) and receiver.id in self.requests_aliases
+            ) or self._is_requests_session(receiver)
+            timeout = _kw(node, "timeout")
+            unknown_kwargs = any(kw.arg is None for kw in node.keywords)
+            if is_requests and not unknown_kwargs and (
+                    timeout is None or isinstance(timeout, ast.Constant) and timeout.value is None):
+                self._add(node, "py.request-no-timeout", "CWE-400",
+                          "HTTP request has no timeout; a stalled server can "
+                          "block indefinitely. Set a finite timeout.", "medium")
+
+            is_httpx = (
+                isinstance(receiver, ast.Name) and receiver.id in self.httpx_aliases
+            ) or self._is_httpx_client(receiver)
+            has_timeout = any(kw.arg == "timeout" for kw in node.keywords)
+            if is_httpx and not unknown_kwargs and has_timeout and isinstance(
+                    timeout, ast.Constant) and timeout.value is None:
+                self._add(node, "py.request-no-timeout", "CWE-400",
+                          "HTTP request disables its timeout; a stalled server can "
+                          "block indefinitely. Set a finite timeout.", "medium")
+
+        unknown_kwargs = any(kw.arg is None for kw in node.keywords)
+        is_urlopen = target in self.urlopen_funcs or any(
+            target == f"{alias}.urlopen" for alias in self.urllib_request_aliases
+        )
+        if is_urlopen and not unknown_kwargs:
+            timeout = _kw(node, "timeout")
+            if timeout is None and len(node.args) >= 3:
+                timeout = node.args[2]
+            if timeout is None or isinstance(timeout, ast.Constant) and timeout.value is None:
+                self._add(node, "py.request-no-timeout", "CWE-400",
+                          "HTTP request has no timeout; a stalled server can "
+                          "block indefinitely. Set a finite timeout.", "medium")
+
+        if self._is_httpx_client(node) and not unknown_kwargs:
+            timeout = _kw(node, "timeout")
+            has_timeout = any(kw.arg == "timeout" for kw in node.keywords)
+            if has_timeout and isinstance(timeout, ast.Constant) and timeout.value is None:
+                self._add(node, "py.request-no-timeout", "CWE-400",
+                          "HTTP client disables its timeout; a stalled server can "
+                          "block indefinitely. Set a finite timeout.", "medium")
+
+        if target in ("eval", "exec") or last in ("eval", "exec"):
+            dynamic = bool(node.args) and not _is_string_constant(node.args[0])
+            sev = "critical" if dynamic else "high"
+            self._add(node, "py.eval-exec", "CWE-95",
+                      f"Use of {last}() can execute arbitrary code.", sev)
+        if last == "compile" and target in ("compile",):
+            self._add(node, "py.compile", "CWE-95",
+                      "compile() of dynamic source can lead to code execution.",
+                      "medium")
+
+        if self._is_os_shell_call(target):
+            self._add(node, "py.os-system", "CWE-78",
+                      f"{target}() invokes a shell — command "
+                      f"injection risk.", "high")
+
+        if "subprocess" in target or last in (
+                "call", "run", "Popen", "check_output", "check_call"):
+            if _is_const_true(_kw(node, "shell")):
+                self._add(node, "py.subprocess-shell", "CWE-78",
+                          "subprocess called with shell=True — command "
+                          "injection risk.", "high")
+
+        if last in ("loads", "load") and any(
+                target.startswith(m + ".") or target == m + "." + last
+                for m in ("pickle", "cPickle", "marshal", "_pickle")):
+            self._add(node, "py.insecure-deserialization", "CWE-502",
+                      f"{target}() deserializes untrusted data unsafely.",
+                      "high")
+
+        if target.endswith("yaml.load") or (last == "load" and "yaml" in target):
+            loader = _kw(node, "Loader")
+            safe = False
+            if loader is not None:
+                lname = _attr_chain(loader) if isinstance(
+                    loader, (ast.Attribute, ast.Name)) else ""
+                safe = "Safe" in lname or "CSafe" in lname
+            if not safe:
+                self._add(node, "py.yaml-load", "CWE-20",
+                          "yaml.load() without SafeLoader can execute "
+                          "arbitrary objects; use yaml.safe_load().", "high")
+
+        if last in ("md5", "sha1") and (
+                "hashlib" in target or target in ("md5", "sha1")) and not (
+                _is_const_false(_kw(node, "usedforsecurity"))):
+            self._add(node, "py.weak-hash", "CWE-327",
+                      f"{last} is cryptographically broken; use SHA-256+.",
+                      "medium")
+
+        if _is_const_false(_kw(node, "verify")) and (
+                "requests" in target or last in (
+                    "get", "post", "put", "delete", "patch", "head",
+                    "request", "Session")):
+            self._add(node, "py.tls-verify-disabled", "CWE-295",
+                      "TLS certificate verification disabled (verify=False).",
+                      "high")
+
+        if target.endswith("tempfile.mktemp") or last == "mktemp":
+            self._add(node, "py.insecure-temp", "CWE-377",
+                      "tempfile.mktemp() is race-prone; use mkstemp()/"
+                      "NamedTemporaryFile.", "medium")
+
+        if last == "run" and _is_const_true(_kw(node, "debug")):
+            self._add(node, "py.flask-debug", "CWE-489",
+                      "Flask app.run(debug=True) exposes the Werkzeug "
+                      "debugger in production.", "medium")
+
+        if last == "Environment" and _is_const_false(_kw(node, "autoescape")):
+            self._add(node, "py.jinja-autoescape", "CWE-79",
+                      "Jinja2 Environment(autoescape=False) enables XSS.",
+                      "medium")
+
+        if last in ("execute", "executemany", "executescript") and node.args:
+            arg0 = node.args[0]
+            if isinstance(arg0, ast.JoinedStr):
+                self._add(arg0, "py.sql-injection", "CWE-89",
+                          "SQL query built with an f-string — use "
+                          "parameterized queries.", "high")
+            elif isinstance(arg0, ast.BinOp) and isinstance(arg0.op, ast.Add):
+                self._add(arg0, "py.sql-injection", "CWE-89",
+                          "SQL query built with string concatenation — use "
+                          "parameterized queries.", "high")
+            elif (isinstance(arg0, ast.Call)
+                  and isinstance(arg0.func, ast.Attribute)
+                  and arg0.func.attr == "format"):
+                self._add(arg0, "py.sql-injection", "CWE-89",
+                          "SQL query built with str.format() — use "
+                          "parameterized queries.", "high")
+            elif isinstance(arg0, ast.BinOp) and isinstance(arg0.op, ast.Mod):
+                self._add(arg0, "py.sql-injection", "CWE-89",
+                          "SQL query built with %-formatting — use "
+                          "parameterized queries.", "high")
+
+        self.generic_visit(node)
+
+    def visit_Assign(self, node: ast.Assign):
+        is_session = self._is_requests_session(node.value)
+        is_httpx_client = self._is_httpx_client(node.value)
+        for tgt in node.targets:
+            if isinstance(tgt, ast.Name):
+                if is_session:
+                    self.requests_sessions.add(tgt.id)
+                else:
+                    self.requests_sessions.discard(tgt.id)
+                if is_httpx_client:
+                    self.httpx_clients.add(tgt.id)
+                else:
+                    self.httpx_clients.discard(tgt.id)
+        if _is_string_constant(node.value) and node.value.value:
+            for tgt in node.targets:
+                name = tgt.id if isinstance(tgt, ast.Name) else (
+                    tgt.attr if isinstance(tgt, ast.Attribute) else "")
+                if name.lower() in PASSWORD_NAMES and len(node.value.value) >= 4:
+                    self._add(node, "py.hardcoded-secret", "CWE-798",
+                              f"Hardcoded secret in variable '{name}'.",
+                              "high")
+
+        # Only when the value is being assigned to something that reads like a
+        # credential. Flagging every random.choice would bury this in noise
+        # from sampling and shuffling.
+        rnd = _random_call(node.value)
+        if rnd:
+            for tgt in node.targets:
+                name = tgt.id if isinstance(tgt, ast.Name) else (
+                    tgt.attr if isinstance(tgt, ast.Attribute) else "")
+                if any(w in name.lower() for w in SECURITY_VALUE_NAMES):
+                    self._add(node, "py.insecure-random", "CWE-330",
+                              f"'{name}' is generated with {rnd}(); the random "
+                              "module is not cryptographically secure. Use "
+                              "the secrets module.", "high")
+                    break
+        self.generic_visit(node)
+
+    def visit_Assert(self, node: ast.Assert):
+        src = ast.dump(node.test).lower()
+        if any(k in src for k in (
+                "auth", "permission", "is_admin", "isadmin", "role",
+                "access", "allowed", "verify", "valid")):
+            self._add(node, "py.assert-security", "CWE-617",
+                      "assert used for a security check — asserts are removed "
+                      "with python -O.", "medium")
+        self.generic_visit(node)
+
+
+def analyze_source(source: str, path: str = "<string>") -> list[Issue]:
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError as exc:
+        return [Issue("py.syntax-error", "CWE-000",
+                      f"Could not parse file: {exc.msg}", "info",
+                      path, exc.lineno or 0, (exc.offset or 0), "")]
+    visitor = SecurityVisitor(path, source.splitlines())
+    visitor.visit(tree)
+    return visitor.issues
+
+
+INFORMATION_URI = "https://github.com/NovaCode37/claude-security-skills"
+
+SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning",
+               "low": "warning", "info": "note"}
+
+SECURITY_SEVERITY = {"critical": "9.5", "high": "8.0", "medium": "5.5",
+                     "low": "3.0"}
+
+RULE_TITLES = {
+    "py.eval-exec": "Use of eval() or exec()",
+    "py.compile": "compile() of dynamic source",
+    "py.os-system": "Shell command through os.system or os.popen",
+    "py.subprocess-shell": "subprocess called with shell=True",
+    "py.insecure-deserialization": "Unsafe deserialization",
+    "py.yaml-load": "yaml.load() without SafeLoader",
+    "py.weak-hash": "Weak hash (MD5 or SHA-1)",
+    "py.tls-verify-disabled": "TLS certificate verification disabled",
+    "py.request-no-timeout": "HTTP request without a timeout",
+    "py.insecure-temp": "Race-prone temporary file",
+    "py.flask-debug": "Flask debug mode",
+    "py.jinja-autoescape": "Jinja2 autoescape disabled",
+    "py.sql-injection": "SQL query built from strings",
+    "py.hardcoded-secret": "Hardcoded secret",
+    "py.insecure-random": "Non-cryptographic random used for a secret",
+    "py.assert-security": "assert used for a security check",
+    "py.syntax-error": "File could not be parsed",
+}
+
+
+def _sarif_uri(path: str) -> str:
+    if os.path.isabs(path):
+        try:
+            path = os.path.relpath(path)
+        except ValueError:
+            pass
+    path = path.replace(os.sep, "/")
+    while path.startswith("./"):
+        path = path[2:]
+    return path
+
+
+def to_sarif(issues: list[Issue]) -> dict:
+    rules: list[dict] = []
+    index: dict[str, int] = {}
+    results: list[dict] = []
+    for issue in issues:
+        if issue.rule_id not in index:
+            index[issue.rule_id] = len(rules)
+            properties: dict = {"tags": ["security"]}
+            if issue.cwe and issue.cwe != "CWE-000":
+                properties["tags"].append(
+                    "external/cwe/" + issue.cwe.lower())
+            if issue.severity in SECURITY_SEVERITY:
+                properties["security-severity"] = SECURITY_SEVERITY[issue.severity]
+            rules.append({
+                "id": issue.rule_id,
+                "shortDescription": {
+                    "text": RULE_TITLES.get(issue.rule_id, issue.rule_id)},
+                "properties": properties,
+            })
+        location: dict = {"artifactLocation": {"uri": _sarif_uri(issue.path)}}
+        if issue.line >= 1:
+            region: dict = {"startLine": issue.line}
+            if issue.col >= 1:
+                region["startColumn"] = issue.col
+            if issue.snippet:
+                region["snippet"] = {"text": issue.snippet}
+            location["region"] = region
+        results.append({
+            "ruleId": issue.rule_id,
+            "ruleIndex": index[issue.rule_id],
+            "level": SARIF_LEVEL.get(issue.severity, "warning"),
+            "message": {"text": issue.message},
+            "locations": [{"physicalLocation": location}],
+        })
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {"name": "sast-lite",
+                                "informationUri": INFORMATION_URI,
+                                "rules": rules}},
+            "results": results,
+        }],
+    }
+
+
+def iter_py_files(paths: Iterable[str]) -> Iterator[str]:
+    for root in paths:
+        if os.path.isfile(root):
+            if root.endswith(".py"):
+                yield root
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            for name in filenames:
+                if name.endswith(".py"):
+                    yield os.path.join(dirpath, name)
+
+
+def analyze_paths(paths: Iterable[str],
+                  min_severity: str = "info") -> list[Issue]:
+    threshold = SEVERITY_RANK.get(min_severity, 3)
+    issues: list[Issue] = []
+    for path in iter_py_files(paths):
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                src = fh.read()
+        except OSError:
+            continue
+        for issue in analyze_source(src, path):
+            if SEVERITY_RANK.get(issue.severity, 3) <= threshold:
+                issues.append(issue)
+    issues.sort(key=lambda i: (SEVERITY_RANK.get(i.severity, 9), i.path, i.line))
+    return issues
+
+
+_SEV_COLOR = {
+    "critical": "\033[1;91m", "high": "\033[91m",
+    "medium": "\033[93m", "low": "\033[94m", "info": "\033[90m",
+}
+_RESET = "\033[0m"
+
+
+def render_pretty(issues: list[Issue]) -> str:
+    if not issues:
+        return "[sast-lite] No issues found. [OK]"
+    color = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+    out = [f"[sast-lite] {len(issues)} issue(s) found:\n"]
+    for i in issues:
+        tag = i.severity.upper()
+        if color:
+            tag = f"{_SEV_COLOR.get(i.severity, '')}{tag}{_RESET}"
+        out.append(f"  {tag:<10} {i.path}:{i.line}:{i.col}  [{i.rule_id} / {i.cwe}]")
+        out.append(f"             {i.message}")
+        if i.snippet:
+            out.append(f"             > {i.snippet}")
+    counts: dict[str, int] = {}
+    for i in issues:
+        counts[i.severity] = counts.get(i.severity, 0) + 1
+    out.append("\nSummary: " + ", ".join(
+        f"{k}={counts[k]}" for k in sorted(counts, key=lambda s: SEVERITY_RANK.get(s, 9))))
+    return "\n".join(out)
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(
+        prog="sast-lite",
+        description="Lightweight AST-based Python security analyzer.")
+    p.add_argument("paths", nargs="+", help="files or directories to scan")
+    fmt = p.add_mutually_exclusive_group()
+    fmt.add_argument("--json", action="store_true", help="emit JSON")
+    fmt.add_argument("--sarif", action="store_true",
+                     help="emit SARIF 2.1.0 for GitHub code scanning")
+    p.add_argument("--min-severity", default="info",
+                   choices=list(SEVERITY_RANK),
+                   help="report issues at or above this severity "
+                        "(default: info, i.e. report everything)")
+    args = p.parse_args(argv)
+
+    for path in args.paths:
+        if not os.path.exists(path):
+            print(f"error: path not found: {path}", file=sys.stderr)
+            return 2
+
+    issues = analyze_paths(args.paths, min_severity=args.min_severity)
+    if args.sarif:
+        print(json.dumps(to_sarif(issues), indent=2))
+    elif args.json:
+        print(json.dumps([i.to_dict() for i in issues], indent=2))
+    else:
+        print(render_pretty(issues))
+    return 1 if issues else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    raise SystemExit(main())

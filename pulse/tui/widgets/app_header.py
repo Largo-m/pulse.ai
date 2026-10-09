@@ -1,44 +1,46 @@
 from __future__ import annotations
 
+import contextlib
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
+from pulse.tui import strings
 from pulse.tui.state import CockpitState, progress_bar
 
 
 class AppHeader(Widget):
-    run_label: reactive[str] = reactive("RUN 0/0")
+    run_label: reactive[str] = reactive(strings.HEADER_RUN_EMPTY)
     workflow_label: reactive[str] = reactive("")
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="header-top"):
-            yield Static("PULSE // ACP COCKPIT", classes="brand")
+            yield Static(strings.HEADER_BRAND, classes="brand")
             yield Static(self.run_label, classes="run-status", id="run-status")
         with Horizontal(id="header-sub"):
-            yield Static("SYS.PIPELINE", classes="pipeline-badge")
+            yield Static(strings.HEADER_PIPELINE_BADGE, classes="pipeline-badge")
             yield Static(self.workflow_label, classes="workflow-label", id="workflow-label")
 
+    # The watchers fire before `compose` has mounted the labels; compose seeds them.
     def watch_run_label(self, value: str) -> None:
-        try:
+        with contextlib.suppress(NoMatches):
             self.query_one("#run-status", Static).update(value)
-        except Exception:
-            pass
 
     def watch_workflow_label(self, value: str) -> None:
-        try:
+        with contextlib.suppress(NoMatches):
             self.query_one("#workflow-label", Static).update(value)
-        except Exception:
-            pass
 
     def sync_from_state(self, state: CockpitState) -> None:
-        if state.tasks:
-            done = state.task_done_count()
-            total = state.task_total_count()
-            bar = progress_bar(done, total, width=12)
-            self.run_label = f"[{bar}] {done}/{total}"
-        else:
-            self.run_label = f"RUN {state.done_count()}/{state.total_count()}"
+        done, total = state.done_count(), state.total_count()
+        bar = progress_bar(done, total, width=12)
+        label = f"[{bar}] {done}/{total}" if total else strings.HEADER_RUN_EMPTY
+        if state.stopped:
+            label = f"{label} · {strings.HEADER_STOPPED}"
+        elif state.awaiting_input:
+            label = f"{label} · {strings.HEADER_AWAITING_INPUT}"
+        self.run_label = label
         self.workflow_label = state.workflow_label

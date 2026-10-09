@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "testing-best-practices": {
+      "source": "adewale/testing-best-practices",
+      "sourceType": "github",
+      "skillPath": "testing-best-practices/SKILL.md",
+      "computedHash": "5f51af6ea8348d07aae0ada383f4bccf2e90fd47671bf866d0d8918f5a5bad7d"
+    }
+  }
+}

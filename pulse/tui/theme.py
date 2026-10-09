@@ -6,6 +6,8 @@ LIME = "#A2D729"
 LIME_MUTED = "#4A5F1A"
 TEXT = "#E0E0E0"
 TEXT_MUTED = "#888888"
+ERROR = "#E85D5D"
+ERROR_SOFT = "#FF8A8A"
 ACCENT_YELLOW = "#D4AF37"
 BORDER = "#333333"
 
@@ -257,6 +259,16 @@ HomeScreen .home-sub {{
     margin-bottom: 2;
 }}
 
+HomeScreen #home-alerts {{
+    width: 60;
+    max-width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: solid #D4AF37;
+    padding: 0 1;
+    margin-bottom: 1;
+}}
+
 HomeScreen OptionList {{
     width: 60;
     max-width: 100%;
@@ -265,6 +277,11 @@ HomeScreen OptionList {{
     background: {BG_PANEL};
     border: solid {BORDER};
     color: {TEXT};
+    padding: 0 1;
+}}
+
+HomeScreen OptionList > .option-list--option {{
+    padding: 0 1;
 }}
 
 HomeScreen OptionList:focus {{
@@ -336,6 +353,135 @@ HistoryListScreen .history-empty {{
     margin-top: 1;
 }}
 
+SettingsScreen {{
+    background: {BG};
+    align: center middle;
+}}
+
+SettingsScreen #settings-content {{
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    align: center middle;
+}}
+
+SettingsScreen .settings-title {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+SettingsScreen .settings-hint {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+SettingsScreen OptionList {{
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+    padding: 0 1;
+}}
+
+SettingsScreen OptionList > .option-list--option {{
+    padding: 0 1;
+}}
+
+SettingsScreen OptionList:focus {{
+    border: solid {LIME};
+}}
+
+SettingsScreen .settings-report {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: left;
+    margin-top: 1;
+    height: auto;
+    max-height: 12;
+}}
+
+SettingsScreen .settings-hint-keys {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-top: 1;
+}}
+
+OnboardingScreen {{
+    background: {BG};
+    align: center middle;
+}}
+
+OnboardingScreen #onboard-content {{
+    width: 80%;
+    max-width: 90;
+    height: auto;
+    align: center middle;
+}}
+
+OnboardingScreen .onboard-title {{
+    width: 100%;
+    color: {LIME};
+    text-style: bold;
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+OnboardingScreen .onboard-hint {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-bottom: 1;
+}}
+
+OnboardingScreen OptionList {{
+    width: 100%;
+    height: auto;
+    max-height: 18;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+}}
+
+OnboardingScreen OptionList:focus {{
+    border: solid {LIME};
+}}
+
+OnboardingScreen .onboard-report {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: left;
+    margin-top: 1;
+    height: auto;
+    max-height: 12;
+}}
+
+OnboardingScreen #onboard-input {{
+    width: 100%;
+    margin-top: 1;
+    background: {BG_PANEL};
+    border: solid {BORDER};
+    color: {TEXT};
+}}
+
+OnboardingScreen #onboard-input:focus {{
+    border: solid {LIME};
+}}
+
+OnboardingScreen .onboard-hint-keys {{
+    width: 100%;
+    color: {TEXT_MUTED};
+    text-align: center;
+    margin-top: 1;
+}}
+
 PromptDock {{
     width: 100%;
     height: 100%;
@@ -380,5 +526,94 @@ PromptDock Input {{
 PromptDock #prompt-actions {{
     height: 3;
     width: 100%;
+}}
+
+ResumeChoiceScreen {{
+    align: center middle;
+}}
+
+ResumeChoiceScreen #resume-box {{
+    width: 62;
+    height: auto;
+    padding: 1 2;
+    background: {BG_PANEL};
+    border: solid {LIME};
+}}
+
+ResumeChoiceScreen .resume-title {{
+    color: {LIME};
+    text-style: bold;
+    width: 100%;
+}}
+
+ResumeChoiceScreen .resume-slug {{
+    color: {TEXT};
+    width: 100%;
+}}
+
+ResumeChoiceScreen .resume-summary {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-bottom: 1;
+}}
+
+ResumeChoiceScreen OptionList {{
+    width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT};
+}}
+
+ResumeChoiceScreen OptionList:focus {{
+    border: none;
+}}
+
+ResumeChoiceScreen .resume-hint {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-top: 1;
+}}
+
+ConfirmScreen {{
+    align: center middle;
+}}
+
+ConfirmScreen #confirm-box {{
+    width: 62;
+    height: auto;
+    padding: 1 2;
+    background: {BG_PANEL};
+    border: solid {ERROR};
+}}
+
+ConfirmScreen .confirm-title {{
+    color: {ERROR_SOFT};
+    text-style: bold;
+    width: 100%;
+}}
+
+ConfirmScreen .confirm-detail {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-bottom: 1;
+}}
+
+ConfirmScreen OptionList {{
+    width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT};
+}}
+
+ConfirmScreen OptionList:focus {{
+    border: none;
+}}
+
+ConfirmScreen .confirm-hint {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-top: 1;
 }}
 """

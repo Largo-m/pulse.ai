@@ -5,23 +5,34 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pulse"
 version = "0.1.0"
-description = "Orquestrador terminal-first de workflows com agentes de IA"
+description = "Terminal-first orchestrator for AI agent workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "questionary>=2.0",
-    "rich>=13.0",
-    "pyyaml>=6.0",
     "textual>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=7.0",
+    "pytest-randomly>=3.16",
+    "hypothesis>=6.150",
+    "httpx>=0.27",
+    "ruff>=0.16",
+    "mypy>=2.0",
+    "vulture>=2.16",
+    "import-linter>=2.15",
+    "mutmut>=3.6",
+    "pre-commit>=4.0",
 ]
 
 [project.scripts]
-pulse = "pulse.cli:main"
+pulse = "pulse.cli.main:main"
+pulse-engine = "pulse.daemon.server:main"
 pulse-mcp-ask = "pulse.mcp.ask_stdio:main"
 
 [tool.setuptools.packages.find]
@@ -29,7 +40,252 @@ where = ["."]
 include = ["pulse*"]
 
 [tool.setuptools.package-data]
-pulse = ["skills/tlc-spec-driven/**/*"]
+"pulse.store.factory" = ["agents/*/*.md", "shared/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".claude", ".agents", ".cursor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "BLE", "ANN", "T20", "PT", "C90"]
+
+[tool.ruff.lint.per-file-ignores]
+# Policy: asserts are how pytest tests, and test functions are not public API.
+"tests/**" = ["S101", "ANN"]
+# Policy: these modules exist to write to the terminal.
+"pulse/cli/daemon_command.py" = ["T201"]
+"pulse/cli/main.py" = ["T201"]
+"pulse/config/commands.py" = ["T201"]
+"pulse/doctor/report.py" = ["T201"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.mypy]
+python_version = "3.11"
+files = ["pulse"]
+warn_unused_ignores = true
+
+# Policy: the domain, the engine and the reply parsers are `--strict` with no `Any` written or
+# inferred in their code. `disallow_any_expr` stays off: typeshed types
+# `re.Match.group` as `str | Any`.
+[[tool.mypy.overrides]]
+module = [
+    "pulse.domain",
+    "pulse.domain.*",
+    "pulse.orchestrator",
+    "pulse.orchestrator.*",
+    "pulse.replies",
+    "pulse.replies.*",
+]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+disallow_any_explicit = true
+disallow_any_unimported = true
+disallow_any_decorated = true
+
+[tool.coverage.run]
+source = ["pulse"]
+branch = true
+
+[tool.coverage.report]
+# Measured when the gate landed; each phase raises it, never lowers it.
+fail_under = 93.0
+precision = 2
+
+[tool.vulture]
+paths = ["pulse"]
+min_confidence = 80
+
+# Architecture fitness functions (AGENTS.md §2.1, §2.2); run by `lint-imports`
+# and by tests/architecture/test_import_contracts.py.
+[tool.importlinter]
+root_package = "pulse"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "TUI and client are thin: they never import the engine"
+type = "forbidden"
+source_modules = ["pulse.tui", "pulse.client"]
+forbidden_modules = ["pulse.orchestrator", "pulse.acp", "pulse.daemon"]
+
+[[tool.importlinter.contracts]]
+name = "Domain stays free of UI and web frameworks"
+type = "forbidden"
+source_modules = ["pulse.domain", "pulse.orchestrator", "pulse.replies"]
+forbidden_modules = ["textual", "fastapi", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Domain values and reply parsing need nothing else from Pulse"
+type = "forbidden"
+source_modules = ["pulse.domain", "pulse.replies"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
+
+[[tool.importlinter.contracts]]
+name = "The engine reaches infrastructure only through ports"
+type = "forbidden"
+source_modules = ["pulse.orchestrator"]
+forbidden_modules = ["pulse.acp", "pulse.store", "pulse.vcs", "pulse.doctor"]
+
+[[tool.importlinter.contracts]]
+name = "Only the CLI opens the TUI"
+type = "forbidden"
+source_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.domain",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.replies",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.vcs",
+]
+forbidden_modules = ["pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "The TUI reaches persistence, config and runtimes only through the daemon"
+type = "forbidden"
+source_modules = ["pulse.tui"]
+forbidden_modules = [
+    "pulse.store",
+    "pulse.config",
+    "pulse.doctor",
+    "pulse.runtimes",
+    "pulse.vcs",
+    "pulse.mcp",
+    "pulse.api",
+]
+# Indirect chains count too: a screen that reaches SQLite through `history/`
+# or the client is as thick as one that imports it.
+ignore_imports = [
+    # Not debt: the `~/.pulse` layout (socket, daemon meta) is where client and
+    # daemon meet, shared by design (AGENTS.md §2.1). It imports nothing.
+    "pulse.client.daemon_process -> pulse.store.paths",
+    "pulse.client.engine_client -> pulse.store.paths",
+]
+
+[[tool.importlinter.contracts]]
+name = "Adapters depend on the domain, not on each other"
+type = "forbidden"
+source_modules = ["pulse.acp", "pulse.mcp", "pulse.runtimes", "pulse.store", "pulse.vcs"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.config",
+    "pulse.history",
+    "pulse.mcp",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.vcs",
+]
+
+# `history/` holds both the pure models the TUI may read and the two daemon-side
+# modules that touch the database; only those two may, and through these edges.
+[[tool.importlinter.contracts]]
+name = "History reaches the database only through its catalog and session log"
+type = "forbidden"
+source_modules = ["pulse.history"]
+forbidden_modules = [
+    "pulse.acp",
+    "pulse.api",
+    "pulse.cli",
+    "pulse.client",
+    "pulse.config",
+    "pulse.daemon",
+    "pulse.doctor",
+    "pulse.mcp",
+    "pulse.orchestrator",
+    "pulse.runtimes",
+    "pulse.store",
+    "pulse.tui",
+    "pulse.vcs",
+]
+ignore_imports = [
+    "pulse.history.catalog -> pulse.store.runs",
+    "pulse.history.catalog -> pulse.store.workflow_defs",
+    "pulse.history.catalog -> pulse.vcs",
+    "pulse.history.session_log -> pulse.config.project_config",
+    "pulse.history.session_log -> pulse.store.runs",
+    "pulse.history.session_log -> pulse.store.sessions",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only store/db.py loads the factory seed"
+type = "protected"
+protected_modules = ["pulse.store.factory"]
+allowed_importers = ["pulse.store.db"]
+
+# Screen copy lives with the layer that composes it (docs/adr/0004): no shared
+# text module every layer imports, and each one read only by its owner and the
+# screens that draw the same words.
+[[tool.importlinter.contracts]]
+name = "Engine wording is the engine's own"
+type = "protected"
+protected_modules = ["pulse.orchestrator.wording"]
+allowed_importers = ["pulse.orchestrator"]
+
+[[tool.importlinter.contracts]]
+name = "Run log wording belongs to history and the screens that redraw it"
+type = "protected"
+protected_modules = ["pulse.history.log_wording"]
+allowed_importers = ["pulse.history", "pulse.tui"]
+
+[[tool.importlinter.contracts]]
+name = "Question wording belongs to the reply builders and the screens that ask"
+type = "protected"
+protected_modules = ["pulse.replies.wording"]
+allowed_importers = ["pulse.replies", "pulse.history", "pulse.tui"]
+
+# Mutation testing of the parsers that read agent text (AGENTS.md §5.1, §6.1):
+# `mutmut run`, `mutmut export-cicd-stats`, then `python scripts/mutation_gate.py --min 80`.
+[tool.mutmut]
+source_paths = ["pulse/"]
+only_mutate = [
+    "pulse/domain/outcome.py",
+    "pulse/orchestrator/fanout.py",
+    "pulse/orchestrator/render.py",
+    "pulse/replies/*",
+]
+pytest_add_cli_args = ["-p", "no:randomly", "-p", "no:cacheprovider"]
+# The prompt-injection corpus lives with the security-audit skill.
+also_copy = [".claude/skills/security-audit/tools/prompt-injection-tester/"]
+pytest_add_cli_args_test_selection = [
+    "tests/domain",
+    "tests/orchestrator",
+    "tests/replies",
+    "tests/architecture/test_prompt_injection.py",
+]
