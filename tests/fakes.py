@@ -103,6 +103,16 @@ class FakeWorkspace:
         self._branch = branch if repo else ""
         self.branches: set[str] = {branch} if repo else set()
         self.worktrees: dict[Path, str] = {}
+        self.files: dict[Path, dict[str, str]] = {}
+        self.bases: dict[str, str] = {}
+        self.log: dict[str, list[str]] = {}
+        self.published: list[str] = []
+        self.requests: list[dict[str, str]] = []
+        self.deleted_branches: list[str] = []
+        self.committed: list[tuple[str, list[str], str]] = []
+        self.fail_push = False
+        self.fail_request = False
+        self.dirty = False
 
     @property
     def root(self) -> Path:
@@ -130,13 +140,55 @@ class FakeWorkspace:
     def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
         if not self._repo:
             raise WorkspaceError(f"{self._root} is not a repository")
-        name, attempt = branch, 2
-        while name in self.branches:
-            name, attempt = f"{branch}-{attempt}", attempt + 1
-        self.branches.add(name)
+        if branch in self.branches:
+            raise WorkspaceError(f"branch `{branch}` already exists")
+        self.branches.add(branch)
+        self.bases[branch] = f"base-{branch}"
+        self.log[branch] = []
         target = self._target(run_id)
-        self.worktrees[target] = name
-        return target, name
+        self.worktrees[target] = branch
+        return target, branch
+
+    def head(self, cwd: Path) -> str:
+        branch = self.worktrees.get(Path(cwd), "")
+        return self.bases.get(branch, "")
+
+    def snapshot(self, cwd: Path) -> dict[str, str]:
+        return dict(self.files.get(Path(cwd), {}))
+
+    def commit(self, cwd: Path, paths: list[str], message: str) -> None:
+        branch = self.worktrees.get(Path(cwd))
+        if branch is None:
+            raise WorkspaceError(f"{cwd} is not a worktree")
+        self.log.setdefault(branch, []).append(message)
+        self.committed.append((branch, list(paths), message))
+
+    def commits_after(self, cwd: Path, base: str) -> list[str]:
+        branch = self.worktrees.get(Path(cwd))
+        if branch is None or self.bases.get(branch) != base:
+            return []
+        return list(self.log.get(branch, []))
+
+    def publish_branch(self, branch: str) -> None:
+        if self.fail_push:
+            raise WorkspaceError("origin rejected the push")
+        self.published.append(branch)
+
+    def remove_worktree(self, path: Path) -> None:
+        if self.dirty:
+            raise WorkspaceError("worktree has uncommitted changes")
+        self.worktrees.pop(Path(path), None)
+
+    def delete_local_branch(self, branch: str) -> None:
+        if branch not in self.branches:
+            raise WorkspaceError(f"branch `{branch}` is not merged")
+        self.branches.discard(branch)
+        self.deleted_branches.append(branch)
+
+    def open_pull_request(self, *, branch: str, title: str, body: str) -> None:
+        if self.fail_request:
+            raise WorkspaceError("gh: not installed")
+        self.requests.append({"branch": branch, "title": title, "body": body})
 
     def lose_worktree(self, path: Path) -> None:
         """The user deleted the folder; the branch stays."""

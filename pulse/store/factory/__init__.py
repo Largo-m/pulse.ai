@@ -31,6 +31,7 @@ class FactoryStep:
     repeat_from: str = ""
     repeat_max: int = 0
     phase: str = ""
+    commit_type: str = ""
 
     def id(self) -> str:
         return self.step_id or self.agent_id
@@ -70,7 +71,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("prd", "PRD", True),
             FactoryStep("techspec", "Techspec", True),
             FactoryStep("tasks", "Tasks", True),
-            FactoryStep("implement", "Implementar", False, fan_out=True),
+            FactoryStep("implement", "Implementar", False, fan_out=True, commit_type="feat"),
             FactoryStep("review", "Review", True),
             FactoryStep(
                 "review-fix",
@@ -78,6 +79,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
                 False,
                 repeat_from="review",
                 repeat_max=3,
+                commit_type="fix",
             ),
         ),
     ),
@@ -87,7 +89,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
         description="mudança pequena, até 3 arquivos",
         steps=(
             FactoryStep("quick-plan", "Plano", True),
-            FactoryStep("quick-implement", "Implementar", False),
+            FactoryStep("quick-implement", "Implementar", False, commit_type="fix"),
         ),
     ),
     FactoryWorkflow(
@@ -103,6 +105,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
                 repeat_from="review",
                 repeat_max=3,
                 phase="STANDALONE",
+                commit_type="fix",
             ),
         ),
         default_prompt="Revisar a branch atual",
@@ -254,8 +257,8 @@ def seed(connection: sqlite3.Connection) -> None:
         """
         INSERT OR IGNORE INTO workflow_steps
           (workflow_id, step_id, position, label, agent_id, prompt_template,
-           requires_approval, fan_out, repeat_from, repeat_max)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           requires_approval, fan_out, repeat_from, repeat_max, commit_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -269,6 +272,7 @@ def seed(connection: sqlite3.Connection) -> None:
                 int(step.fan_out),
                 step.repeat_from,
                 int(step.repeat_max),
+                step.commit_type,
             )
             for workflow in WORKFLOWS
             for position, step in enumerate(workflow.steps, start=1)
@@ -285,6 +289,27 @@ def inherit_policy_on_default_agent(connection: sqlite3.Connection) -> None:
     connection.execute(
         "UPDATE agent_defs SET permission_policy = '' "
         "WHERE id = 'default' AND permission_policy = 'ask'"
+    )
+
+
+def backfill_commit_types(connection: sqlite3.Connection) -> None:
+    """Fill `commit_type` where the column was just added and is still empty.
+
+    `seed` does not rewrite existing rows, so a later edit of the column stays.
+    """
+    rows = [
+        (step.commit_type, workflow.id, step.id())
+        for workflow in WORKFLOWS
+        for step in workflow.steps
+        if step.commit_type
+    ]
+    connection.executemany(
+        """
+        UPDATE workflow_steps
+           SET commit_type = ?
+         WHERE workflow_id = ? AND step_id = ? AND commit_type = ''
+        """,
+        rows,
     )
 
 

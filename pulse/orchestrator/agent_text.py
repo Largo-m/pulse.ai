@@ -112,13 +112,28 @@ status: done
 """
 
 
-def outcome_protocol() -> str:
+_COMMIT_LINE = """
+Se este step entrega uma mudança no código, acrescente no mesmo bloco uma linha
+`commit:` com o assunto em inglês: minúscula, sem acento, no imperativo, sem
+ponto final e sem o tipo (`feat` ou `fix`).
+
+```pulse:outcome
+status: done
+commit: add email validation
+```
+"""
+
+
+def outcome_protocol(*, ask_commit: bool = False) -> str:
     """Closing instructions appended to the prompt of a step without approval.
 
     Engine protocol rather than step content, so `prompt_template` authors need
-    not know about it.
+    not know about it. `ask_commit` asks for the subject Pulse will put on the
+    commit of a step that delivers.
     """
-    return _OUTCOME_PROTOCOL
+    if not ask_commit:
+        return _OUTCOME_PROTOCOL
+    return _OUTCOME_PROTOCOL + _COMMIT_LINE
 
 
 def build_unblock_prompt(*, step_id: str, reason: str) -> str:

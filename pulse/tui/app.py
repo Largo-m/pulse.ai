@@ -28,6 +28,7 @@ class PulseApp(App[None]):
         resume_run_id: str | None = None,
         attach_run_id: str | None = None,
         workspace: Path | None = None,
+        branch: str = "",
     ) -> None:
         self.push_screen(
             CockpitScreen(
@@ -36,6 +37,7 @@ class PulseApp(App[None]):
                 workspace=workspace,
                 resume_run_id=resume_run_id,
                 attach_run_id=attach_run_id,
+                branch=branch,
             )
         )
 

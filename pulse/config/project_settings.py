@@ -56,10 +56,16 @@ class AgentSettings:
     fields: AgentFields
 
 
+class SettingsOrderError(ValueError):
+    """A flag was turned on without the flag it depends on."""
+
+
 @dataclass(frozen=True)
 class ProjectSettings:
     is_repo: bool
     use_worktree: bool
+    atomic_commits: bool
+    auto_pull_request: bool
     defaults: AgentFields
     agents: tuple[AgentSettings, ...]
 
@@ -76,6 +82,8 @@ def project_settings(workspace: Path) -> ProjectSettings:
     return ProjectSettings(
         is_repo=vcs.is_repo(workspace),
         use_worktree=bool(project.use_worktree) if project is not None else False,
+        atomic_commits=bool(project.atomic_commits) if project is not None else False,
+        auto_pull_request=bool(project.auto_pull_request) if project is not None else False,
         defaults=defaults,
         agents=tuple(
             AgentSettings(id=agent.id, label=agent.label, fields=_agent_fields(agent, workspace))
@@ -168,4 +176,27 @@ def set_agent_field(workspace: Path, agent_id: str, field: AgentField, value: st
 
 
 def set_worktree(workspace: Path, *, enabled: bool) -> None:
-    update_project_defaults(workspace, use_worktree=enabled)
+    if enabled:
+        update_project_defaults(workspace, use_worktree=True)
+        return
+    update_project_defaults(
+        workspace, use_worktree=False, atomic_commits=False, auto_pull_request=False
+    )
+
+
+def set_atomic_commits(workspace: Path, *, enabled: bool) -> None:
+    project = load_project_config(open_project(workspace))
+    if enabled and (project is None or not project.use_worktree):
+        raise SettingsOrderError("atomic commits require a worktree")
+    if enabled:
+        update_project_defaults(workspace, atomic_commits=True)
+        return
+    update_project_defaults(workspace, atomic_commits=False, auto_pull_request=False)
+
+
+def set_auto_pull_request(workspace: Path, *, enabled: bool) -> None:
+    project = load_project_config(open_project(workspace))
+    ready = project is not None and project.use_worktree and project.atomic_commits
+    if enabled and not ready:
+        raise SettingsOrderError("a pull request requires a worktree and atomic commits")
+    update_project_defaults(workspace, auto_pull_request=enabled)

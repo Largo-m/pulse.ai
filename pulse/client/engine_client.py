@@ -143,12 +143,15 @@ class EngineClient:
         prompt: str,
         workspace: str | None = None,
         resume_run_id: str | None = None,
+        branch: str = "",
     ) -> dict[str, Any]:
         body: dict[str, Any] = {"prompt": prompt}
         if workspace is not None:
             body["workspace"] = workspace
         if resume_run_id:
             body["resume_run_id"] = resume_run_id
+        if branch:
+            body["branch"] = branch
         return self.post(f"/api/workflows/{workflow_id}/runs", body)
 
     def doctor(self) -> dict[str, Any]:

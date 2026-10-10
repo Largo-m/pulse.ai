@@ -55,15 +55,16 @@ def test_a_repository_reports_its_branch(make):
     assert workspace.has_branch("nope") is False
 
 
-def test_a_new_worktree_never_reuses_a_branch(make):
-    """Two runs on one branch would write to the same history."""
+def test_a_taken_branch_name_is_refused(make):
+    """The caller confirmed the name, so a suffix would publish a different branch."""
     workspace = make()
 
-    first, first_branch = workspace.add_worktree("run-a", "pulse/demo")
-    second, second_branch = workspace.add_worktree("run-b", "pulse/demo")
+    first, first_branch = workspace.add_worktree("run-a", "corrigir-o-login")
 
-    assert (first_branch, second_branch) == ("pulse/demo", "pulse/demo-2")
-    assert first != second
+    with pytest.raises(WorkspaceError, match="already exists"):
+        workspace.add_worktree("run-b", "corrigir-o-login")
+
+    assert first_branch == "corrigir-o-login"
     assert first.name == "run-a"
     assert workspace.worktree_exists(str(first)) is True
     assert workspace.current_branch() == "main", "the project root stays where it was"

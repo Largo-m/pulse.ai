@@ -428,4 +428,4 @@ def test_enabled_toggle_moves_run_to_worktree(tmp_path: Path):
     exec_dir, branch = prepare(record, repo, use_worktree=resolve_config(repo).use_worktree)
 
     assert exec_dir == worktrees_dir() / run_id
-    assert branch.startswith("pulse/demo-")
+    assert branch == "adicionar-login"

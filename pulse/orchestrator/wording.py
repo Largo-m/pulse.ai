@@ -6,6 +6,8 @@ happened; the screens only show them. Code, errors and logs stay in English.
 
 from __future__ import annotations
 
+import re
+
 # Run notices narrated by the engine.
 RUN_STOPPED_BY_USER = "Run parada pelo usuário"
 AGENT_SESSION_RESTARTED = "Sessão do agente reiniciada"
@@ -81,6 +83,74 @@ OUTCOME_NOT_DECLARED = (
     "não dá para afirmar que ele entregou o que o step pede"
 )
 BLOCKED_WITHOUT_REASON = "o agente declarou bloqueio sem dizer o motivo"
+
+
+def commit_failed(error: str) -> str:
+    return f"Não commitei: {error}"
+
+
+def publish_failed(error: str) -> str:
+    return f"Não publiquei a branch: {error}"
+
+
+def pull_request_failed(error: str) -> str:
+    return f"Não abri o pedido: {error}"
+
+
+def worktree_left_dirty() -> str:
+    return "A pasta do worktree ficou: ainda há alteração sem commit"
+
+
+def local_branch_kept(error: str) -> str:
+    return f"A branch local ficou: {error}"
+
+
+_FIGMA = re.compile(r"https?://(?:www\.)?figma\.com/\S+")
+_FIGMA_PLACEHOLDER = (
+    "[Se houver algum link de figma anexar aqui, para avaliar o layout "
+    "com o resultado de desenvolvimento]"
+)
+_SCREENSHOTS = (
+    "[Se houver mudanças visuais ou novos recursos implementados, "
+    "adicione capturas de tela aqui para mostrar como eles ficam.]"
+)
+_HOW_TO_TEST = "[Uma breve descrição de como testar]"
+
+
+def commit_message(commit_type: str, subject: str, *, item_id: str) -> str:
+    text = subject.strip() or _fallback_subject(commit_type, item_id)
+    return f"{commit_type}: {text}"
+
+
+def _fallback_subject(commit_type: str, item_id: str) -> str:
+    if commit_type == "feat" and item_id:
+        return f"implement {item_id}"
+    if commit_type == "feat":
+        return "implement the change"
+    return "apply the correction"
+
+
+def pull_request_body(*, prompt: str, branch: str, commits: list[str]) -> str:
+    link = _figma_link(prompt)
+    listed = "\n".join(f"- {subject}" for subject in commits) or "- (sem commits listados)"
+    return (
+        f"#### Descrição:\n{prompt.strip()}\n\n"
+        f"#### Contexto Adicional:\nBranch `{branch}`.\n{listed}\n\n"
+        f"#### Link do Figma:\n{link or _FIGMA_PLACEHOLDER}\n\n"
+        f"#### Capturas de Tela:\n{_SCREENSHOTS}\n\n"
+        "#### Checklist:\n"
+        "- [ ] Testado localmente\n"
+        "- [ ] Cobertura de testes\n"
+        "- [ ] Changelog Atualizado\n\n"
+        f"#### Como Testar:\n{_HOW_TO_TEST}\n"
+    )
+
+
+def _figma_link(prompt: str) -> str:
+    match = _FIGMA.search(prompt)
+    if match is None:
+        return ""
+    return match.group(0).rstrip(").,")
 
 
 def unknown_outcome(status: str) -> str:

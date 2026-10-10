@@ -7,7 +7,7 @@ would serve wrongly: the client restarts a daemon older than this.
 
 from __future__ import annotations
 
-ENGINE_PROTOCOL = 9
+ENGINE_PROTOCOL = 10
 
 REPLAY_END = "stream.replay_end"
 PING = "stream.ping"

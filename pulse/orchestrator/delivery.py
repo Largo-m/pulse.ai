@@ -1,0 +1,93 @@
+"""Commit a delivered step, then publish the branch when the run is over."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from pulse.domain.ports import WorkspaceError
+from pulse.domain.run import RunRecord
+from pulse.domain.workflow import StepDef
+from pulse.orchestrator import wording
+from pulse.orchestrator.fanout import Item
+from pulse.orchestrator.wiring import Wiring, notify
+
+
+def snapshot_if_committing(wiring: Wiring, run: RunRecord, step: StepDef) -> dict[str, str]:
+    if not _will_commit(wiring, run, step):
+        return {}
+    return wiring.ports.workspace.snapshot(wiring.exec_dir)
+
+
+def commit_delivery(
+    wiring: Wiring,
+    run: RunRecord,
+    step: StepDef,
+    *,
+    delivered: bool,
+    subject: str,
+    item: Item | None,
+    before: dict[str, str],
+) -> None:
+    if not delivered or not _will_commit(wiring, run, step):
+        return
+    after = wiring.ports.workspace.snapshot(wiring.exec_dir)
+    paths = _changed(before, after)
+    if not paths:
+        return
+    message = wording.commit_message(
+        step.commit_type, subject, item_id=item.id if item is not None else ""
+    )
+    try:
+        wiring.ports.workspace.commit(wiring.exec_dir, paths, message)
+    except WorkspaceError as error:
+        notify(wiring, wording.commit_failed(str(error)))
+
+
+def publish_finished_run(wiring: Wiring, run: RunRecord) -> int | None:
+    """Push, open the request and drop the local worktree. `1` when the push fails."""
+    if not run.owns_branch or not run.branch_base or not run.worktree_path:
+        return None
+    cwd = Path(run.worktree_path)
+    subjects = wiring.ports.workspace.commits_after(cwd, run.branch_base)
+    if not subjects:
+        return None
+    try:
+        wiring.ports.workspace.publish_branch(run.branch)
+    except WorkspaceError as error:
+        notify(wiring, wording.publish_failed(str(error)))
+        return 1
+    _open_request(wiring, run, subjects)
+    _drop_local(wiring, run, cwd)
+    return None
+
+
+def _will_commit(wiring: Wiring, run: RunRecord, step: StepDef) -> bool:
+    return bool(wiring.atomic_commits and run.branch_owned and step.commit_type)
+
+
+def _open_request(wiring: Wiring, run: RunRecord, subjects: list[str]) -> None:
+    if not wiring.auto_pull_request:
+        return
+    body = wording.pull_request_body(prompt=run.user_prompt, branch=run.branch, commits=subjects)
+    try:
+        wiring.ports.workspace.open_pull_request(branch=run.branch, title=run.branch, body=body)
+    except WorkspaceError as error:
+        notify(wiring, wording.pull_request_failed(str(error)))
+
+
+def _drop_local(wiring: Wiring, run: RunRecord, cwd: Path) -> None:
+    try:
+        wiring.ports.workspace.remove_worktree(cwd)
+    except WorkspaceError:
+        notify(wiring, wording.worktree_left_dirty())
+        return
+    run.work_in(worktree_path="", branch=run.branch)
+    try:
+        wiring.ports.workspace.delete_local_branch(run.branch)
+    except WorkspaceError as error:
+        notify(wiring, wording.local_branch_kept(str(error)))
+
+
+def _changed(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    names = set(before) | set(after)
+    return sorted(path for path in names if before.get(path) != after.get(path))

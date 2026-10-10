@@ -84,6 +84,8 @@ def _run(row: sqlite3.Row, steps: list[StepRecord]) -> RunRecord:
         updated_at=str(row["updated_at"] or ""),
         worktree_path=str(row["worktree_path"] or ""),
         branch=str(row["branch"] or ""),
+        branch_owned=bool(row["branch_owned"]),
+        branch_base=str(row["branch_base"] or ""),
         steps=steps,
     )
 
@@ -212,10 +214,20 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
         connection.execute(
             """
             UPDATE runs
-            SET status = ?, current_step = ?, worktree_path = ?, branch = ?, updated_at = ?
+            SET status = ?, current_step = ?, worktree_path = ?, branch = ?,
+                branch_owned = ?, branch_base = ?, updated_at = ?
             WHERE id = ?
             """,
-            (run.status, run.current_step, run.worktree_path, run.branch, _now_text(), run.id),
+            (
+                run.status,
+                run.current_step,
+                run.worktree_path,
+                run.branch,
+                int(run.branch_owned),
+                run.branch_base,
+                _now_text(),
+                run.id,
+            ),
         )
         connection.executemany(
             "DELETE FROM run_steps WHERE run_id = ? AND step_id = ?",

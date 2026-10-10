@@ -21,6 +21,7 @@ class StartRunBody(BaseModel):
     prompt: str = ""
     workspace: str | None = None
     resume_run_id: str | None = None
+    branch: str = ""
 
 
 class PromptAnswerBody(BaseModel):
@@ -54,6 +55,7 @@ def start_workflow_run(workflow_id: str, body: StartRunBody, runs: Runs) -> dict
             prompt=body.prompt,
             workspace=body.workspace,
             resume_run_id=body.resume_run_id,
+            branch=body.branch,
         )
     except RunAlreadyActive as error:
         raise HTTPException(status_code=409, detail=str(error)) from error

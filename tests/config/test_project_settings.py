@@ -17,11 +17,15 @@ from pulse.config.project_settings import (
     FALLBACK_MODEL,
     AgentField,
     AgentFields,
+    SettingsOrderError,
     agent_fields,
     effective_defaults,
     project_settings,
     set_agent_field,
+    set_atomic_commits,
+    set_auto_pull_request,
     set_project_default,
+    set_worktree,
 )
 from pulse.config.resolved import DEFAULT_PERMISSION_POLICY
 from pulse.runtimes import DEFAULT_RUNTIME_ID
@@ -97,6 +101,40 @@ def test_the_settings_list_every_agent_and_the_worktree_switch(tmp_path: Path) -
     project = load_project_config(tmp_path)
     assert project is not None
     assert settings.use_worktree is project.use_worktree is False
+    assert settings.atomic_commits is settings.auto_pull_request is False
+
+
+def test_git_options_turn_on_only_in_order_and_turn_off_downward(tmp_path: Path) -> None:
+    init_project_config(tmp_path)
+
+    with pytest.raises(SettingsOrderError):
+        set_atomic_commits(tmp_path, enabled=True)
+    with pytest.raises(SettingsOrderError):
+        set_auto_pull_request(tmp_path, enabled=True)
+
+    set_worktree(tmp_path, enabled=True)
+    set_atomic_commits(tmp_path, enabled=True)
+    set_auto_pull_request(tmp_path, enabled=True)
+    set_atomic_commits(tmp_path, enabled=False)
+    project = load_project_config(tmp_path)
+    assert project is not None
+    assert (project.use_worktree, project.atomic_commits, project.auto_pull_request) == (
+        True,
+        False,
+        False,
+    )
+
+    set_worktree(tmp_path, enabled=True)
+    set_atomic_commits(tmp_path, enabled=True)
+    set_auto_pull_request(tmp_path, enabled=True)
+    set_worktree(tmp_path, enabled=False)
+    project = load_project_config(tmp_path)
+    assert project is not None
+    assert (project.use_worktree, project.atomic_commits, project.auto_pull_request) == (
+        False,
+        False,
+        False,
+    )
 
 
 def test_a_field_the_settings_do_not_know_is_refused_not_written_as_the_policy(

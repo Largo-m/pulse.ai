@@ -11,6 +11,22 @@ def _block(body: str) -> str:
     return f"texto do agente\n\n```pulse:outcome\n{body}\n```\n"
 
 
+def test_a_lowercase_commit_line_keeps_the_subject_and_drops_the_type():
+    outcome = parse_outcome(_block("status: done\ncommit: feat: add email validation"))
+
+    assert outcome.delivered
+    assert outcome.commit_subject == "add email validation"
+
+
+def test_a_commit_line_with_an_accent_or_a_capital_is_ignored():
+    accent = parse_outcome(_block("status: done\ncommit: ação"))
+    capital = parse_outcome(_block("status: done\ncommit: Add email"))
+
+    assert accent.commit_subject == ""
+    assert capital.commit_subject == ""
+    assert accent.delivered
+
+
 def test_done_is_the_only_way_to_say_delivered():
     assert parse_outcome(_block("status: done")).delivered
 

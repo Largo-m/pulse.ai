@@ -241,7 +241,7 @@ def test_worktree_and_doctor_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr("pulse.api.system_routes.run_doctor_checks", lambda: [])
 
     async def scenario(pilot, screen: SettingsScreen) -> None:
-        root = ["global", "agents", "worktree", "doctor", "back"]
+        root = ["global", "agents", "worktree", "atomic", "pull_request", "doctor", "back"]
         assert _option_ids(screen) == root
         await _select(pilot, screen, "worktree")
         assert _option_ids(screen) == root

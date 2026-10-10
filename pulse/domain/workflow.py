@@ -107,6 +107,7 @@ class StepDef:
     fan_out: bool = False
     requires_outcome: bool = True
     repeat: RepeatRule | None = None
+    commit_type: str = ""
 
     @property
     def declares_outcome(self) -> bool:

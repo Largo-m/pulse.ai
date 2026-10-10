@@ -15,7 +15,8 @@ Tabelas em `~/.pulse/pulse.db` (ver [armazenamento.md](armazenamento.md)):
 ```
 workflow_defs     id, label, description, is_default, default_prompt
 workflow_steps    workflow_id, step_id, position, label,
-                  agent_id, prompt_template, requires_approval, fan_out
+                  agent_id, prompt_template, requires_approval, fan_out,
+                  commit_type
 agent_defs        id, label, runtime, model, permission_policy, instructions
 ```
 
@@ -27,6 +28,10 @@ Id que não está em `workflow_defs` não existe: `run_workflow` levanta
 `default_prompt` é a tarefa que o loop já sabe qual é — "Analisar codebase" e
 "Setup do projeto" olham o repositório, não um pedido. Preenchido, o menu entra
 direto na run; vazio, ele abre o campo para o usuário descrever a tarefa.
+
+`commit_type` (`feat`, `fix` ou vazio) diz se o Autocommit grava um commit
+quando o step entrega. Vazio não commita. A opção só existe com Worktree
+ligado; PR/MR só existe com as duas.
 
 ## 1.1 A semente de fábrica
 

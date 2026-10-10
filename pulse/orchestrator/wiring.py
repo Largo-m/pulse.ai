@@ -34,6 +34,8 @@ class Wiring:
     ports: EnginePorts
     control: RunControl
     exec_dir: Path
+    atomic_commits: bool = False
+    auto_pull_request: bool = False
 
     @property
     def session(self) -> AgentSession:

@@ -39,6 +39,9 @@ class EngineHarness:
         run_id: str | None = None,
         control: RunControl | None = None,
         use_worktree: bool = False,
+        atomic_commits: bool = False,
+        auto_pull_request: bool = False,
+        branch: str = "",
     ) -> int:
         definition = get_workflow(workflow_id)
         assert definition is not None, f"seed `{workflow_id}` with make_workflow first"
@@ -54,6 +57,9 @@ class EngineHarness:
             user_prompt=user_prompt,
             ports=ports,
             use_worktree=use_worktree,
+            atomic_commits=atomic_commits,
+            auto_pull_request=auto_pull_request,
+            branch=branch,
             resume_run_id=resume_run_id,
             control=control or session.control,
             run_id=run_id,

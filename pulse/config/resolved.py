@@ -35,6 +35,8 @@ class ResolvedConfig:
     permission_policy: str
     workspace_dir: Path
     use_worktree: bool = False
+    atomic_commits: bool = False
+    auto_pull_request: bool = False
     workflow: str | None = None
     pulse_agent: str | None = None
     agents: dict[str, AgentConfig] = field(default_factory=dict)
@@ -204,6 +206,15 @@ def resolve_config(
         permission_policy=permission_policy,
         workspace_dir=workspace_dir,
         use_worktree=bool(project_cfg.use_worktree) if project_cfg else False,
+        atomic_commits=bool(project_cfg.use_worktree and project_cfg.atomic_commits)
+        if project_cfg
+        else False,
+        auto_pull_request=bool(
+            project_cfg
+            and project_cfg.use_worktree
+            and project_cfg.atomic_commits
+            and project_cfg.auto_pull_request
+        ),
         workflow=workflow,
         pulse_agent=pulse_agent,
         agents=agents,

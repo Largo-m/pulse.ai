@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.domain.ports import RunRepository, Workspace
+from pulse.domain.branch_name import task_slug
+from pulse.domain.ports import RunRepository, Workspace, WorkspaceError
 from pulse.domain.run import RunRecord
 
 
@@ -18,6 +19,7 @@ def prepare_workspace(
     runs: RunRepository,
     *,
     use_worktree: bool,
+    branch: str = "",
 ) -> tuple[Path, str]:
     """Where this run works, and on which branch.
 
@@ -27,7 +29,7 @@ def prepare_workspace(
        worktree on that branch, regardless of the setting.
     3. No isolation (setting off, or not a git repo): run at the root on the
        project's current branch.
-    4. Isolation on: a new worktree for the run, on a new branch from HEAD.
+    4. Isolation on: a new worktree for the run, on `branch` or the task slug.
 
     `workspace.root` stays the run's identity (history looks it up by it); only
     where the agent writes changes.
@@ -46,11 +48,29 @@ def prepare_workspace(
         runs.save(run)
         return workspace.root, branch
 
-    target, branch = workspace.add_worktree(run.id, run.own_branch)
-    return _work_in(run, runs, target, branch)
+    name = _branch_name(run, branch)
+    target, created = workspace.add_worktree(run.id, name)
+    return _work_in(run, runs, target, created, owns=True, base=workspace.head(target))
 
 
-def _work_in(run: RunRecord, runs: RunRepository, target: Path, branch: str) -> tuple[Path, str]:
-    run.work_in(worktree_path=str(target), branch=branch)
+def _branch_name(run: RunRecord, requested: str) -> str:
+    if run.branch_owned and run.branch:
+        return run.branch
+    name = requested.strip() or task_slug(run.user_prompt)
+    if not name:
+        raise WorkspaceError("the run needs a branch name")
+    return name
+
+
+def _work_in(
+    run: RunRecord,
+    runs: RunRepository,
+    target: Path,
+    branch: str,
+    *,
+    owns: bool = False,
+    base: str = "",
+) -> tuple[Path, str]:
+    run.work_in(worktree_path=str(target), branch=branch, owns=owns, base=base)
     runs.save(run)
     return target, branch

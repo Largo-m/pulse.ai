@@ -73,12 +73,14 @@ class CockpitScreen(Screen[None]):
         workspace: Path | None = None,
         resume_run_id: str | None = None,
         attach_run_id: str | None = None,
+        branch: str = "",
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
         self.user_prompt = user_prompt
         self.resume_run_id = resume_run_id
         self.attach_run_id = attach_run_id
+        self.branch = branch
         self.state = CockpitState()
         # Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
         shape = engine.optional(lambda: engine.workflow(workflow_id))
@@ -275,6 +277,7 @@ class CockpitScreen(Screen[None]):
                     user_prompt=self.user_prompt,
                     workspace=self._workspace,
                     resume_run_id=self.resume_run_id,
+                    branch=self.branch,
                 )
         except PromptAbandoned:
             return

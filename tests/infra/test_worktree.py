@@ -42,12 +42,12 @@ def make_repo(path: Path) -> Path:
     return path
 
 
-def make_run(workspace: Path, *, run_id: str = "run-1") -> RunRecord:
+def make_run(workspace: Path, *, run_id: str = "run-1", user_prompt: str = "tarefa") -> RunRecord:
     return run_store.create_run(
         run_id=run_id,
         workflow_id="demo",
         workspace=workspace,
-        user_prompt="tarefa",
+        user_prompt=user_prompt,
         steps=[StepRecord(step_id="one", position=1, label="Um", agent_id="tester")],
     )
 
@@ -92,16 +92,13 @@ def test_add_worktree_creates_branch_and_directory(tmp_path: Path) -> None:
     assert vcs.current_branch(repo) == "main"
 
 
-def test_existing_branch_gets_a_suffix(tmp_path: Path) -> None:
-    """A removed worktree leaves its branch behind; the next name avoids it.
-
-    Reusing the branch would make two runs write to the same history.
-    """
+def test_an_existing_branch_name_is_refused(tmp_path: Path) -> None:
+    """A removed worktree leaves its branch behind; the next run must pick another name."""
     repo = make_repo(tmp_path / "repo")
-    first = vcs.add_worktree(repo, tmp_path / "wt1", "pulse/demo-abc")
-    second = vcs.add_worktree(repo, tmp_path / "wt2", "pulse/demo-abc")
-    assert first == "pulse/demo-abc"
-    assert second == "pulse/demo-abc-2"
+    first = vcs.add_worktree(repo, tmp_path / "wt1", "corrigir-o-login")
+    with pytest.raises(vcs.GitError, match="already exists"):
+        vcs.add_worktree(repo, tmp_path / "wt2", "corrigir-o-login")
+    assert first == "corrigir-o-login"
 
 
 def test_remove_worktree_refuses_dirty_directory(tmp_path: Path) -> None:
@@ -163,7 +160,7 @@ def test_isolation_opens_worktree_and_stores_it(tmp_path: Path) -> None:
 
     assert exec_dir == worktrees_dir() / run.id
     assert exec_dir.is_dir()
-    assert branch == run.own_branch
+    assert branch == "tarefa"
     assert vcs.current_branch(exec_dir) == branch
     assert vcs.current_branch(repo) == "main"
 
@@ -171,6 +168,8 @@ def test_isolation_opens_worktree_and_stores_it(tmp_path: Path) -> None:
     assert stored is not None
     assert stored.worktree_path == str(exec_dir)
     assert stored.branch == branch
+    assert stored.branch_owned is True
+    assert stored.branch_base
     assert stored.workspace_root == str(repo.resolve())
     assert stored.exec_root == str(exec_dir)
 
@@ -251,7 +250,7 @@ def test_project_branch_is_not_reattached(tmp_path: Path) -> None:
     assert resumed.branch == "main"
     target, branch = prepare(resumed, repo, use_worktree=True)
 
-    assert branch == run.own_branch
+    assert branch == "tarefa"
     assert target == worktrees_dir() / run.id
     assert vcs.current_branch(repo) == "main"
 
@@ -279,8 +278,12 @@ def test_deleted_run_branch_opens_another(tmp_path: Path) -> None:
 
 def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
-    one, _ = prepare(make_run(repo, run_id="run-a"), repo, use_worktree=True)
-    two, _ = prepare(make_run(repo, run_id="run-b"), repo, use_worktree=True)
+    one, _ = prepare(
+        make_run(repo, run_id="run-a", user_prompt="tarefa a"), repo, use_worktree=True
+    )
+    two, _ = prepare(
+        make_run(repo, run_id="run-b", user_prompt="tarefa b"), repo, use_worktree=True
+    )
     assert one != two
     assert one.is_dir()
     assert two.is_dir()

@@ -36,6 +36,8 @@ def _show(base: Path, workflow: str | None) -> int:
         f"({resolved.sources.get('workspace_dir', '')})"
     )
     print(f"  worktree           {'on' if resolved.use_worktree else 'off'}  (project)")
+    print(f"  atomic_commits     {'on' if resolved.atomic_commits else 'off'}  (project)")
+    print(f"  pull_request       {'on' if resolved.auto_pull_request else 'off'}  (project)")
     project = find_project_root(base)
     if project is not None:
         print(f"  project_config     {project}")

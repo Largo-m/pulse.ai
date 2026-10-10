@@ -15,6 +15,38 @@ from pulse.tui import engine, strings
 from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
 
 
+def _flag_state(enabled: bool, *, available: bool) -> str:
+    if not available:
+        return strings.SETTINGS_ATOMIC_UNAVAILABLE
+    return strings.SETTINGS_WORKTREE_ON if enabled else strings.SETTINGS_WORKTREE_OFF
+
+
+def _git_options(settings: ProjectSettings) -> list[tuple[str, str]]:
+    return [
+        (
+            "worktree",
+            strings.SETTINGS_WORKTREE_OPTION.format(
+                state=_flag_state(settings.use_worktree, available=True)
+            ),
+        ),
+        (
+            "atomic",
+            strings.SETTINGS_ATOMIC_OPTION.format(
+                state=_flag_state(settings.atomic_commits, available=settings.use_worktree)
+            ),
+        ),
+        (
+            "pull_request",
+            strings.SETTINGS_PR_OPTION.format(
+                state=_flag_state(
+                    settings.auto_pull_request,
+                    available=settings.use_worktree and settings.atomic_commits,
+                )
+            ),
+        ),
+    ]
+
+
 class SettingsScreen(Screen[None]):
     BINDINGS = [
         ("escape", "go_back", strings.BACK),
@@ -101,12 +133,7 @@ class SettingsScreen(Screen[None]):
             self._set_options([("back", strings.BACK)])
             return
         if settings.is_repo:
-            state = (
-                strings.SETTINGS_WORKTREE_ON
-                if settings.use_worktree
-                else strings.SETTINGS_WORKTREE_OFF
-            )
-            options.append(("worktree", strings.SETTINGS_WORKTREE_OPTION.format(state=state)))
+            options.extend(_git_options(settings))
         options.append(("doctor", strings.SETTINGS_DOCTOR_OPTION))
         options.append(("back", strings.BACK))
         self._set_options(options)
@@ -118,6 +145,28 @@ class SettingsScreen(Screen[None]):
 
     def _current(self) -> ProjectSettings:
         return self._settings if self._settings is not None else self._load()
+
+    def _toggle_atomic(self) -> None:
+        current = self._current()
+        if not current.use_worktree:
+            self._set_report(strings.SETTINGS_ATOMIC_NEEDS_WORKTREE)
+            return
+        enabled = not current.atomic_commits
+        engine.set_atomic_commits(self._cwd, enabled=enabled)
+        self._show_root()
+        self._set_report(
+            strings.SETTINGS_ATOMIC_ENABLED if enabled else strings.SETTINGS_ATOMIC_DISABLED
+        )
+
+    def _toggle_pull_request(self) -> None:
+        current = self._current()
+        if not current.use_worktree or not current.atomic_commits:
+            self._set_report(strings.SETTINGS_PR_NEEDS_COMMITS)
+            return
+        enabled = not current.auto_pull_request
+        engine.set_pull_request(self._cwd, enabled=enabled)
+        self._show_root()
+        self._set_report(strings.SETTINGS_PR_ENABLED if enabled else strings.SETTINGS_PR_DISABLED)
 
     def _toggle_worktree(self) -> None:
         enabled = not self._current().use_worktree
@@ -157,6 +206,8 @@ class SettingsScreen(Screen[None]):
             ("root", "global"): lambda _: self._show_global_fields(),
             ("root", "agents"): lambda _: self._show_pulse_agents(),
             ("root", "worktree"): lambda _: self._toggle_worktree(),
+            ("root", "atomic"): lambda _: self._toggle_atomic(),
+            ("root", "pull_request"): lambda _: self._toggle_pull_request(),
             ("root", "doctor"): lambda _: self._run_doctor(),
             **{("global_fields", f"g_{field}"): route for field, route in open_fields.items()},
             **{("workflow_fields", f"wf_{field}"): route for field, route in open_fields.items()},

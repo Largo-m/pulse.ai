@@ -16,10 +16,12 @@ from textual.worker import get_current_worker
 
 from pulse import __version__
 from pulse.client.active_runs import active_runs, awaiting_runs
+from pulse.domain.branch_name import task_slug
 from pulse.history.run_lines import held_tail, run_line
 from pulse.history.status_labels import status_color, status_icon
 from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.tui.screens.branch_name import BranchNameScreen
 from pulse.tui.screens.navigation import pulse_app
 
 
@@ -291,7 +293,7 @@ class HomeScreen(Screen[None]):
         """Start right away when the workflow has a default prompt; otherwise ask for one."""
         default_prompt = self._default_prompts.get(workflow_id, "")
         if default_prompt:
-            pulse_app(self).open_cockpit(workflow_id, default_prompt)
+            self._open_run(workflow_id, default_prompt)
             return
         self._pending_workflow = workflow_id
         prompt_input = self.query_one("#workflow-prompt", Input)
@@ -337,7 +339,27 @@ class HomeScreen(Screen[None]):
         self._pending_workflow = None
         if not workflow_id or not text:
             return
-        pulse_app(self).open_cockpit(workflow_id, text)
+        self._open_run(workflow_id, text)
+
+    def _open_run(self, workflow_id: str, text: str) -> None:
+        workspace = Path.cwd()
+        try:
+            settings = engine.project_settings(workspace)
+        except engine.EngineError as error:
+            self.query_one(".home-hint", Static).update(error.describe())
+            return
+        if not settings.use_worktree:
+            pulse_app(self).open_cockpit(workflow_id, text)
+            return
+
+        def _chosen(name: str | None) -> None:
+            if name:
+                pulse_app(self).open_cockpit(workflow_id, text, branch=name)
+
+        self.app.push_screen(
+            BranchNameScreen(suggested=task_slug(text), workspace=workspace),
+            _chosen,
+        )
 
     def action_quit_app(self) -> None:
         """Quit the CLI without stopping runs, which live in the engine process.
