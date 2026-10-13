@@ -84,6 +84,19 @@ def default_global_agents() -> dict[str, AgentConfig]:
     }
 
 
+def include_registered_runtimes(agents: dict[str, AgentConfig]) -> dict[str, AgentConfig]:
+    """Runtimes registered after this config was saved.
+
+    A stored row wins: onboarding writes the catalog once, and a runtime added
+    later must show up in settings without replacing a binary, command or model
+    list the user already has.
+    """
+    filled = dict(agents)
+    for name, agent in default_global_agents().items():
+        filled.setdefault(name, agent)
+    return filled
+
+
 def default_global_workflows() -> dict[str, WorkflowConfig]:
     """None. A workflow only exists if it is in the `workflow_defs` DB table.
 

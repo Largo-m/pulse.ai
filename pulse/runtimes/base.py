@@ -33,6 +33,7 @@ def run_cli(
             text=True,
             timeout=timeout,
             check=False,
+            cwd=os.getcwd(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

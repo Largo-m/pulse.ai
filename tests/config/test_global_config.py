@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pulse.config.agents import AgentConfig, WorkflowConfig
+from pulse.config.agents import AgentConfig, WorkflowConfig, default_global_agents
 from pulse.config.global_config import (
     GlobalConfig,
     global_config_exists,
@@ -8,6 +8,8 @@ from pulse.config.global_config import (
     mark_onboarding_complete,
     save_global_config,
 )
+from pulse.store.codec import load_list
+from pulse.store.db import connect
 
 
 def test_global_config_roundtrip(tmp_path: Path):
@@ -70,6 +72,59 @@ def test_global_config_agents_and_workflows_roundtrip(tmp_path: Path):
     assert loaded.agents["cursor"].models == ["Auto", "gpt-5.5"]
     assert loaded.workflows["fluxo-a"].agent == "cursor"
     assert loaded.workflows["fluxo-a"].model == "gpt-5.5"
+
+
+def test_a_runtime_added_after_onboarding_is_listed_and_stored_rows_stay(tmp_path: Path):
+    """Settings reads this catalog. A runtime registered later must show up,
+    and a binary or model list already saved must stay as the user left it.
+    """
+    config_path = tmp_path / "pulse.db"
+    save_global_config(
+        GlobalConfig(
+            version=1,
+            agent_binary="agent",
+            acp_command=["agent", "acp"],
+            auth_method="cursor_login",
+            workspace_dir=tmp_path,
+            model="Auto",
+            permission_policy="ask",
+            completed_at="2026-06-21T12:00:00+00:00",
+            default_agent="cursor",
+            agents={
+                "cursor": AgentConfig(
+                    name="cursor",
+                    binary="agent",
+                    acp_command=["agent", "acp"],
+                    models=["Auto", "gpt-5.5"],
+                ),
+                "claude": AgentConfig(
+                    name="claude",
+                    binary="claude",
+                    acp_command=["claude", "acp"],
+                    models=["opus"],
+                ),
+            },
+        ),
+        config_path,
+    )
+
+    loaded = load_global_config(config_path)
+
+    assert loaded is not None
+    assert loaded.agents["codex"] == default_global_agents()["codex"]
+    assert loaded.agents["cursor"].models == ["Auto", "gpt-5.5"]
+    assert loaded.agents["claude"].models == ["opus"]
+    connection = connect(config_path)
+    try:
+        rows = {
+            row["name"]: row
+            for row in connection.execute("SELECT name, binary, models FROM machine_agents")
+        }
+    finally:
+        connection.close()
+    assert rows["codex"]["binary"] == "codex"
+    assert load_list(rows["cursor"]["models"]) == ["Auto", "gpt-5.5"]
+    assert load_list(rows["claude"]["models"]) == ["opus"]
 
 
 def test_save_global_config_creates_parent(tmp_path: Path):

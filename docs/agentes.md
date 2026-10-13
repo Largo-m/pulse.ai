@@ -17,7 +17,7 @@ Antes de tudo, porque isso confunde quem chega:
 | Caminho | O que é |
 | --- | --- |
 | [`pulse/store/factory/agents/`](../pulse/store/factory/agents/) | Os `.md` de fábrica. **Semente do banco**, lida uma vez. |
-| [`pulse/runtimes/`](../pulse/runtimes/) (plural) | Os **backends**: qual CLI executa um agente (`cursor`, `claude`). |
+| [`pulse/runtimes/`](../pulse/runtimes/) (plural) | Os **backends**: qual CLI executa um agente (`cursor`, `claude`, `codex`). |
 
 E os dois sentidos da palavra "agente", que o código separa:
 
@@ -54,7 +54,7 @@ Um agente Pulse *usa* um runtime. Trocar de runtime não muda o papel.
                                │ resolve_config(pulse_agent=…)
                                ▼
   ┌─ 4. EXECUÇÃO (processo) ───────────────────────────────────┐
-  │  pulse/runtimes/{cursor,claude}.py   → subprocess ACP      │
+  │  pulse/runtimes/{cursor,claude,codex}.py → subprocess ACP  │
   └────────────────────────────────────────────────────────────┘
 ```
 
