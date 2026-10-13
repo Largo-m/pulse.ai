@@ -1,0 +1,109 @@
+"""Commits, snapshots and the push that publishes a run's branch."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from pulse import vcs
+from pulse.vcs import changes
+from pulse.vcs.workspace import GitWorkspace
+from tests.infra.test_worktree import make_repo
+
+pytestmark = pytest.mark.skipif(not vcs.git_available(), reason="git is not on PATH")
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # noqa: S603 - fixed git argv on a temp repo
+        ["git", *args],  # noqa: S607 - git resolved from PATH
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_a_snapshot_hashes_only_dirty_paths_and_a_commit_keeps_the_subject(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    workspace = GitWorkspace(repo, worktrees=tmp_path / "worktrees")
+    target, branch = workspace.add_worktree("run-1", "corrigir-o-login")
+    base = workspace.head(target)
+    (target / "novo.txt").write_text("novo\n", encoding="utf-8")
+    _git(target, "mv", "README.md", "LEIA.md")
+
+    before = workspace.snapshot(target)
+    assert set(before) == {"novo.txt", "LEIA.md", "README.md"}
+    assert before["novo.txt"]
+    assert before["LEIA.md"]
+    assert before["README.md"] == ""
+    assert before["LEIA.md"]
+
+    workspace.commit(target, ["novo.txt"], "feat: add the file")
+
+    assert workspace.commits_after(target, base) == ["feat: add the file"]
+    after = workspace.snapshot(target)
+    assert "novo.txt" not in after
+    (target / "novo.txt").unlink()
+    assert workspace.snapshot(target)["novo.txt"] == ""
+    assert branch == "corrigir-o-login"
+
+
+def test_a_commit_refuses_an_empty_list_and_a_path_outside_the_worktree(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    workspace = GitWorkspace(repo, worktrees=tmp_path / "worktrees")
+    target, _branch = workspace.add_worktree("run-1", "corrigir-o-login")
+
+    with pytest.raises(vcs.GitError, match="nothing to commit"):
+        changes.commit_paths(target, [], "feat: nothing")
+    with pytest.raises(vcs.GitError, match="escapes"):
+        changes.commit_paths(target, ["../fora.txt"], "feat: escape")
+    with pytest.raises(vcs.GitError, match="escapes"):
+        changes.commit_paths(target, ["/etc/passwd"], "feat: absolute")
+
+
+def test_a_missing_or_unreadable_status_is_an_empty_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(*_args, **_kwargs):
+        raise OSError("git sumiu")
+
+    monkeypatch.setattr(changes, "_run", _boom)
+    assert changes.snapshot(tmp_path) == {}
+    assert changes.branch_name_ok(tmp_path, "ok") is False
+
+
+def test_branch_names_and_the_remote_default(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    assert changes.branch_name_ok(repo, "corrigir-o-login") is True
+    assert changes.branch_name_ok(repo, " nome ruim") is False
+    assert changes.branch_name_ok(repo, "") is False
+    assert changes.default_branch(repo) == ""
+
+    bare = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-u", "origin", "main")
+    _git(repo, "remote", "set-head", "origin", "main")
+    assert changes.default_branch(repo) == "main"
+
+
+def test_publishing_pushes_the_branch_and_deletes_only_the_local_one(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    bare = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", "-q", str(bare))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-u", "origin", "main")
+    workspace = GitWorkspace(repo, worktrees=tmp_path / "worktrees")
+    target, branch = workspace.add_worktree("run-1", "corrigir-o-login")
+    (target / "novo.txt").write_text("novo\n", encoding="utf-8")
+    workspace.commit(target, ["novo.txt"], "feat: add the file")
+
+    workspace.publish_branch(branch)
+    workspace.remove_worktree(target)
+    workspace.delete_local_branch(branch)
+
+    assert not target.exists()
+    assert vcs.branch_exists(repo, branch) is False
+    assert vcs.branch_exists(bare, branch) is True

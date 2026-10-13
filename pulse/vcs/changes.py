@@ -49,12 +49,15 @@ def _parse_porcelain(text: str) -> list[str]:
         if len(entry) < 4:
             continue
         path = entry[3:]
+        extra = ""
         if "R" in entry[:2] or "C" in entry[:2]:
             if index < len(entries) and entries[index]:
-                path = entries[index]
+                extra = entries[index]
                 index += 1
         if path:
             paths.append(path)
+        if extra:
+            paths.append(extra)
     return paths
 
 
