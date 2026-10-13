@@ -25,7 +25,7 @@ from pulse.orchestrator.waits import RunWaits
 from pulse.runtimes import get_runtime
 from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
-from pulse.tui.hydrate import _stamp_elapsed
+from pulse.tui.hydrate import _stamp_persisted
 from pulse.tui.state import CockpitState
 from tests.conftest import served_log, store_step, wait_for_event
 from tests.orchestrator.test_run_context import _ReplayClient
@@ -183,7 +183,7 @@ def test_history_duration_discounts_the_wait():
 
     state = CockpitState()
     state.phases = [PhaseItem(id="one", label="Um", status=PhaseStatus.DONE)]
-    _stamp_elapsed(state, served_log(run.id))
+    _stamp_persisted(state, served_log(run.id))
     assert state.phases[0].elapsed_label() == "01:00"
 
 

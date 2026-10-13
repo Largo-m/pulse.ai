@@ -3,8 +3,10 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from pulse.domain.run import StepStatus
+from pulse.replies.acp_payloads import non_negative_int
 
 # The screen shows the persisted step states; one vocabulary, no translation.
 PhaseStatus = StepStatus
@@ -41,6 +43,31 @@ def format_elapsed(seconds: float) -> str:
     return f"{days}d{leftover:02d}"
 
 
+def format_tokens(tokens: int) -> str:
+    """Token count for a narrow column: `950`, `42k`, `1.2M`."""
+    if tokens < 1000:
+        return str(tokens)
+    if tokens < 1_000_000:
+        return f"{tokens // 1000}k"
+    return f"{tokens // 100_000 / 10:.1f}M"
+
+
+@dataclass(frozen=True)
+class ContextUsage:
+    """How many tokens a step's context holds, as the agent's `usage_update` reports it.
+
+    A level, not a running sum: compaction can lower it.
+    """
+
+    used: int
+
+    @classmethod
+    def parse(cls, update: dict[str, Any]) -> ContextUsage | None:
+        """Agent output is untrusted: without a valid `used` there is no reading."""
+        used = non_negative_int(update.get("used"))
+        return None if used is None else cls(used=used)
+
+
 @dataclass
 class PhaseItem:
     id: str
@@ -53,6 +80,7 @@ class PhaseItem:
     rounds: int = 1
     files: int = 0
     issues: int = 0
+    context: ContextUsage | None = None
     _seen_files: set[str] = field(default_factory=set, repr=False, compare=False)
     _seen_issues: set[str] = field(default_factory=set, repr=False, compare=False)
 
@@ -127,6 +155,7 @@ class PhaseItem:
         self.ended_at = None
         self.awaiting_since = None
         self.waiting_total = 0.0
+        self.context = None
 
     def show_closed(self, seconds: float) -> None:
         """A fixed duration read from storage; it does not tick."""

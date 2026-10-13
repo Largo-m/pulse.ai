@@ -42,5 +42,7 @@ class AppHeader(Widget):
             label = f"{label} · {strings.HEADER_STOPPED}"
         elif state.awaiting_input:
             label = f"{label} · {strings.HEADER_AWAITING_INPUT}"
+        if context := state.run_context_label():
+            label = f"{label} · {context}"
         self.run_label = label
         self.workflow_label = state.workflow_label

@@ -14,7 +14,7 @@ from pathlib import Path
 from pulse.config.project_config import load_project_config
 from pulse.domain.ports import JsonObject
 from pulse.history import log_wording
-from pulse.history.events import LogKind
+from pulse.history.events import ContextUsage, LogKind
 from pulse.history.prompt_detail import build_prompt_qa
 from pulse.history.tool_detail import build_tool_labels, extract_paths, merge_tool_update
 from pulse.replies.text_questionnaire import strip_questionnaire_block
@@ -85,12 +85,11 @@ class RecordedSessionLog:
         if not isinstance(update, dict):
             return
         kind = str(update.get("sessionUpdate") or "")
+        if kind == "usage_update":
+            self._record_context(update)
+            return
         if kind == "agent_message_chunk":
-            content = update.get("content")
-            if isinstance(content, dict) and content.get("type") == "text":
-                text = str(content.get("text") or "")
-                if text:
-                    self._text.append(text)
+            self._collect_text(update)
             return
         if kind not in _TOOL_UPDATES:
             return
@@ -221,6 +220,21 @@ class RecordedSessionLog:
                     found.append(value.strip())
                     break
         return list(dict.fromkeys(found))
+
+    def _collect_text(self, update: JsonObject) -> None:
+        content = update.get("content")
+        if isinstance(content, dict) and content.get("type") == "text":
+            text = str(content.get("text") or "")
+            if text:
+                self._text.append(text)
+
+    def _record_context(self, update: JsonObject) -> None:
+        usage = ContextUsage.parse(update)
+        if usage is None or not self._step_id:
+            return
+        # Same rule as the run log: a failing database must not end the agent's turn.
+        with suppress(sqlite3.Error, OSError):
+            run_store.record_context_tokens(self._run_id, self._step_id, usage.used)
 
     def _save(self, *, kind: LogKind, title: str, detail: str, tool_id: str = "") -> None:
         if not self._run_id:
