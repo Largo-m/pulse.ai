@@ -57,6 +57,8 @@ Tabelas `machine`, `machine_agents`, `machine_workflows`.
 
 Conteúdo: versão, binário ACP, auth, defaults (agent, model, workspace,
 permission_policy), onboarding, lista de runtimes e overrides por workflow.
+Um runtime registrado depois do onboarding é inserido em `machine_agents`
+na leitura (`INSERT OR IGNORE`); a linha já gravada não é substituída.
 
 Escrita em `pulse init` (`mark_onboarding_complete`) e no menu de configurações
 (`update_global_defaults`, `update_global_agent`, `update_global_workflow`).
@@ -92,6 +94,12 @@ inicializado e faria o onboarding parar de rodar.
 
 `run_steps` copia `label` e `position` da definição no início da run: editar o
 workflow depois não reescreve o que já aconteceu.
+
+`run_steps.context_tokens` guarda a última leitura de tokens no contexto do step
+(`usage_update` do agente). Quem escreve é o log da sessão, não o `save` do
+motor, que deixa a coluna de fora para não sobrescrever uma leitura mais nova.
+A exceção: um step que volta a `pending` (parado ou reaberto num loop) roda de
+novo em outra sessão, e o `save` zera a leitura dele.
 
 `run_events` existe porque ler o log do runtime não serve — só o Cursor tem um, e
 o Pulse é agnóstico ao agente.

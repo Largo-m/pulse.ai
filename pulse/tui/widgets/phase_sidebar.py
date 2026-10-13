@@ -193,7 +193,10 @@ class PhaseSidebar(Widget):
         meta_indent = "     " if nested else "   "
         output.append(meta_indent)
         output.append(status_label(shown), style=tone)
-        output.append(f" · {timer}\n", style="#888888")
+        output.append(f" · {timer}", style="#888888")
+        if context := state.context_label(item):
+            output.append(f" · {context}", style="#888888")
+        output.append("\n")
         if trailing_blank:
             output.append("\n")
         return output

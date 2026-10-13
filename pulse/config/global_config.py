@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from pulse.config.agents import (
     WorkflowConfig,
     default_global_agents,
     default_global_workflows,
+    include_registered_runtimes,
 )
 from pulse.store.codec import dump_list, load_list
 from pulse.store.db import connect, default_db_path
@@ -55,8 +57,7 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
                 acp_command=load_list(agent_row["acp_command"]),
                 models=load_list(agent_row["models"]),
             )
-        if not agents:
-            agents = default_global_agents()
+        agents = _store_missing_runtimes(connection, agents)
         workflows: dict[str, WorkflowConfig] = {}
         for workflow_row in connection.execute("SELECT * FROM machine_workflows"):
             workflows[workflow_row["workflow_id"]] = WorkflowConfig(
@@ -84,6 +85,29 @@ def load_global_config(path: Path | None = None) -> GlobalConfig | None:
         )
     finally:
         connection.close()
+
+
+def _store_missing_runtimes(
+    connection: sqlite3.Connection, stored: dict[str, AgentConfig]
+) -> dict[str, AgentConfig]:
+    """Insert runtimes registered after this machine was saved.
+
+    The settings screen lists `machine_agents`. Filling the gap only in memory
+    leaves a daemon that was already running blind to the new runtime.
+    """
+    filled = include_registered_runtimes(stored)
+    missing = [agent for name, agent in filled.items() if name not in stored]
+    for agent in missing:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO machine_agents (name, binary, acp_command, models)
+            VALUES (?, ?, ?, ?)
+            """,
+            (agent.name, agent.binary, dump_list(agent.acp_command), dump_list(agent.models)),
+        )
+    if missing:
+        connection.commit()
+    return filled
 
 
 def save_global_config(config: GlobalConfig, path: Path | None = None) -> Path:

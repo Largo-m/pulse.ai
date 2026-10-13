@@ -69,6 +69,7 @@ def _step(row: sqlite3.Row) -> StepRecord:
         waiting_seconds=float(row["waiting_seconds"] or 0.0),
         rounds=int(row["rounds"] or 1),
         carried_seconds=float(row["carried_seconds"] or 0.0),
+        context_tokens=int(row["context_tokens"] or 0),
     )
 
 
@@ -242,6 +243,9 @@ def save(run: RunRecord, *, db_path: Path | None = None) -> None:
 
 
 def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) -> None:
+    # `context_tokens` is not written from the step: the session log owns it, and
+    # the engine's in-memory step would write back a stale value over a fresher
+    # reading. A step back to `pending` reruns in a new session, so its reading goes.
     connection.execute(
         """
         INSERT INTO run_steps
@@ -257,7 +261,9 @@ def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) 
           ended_at = excluded.ended_at,
           waiting_seconds = excluded.waiting_seconds,
           rounds = excluded.rounds,
-          carried_seconds = excluded.carried_seconds
+          carried_seconds = excluded.carried_seconds,
+          context_tokens = CASE WHEN excluded.status = ? THEN 0
+                                ELSE run_steps.context_tokens END
         """,
         (
             run_id,
@@ -273,8 +279,24 @@ def _upsert_step(connection: sqlite3.Connection, run_id: str, step: StepRecord) 
             step.waiting_seconds,
             step.rounds,
             step.carried_seconds,
+            StepStatus.PENDING,
         ),
     )
+
+
+def record_context_tokens(
+    run_id: str, step_id: str, tokens: int, *, db_path: Path | None = None
+) -> None:
+    """The step's last context reading; a step with no row is ignored."""
+    connection = connect(db_path or default_db_path())
+    try:
+        connection.execute(
+            "UPDATE run_steps SET context_tokens = ? WHERE run_id = ? AND step_id = ?",
+            (tokens, run_id, step_id),
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def clear_worktree(run_id: str, *, db_path: Path | None = None) -> None:

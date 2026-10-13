@@ -35,6 +35,7 @@ def _record() -> RunRecord:
                 ended_at=datetime(2026, 9, 29, 10, 2, 30, tzinfo=UTC),
                 waiting_seconds=30.0,
                 carried_seconds=12.5,
+                context_tokens=42_000,
             ),
             StepRecord(step_id="build", label="Construir"),
         ],
@@ -59,6 +60,7 @@ def test_the_log_carries_what_the_screen_needs_from_the_record() -> None:
     plan, build = log.steps
     assert plan.elapsed_seconds == pytest.approx(12.5 + 150.0 - 30.0)
     assert plan.has_ended is True
+    assert plan.context_tokens == 42_000
     assert build == LoggedStep(step_id="build", label="Construir", status=StepStatus.PENDING)
 
 

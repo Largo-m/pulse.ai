@@ -25,6 +25,7 @@ class LoggedStep:
     waiting_seconds: float = 0.0
     carried_seconds: float = 0.0
     has_ended: bool = False
+    context_tokens: int = 0
 
     @classmethod
     def of(cls, step: StepRecord) -> LoggedStep:
@@ -37,6 +38,7 @@ class LoggedStep:
             waiting_seconds=step.waiting_seconds,
             carried_seconds=step.carried_seconds,
             has_ended=step.has_ended,
+            context_tokens=step.context_tokens,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -49,6 +51,7 @@ class LoggedStep:
             "waiting_seconds": self.waiting_seconds,
             "carried_seconds": self.carried_seconds,
             "has_ended": self.has_ended,
+            "context_tokens": self.context_tokens,
         }
 
     @classmethod
@@ -64,6 +67,7 @@ class LoggedStep:
             waiting_seconds=float(data.get("waiting_seconds") or 0.0),
             carried_seconds=float(data.get("carried_seconds") or 0.0),
             has_ended=bool(data.get("has_ended")),
+            context_tokens=int(data.get("context_tokens") or 0),
         )
 
 

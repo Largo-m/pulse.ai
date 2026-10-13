@@ -53,6 +53,13 @@ def positive_int(value: object) -> int | None:
     return value if value > 0 else None
 
 
+def non_negative_int(value: object) -> int | None:
+    """A count that may be zero, with the same refusal of `true` as `positive_int`."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if value >= 0 else None
+
+
 @dataclass(frozen=True)
 class QuestionOption:
     id: str

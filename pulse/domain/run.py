@@ -104,6 +104,8 @@ class StepRecord:
     waiting_seconds: float = 0.0
     rounds: int = 1
     carried_seconds: float = 0.0
+    # Written by the session log as the agent reports it; the engine never sets it.
+    context_tokens: int = 0
 
     @property
     def settled(self) -> bool:
