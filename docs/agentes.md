@@ -304,8 +304,10 @@ run.complete(); runs.save(run)
 finally: session.close()
 ```
 
-Note que o `AcpSessionRunner` é **um só para a run inteira** — o subprocesso do
-runtime sobe uma vez e fica de pé. O que muda por step é a *sessão* dentro dele.
+O `AcpSessionRunner` é **um só para a run inteira**. O subprocesso sobe no
+runtime do pré-voo e, quando o agente do step resolve outro runtime, o runner
+troca o processo (fecha, sobe o comando novo, refaz o handshake) antes da
+sessão daquele step. O que muda sempre por step é a *sessão* dentro do processo.
 
 ### 4.3 O que muda por step
 
@@ -320,11 +322,9 @@ agents.profile(step.agent_id)          ← resolve_config(pulse_agent=…) + age
   └─ profile.instructions              ← prefixo do prompt
 ```
 
-> **Nuance importante:** a resolução devolve também um `runtime`, mas ele **não é
-> aplicado hoje** — o `acp_command` foi fixado na construção do runner, no
-> pré-voo. Na prática, uma run inteira roda no mesmo runtime; o que varia por step
-> é modelo, política e instruções. Trocar de runtime *entre steps* exigiria
-> recriar o runner no meio do laço.
+O perfil também leva o `runtime` e o `acp_command` resolvidos. `use_agent`
+aplica a política na hora e, se o comando for outro, troca o processo antes do
+`session/new` daquele step. Modelo, política e instruções continuam por step.
 
 ---
 

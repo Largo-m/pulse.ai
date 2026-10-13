@@ -211,8 +211,12 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
     ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
     ("run_steps", "carried_seconds", "REAL NOT NULL DEFAULT 0"),
-    ("run_steps", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+
+def _apply_context_tokens(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    columns = (("run_steps", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),)
+    return _add_columns(connection, columns)
 
 
 def _apply_git_options(connection: sqlite3.Connection) -> set[tuple[str, str]]:
@@ -275,6 +279,7 @@ class SchemaTooNewError(RuntimeError):
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, apply=_apply_added_columns),
     Migration(version=2, apply=_apply_git_options),
+    Migration(version=3, apply=_apply_context_tokens),
 )
 
 

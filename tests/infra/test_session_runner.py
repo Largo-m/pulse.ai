@@ -87,6 +87,69 @@ def test_session_runner_handles_ask_question_request():
     assert '"questionId"' in sent
 
 
+def test_a_step_on_another_runtime_restarts_the_agent_process(tmp_path):
+    """The run opens on the project runtime; a step whose agent names another
+    one must talk to that CLI, or its model is applied to the wrong catalog.
+    """
+    from pulse.domain.ports import AgentProfile
+    from pulse.runtimes.codex import CODEX_ACP_PACKAGE, CODEX_ACP_VERSION
+
+    codex_command = ["npx", "-y", f"{CODEX_ACP_PACKAGE}@{CODEX_ACP_VERSION}"]
+    first = _make_process(
+        json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": 1}}) + "\n"
+    )
+    second = _make_process(
+        json.dumps({"jsonrpc": "2.0", "id": 2, "result": {"protocolVersion": 1}}) + "\n"
+    )
+    with patch("pulse.acp.session_runner.subprocess.Popen", side_effect=[first, second]) as popen:
+        runner = AcpSessionRunner(
+            ["agent", "acp"], cwd=str(tmp_path), timeout_seconds=5, runtime=get_runtime("cursor")
+        )
+        runner.open(tmp_path)
+        runner.use_agent(
+            AgentProfile(
+                agent_id="implement",
+                model="6 Luna (medium)",
+                permission_policy="auto_approve",
+                runtime_id="codex",
+                acp_command=tuple(codex_command),
+                dialect=get_runtime("codex"),
+            )
+        )
+        runner.close()
+
+    assert popen.call_count == 2
+    assert popen.call_args_list[1].args[0] == codex_command
+    assert runner._runtime is get_runtime("codex")
+
+
+def test_a_step_on_the_same_runtime_keeps_the_agent_process(tmp_path):
+    from pulse.domain.ports import AgentProfile
+
+    handshake = json.dumps({"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": 1}}) + "\n"
+    with patch(
+        "pulse.acp.session_runner.subprocess.Popen",
+        return_value=_make_process(handshake),
+    ) as popen:
+        runner = AcpSessionRunner(
+            ["agent", "acp"], cwd=str(tmp_path), timeout_seconds=5, runtime=get_runtime("cursor")
+        )
+        runner.open(tmp_path)
+        runner.use_agent(
+            AgentProfile(
+                agent_id="prd",
+                model="grok-4.7",
+                permission_policy="ask",
+                runtime_id="cursor",
+                acp_command=("agent", "acp"),
+                dialect=get_runtime("cursor"),
+            )
+        )
+        runner.close()
+
+    assert popen.call_count == 1
+
+
 def test_the_runner_is_the_agent_session_adapter():
     from pulse.domain.ports import AgentSession
 

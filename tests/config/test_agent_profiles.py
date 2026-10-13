@@ -35,6 +35,35 @@ def test_the_agent_definition_sets_model_policy_and_instructions(tmp_path: Path)
     assert profile.instructions == "Revise sem editar."
 
 
+def test_a_step_configured_for_codex_carries_that_runtime(tmp_path: Path, monkeypatch):
+    """The implement step's runtime is what the session must launch, not the run default."""
+    from pulse.config.global_config import mark_onboarding_complete
+    from pulse.config.project_settings import set_agent_field
+    from pulse.runtimes import get_runtime
+    from pulse.runtimes.codex import CodexRuntime
+
+    monkeypatch.setattr(CodexRuntime, "is_available", lambda self: True)
+    mark_onboarding_complete(
+        agent_binary="agent",
+        acp_command=["agent", "acp"],
+        auth_method="cursor_login",
+        workspace_dir=tmp_path,
+        model="Auto",
+        permission_policy="ask",
+        acp_test_passed=True,
+    )
+    set_agent_field(tmp_path, "implement", "runtime", "codex")
+    set_agent_field(tmp_path, "implement", "model", "6 Luna (medium)")
+
+    profile = ConfiguredAgentProfiles(tmp_path, fallback_model="Auto").profile("implement")
+
+    codex = get_runtime("codex")
+    assert profile.runtime_id == "codex"
+    assert profile.model == "6 Luna (medium)"
+    assert list(profile.acp_command) == codex.acp_command
+    assert profile.dialect is codex
+
+
 def test_an_agent_missing_from_the_database_runs_without_instructions(tmp_path: Path):
     """The engine inlines instructions into the prompt; none is an empty string, not an error."""
     profile = ConfiguredAgentProfiles(tmp_path, fallback_model="auto").profile("ghost")
