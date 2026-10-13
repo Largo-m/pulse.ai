@@ -17,7 +17,7 @@ Antes de tudo, porque isso confunde quem chega:
 | Caminho | O que é |
 | --- | --- |
 | [`pulse/store/factory/agents/`](../pulse/store/factory/agents/) | Os `.md` de fábrica. **Semente do banco**, lida uma vez. |
-| [`pulse/runtimes/`](../pulse/runtimes/) (plural) | Os **backends**: qual CLI executa um agente (`cursor`, `claude`). |
+| [`pulse/runtimes/`](../pulse/runtimes/) (plural) | Os **backends**: qual CLI executa um agente (`cursor`, `claude`, `codex`). |
 
 E os dois sentidos da palavra "agente", que o código separa:
 
@@ -54,7 +54,7 @@ Um agente Pulse *usa* um runtime. Trocar de runtime não muda o papel.
                                │ resolve_config(pulse_agent=…)
                                ▼
   ┌─ 4. EXECUÇÃO (processo) ───────────────────────────────────┐
-  │  pulse/runtimes/{cursor,claude}.py   → subprocess ACP      │
+  │  pulse/runtimes/{cursor,claude,codex}.py → subprocess ACP  │
   └────────────────────────────────────────────────────────────┘
 ```
 
@@ -580,6 +580,12 @@ injetado pelo daemon) extrair o caminho de `locations[].path` ou do `rawInput`
 (chaves `path`, `file_path`, `target_file`, `filePath`, `abs_path` — cada runtime
 reporta de um jeito) e gravar em `run_artifacts`. Não há convenção de pasta, nome
 ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
+
+**Contexto ocupado:** um `session/update` com `sessionUpdate: "usage_update"`
+(`used`) vira o indicador `42k tokens` ao lado do tempo do step na barra lateral
+e a soma no cabeçalho da run, ao vivo. O adaptador do Claude emite esse evento; runtime que
+não emite simplesmente não mostra o indicador. A última leitura de cada step fica
+em `run_steps.context_tokens`, e o histórico mostra os mesmos números.
 
 **Por que o Pulse mantém log próprio (`run_events`):** ler o store do runtime não
 serve — só o Cursor tem um, e o Pulse é agnóstico ao agente. Gravar eventos é

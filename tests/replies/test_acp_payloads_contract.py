@@ -25,6 +25,7 @@ from pulse.replies.acp_payloads import (
     first_present,
     items_of,
     mapping_of,
+    non_negative_int,
     positive_int,
     text_of,
     truthy_text,
@@ -110,6 +111,27 @@ def test_first_present_returns_the_first_key_the_payload_has(
 )
 def test_positive_int_accepts_only_integers_from_one(value: object, expected: int | None) -> None:
     assert positive_int(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0, 0),
+        (1, 1),
+        (42_000, 42_000),
+        (-1, None),
+        (True, None),
+        (False, None),
+        ("3", None),
+        (2.0, None),
+        (None, None),
+    ],
+)
+def test_non_negative_int_accepts_only_integers_from_zero(
+    value: object, expected: int | None
+) -> None:
+    """Zero is a real count here; `false` is not, even though Python says it is 0."""
+    assert non_negative_int(value) == expected
 
 
 # --- AskQuestion ------------------------------------------------------------

@@ -21,7 +21,7 @@ Você digita `pulse`
         │
         ▼
    CLI / TUI  ───HTTP/UDS──►  Engine (daemon)  ───ACP──►  runtime
-   (só tela)                  (orquestrador)              (cursor | claude)
+   (só tela)                  (orquestrador)              (cursor | claude | codex)
                                     │                          │
                                     ▼                          ▼
                               ~/.pulse/pulse.db          arquivos no workspace
@@ -549,6 +549,18 @@ volta um título em português (`ENGINE_PROTOCOL` 7).
 run trabalha). Vem antes de qualquer `phase.begin` de propósito: é por ele que o
 painel de artefatos sabe em que pasta procurar arquivo.
 
+`session.update` leva o `session/update` do agente cru; quem interpreta é o
+cockpit. Além do texto e das tools, ele lê o `used` do `usage_update` como
+`ContextUsage` (`history/events.py`): quantos tokens o contexto do step ocupa
+agora. A barra lateral mostra `42k tokens` ao lado do tempo de cada step e o
+cabeçalho, a soma da última leitura de cada step. Como o
+`session.update` é reenviado no replay, voltar à run reconstrói os números. O
+`RecordedSessionLog` grava a última leitura de cada step em
+`run_steps.context_tokens`, e o histórico reabre a run com ela; o `save` do
+motor não escreve essa coluna, para não apagar uma leitura mais nova; só a zera
+quando o step volta a `pending`, porque ele roda de novo em outra sessão. Runtime
+que não emite `usage_update` não mostra o indicador.
+
 Os dois últimos são do transporte, não da run: `stream.replay_end` marca onde o
 passado reenviado acaba (ver §Sair, voltar e parar) e `stream.ping` é o
 batimento do stream ocioso, que dá ao cliente um ponto de retorno regular para
@@ -593,7 +605,7 @@ pelas portas ([ADR 0002](docs/adr/0002-engine-depends-on-ports.md)). O porquê d
 | [`pulse/acp/reply_clock.py`](pulse/acp/reply_clock.py) | Prazo de resposta de cada request: silêncio em `session/prompt`, fixo nos demais |
 | [`pulse/acp/watched_prompts.py`](pulse/acp/watched_prompts.py) | Proxy do `PromptPort`: aplica a política de permissão e mede a espera do usuário |
 | [`pulse/acp/client.py`](pulse/acp/client.py) | Cliente ACP + probe de conexão |
-| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor` e `claude`; cada um é um `RuntimeDialect` |
+| [`pulse/runtimes/`](pulse/runtimes/) | `AgentRuntime` + backends `cursor`, `claude` e `codex` (via `@agentclientprotocol/codex-acp`); cada um é um `RuntimeDialect` |
 | [`pulse/replies/session_models.py`](pulse/replies/session_models.py) | O catálogo de modelos da resposta ao `session/new` (ACP puro e o dialeto do Claude), lido igual pelo runner e pelos runtimes |
 | [`pulse/mcp/channel.py`](pulse/mcp/channel.py) | `McpQuestionChannel`: a ponte MCP `AskQuestion` como `QuestionChannel` |
 | [`pulse/history/session_log.py`](pulse/history/session_log.py) | `RecordedSessionLog`: o `SessionLog` que grava `run_events`, `run_artifacts` e o ponteiro de sessão |
@@ -810,7 +822,7 @@ grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase"
 | **Step** | Um passo: um agente, um prompt, uma sessão ACP isolada |
 | **Run** | Uma execução concreta de um workflow |
 | **Agente** | Linha em `agent_defs`: runtime + model + política + instruções |
-| **Runtime** | O backend que executa um agente (`cursor`, `claude`) |
+| **Runtime** | O backend que executa um agente (`cursor`, `claude`, `codex`) |
 | **Artefato** | Arquivo que o agente escreveu, descoberto por tool-call |
 | **Worktree** | Cópia de trabalho isolada do repositório, uma por run, em branch própria |
 | **Daemon** | Processo em background (o Engine) |

@@ -13,7 +13,14 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pulse.history.events import ArtifactItem, LogEntry, LogKind, PhaseItem, PhaseStatus
+from pulse.history.events import (
+    ArtifactItem,
+    ContextUsage,
+    LogEntry,
+    LogKind,
+    PhaseItem,
+    PhaseStatus,
+)
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
 from pulse.tui import strings
@@ -45,7 +52,7 @@ def hydrate_history_item(item: HistoryItem, workspace: Path, log: RunLog | None)
         state.acp_session_id = state.acp_sessions[-1]["acp_session_id"]
 
     if log is not None:
-        _stamp_elapsed(state, log)
+        _stamp_persisted(state, log)
     state.entries = _load_entries(log, state.phases)
     state.artifacts = _load_artifacts(log, Path(item.worktree_path or workspace))
     displayable = [artifact for artifact in state.artifacts if artifact.has_content]
@@ -77,7 +84,7 @@ def restore_run(state: CockpitState, log: RunLog, workspace: Path) -> str:
         phase.status = status.get(phase.id, PhaseStatus.PENDING)
         if phase.status == PhaseStatus.RUNNING:
             phase.status = PhaseStatus.PENDING
-    _stamp_elapsed(state, log)
+    _stamp_persisted(state, log)
 
     state.entries = _load_entries(log, state.phases, placeholder=False)
     state.artifacts = _load_artifacts(log, Path(log.exec_root or workspace))
@@ -124,7 +131,7 @@ def stamp_live_elapsed(state: CockpitState, log: RunLog) -> None:
     reattach time. Settled steps use `run_steps`; the running step has its
     `started_at` shifted back by the time already spent so the timer continues.
     """
-    _stamp_elapsed(state, log)
+    _stamp_persisted(state, log)
     started = {step.step_id: step.started_at for step in log.steps}
     waiting = {step.step_id: step.waiting_seconds for step in log.steps}
     carried = {step.step_id: step.carried_seconds for step in log.steps}
@@ -144,17 +151,21 @@ def stamp_live_elapsed(state: CockpitState, log: RunLog) -> None:
     state.notify()
 
 
-def _stamp_elapsed(state: CockpitState, log: RunLog) -> None:
-    """Set each step's duration from what was persisted in `run_steps`.
+def _stamp_persisted(state: CockpitState, log: RunLog) -> None:
+    """Set each step's duration and context tokens from what `run_steps` kept.
 
     The screen measures time with `time.monotonic()`, which does not survive the
     process; the (0, duration) pair shows the right duration without ticking.
+    A step with no stored reading keeps whatever the live stream gave it.
     """
     durations = {step.step_id: step.elapsed_seconds for step in log.steps}
+    tokens = {step.step_id: step.context_tokens for step in log.steps}
     for phase in state.phases:
         seconds = durations.get(phase.id)
         if seconds is not None:
             phase.show_closed(seconds)
+        if tokens.get(phase.id):
+            phase.context = ContextUsage(used=tokens[phase.id])
 
 
 _BODY_KINDS = frozenset({LogKind.ASSISTANT, LogKind.QUESTION, LogKind.ANSWER})

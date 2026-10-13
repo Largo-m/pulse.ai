@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pulse.domain.ports import StepRow
+from pulse.history.events import ContextUsage
 from pulse.history.log_wording import QUESTIONNAIRE_NOTICE, phase_title
 from pulse.history.tool_detail import (
     build_tool_labels,
@@ -113,6 +114,7 @@ class CockpitSink:
         self._update_handlers: dict[str, Callable[[dict[str, Any]], None]] = {
             "agent_message_chunk": self._on_message_chunk,
             "agent_thought_chunk": self._on_thought_chunk,
+            "usage_update": self._on_usage_update,
             **dict.fromkeys(_TOOL_KINDS, self._handle_tool),
         }
 
@@ -164,6 +166,11 @@ class CockpitSink:
         handler = self._update_handlers.get(str(update.get("sessionUpdate")))
         if handler is not None:
             handler(update)
+
+    def _on_usage_update(self, update: dict[str, Any]) -> None:
+        usage = ContextUsage.parse(update)
+        if usage is not None and self._state.record_context_usage(usage):
+            self._emit()
 
     def _on_message_chunk(self, update: dict[str, Any]) -> None:
         content = update.get("content", {})

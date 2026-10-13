@@ -1,4 +1,4 @@
-"""Run a runtime's own login (`cursor-agent login`, `claude /login`) in the user's terminal.
+"""Run a runtime's login (`agent login`, `claude /login`, `codex login`) in the user's terminal.
 
 It is the one subprocess the client side starts: the login is interactive and
 needs the terminal the user is sitting at, which the detached daemon does not
