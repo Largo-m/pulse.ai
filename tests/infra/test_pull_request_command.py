@@ -118,6 +118,8 @@ def test_opening_a_request_uses_the_forge_command_and_reports_its_failure(
     with pytest.raises(GitError, match="quebrou"):
         open_request(tmp_path, branch="corrigir-o-login", title="t", body="corpo", base="main")
 
-    monkeypatch.setattr("pulse.vcs.publish.origin_url", lambda _repo: "https://example.com/acme/app.git")
+    monkeypatch.setattr(
+        "pulse.vcs.publish.origin_url", lambda _repo: "https://example.com/acme/app.git"
+    )
     with pytest.raises(GitError, match="unknown"):
         open_request(tmp_path, branch="corrigir-o-login", title="t", body="corpo", base="main")
