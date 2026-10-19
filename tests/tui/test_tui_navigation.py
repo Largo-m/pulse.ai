@@ -150,6 +150,57 @@ def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
     asyncio.run(run())
 
 
+def test_a_worktree_run_confirms_the_branch_and_cancel_does_not_start(monkeypatch):
+    """The workflow stays unstarted until the suggested branch name is confirmed."""
+    from types import SimpleNamespace
+
+    import pulse.tui.screens.home as home_module
+
+    onboard_machine()
+    monkeypatch.setattr(
+        home_module.engine,
+        "project_settings",
+        lambda _path: SimpleNamespace(use_worktree=True),
+    )
+
+    async def run() -> None:
+        from textual.app import App, ComposeResult
+        from textual.widgets import Input, Static
+
+        from pulse.tui.screens.branch_name import BranchNameScreen
+
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+            def open_cockpit(self, workflow_id: str, prompt: str, branch: str = "") -> None:
+                opened.append((workflow_id, prompt, branch))
+
+        opened: list[tuple[str, str, str]] = []
+        app = Harness()
+        async with app.run_test(size=(80, 24)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            screen.on_option_selected(_selected("session"))
+            screen.on_option_selected(_selected("workflow:new-issue"))
+            await pilot.pause()
+            prompt_input = screen.query_one("#workflow-prompt", Input)
+            prompt_input.value = "Corrigir o login"
+            screen.on_prompt_submitted(Input.Submitted(prompt_input, prompt_input.value))
+            await pilot.pause()
+
+            assert isinstance(app.screen, BranchNameScreen)
+            assert app.screen.query_one("#branch-name", Input).value == "corrigir-o-login"
+            app.screen.action_cancel()
+            await pilot.pause()
+            assert opened == []
+
+    asyncio.run(run())
+
+
 def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
     """Esc goes one step at a time: closes the input, then returns to the root."""
 

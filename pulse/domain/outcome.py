@@ -14,9 +14,11 @@ from functools import cache
 
 OUTCOME_TAG = "outcome"
 FIELD = re.compile(
-    r"^[ \t>*-]*(status|reason|needs|motivo|precisa|next|proximo|próximo)[ \t]*:[ \t]*(.*)$",
+    r"^[ \t>*-]*(status|reason|needs|motivo|precisa|next|proximo|próximo|commit)[ \t]*:[ \t]*(.*)$",
     re.IGNORECASE,
 )
+COMMIT_SUBJECT_MAX = 72
+_COMMIT_TYPE = re.compile(r"^(feat|fix|chore|docs|refactor|test|perf|ci|build|style):\s*(.+)$")
 
 
 class OutcomeStatus(StrEnum):
@@ -72,6 +74,7 @@ class Outcome:
     needs: str = ""
     next: LoopSignal | None = None
     unknown_status: str = ""
+    commit_subject: str = ""
 
     @property
     def delivered(self) -> bool:
@@ -148,7 +151,11 @@ def parse_outcome(text: str) -> Outcome:
     nxt = _first_word(fields.get("next", ""))
 
     if raw_status in _DONE_WORDS:
-        return Outcome(status=OutcomeStatus.DONE, next=_loop_signal(nxt))
+        return Outcome(
+            status=OutcomeStatus.DONE,
+            next=_loop_signal(nxt),
+            commit_subject=accept_commit_subject(fields.get("commit", "")),
+        )
     if raw_status in _BLOCKED_WORDS:
         return Outcome(status=OutcomeStatus.BLOCKED, reason=reason, needs=needs)
     if not raw_status:
@@ -156,6 +163,24 @@ def parse_outcome(text: str) -> Outcome:
     return Outcome(
         status=OutcomeStatus.BLOCKED, reason=reason, needs=needs, unknown_status=raw_status
     )
+
+
+def accept_commit_subject(raw: str) -> str:
+    """The subject of a `commit:` line, or empty when the line is not usable.
+
+    One lowercase line, no accent, at most 72 characters. A Conventional Commits
+    type at the start is dropped: the step's `commit_type` supplies the prefix.
+    """
+    text = raw.strip()
+    if not text or len(text) > COMMIT_SUBJECT_MAX or text != text.lower():
+        return ""
+    if any(ord(char) > 127 for char in text):
+        return ""
+    typed = _COMMIT_TYPE.match(text)
+    subject = typed.group(2).strip() if typed else text
+    if not subject or len(subject) > COMMIT_SUBJECT_MAX:
+        return ""
+    return subject
 
 
 def _loop_signal(word: str) -> LoopSignal | None:

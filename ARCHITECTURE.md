@@ -332,7 +332,7 @@ nas configurações do projeto (`project_settings.use_worktree`, e a opção só
 aparece se o root for repositório git) passa a ter **uma run, um worktree**:
 
 ```
-~/.pulse/worktrees/<run_id>        branch `pulse/<workflow>-<run curto>`
+~/.pulse/worktrees/<run_id>        branch confirmada (slug da tarefa)
 ```
 
 O que isso resolve é a mistura: duas runs simultâneas escreviam na mesma árvore
@@ -358,9 +358,25 @@ Quem decide é [`prepare_workspace`](pulse/orchestrator/worktree.py), pela porta
 `Workspace` (o adapter de produção é [`GitWorkspace`](pulse/vcs/workspace.py)), em três
 casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
 fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
-isolamento, `git worktree add`. Falhar ao abrir o worktree **para a run** —
-rodar na árvore de trabalho da pessoa é justamente o que a chave pediu para não
-acontecer.
+isolamento, `git worktree add` na branch que a pessoa confirmou antes de
+começar (sugestão: slug da tarefa; nome ocupado é recusado). Falhar ao abrir o
+worktree **para a run** — rodar na árvore de trabalho da pessoa é justamente o
+que a chave pediu para não acontecer.
+
+Três opções de projeto, em escada, todas desligadas por padrão:
+**Worktree**, **Autocommit** (`atomic_commits`, só com worktree) e **PR/MR**
+(`auto_pull_request`, só com as duas). Autocommit grava um commit por step com
+`workflow_steps.commit_type` (`feat` ou `fix`; vazio não commita), só com os
+caminhos que mudaram naquele step, dentro do worktree (arquivos de pasta não
+rastreada contam um a um). No fim da run, com Autocommit ligado e se essa
+branch teve commit, o Pulse faz `git push -u origin`; sem Autocommit nada é
+publicado, mesmo que o agente tenha commitado sozinho. Com PR/MR ligado, abre o
+pedido no GitHub (`gh pr create`) ou no GitLab (`glab mr create`) contra o
+`origin/HEAD` (sem ele, o pedido não abre e a run avisa), com o corpo de
+`workflow_defs.pull_request_template`. Push ok e árvore limpa: a pasta do worktree sai e a branch local sai com
+`git branch -d`; fica a branch remota. Push recusado, árvore suja, run parada
+ou step falho: a pasta e a branch local ficam. O motor fala com git, `gh` e
+`glab` pela porta `Workspace`.
 
 A branch é lida nos três casos, inclusive sem worktree, e é isso que faz a
 sessão mostrar `modelo · branch` na linha de meta do stream. Ela chega à tela

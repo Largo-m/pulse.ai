@@ -47,6 +47,7 @@ class RunState:
     status: RunStatus = RunStatus.RUNNING
     exit_code: int | None = None
     resume_run_id: str | None = None
+    branch: str = ""
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
     ended: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
@@ -60,6 +61,7 @@ class RunState:
         prompt: str,
         workspace: str,
         resume_run_id: str | None = None,
+        branch: str = "",
     ) -> RunState:
         """A new run with its own bus; questions and stop/pause go out on that bus."""
         bus = EventBus()
@@ -76,6 +78,7 @@ class RunState:
             correlator=PromptCorrelator(bus),
             control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
+            branch=branch,
         )
 
     def is_active(self) -> bool:
@@ -113,6 +116,7 @@ def run_engine(
     resume_run_id: str | None,
     control: RunControl,
     run_id: str,
+    branch: str = "",
 ) -> int:
     """Wire the engine's ports for one run, then run it.
 
@@ -154,6 +158,9 @@ def run_engine(
         user_prompt=user_prompt,
         ports=ports,
         use_worktree=resolved.use_worktree,
+        atomic_commits=resolved.atomic_commits,
+        auto_pull_request=resolved.auto_pull_request,
+        branch=branch,
         resume_run_id=resume_run_id,
         control=control,
         run_id=run_id,
@@ -191,6 +198,7 @@ class RunManager:
         prompt: str,
         workspace: str | None = None,
         resume_run_id: str | None = None,
+        branch: str = "",
     ) -> RunState:
         if get_workflow(workflow_id) is None:
             raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
@@ -202,6 +210,7 @@ class RunManager:
             prompt=prompt,
             workspace=workspace or str(safe_cwd()),
             resume_run_id=resume_run_id,
+            branch="" if resume_run_id else branch,
         )
         with self._lock:
             if self._closing:
@@ -373,6 +382,7 @@ class RunManager:
                 resume_run_id=state.resume_run_id,
                 control=state.control,
                 run_id=state.id,
+                branch=state.branch,
             )
         except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
             _log.exception("run.failed run_id=%s workflow=%s", state.id, state.workflow_id)

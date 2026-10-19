@@ -616,4 +616,44 @@ ConfirmScreen .confirm-hint {{
     width: 100%;
     margin-top: 1;
 }}
+
+BranchNameScreen {{
+    align: center middle;
+}}
+
+BranchNameScreen #branch-box {{
+    width: 62;
+    height: auto;
+    padding: 1 2;
+    background: {BG_PANEL};
+    border: solid {LIME};
+}}
+
+BranchNameScreen .branch-title {{
+    color: {LIME};
+    text-style: bold;
+    width: 100%;
+}}
+
+BranchNameScreen Input {{
+    margin: 1 0;
+}}
+
+BranchNameScreen OptionList {{
+    width: 100%;
+    height: auto;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT};
+}}
+
+BranchNameScreen OptionList:focus {{
+    border: none;
+}}
+
+BranchNameScreen .branch-hint {{
+    color: {TEXT_MUTED};
+    width: 100%;
+    margin-top: 1;
+}}
 """

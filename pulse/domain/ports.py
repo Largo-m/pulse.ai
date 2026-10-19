@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
@@ -160,6 +160,9 @@ class AgentProfile:
     model: str | None
     permission_policy: str
     instructions: str = ""
+    runtime_id: str = ""
+    acp_command: tuple[str, ...] = ()
+    dialect: RuntimeDialect | None = field(default=None, compare=False, hash=False)
 
 
 @runtime_checkable
@@ -340,7 +343,39 @@ class Workspace(Protocol):
         ...
 
     def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
-        """Open the run's worktree on a new branch; the name gets a suffix if taken."""
+        """Open the run's worktree on `branch`. Raises when that name is taken."""
+        ...
+
+    def head(self, cwd: Path) -> str:
+        """Commit the worktree is on, empty when it cannot be read."""
+        ...
+
+    def snapshot(self, cwd: Path) -> dict[str, str]:
+        """Content digest of each dirty path, so a later snapshot shows what changed."""
+        ...
+
+    def commit(self, cwd: Path, paths: list[str], message: str) -> None:
+        """Commit `paths` in `cwd` with `message`."""
+        ...
+
+    def commits_after(self, cwd: Path, base: str) -> list[str]:
+        """Subjects of commits in `cwd` after `base`."""
+        ...
+
+    def publish_branch(self, branch: str) -> None:
+        """Push `branch` to `origin` and set it as the upstream."""
+        ...
+
+    def remove_worktree(self, path: Path) -> None:
+        """Remove the worktree directory. A dirty tree is refused."""
+        ...
+
+    def delete_local_branch(self, branch: str) -> None:
+        """Delete the local branch once it is on its upstream. The remote stays."""
+        ...
+
+    def open_pull_request(self, *, branch: str, title: str, body: str) -> None:
+        """Open a pull request or merge request for `branch` on `origin`."""
         ...
 
 

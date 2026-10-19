@@ -12,7 +12,7 @@ from pathlib import Path
 PACKAGE = Path(__file__).resolve().parents[2] / "pulse"
 FACTORY = PACKAGE / "store" / "factory"
 DOMAIN_VOCABULARY = re.compile(
-    r"\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase", re.IGNORECASE
+    r"\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase|figma", re.IGNORECASE
 )
 
 
@@ -48,4 +48,5 @@ def test_the_vocabulary_check_recognises_a_leak() -> None:
     """Guards the guard: a regex that matches nothing would pass the test above forever."""
     assert DOMAIN_VOCABULARY.search('if workflow_id == "quick-fix":')
     assert DOMAIN_VOCABULARY.search("write the PRD first")
+    assert DOMAIN_VOCABULARY.search("#### Link do Figma:")
     assert not DOMAIN_VOCABULARY.search("prdx = approved")

@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS project_settings (
   permission_policy TEXT,
   workspace_root TEXT,
   default_agent TEXT,
-  use_worktree INTEGER NOT NULL DEFAULT 0
+  use_worktree INTEGER NOT NULL DEFAULT 0,
+  atomic_commits INTEGER NOT NULL DEFAULT 0,
+  auto_pull_request INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS project_agents (
@@ -102,7 +104,8 @@ CREATE TABLE IF NOT EXISTS workflow_defs (
   label TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   is_default INTEGER NOT NULL DEFAULT 0,
-  default_prompt TEXT NOT NULL DEFAULT ''
+  default_prompt TEXT NOT NULL DEFAULT '',
+  pull_request_template TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS workflow_steps (
@@ -117,6 +120,7 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
   requires_outcome INTEGER NOT NULL DEFAULT 1,
   repeat_from TEXT NOT NULL DEFAULT '',
   repeat_max INTEGER NOT NULL DEFAULT 0,
+  commit_type TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (workflow_id, step_id)
 );
 
@@ -130,7 +134,9 @@ CREATE TABLE IF NOT EXISTS runs (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   worktree_path TEXT NOT NULL DEFAULT '',
-  branch TEXT NOT NULL DEFAULT ''
+  branch TEXT NOT NULL DEFAULT '',
+  branch_owned INTEGER NOT NULL DEFAULT 0,
+  branch_base TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_workspace
@@ -206,8 +212,43 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("workflow_steps", "repeat_max", "INTEGER NOT NULL DEFAULT 0"),
     ("run_steps", "rounds", "INTEGER NOT NULL DEFAULT 1"),
     ("run_steps", "carried_seconds", "REAL NOT NULL DEFAULT 0"),
-    ("run_steps", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),
 )
+
+
+def _apply_context_tokens(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    columns = (("run_steps", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),)
+    return _add_columns(connection, columns)
+
+
+def _apply_git_options(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    columns = (
+        ("project_settings", "atomic_commits", "INTEGER NOT NULL DEFAULT 0"),
+        ("project_settings", "auto_pull_request", "INTEGER NOT NULL DEFAULT 0"),
+        ("workflow_steps", "commit_type", "TEXT NOT NULL DEFAULT ''"),
+        ("runs", "branch_owned", "INTEGER NOT NULL DEFAULT 0"),
+        ("runs", "branch_base", "TEXT NOT NULL DEFAULT ''"),
+    )
+    return _add_columns(connection, columns)
+
+
+def _apply_pull_request_template(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    columns = (("workflow_defs", "pull_request_template", "TEXT NOT NULL DEFAULT ''"),)
+    return _add_columns(connection, columns)
+
+
+def _add_columns(
+    connection: sqlite3.Connection, columns: tuple[tuple[str, str, str], ...]
+) -> set[tuple[str, str]]:
+    added: set[tuple[str, str]] = set()
+    for table, column, declaration in columns:
+        pragma = f"PRAGMA table_info({table})"  # noqa: S608 - table is a constant
+        existing = {str(row["name"]) for row in connection.execute(pragma)}
+        if column not in existing:
+            connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {declaration}"  # noqa: S608 - constants
+            )
+            added.add((table, column))
+    return added
 
 
 def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]:
@@ -216,15 +257,7 @@ def _apply_added_columns(connection: sqlite3.Connection) -> set[tuple[str, str]]
     A new column gets the `ALTER` default on existing rows and factory seeding
     does not rerun on a seeded DB, so callers must backfill factory values.
     """
-    added: set[tuple[str, str]] = set()
-    # Identifiers cannot be bound as `?`; they come from the ADDED_COLUMNS constant.
-    for table, column, declaration in ADDED_COLUMNS:
-        pragma = f"PRAGMA table_info({table})"  # noqa: S608
-        existing = {str(row["name"]) for row in connection.execute(pragma)}
-        if column not in existing:
-            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")  # noqa: S608
-            added.add((table, column))
-    return added
+    return _add_columns(connection, ADDED_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -249,7 +282,12 @@ class SchemaTooNewError(RuntimeError):
 # databases at the latest version without replaying history. SCHEMA also runs
 # on existing databases before their migrations, so an index on a column a
 # migration adds belongs in that migration, not in SCHEMA.
-MIGRATIONS: tuple[Migration, ...] = (Migration(version=1, apply=_apply_added_columns),)
+MIGRATIONS: tuple[Migration, ...] = (
+    Migration(version=1, apply=_apply_added_columns),
+    Migration(version=2, apply=_apply_git_options),
+    Migration(version=3, apply=_apply_context_tokens),
+    Migration(version=4, apply=_apply_pull_request_template),
+)
 
 
 def schema_version(connection: sqlite3.Connection) -> int:
@@ -320,6 +358,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     else:
         if ("workflow_defs", "default_prompt") in added:
             factory.backfill_default_prompts(connection)
+        if ("workflow_steps", "commit_type") in added:
+            factory.backfill_commit_types(connection)
+        if ("workflow_defs", "pull_request_template") in added:
+            factory.backfill_pull_request_templates(connection)
         factory.drop_approval_from_unattended_steps(connection)
         factory.inherit_policy_on_default_agent(connection)
     connection.commit()

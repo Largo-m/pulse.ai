@@ -202,6 +202,38 @@ def test_a_bad_settings_write_changes_nothing(
     assert (project.model, project.permission_policy) == (None, None)
 
 
+def test_atomic_commits_and_pull_requests_follow_the_worktree(
+    client: TestClient, tmp_path: Path
+) -> None:
+    init_project_config(tmp_path)
+    body = {"workspace": str(tmp_path)}
+
+    def put(path: str, *, enabled: bool) -> int:
+        response = client.put(path, json={**body, "enabled": enabled})
+        return response.status_code
+
+    assert put("/api/settings/atomic-commits", enabled=True) == 422
+    assert put("/api/settings/pull-request", enabled=True) == 422
+
+    assert put("/api/settings/worktree", enabled=True) == 200
+    assert put("/api/settings/atomic-commits", enabled=True) == 200
+    assert put("/api/settings/pull-request", enabled=True) == 200
+    settings = client.get("/api/settings", params=body).json()
+    assert settings["use_worktree"] is True
+    assert settings["atomic_commits"] is True
+    assert settings["auto_pull_request"] is True
+
+    assert put("/api/settings/worktree", enabled=False) == 200
+    settings = client.get("/api/settings", params=body).json()
+    assert settings["use_worktree"] is False
+    assert settings["atomic_commits"] is False
+    assert settings["auto_pull_request"] is False
+    branch = client.get("/api/git/branch", params={**body, "name": "corrigir-o-login"}).json()
+    assert branch == {"valid": True, "exists": False}
+    invalid = client.get("/api/git/branch", params={**body, "name": " nome"}).json()
+    assert invalid["valid"] is False
+
+
 def test_the_worktree_switch_is_saved_on_the_project(client: TestClient, tmp_path: Path) -> None:
     init_project_config(tmp_path)
 

@@ -150,12 +150,14 @@ class EngineRunSession:
         user_prompt: str,
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
+        branch: str = "",
     ) -> int:
         self.start(
             workflow_id=workflow_id,
             user_prompt=user_prompt,
             workspace=workspace,
             resume_run_id=resume_run_id,
+            branch=branch,
         )
         return self.listen()
 
@@ -166,6 +168,7 @@ class EngineRunSession:
         user_prompt: str,
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
+        branch: str = "",
     ) -> str:
         """Create the run in the daemon and return its id, without listening."""
         self._client.ensure_daemon()
@@ -174,6 +177,7 @@ class EngineRunSession:
             prompt=user_prompt,
             workspace=str(workspace) if workspace is not None else None,
             resume_run_id=resume_run_id,
+            branch=branch,
         )
         self.run_id = str(created["id"])
         return self.run_id

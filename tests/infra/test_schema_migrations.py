@@ -44,6 +44,23 @@ def test_a_new_database_starts_at_the_latest_version(tmp_path: Path) -> None:
         assert "carried_seconds" in _columns(connection, "run_steps")
 
 
+def test_a_database_already_at_version_2_gains_context_tokens(tmp_path: Path) -> None:
+    """The column landed in migration 1 after version 2 had shipped, so an
+    upgraded database never received the ALTER and every read of run_steps failed.
+    """
+    path = tmp_path / "v2.db"
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("ALTER TABLE run_steps DROP COLUMN context_tokens")
+        connection.execute("PRAGMA user_version = 2")
+
+    connect(path).close()
+
+    with _raw(path) as connection:
+        assert schema_version(connection) == LATEST
+        assert "context_tokens" in _columns(connection, "run_steps")
+
+
 def test_a_database_from_before_versioning_gets_the_missing_columns(tmp_path: Path) -> None:
     """Version 0 is every database Pulse wrote before the schema had a version."""
     path = tmp_path / "old.db"
@@ -193,3 +210,22 @@ def test_versions_are_strictly_increasing() -> None:
 
     assert versions == sorted(set(versions))
     assert versions[0] == 1
+
+
+def test_a_database_at_version_3_gains_the_factory_pull_request_template(tmp_path: Path) -> None:
+    """The PR body moved from engine code to `workflow_defs`; an upgraded database must
+    get the factory template on its factory workflows, not an empty body.
+    """
+    path = tmp_path / "v3.db"
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("ALTER TABLE workflow_defs DROP COLUMN pull_request_template")
+        connection.execute("PRAGMA user_version = 3")
+
+    connect(path).close()
+
+    with _raw(path) as connection:
+        assert schema_version(connection) == LATEST
+        rows = connection.execute("SELECT id, pull_request_template FROM workflow_defs").fetchall()
+        assert rows
+        assert all("{{prompt}}" in str(row["pull_request_template"]) for row in rows)

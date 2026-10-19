@@ -27,7 +27,7 @@ from pulse.domain.ports import (
     PromptContinuation,
     WorkspaceError,
 )
-from pulse.domain.run import RunRecord, StepRecord
+from pulse.domain.run import RunRecord, StepRecord, StepStatus
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator import wording
 from pulse.orchestrator.agent_text import (
@@ -36,6 +36,11 @@ from pulse.orchestrator.agent_text import (
     build_unblock_prompt,
     guidance_block,
     outcome_protocol,
+)
+from pulse.orchestrator.delivery import (
+    commit_delivery,
+    publish_finished_run,
+    snapshot_if_committing,
 )
 from pulse.orchestrator.fanout import POSITION_STRIDE, Item, expand
 from pulse.orchestrator.loops import close_loop, repeat_loop
@@ -58,6 +63,9 @@ def run_workflow(
     user_prompt: str,
     ports: EnginePorts,
     use_worktree: bool = False,
+    atomic_commits: bool = False,
+    auto_pull_request: bool = False,
+    branch: str = "",
     resume_run_id: str | None = None,
     control: RunControl | None = None,
     run_id: str | None = None,
@@ -80,9 +88,15 @@ def run_workflow(
     )
 
     try:
-        exec_dir = _open_workspace(run, ports, use_worktree=use_worktree)
+        exec_dir = _open_workspace(run, ports, use_worktree=use_worktree, branch=branch)
         ports.session.bind_run(run.id, RunWaits(run, ports.runs))
-        wiring = Wiring(ports=ports, control=control or RunControl(), exec_dir=exec_dir)
+        wiring = Wiring(
+            ports=ports,
+            control=control or RunControl(),
+            exec_dir=exec_dir,
+            atomic_commits=atomic_commits and use_worktree,
+            auto_pull_request=auto_pull_request and atomic_commits and use_worktree,
+        )
         return _execute(wiring, definition=definition, run=run)
     # The run is stored, so it is the boundary: record the crash on it, then let
     # the caller report it.
@@ -92,11 +106,11 @@ def run_workflow(
         raise
 
 
-def _open_workspace(run: RunRecord, ports: EnginePorts, *, use_worktree: bool) -> Path:
+def _open_workspace(run: RunRecord, ports: EnginePorts, *, use_worktree: bool, branch: str) -> Path:
     """Where the agent works, announced to the stream before any step begins."""
     try:
         exec_dir, branch = prepare_workspace(
-            run, ports.workspace, ports.runs, use_worktree=use_worktree
+            run, ports.workspace, ports.runs, use_worktree=use_worktree, branch=branch
         )
     except WorkspaceError as error:
         raise WorkspaceError(f"could not open the worktree for this run: {error}") from error
@@ -209,6 +223,11 @@ def _execute(wiring: Wiring, *, definition: WorkflowDef, run: RunRecord) -> int:
                         break
 
         run.retire_steps_outside({step.step_id for step in definition.steps})
+        failed = publish_finished_run(wiring, run, template=definition.pull_request_template)
+        if failed is not None:
+            run.end(failed)
+            wiring.runs.save(run)
+            return failed
         run.complete()
         wiring.runs.save(run)
         sync_steps(wiring, run)
@@ -279,6 +298,7 @@ def _attempt_step(
 
     profile = wiring.ports.agents.profile(step.agent_id)
     wiring.session.use_agent(profile)
+    before = snapshot_if_committing(wiring, run, step)
     try:
         prompt_text = _step_prompt(wiring, run, step, profile, item=item, guidance=guidance)
     except TemplateError as error:
@@ -296,7 +316,17 @@ def _attempt_step(
     record.record_reply(
         session_id=wiring.session.last_session_id, summary=format_summary(turn.summary)
     )
-    return _judge_turn(wiring, run, step, record, turn, may_close=may_close)
+    signal, reason = _judge_turn(wiring, run, step, record, turn, may_close=may_close)
+    commit_delivery(
+        wiring,
+        run,
+        step,
+        delivered=record.status == StepStatus.DONE,
+        subject=parse_outcome(turn.summary).commit_subject,
+        item=item,
+        before=before,
+    )
+    return signal, reason
 
 
 def _step_prompt(
@@ -315,7 +345,7 @@ def _step_prompt(
         prompt_text = f"{profile.instructions}\n\n---\n\n{prompt_text}"
     prompt_text += guidance_block(guidance)
     if step.declares_outcome:
-        prompt_text += outcome_protocol()
+        prompt_text += outcome_protocol(ask_commit=bool(wiring.atomic_commits and step.commit_type))
     return prompt_text
 
 

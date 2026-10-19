@@ -107,6 +107,7 @@ class StepDef:
     fan_out: bool = False
     requires_outcome: bool = True
     repeat: RepeatRule | None = None
+    commit_type: str = ""
 
     @property
     def declares_outcome(self) -> bool:
@@ -127,6 +128,7 @@ class WorkflowDef:
     description: str = ""
     is_default: bool = False
     default_prompt: str = ""
+    pull_request_template: str = ""
     steps: tuple[StepDef, ...] = ()
 
     def loops(self) -> dict[int, Loop]:

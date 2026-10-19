@@ -23,6 +23,8 @@ class ProjectConfig:
     workspace: Path | None = None
     default_agent: str | None = None
     use_worktree: bool = False
+    atomic_commits: bool = False
+    auto_pull_request: bool = False
     agents: dict[str, AgentConfig] = field(default_factory=dict)
     workflows: dict[str, WorkflowConfig] = field(default_factory=dict)
 
@@ -121,6 +123,8 @@ def _load_project(root: Path, *, db_path: Path | None = None) -> ProjectConfig |
             workspace=workspace_path,
             default_agent=str(default_agent) if default_agent else None,
             use_worktree=bool(settings["use_worktree"]) if settings else False,
+            atomic_commits=bool(settings["atomic_commits"]) if settings else False,
+            auto_pull_request=bool(settings["auto_pull_request"]) if settings else False,
             agents=agents,
             workflows=workflows,
         )
@@ -152,10 +156,10 @@ def init_project_config(root: Path, *, db_path: Path | None = None) -> Path:
             """
             INSERT INTO project_settings (
               project_id, model, permission_policy, workspace_root, default_agent,
-              use_worktree
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              use_worktree, atomic_commits, auto_pull_request
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (project_id, None, None, None, None, 0),
+            (project_id, None, None, None, None, 0, 0, 0),
         )
         for workflow_id, defaults in DEFAULT_PROJECT_WORKFLOWS.items():
             connection.execute(
@@ -195,6 +199,8 @@ def update_project_defaults(
     permission_policy: str | None = None,
     agent: str | None = None,
     use_worktree: bool | None = None,
+    atomic_commits: bool | None = None,
+    auto_pull_request: bool | None = None,
     db_path: Path | None = None,
 ) -> Path:
     init_project_config(root, db_path=db_path)
@@ -203,7 +209,17 @@ def update_project_defaults(
         return root.resolve()
     if permission_policy is not None and permission_policy not in PERMISSION_POLICIES:
         raise ValueError(f"Invalid permission policy: {permission_policy}")
-    if (model, permission_policy, agent, use_worktree) == (None, None, None, None):
+    if all(
+        value is None
+        for value in (
+            model,
+            permission_policy,
+            agent,
+            use_worktree,
+            atomic_commits,
+            auto_pull_request,
+        )
+    ):
         return root.resolve()
     updated = replace(
         config,
@@ -213,6 +229,10 @@ def update_project_defaults(
         else permission_policy,
         default_agent=config.default_agent if agent is None else agent,
         use_worktree=config.use_worktree if use_worktree is None else bool(use_worktree),
+        atomic_commits=config.atomic_commits if atomic_commits is None else bool(atomic_commits),
+        auto_pull_request=config.auto_pull_request
+        if auto_pull_request is None
+        else bool(auto_pull_request),
     )
     _save_project(updated, db_path=db_path)
     return root.resolve()
@@ -285,14 +305,16 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
             """
             INSERT INTO project_settings (
               project_id, model, permission_policy, workspace_root, default_agent,
-              use_worktree
-            ) VALUES (?, ?, ?, ?, ?, ?)
+              use_worktree, atomic_commits, auto_pull_request
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id) DO UPDATE SET
               model = excluded.model,
               permission_policy = excluded.permission_policy,
               workspace_root = excluded.workspace_root,
               default_agent = excluded.default_agent,
-              use_worktree = excluded.use_worktree
+              use_worktree = excluded.use_worktree,
+              atomic_commits = excluded.atomic_commits,
+              auto_pull_request = excluded.auto_pull_request
             """,
             (
                 config.project_id,
@@ -301,6 +323,8 @@ def _save_project(config: ProjectConfig, *, db_path: Path | None = None) -> None
                 workspace_root,
                 config.default_agent,
                 int(config.use_worktree),
+                int(config.atomic_commits),
+                int(config.auto_pull_request),
             ),
         )
         connection.execute("DELETE FROM project_agents WHERE project_id = ?", (config.project_id,))

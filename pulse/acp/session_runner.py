@@ -183,15 +183,7 @@ class AcpSessionRunner(StepTurns):
         alive = self._process is not None and self._process.poll() is None
         if alive and not self._hung:
             return False
-        self.close()
-        self._responses.clear()
-        while not self._response_queue.empty():
-            self._response_queue.get_nowait()
-        self._session_id = None
-        self._hung = False
-        self.start()
-        self.initialize()
-        self.authenticate()
+        self._boot()
         return True
 
     def close(self) -> None:
@@ -446,9 +438,28 @@ class AcpSessionRunner(StepTurns):
         """The prompt port as the engine must use it: every question it asks is a user wait."""
         return self._prompt_handler
 
+    def _boot(self) -> None:
+        """Replace the agent process and finish the handshake on the current command."""
+        self.close()
+        self._responses.clear()
+        while not self._response_queue.empty():
+            self._response_queue.get_nowait()
+        self._session_id = None
+        self._hung = False
+        self.start()
+        self.initialize()
+        self.authenticate()
+
     def use_agent(self, profile: AgentProfile) -> None:
         self._pulse_agent = profile.agent_id
         self._permission_policy = parse_policy(profile.permission_policy)
+        command = list(profile.acp_command)
+        if not command or command == self._command or profile.dialect is None:
+            return
+        self._command = command
+        self._runtime = profile.dialect
+        if self._process is not None:
+            self._boot()
 
     def _activate_session(self, session_id: str) -> None:
         self._session_id = str(session_id)

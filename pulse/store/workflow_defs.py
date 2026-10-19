@@ -36,6 +36,7 @@ def _step(row: sqlite3.Row) -> StepDef:
         fan_out=bool(row["fan_out"]),
         requires_outcome=bool(row["requires_outcome"]),
         repeat=RepeatRule.from_columns(str(row["repeat_from"] or ""), int(row["repeat_max"] or 0)),
+        commit_type=str(row["commit_type"] or ""),
     )
 
 
@@ -46,6 +47,7 @@ def _workflow(row: sqlite3.Row, steps: tuple[StepDef, ...]) -> WorkflowDef:
         description=str(row["description"] or ""),
         is_default=bool(row["is_default"]),
         default_prompt=str(row["default_prompt"] or ""),
+        pull_request_template=str(row["pull_request_template"] or ""),
         steps=steps,
     )
 
@@ -138,22 +140,30 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
     try:
         connection.execute(
             """
-            INSERT INTO workflow_defs (id, label, description, is_default)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO workflow_defs (id, label, description, is_default, pull_request_template)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               label = excluded.label,
               description = excluded.description,
-              is_default = excluded.is_default
+              is_default = excluded.is_default,
+              pull_request_template = excluded.pull_request_template
             """,
-            (workflow.id, workflow.label, workflow.description, int(workflow.is_default)),
+            (
+                workflow.id,
+                workflow.label,
+                workflow.description,
+                int(workflow.is_default),
+                workflow.pull_request_template,
+            ),
         )
         connection.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (workflow.id,))
         connection.executemany(
             """
             INSERT INTO workflow_steps
               (workflow_id, step_id, position, label, agent_id, prompt_template,
-               requires_approval, fan_out, requires_outcome, repeat_from, repeat_max)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               requires_approval, fan_out, requires_outcome, repeat_from, repeat_max,
+               commit_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -168,6 +178,7 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
                     int(step.requires_outcome),
                     step.repeat.back_to if step.repeat else "",
                     step.repeat.max_rounds if step.repeat else 0,
+                    step.commit_type,
                 )
                 for index, step in enumerate(workflow.steps, start=1)
             ],

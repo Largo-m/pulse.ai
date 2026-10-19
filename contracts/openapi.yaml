@@ -76,6 +76,11 @@ paths:
                     Resume a previous run instead of creating one; it picks up at
                     the first step that is not done or skipped. The resumed run
                     keeps its id, so the run id is stable across resumes
+                branch:
+                  type: string
+                  description: >-
+                    Branch the worktree is created on, when the project isolates
+                    runs. Empty lets the engine slug the prompt. Ignored on resume.
       responses:
         "200":
           description: Run created
@@ -413,6 +418,63 @@ paths:
           description: Unknown agent
         "422":
           description: Unknown field or policy, or an empty value
+  /api/git/branch:
+    get:
+      summary: Whether a branch name is valid and already used in the workspace repo
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: valid and exists
+  /api/settings/atomic-commits:
+    put:
+      summary: Turn atomic commits on or off; requires the worktree
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace, enabled]
+              properties:
+                workspace:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+        "422":
+          description: Worktree is off
+  /api/settings/pull-request:
+    put:
+      summary: Turn automatic pull requests on or off; requires worktree and atomic commits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workspace, enabled]
+              properties:
+                workspace:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Saved
+        "422":
+          description: Worktree or atomic commits is off
   /api/settings/worktree:
     put:
       summary: Turn the per-run worktree on or off for a project

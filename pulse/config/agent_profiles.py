@@ -28,4 +28,7 @@ class ConfiguredAgentProfiles:
             model=resolved.model or self._fallback_model,
             permission_policy=resolved.permission_policy,
             instructions=definition.instructions.strip() if definition is not None else "",
+            runtime_id=resolved.runtime.id,
+            acp_command=tuple(resolved.acp_command),
+            dialect=resolved.runtime,
         )

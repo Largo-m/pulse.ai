@@ -81,7 +81,7 @@ lives in the package of its layer. Why: [ADR 0001](docs/adr/0001-camada-de-domin
 
    ```bash
    find pulse -type f ! -name "*.py" -not -path "*__pycache__*" -not -path "pulse/store/factory/*"
-   grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase" \
+   grep -rniE "\bprd\b|techspec|new-issue|quick-fix|setup-project|analyze-codebase|figma" \
      --include="*.py" pulse/ | grep -v "^pulse/store/factory/"
    ```
 

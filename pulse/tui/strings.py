@@ -218,13 +218,29 @@ SETTINGS_WORKTREE_OFF = "desligado"
 SETTINGS_DOCTOR_OPTION = "Verificar ambiente"
 SETTINGS_WORKTREE_ENABLED = (
     "As runs deste projeto passam a rodar num `git worktree` próprio, em "
-    "`~/.pulse/worktrees/`, numa branch `pulse/…` por run. A árvore de "
+    "`~/.pulse/worktrees/`, numa branch com o nome da tarefa. A árvore de "
     "trabalho do editor fica intocada."
 )
 SETTINGS_WORKTREE_DISABLED = (
     "As runs voltam a rodar na árvore de trabalho do projeto. "
-    "Os worktrees já criados continuam onde estão."
+    "Autocommit e PR/MR foram desligados. Os worktrees já criados continuam onde estão."
 )
+SETTINGS_ATOMIC_OPTION = "Autocommit — um commit por entrega · {state}"
+SETTINGS_ATOMIC_UNAVAILABLE = "indisponível"
+SETTINGS_ATOMIC_NEEDS_WORKTREE = "Autocommit só liga com o Worktree ligado."
+SETTINGS_ATOMIC_ENABLED = (
+    "Cada entrega de implementação ou correção vira um commit na branch da run."
+)
+SETTINGS_ATOMIC_DISABLED = "As runs deixam de commitar. PR/MR foi desligado."
+SETTINGS_PR_OPTION = "PR/MR — abrir pedido no fim da run · {state}"
+SETTINGS_PR_NEEDS_COMMITS = "PR/MR só liga com o Worktree e o Autocommit ligados."
+SETTINGS_PR_ENABLED = "No fim da run o Pulse abre o pedido no GitHub ou no GitLab."
+SETTINGS_PR_DISABLED = "O Pulse deixa de abrir pedido no fim da run."
+BRANCH_TITLE = "BRANCH"
+BRANCH_CONFIRM = "Confirmar"
+BRANCH_TAKEN = "Essa branch já existe. Escolha outro nome."
+BRANCH_INVALID = "Nome de branch inválido."
+BRANCH_EMPTY = "Informe o nome da branch."
 SETTINGS_LOADING_MODELS = "Carregando modelos…"
 SETTINGS_PICK_MODEL = "Escolha o modelo"
 SETTINGS_PICK_POLICY = "Escolha a política de permissões"

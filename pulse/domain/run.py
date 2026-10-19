@@ -258,6 +258,8 @@ class RunRecord:
     updated_at: str = ""
     worktree_path: str = ""
     branch: str = ""
+    branch_owned: bool = False
+    branch_base: str = ""
     steps: list[StepRecord] = field(default_factory=list)
     _removed: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
 
@@ -279,9 +281,12 @@ class RunRecord:
     def owns_branch(self) -> bool:
         """The recorded branch was created by this run rather than the project's.
 
-        Prevents reattaching e.g. `main` from the user's working tree. Only
-        `own_branch`, with or without the suffix git adds when it is taken, counts.
+        Prevents reattaching e.g. `main` from the user's working tree. A run that
+        recorded `branch_owned` owns whatever name it confirmed. Older runs own
+        `own_branch`, with or without the suffix git used to add when it was taken.
         """
+        if self.branch_owned and self.branch:
+            return True
         base = self.own_branch
         return self.branch == base or self.branch.startswith(f"{base}-")
 
@@ -364,10 +369,16 @@ class RunRecord:
         """Called by storage once the deletions are committed."""
         self._removed.clear()
 
-    def work_in(self, *, worktree_path: str, branch: str) -> None:
+    def work_in(
+        self, *, worktree_path: str, branch: str, owns: bool = False, base: str = ""
+    ) -> None:
         """Where the agent works for this run: a worktree, or the root when empty."""
         self.worktree_path = worktree_path
         self.branch = branch
+        if owns:
+            self.branch_owned = True
+        if base:
+            self.branch_base = base
 
     def await_input(self) -> bool:
         """A question is open: the run is alive but paused on the user.

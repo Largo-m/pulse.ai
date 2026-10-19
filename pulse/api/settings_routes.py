@@ -7,21 +7,26 @@ config, runtimes and the doctor.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from pulse import vcs
 from pulse.api.deps import project_root
 from pulse.config.global_config import PERMISSION_POLICIES
 from pulse.config.model_catalog import DEFAULT_MODELS, collect_available_models
 from pulse.config.onboarding import complete_onboarding, setup_state
 from pulse.config.project_settings import (
     AgentField,
+    SettingsOrderError,
     agent_fields,
     project_settings,
     set_agent_field,
+    set_atomic_commits,
+    set_auto_pull_request,
     set_project_default,
     set_worktree,
 )
@@ -29,6 +34,7 @@ from pulse.config.resolved import resolve_config
 from pulse.doctor.checks import CheckResult, run_agent_checks
 from pulse.runtimes import DEFAULT_RUNTIME_ID, AgentRuntime, all_runtimes, find_runtime
 from pulse.store.db import default_db_path
+from pulse.vcs import changes as git_changes
 
 router = APIRouter()
 
@@ -49,6 +55,11 @@ class FieldBody(BaseModel):
 
 
 class WorktreeBody(BaseModel):
+    workspace: str
+    enabled: bool
+
+
+class FlagBody(BaseModel):
     workspace: str
     enabled: bool
 
@@ -147,6 +158,8 @@ def get_settings(workspace: str | None = None) -> dict[str, Any]:
     return {
         "is_repo": settings.is_repo,
         "use_worktree": settings.use_worktree,
+        "atomic_commits": settings.atomic_commits,
+        "auto_pull_request": settings.auto_pull_request,
         "defaults": settings.defaults.to_dict(),
         "agents": [
             {"id": agent.id, "label": agent.label, **agent.fields.to_dict()}
@@ -183,6 +196,33 @@ def patch_agent(agent_id: str, body: FieldBody) -> dict[str, Any]:
 def put_worktree(body: WorktreeBody) -> dict[str, Any]:
     set_worktree(Path(body.workspace).resolve(), enabled=body.enabled)
     return {"ok": True}
+
+
+@router.put("/api/settings/atomic-commits")
+def put_atomic_commits(body: FlagBody) -> dict[str, Any]:
+    _save_flag(set_atomic_commits, body)
+    return {"ok": True}
+
+
+@router.put("/api/settings/pull-request")
+def put_pull_request(body: FlagBody) -> dict[str, Any]:
+    _save_flag(set_auto_pull_request, body)
+    return {"ok": True}
+
+
+@router.get("/api/git/branch")
+def get_branch(name: str = "", workspace: str | None = None) -> dict[str, Any]:
+    root = project_root(workspace)
+    repo = vcs.repo_root(root) or root
+    valid = git_changes.branch_name_ok(repo, name)
+    return {"valid": valid, "exists": valid and vcs.branch_exists(repo, name)}
+
+
+def _save_flag(save: Callable[..., None], body: FlagBody) -> None:
+    try:
+        save(Path(body.workspace).resolve(), enabled=body.enabled)
+    except SettingsOrderError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 def _validate(body: FieldBody) -> None:

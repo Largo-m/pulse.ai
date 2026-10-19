@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse import vcs
+from pulse.vcs import changes, publish
 
 
 class GitWorkspace:
@@ -43,6 +44,34 @@ class GitWorkspace:
     def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
         target = self._worktrees / run_id
         return target, vcs.add_worktree(self._repo(), target, branch)
+
+    def head(self, cwd: Path) -> str:
+        return vcs.head_sha(cwd)
+
+    def snapshot(self, cwd: Path) -> dict[str, str]:
+        return changes.snapshot(cwd)
+
+    def commit(self, cwd: Path, paths: list[str], message: str) -> None:
+        changes.commit_paths(cwd, paths, message)
+
+    def commits_after(self, cwd: Path, base: str) -> list[str]:
+        return vcs.commits_after(cwd, base)
+
+    def publish_branch(self, branch: str) -> None:
+        vcs.push_branch(self._repo(), branch)
+
+    def remove_worktree(self, path: Path) -> None:
+        vcs.remove_worktree(self._repo(), path)
+
+    def delete_local_branch(self, branch: str) -> None:
+        vcs.delete_local_branch(self._repo(), branch)
+
+    def open_pull_request(self, *, branch: str, title: str, body: str) -> None:
+        repo = self._repo()
+        base = changes.default_branch(repo)
+        if not base:
+            raise vcs.GitError("origin has no default branch (`git remote set-head origin -a`)")
+        publish.open_request(repo, branch=branch, title=title, body=body, base=base)
 
     def _repo(self) -> Path:
         repo = vcs.repo_root(self._root)

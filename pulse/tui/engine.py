@@ -100,6 +100,8 @@ class AgentRow:
 class ProjectSettings:
     is_repo: bool
     use_worktree: bool
+    atomic_commits: bool
+    auto_pull_request: bool
     defaults: Fields
     agents: tuple[AgentRow, ...]
     runtimes: tuple[tuple[str, str], ...]
@@ -303,6 +305,8 @@ def project_settings(workspace: Path) -> ProjectSettings:
     return ProjectSettings(
         is_repo=bool(data.get("is_repo")),
         use_worktree=bool(data.get("use_worktree")),
+        atomic_commits=bool(data.get("atomic_commits")),
+        auto_pull_request=bool(data.get("auto_pull_request")),
         defaults=_fields(data.get("defaults") or {}),
         agents=tuple(
             AgentRow(id=str(item["id"]), label=str(item.get("label") or ""), fields=_fields(item))
@@ -326,8 +330,29 @@ def save_agent_field(workspace: Path, agent_id: str, field: AgentField, value: s
 
 
 def set_worktree(workspace: Path, *, enabled: bool) -> None:
+    _put_flag(workspace, "/api/settings/worktree", enabled=enabled)
+
+
+def set_atomic_commits(workspace: Path, *, enabled: bool) -> None:
+    _put_flag(workspace, "/api/settings/atomic-commits", enabled=enabled)
+
+
+def set_pull_request(workspace: Path, *, enabled: bool) -> None:
+    _put_flag(workspace, "/api/settings/pull-request", enabled=enabled)
+
+
+def branch_check(workspace: Path, name: str) -> tuple[bool, bool]:
+    data = _call(
+        lambda client: client.get(
+            "/api/git/branch", params={"workspace": str(workspace), "name": name}
+        )
+    )
+    return bool(data.get("valid")), bool(data.get("exists"))
+
+
+def _put_flag(workspace: Path, path: str, *, enabled: bool) -> None:
     body = {"workspace": str(workspace), "enabled": enabled}
-    _call(lambda client: client.put("/api/settings/worktree", body))
+    _call(lambda client: client.put(path, body))
 
 
 # Workflows and history.

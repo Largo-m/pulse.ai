@@ -457,6 +457,13 @@ def test_a_run_owns_only_the_branch_it_created(branch: str, owned: bool):
     assert run.owns_branch is owned
 
 
+def test_a_confirmed_branch_is_owned_whatever_its_name():
+    run = _run()
+    run.work_in(worktree_path="/wt", branch="corrigir-o-login", owns=True)
+
+    assert run.owns_branch is True
+
+
 def test_unknown_stored_statuses_load_as_pending():
     assert StepStatus.parse("") == StepStatus.PENDING
     assert RunStatus.parse("legacy") == RunStatus.PENDING

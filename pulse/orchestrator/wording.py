@@ -83,6 +83,39 @@ OUTCOME_NOT_DECLARED = (
 BLOCKED_WITHOUT_REASON = "o agente declarou bloqueio sem dizer o motivo"
 
 
+def commit_failed(error: str) -> str:
+    return f"Não commitei: {error}"
+
+
+def publish_failed(error: str) -> str:
+    return f"Não publiquei a branch: {error}"
+
+
+def pull_request_failed(error: str) -> str:
+    return f"Não abri o pedido: {error}"
+
+
+def worktree_left_dirty() -> str:
+    return "A pasta do worktree ficou: ainda há alteração sem commit"
+
+
+def local_branch_kept(error: str) -> str:
+    return f"A branch local ficou: {error}"
+
+
+def commit_message(commit_type: str, subject: str, *, item_id: str) -> str:
+    text = subject.strip() or _fallback_subject(commit_type, item_id)
+    return f"{commit_type}: {text}"
+
+
+def _fallback_subject(commit_type: str, item_id: str) -> str:
+    if commit_type == "feat" and item_id:
+        return f"implement {item_id}"
+    if commit_type == "feat":
+        return "implement the change"
+    return "apply the correction"
+
+
 def unknown_outcome(status: str) -> str:
     return f"o agente declarou um desfecho que o Pulse não conhece: `{status}`"
 
