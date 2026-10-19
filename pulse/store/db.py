@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS workflow_defs (
   label TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   is_default INTEGER NOT NULL DEFAULT 0,
-  default_prompt TEXT NOT NULL DEFAULT ''
+  default_prompt TEXT NOT NULL DEFAULT '',
+  pull_request_template TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS workflow_steps (
@@ -230,6 +231,11 @@ def _apply_git_options(connection: sqlite3.Connection) -> set[tuple[str, str]]:
     return _add_columns(connection, columns)
 
 
+def _apply_pull_request_template(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    columns = (("workflow_defs", "pull_request_template", "TEXT NOT NULL DEFAULT ''"),)
+    return _add_columns(connection, columns)
+
+
 def _add_columns(
     connection: sqlite3.Connection, columns: tuple[tuple[str, str, str], ...]
 ) -> set[tuple[str, str]]:
@@ -280,6 +286,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=1, apply=_apply_added_columns),
     Migration(version=2, apply=_apply_git_options),
     Migration(version=3, apply=_apply_context_tokens),
+    Migration(version=4, apply=_apply_pull_request_template),
 )
 
 
@@ -353,6 +360,8 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
             factory.backfill_default_prompts(connection)
         if ("workflow_steps", "commit_type") in added:
             factory.backfill_commit_types(connection)
+        if ("workflow_defs", "pull_request_template") in added:
+            factory.backfill_pull_request_templates(connection)
         factory.drop_approval_from_unattended_steps(connection)
         factory.inherit_policy_on_default_agent(connection)
     connection.commit()

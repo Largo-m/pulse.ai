@@ -367,10 +367,13 @@ Três opções de projeto, em escada, todas desligadas por padrão:
 **Worktree**, **Autocommit** (`atomic_commits`, só com worktree) e **PR/MR**
 (`auto_pull_request`, só com as duas). Autocommit grava um commit por step com
 `workflow_steps.commit_type` (`feat` ou `fix`; vazio não commita), só com os
-caminhos que mudaram naquele step, dentro do worktree. No fim da run, se essa
-branch teve commit, o Pulse faz `git push -u origin`. Com PR/MR ligado, abre o
-pedido no GitHub (`gh pr create`) ou no GitLab (`glab mr create`) com o mesmo
-corpo. Push ok e árvore limpa: a pasta do worktree sai e a branch local sai com
+caminhos que mudaram naquele step, dentro do worktree (arquivos de pasta não
+rastreada contam um a um). No fim da run, com Autocommit ligado e se essa
+branch teve commit, o Pulse faz `git push -u origin`; sem Autocommit nada é
+publicado, mesmo que o agente tenha commitado sozinho. Com PR/MR ligado, abre o
+pedido no GitHub (`gh pr create`) ou no GitLab (`glab mr create`) contra o
+`origin/HEAD` (sem ele, o pedido não abre e a run avisa), com o corpo de
+`workflow_defs.pull_request_template`. Push ok e árvore limpa: a pasta do worktree sai e a branch local sai com
 `git branch -d`; fica a branch remota. Push recusado, árvore suja, run parada
 ou step falho: a pasta e a branch local ficam. O motor fala com git, `gh` e
 `glab` pela porta `Workspace`.

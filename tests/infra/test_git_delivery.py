@@ -107,3 +107,34 @@ def test_publishing_pushes_the_branch_and_deletes_only_the_local_one(tmp_path: P
     assert not target.exists()
     assert vcs.branch_exists(repo, branch) is False
     assert vcs.branch_exists(bare, branch) is True
+
+
+def test_a_snapshot_lists_each_file_inside_an_untracked_directory(tmp_path: Path) -> None:
+    """A directory left untracked by an earlier step collapsed into one `docs/` entry,
+    so the files a later step added or edited inside it never reached a commit.
+    """
+    repo = make_repo(tmp_path / "repo")
+    workspace = GitWorkspace(repo, worktrees=tmp_path / "worktrees")
+    target, _branch = workspace.add_worktree("run-1", "corrigir-o-login")
+    (target / "docs").mkdir()
+    (target / "docs" / "prd.md").write_text("prd\n", encoding="utf-8")
+
+    before = workspace.snapshot(target)
+    (target / "docs" / "prd.md").write_text("prd editado\n", encoding="utf-8")
+    (target / "docs" / "tasks.md").write_text("tasks\n", encoding="utf-8")
+    after = workspace.snapshot(target)
+
+    assert set(before) == {"docs/prd.md"}
+    assert set(after) == {"docs/prd.md", "docs/tasks.md"}
+    assert before["docs/prd.md"] != after["docs/prd.md"]
+
+
+def test_a_pull_request_without_a_known_default_branch_is_refused(tmp_path: Path) -> None:
+    """Without `origin/HEAD` the base was guessed (`main`, or whatever the root had
+    checked out), which can target a branch that does not exist.
+    """
+    repo = make_repo(tmp_path / "repo")
+    workspace = GitWorkspace(repo, worktrees=tmp_path / "worktrees")
+
+    with pytest.raises(vcs.GitError, match="default branch"):
+        workspace.open_pull_request(branch="corrigir-o-login", title="t", body="corpo")

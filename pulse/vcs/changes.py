@@ -16,11 +16,6 @@ def snapshot(cwd: Path) -> dict[str, str]:
     return digests
 
 
-def changed_paths(before: dict[str, str], after: dict[str, str]) -> list[str]:
-    names = set(before) | set(after)
-    return sorted(path for path in names if before.get(path) != after.get(path))
-
-
 def commit_paths(cwd: Path, paths: list[str], message: str) -> None:
     relative = [_inside(cwd, path) for path in paths]
     if not relative:
@@ -31,7 +26,9 @@ def commit_paths(cwd: Path, paths: list[str], message: str) -> None:
 
 def _status_paths(cwd: Path) -> list[str]:
     try:
-        result = _run(["status", "--porcelain", "-z"], cwd=cwd)
+        # `all`: the default collapses an untracked directory into one entry, so
+        # edits inside it would never show up as a change.
+        result = _run(["status", "--porcelain", "-z", "--untracked-files=all"], cwd=cwd)
     except OSError:
         return []
     if result.returncode != 0:

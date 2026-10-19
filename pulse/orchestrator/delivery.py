@@ -9,7 +9,10 @@ from pulse.domain.run import RunRecord
 from pulse.domain.workflow import StepDef
 from pulse.orchestrator import wording
 from pulse.orchestrator.fanout import Item
+from pulse.orchestrator.render import TemplateError, render
 from pulse.orchestrator.wiring import Wiring, notify
+
+DEFAULT_PULL_REQUEST_TEMPLATE = "{{prompt}}\n\n{{commits}}"
 
 
 def snapshot_if_committing(wiring: Wiring, run: RunRecord, step: StepDef) -> dict[str, str]:
@@ -43,8 +46,14 @@ def commit_delivery(
         notify(wiring, wording.commit_failed(str(error)))
 
 
-def publish_finished_run(wiring: Wiring, run: RunRecord) -> int | None:
-    """Push, open the request and drop the local worktree. `1` when the push fails."""
+def publish_finished_run(wiring: Wiring, run: RunRecord, *, template: str) -> int | None:
+    """Push, open the request and drop the local worktree. `1` when the push fails.
+
+    Push sits behind Autocommit: without it the user never opted into publishing,
+    even if the agent committed on its own.
+    """
+    if not wiring.atomic_commits:
+        return None
     if not run.owns_branch or not run.branch_base or not run.worktree_path:
         return None
     cwd = Path(run.worktree_path)
@@ -56,7 +65,7 @@ def publish_finished_run(wiring: Wiring, run: RunRecord) -> int | None:
     except WorkspaceError as error:
         notify(wiring, wording.publish_failed(str(error)))
         return 1
-    _open_request(wiring, run, subjects)
+    _open_request(wiring, run, subjects, template)
     _drop_local(wiring, run, cwd)
     return None
 
@@ -65,13 +74,22 @@ def _will_commit(wiring: Wiring, run: RunRecord, step: StepDef) -> bool:
     return bool(wiring.atomic_commits and run.branch_owned and step.commit_type)
 
 
-def _open_request(wiring: Wiring, run: RunRecord, subjects: list[str]) -> None:
+def pull_request_body(template: str, *, prompt: str, branch: str, commits: list[str]) -> str:
+    """The workflow's `pull_request_template`, or the prompt and commits when it has none."""
+    listed = "\n".join(f"- {subject}" for subject in commits)
+    context = {"prompt": prompt.strip(), "branch": branch, "commits": listed}
+    return render(template or DEFAULT_PULL_REQUEST_TEMPLATE, context)
+
+
+def _open_request(wiring: Wiring, run: RunRecord, subjects: list[str], template: str) -> None:
     if not wiring.auto_pull_request:
         return
-    body = wording.pull_request_body(prompt=run.user_prompt, branch=run.branch, commits=subjects)
     try:
+        body = pull_request_body(
+            template, prompt=run.user_prompt, branch=run.branch, commits=subjects
+        )
         wiring.ports.workspace.open_pull_request(branch=run.branch, title=run.branch, body=body)
-    except WorkspaceError as error:
+    except (TemplateError, WorkspaceError) as error:
         notify(wiring, wording.pull_request_failed(str(error)))
 
 
@@ -89,5 +107,7 @@ def _drop_local(wiring: Wiring, run: RunRecord, cwd: Path) -> None:
 
 
 def _changed(before: dict[str, str], after: dict[str, str]) -> list[str]:
-    names = set(before) | set(after)
-    return sorted(path for path in names if before.get(path) != after.get(path))
+    """Dirty paths the step touched. One gone from `after` is back to HEAD or was an
+    untracked file now deleted: nothing to stage, and naming it fails `git add`.
+    """
+    return sorted(path for path, digest in after.items() if before.get(path) != digest)

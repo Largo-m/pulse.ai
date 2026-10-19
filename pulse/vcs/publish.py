@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-from pulse.vcs import GitError, _read
+from pulse.vcs import GitError, _quiet_git_env, _read
 
 REQUEST_TIMEOUT = 60.0
 
@@ -81,7 +80,7 @@ def glab_host() -> str:
             text=True,
             timeout=5,
             check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=_quiet_git_env(),
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -101,7 +100,7 @@ def open_request(repo: Path, *, branch: str, title: str, body: str, base: str) -
             text=True,
             timeout=REQUEST_TIMEOUT,
             check=False,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=_quiet_git_env(),
         )
     except (OSError, subprocess.SubprocessError) as error:
         raise GitError(f"{command[0]}: {error}") from error

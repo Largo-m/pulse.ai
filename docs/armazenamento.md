@@ -31,6 +31,8 @@ vez só, a segunda espera e pula.
 - A migração 3 adiciona `run_steps.context_tokens`. A coluna entrou no `SCHEMA`
   depois da versão 2, então um banco que já passou da migração 1 não a recebe
   de novo por ali.
+- A migração 4 adiciona `workflow_defs.pull_request_template`, e
+  `backfill_pull_request_templates` preenche o modelo da fábrica onde ficou vazio.
 - Banco com versão maior que a do código (gravado por um Pulse mais novo) é
   recusado com `SchemaTooNewError`, em vez de ser escrito por um schema que
   este código não conhece.

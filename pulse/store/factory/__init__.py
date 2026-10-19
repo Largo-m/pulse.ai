@@ -148,6 +148,11 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def pull_request_template() -> str:
+    """PR/MR body a factory workflow opens: `{{prompt}}`, `{{branch}}`, `{{commits}}`."""
+    return _read(factory_dir() / "pull_request.md")
+
+
 def _expand_includes(text: str) -> str:
     shared = factory_dir() / "shared"
 
@@ -245,11 +250,18 @@ def seed(connection: sqlite3.Connection) -> None:
     connection.executemany(
         """
         INSERT OR IGNORE INTO workflow_defs
-          (id, label, description, is_default, default_prompt)
-        VALUES (?, ?, ?, ?, ?)
+          (id, label, description, is_default, default_prompt, pull_request_template)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         [
-            (item.id, item.label, item.description, int(item.is_default), item.default_prompt)
+            (
+                item.id,
+                item.label,
+                item.description,
+                int(item.is_default),
+                item.default_prompt,
+                pull_request_template(),
+            )
             for item in WORKFLOWS
         ],
     )
@@ -310,6 +322,16 @@ def backfill_commit_types(connection: sqlite3.Connection) -> None:
          WHERE workflow_id = ? AND step_id = ? AND commit_type = ''
         """,
         rows,
+    )
+
+
+def backfill_pull_request_templates(connection: sqlite3.Connection) -> None:
+    """Fill `pull_request_template` where the column was just added and is still empty."""
+    template = pull_request_template()
+    connection.executemany(
+        "UPDATE workflow_defs SET pull_request_template = ? "
+        "WHERE id = ? AND pull_request_template = ''",
+        [(template, item.id) for item in WORKFLOWS],
     )
 
 

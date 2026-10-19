@@ -13,7 +13,8 @@ durante uma run.
 Tabelas em `~/.pulse/pulse.db` (ver [armazenamento.md](armazenamento.md)):
 
 ```
-workflow_defs     id, label, description, is_default, default_prompt
+workflow_defs     id, label, description, is_default, default_prompt,
+                  pull_request_template
 workflow_steps    workflow_id, step_id, position, label,
                   agent_id, prompt_template, requires_approval, fan_out,
                   commit_type
@@ -32,6 +33,11 @@ direto na run; vazio, ele abre o campo para o usuário descrever a tarefa.
 `commit_type` (`feat`, `fix` ou vazio) diz se o Autocommit grava um commit
 quando o step entrega. Vazio não commita. A opção só existe com Worktree
 ligado; PR/MR só existe com as duas.
+
+`pull_request_template` é o corpo do PR/MR que a run abre no fim, com
+`{{prompt}}`, `{{branch}}` e `{{commits}}` (um `- assunto` por linha). A fábrica
+semeia [`pulse/store/factory/pull_request.md`](../pulse/store/factory/pull_request.md);
+vazio, o corpo é o prompt seguido dos commits.
 
 ## 1.1 A semente de fábrica
 

@@ -47,6 +47,7 @@ def _workflow(row: sqlite3.Row, steps: tuple[StepDef, ...]) -> WorkflowDef:
         description=str(row["description"] or ""),
         is_default=bool(row["is_default"]),
         default_prompt=str(row["default_prompt"] or ""),
+        pull_request_template=str(row["pull_request_template"] or ""),
         steps=steps,
     )
 
@@ -139,14 +140,21 @@ def save_workflow(workflow: WorkflowDef, *, db_path: Path | None = None) -> None
     try:
         connection.execute(
             """
-            INSERT INTO workflow_defs (id, label, description, is_default)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO workflow_defs (id, label, description, is_default, pull_request_template)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               label = excluded.label,
               description = excluded.description,
-              is_default = excluded.is_default
+              is_default = excluded.is_default,
+              pull_request_template = excluded.pull_request_template
             """,
-            (workflow.id, workflow.label, workflow.description, int(workflow.is_default)),
+            (
+                workflow.id,
+                workflow.label,
+                workflow.description,
+                int(workflow.is_default),
+                workflow.pull_request_template,
+            ),
         )
         connection.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (workflow.id,))
         connection.executemany(

@@ -210,3 +210,22 @@ def test_versions_are_strictly_increasing() -> None:
 
     assert versions == sorted(set(versions))
     assert versions[0] == 1
+
+
+def test_a_database_at_version_3_gains_the_factory_pull_request_template(tmp_path: Path) -> None:
+    """The PR body moved from engine code to `workflow_defs`; an upgraded database must
+    get the factory template on its factory workflows, not an empty body.
+    """
+    path = tmp_path / "v3.db"
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("ALTER TABLE workflow_defs DROP COLUMN pull_request_template")
+        connection.execute("PRAGMA user_version = 3")
+
+    connect(path).close()
+
+    with _raw(path) as connection:
+        assert schema_version(connection) == LATEST
+        rows = connection.execute("SELECT id, pull_request_template FROM workflow_defs").fetchall()
+        assert rows
+        assert all("{{prompt}}" in str(row["pull_request_template"]) for row in rows)

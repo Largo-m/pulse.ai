@@ -128,6 +128,7 @@ class WorkflowDef:
     description: str = ""
     is_default: bool = False
     default_prompt: str = ""
+    pull_request_template: str = ""
     steps: tuple[StepDef, ...] = ()
 
     def loops(self) -> dict[int, Loop]:

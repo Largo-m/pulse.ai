@@ -223,7 +223,7 @@ def _execute(wiring: Wiring, *, definition: WorkflowDef, run: RunRecord) -> int:
                         break
 
         run.retire_steps_outside({step.step_id for step in definition.steps})
-        failed = publish_finished_run(wiring, run)
+        failed = publish_finished_run(wiring, run, template=definition.pull_request_template)
         if failed is not None:
             run.end(failed)
             wiring.runs.save(run)

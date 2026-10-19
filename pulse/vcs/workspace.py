@@ -68,7 +68,9 @@ class GitWorkspace:
 
     def open_pull_request(self, *, branch: str, title: str, body: str) -> None:
         repo = self._repo()
-        base = changes.default_branch(repo) or self.current_branch() or "main"
+        base = changes.default_branch(repo)
+        if not base:
+            raise vcs.GitError("origin has no default branch (`git remote set-head origin -a`)")
         publish.open_request(repo, branch=branch, title=title, body=body, base=base)
 
     def _repo(self) -> Path:

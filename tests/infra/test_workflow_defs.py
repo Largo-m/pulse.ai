@@ -91,6 +91,24 @@ def test_every_factory_step_renders_with_what_the_engine_offers():
             render(step.prompt_template, first_step)
 
 
+def test_every_factory_pull_request_template_renders_with_what_the_engine_offers():
+    """The body is rendered at the end of a run; a placeholder the engine does not fill
+    would leave the pull request unopened.
+    """
+    from pulse.orchestrator.delivery import pull_request_body
+
+    for workflow in list_workflows():
+        body = pull_request_body(
+            workflow.pull_request_template,
+            prompt="Corrigir o login",
+            branch="corrigir-o-login",
+            commits=["feat: add email validation"],
+        )
+        assert "Corrigir o login" in body
+        assert "- feat: add email validation" in body
+        assert "{{" not in body
+
+
 def test_factory_agents_carry_their_playbook_and_defer_on_runtime():
     prd = get_agent("prd")
 

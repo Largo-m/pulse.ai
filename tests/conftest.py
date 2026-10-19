@@ -37,6 +37,7 @@ def make_workflow(
     requires_outcome: bool = True,
     repeat: tuple[str, str, int] | None = None,
     commit_types: dict[str, str] | None = None,
+    pull_request_template: str = "",
 ) -> WorkflowDef:
     """Persist a test workflow in the database and return its definition.
 
@@ -49,6 +50,7 @@ def make_workflow(
     definition = WorkflowDef(
         id=workflow_id,
         label=label,
+        pull_request_template=pull_request_template,
         steps=tuple(
             StepDef(
                 workflow_id=workflow_id,
