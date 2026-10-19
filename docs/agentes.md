@@ -120,6 +120,7 @@ lista canônica — id da pasta → rótulo na UI:
 | `techspec` | Techspec | `new-issue` |
 | `tasks` | Tasks | `new-issue` |
 | `implement` | Implementar | `new-issue` (fan-out) |
+| `verify` | Verificar | `new-issue` (uma vez, depois da última task) |
 | `review` | Review | `new-issue` (laço), `review` (fase `STANDALONE.md`) |
 | `review-fix` | Fix review | `new-issue` (laço, fecha e pede a volta), `review` (fase `STANDALONE.md`) |
 | `quick-plan` | Quick plan | `quick-fix` |

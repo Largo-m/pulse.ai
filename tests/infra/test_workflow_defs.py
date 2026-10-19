@@ -36,6 +36,7 @@ def test_a_fresh_database_already_has_the_factory_loops():
         "techspec",
         "tasks",
         "implement",
+        "verify",
         "review",
         "review-fix",
     ]
@@ -44,6 +45,7 @@ def test_a_fresh_database_already_has_the_factory_loops():
         True,
         True,
         False,
+        True,
         True,
         False,
     ]
@@ -304,6 +306,7 @@ def test_unattended_loops_do_not_ask_for_approval():
         True,
         False,
         True,
+        True,
         False,
     ]
 
@@ -387,12 +390,104 @@ def test_seeded_db_gains_the_merge_phase_on_open(tmp_path: Path):
 
     workflows = {item.id: item for item in list_workflows(db_path=db_path)}
     steps = {step.step_id: step for step in workflows["new-issue"].steps}
-    assert (steps["review"].position, steps["review-fix"].position) == (5, 6)
+    assert (steps["review"].position, steps["review-fix"].position) == (6, 7)
     assert steps["review"].requires_approval is True
     assert steps["review-fix"].requires_approval is False
     assert get_agent("review", db_path=db_path) is not None
     assert get_agent("review-fix", db_path=db_path) is not None
     assert steps["prd"].prompt_template == "PRD do meu jeito."
+
+
+def test_seeded_db_gains_the_verify_step_before_review_on_open(tmp_path: Path):
+    """A database seeded before `verify` existed must run it between implement and review.
+
+    Inserting the step at its factory position would tie it with `review`, and
+    `ORDER BY position, step_id` would then run it after the fix loop.
+    """
+    db_path = tmp_path / "antigo.db"
+    connection = connect(db_path)
+    connection.execute("DELETE FROM workflow_steps WHERE step_id = 'verify'")
+    connection.execute("DELETE FROM agent_defs WHERE id = 'verify'")
+    connection.execute(
+        "UPDATE workflow_steps SET position = position - 1 "
+        "WHERE workflow_id = 'new-issue' AND step_id IN ('review', 'review-fix')"
+    )
+    connection.execute(
+        "UPDATE workflow_steps SET label = 'Meu review' "
+        "WHERE workflow_id = 'new-issue' AND step_id = 'review'"
+    )
+    connection.commit()
+    connection.close()
+
+    connect(db_path).close()
+
+    workflow = get_workflow("new-issue", db_path=db_path)
+    assert workflow is not None
+    assert [(step.step_id, step.position) for step in workflow.steps[3:]] == [
+        ("implement", 4),
+        ("verify", 5),
+        ("review", 6),
+        ("review-fix", 7),
+    ]
+    assert workflow.steps[4].requires_approval is True
+    assert workflow.steps[5].label == "Meu review"
+    assert get_agent("verify", db_path=db_path) is not None
+
+
+VALIDATION_IN_IMPLEMENT = "### 9. Feature-level validation (after the LAST task)"
+
+
+def test_feature_validation_runs_in_its_own_step_not_in_the_last_task():
+    """Each implement item is one task; the feature check needs a session that wrote none.
+
+    With the playbook in `implement`, whichever fan-out item finished last also
+    judged the whole feature, so the author was the verifier.
+    """
+    implement = get_agent("implement")
+    verify = get_agent("verify")
+
+    assert implement is not None
+    assert verify is not None
+    assert VALIDATION_IN_IMPLEMENT not in implement.instructions
+    assert "# validate.md" not in implement.instructions
+    assert "validation.md" in verify.instructions
+    assert "Spec-Anchored Acceptance Criteria" in verify.instructions
+
+
+def test_old_db_implement_drops_the_last_task_validation_on_open(tmp_path: Path):
+    """`seed` never rewrites `agent_defs`, so old rows would keep validating in the last task."""
+    db_path = tmp_path / "antigo.db"
+    connection = connect(db_path)
+    connection.execute(
+        "UPDATE agent_defs SET instructions = instructions || ? WHERE id = 'implement'",
+        (f"\n\n{VALIDATION_IN_IMPLEMENT}\n\nDispatch a fresh Verifier.\n",),
+    )
+    connection.commit()
+    connection.close()
+
+    connect(db_path).close()
+
+    implement = get_agent("implement", db_path=db_path)
+    assert implement is not None
+    assert VALIDATION_IN_IMPLEMENT not in implement.instructions
+    assert implement.instructions == get_agent("implement").instructions
+
+
+def test_user_rewritten_implement_instructions_are_not_touched(tmp_path: Path):
+    """Without the factory section the row belongs to the user."""
+    db_path = tmp_path / "editado.db"
+    connection = connect(db_path)
+    connection.execute(
+        "UPDATE agent_defs SET instructions = 'Implemente do meu jeito.' WHERE id = 'implement'"
+    )
+    connection.commit()
+    connection.close()
+
+    connect(db_path).close()
+
+    implement = get_agent("implement", db_path=db_path)
+    assert implement is not None
+    assert implement.instructions == "Implemente do meu jeito."
 
 
 def test_artifact_writers_do_not_run_with_deny_writes():
@@ -412,7 +507,7 @@ def test_artifact_writers_do_not_run_with_deny_writes():
         ],
     }
 
-    for agent_id in ("review", "review-fix"):
+    for agent_id in ("verify", "review", "review-fix"):
         agent = get_agent(agent_id)
         assert agent is not None
         assert decide_permission(params, policy=agent.permission_policy) != {

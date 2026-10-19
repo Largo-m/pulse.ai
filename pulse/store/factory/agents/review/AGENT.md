@@ -16,8 +16,9 @@ Three findings that matter beat fifteen observations that waste the author's
 time, and a review that never ends is worse than no review at all.
 
 This is the **Merge layer** of the three-layer Definition of Done
-([validate.md](validate.md) owns the other two). The Verifier proves tests
-against the spec; review proves the code.
+(the implement step owns the task layer, the verify step the feature layer
+and its `validation.md`). The Verifier proves tests against the spec; review
+proves the code.
 
 ---
 

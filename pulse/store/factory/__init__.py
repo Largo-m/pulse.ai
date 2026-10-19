@@ -52,6 +52,7 @@ AGENT_LABELS: dict[str, str] = {
     "techspec": "Techspec",
     "tasks": "Tasks",
     "implement": "Implementar",
+    "verify": "Verificar",
     "review": "Review",
     "review-fix": "Fix review",
     "quick-plan": "Quick plan",
@@ -72,6 +73,7 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("techspec", "Techspec", True),
             FactoryStep("tasks", "Tasks", True),
             FactoryStep("implement", "Implementar", False, fan_out=True, commit_type="feat"),
+            FactoryStep("verify", "Verificar", True, commit_type="docs"),
             FactoryStep("review", "Review", True),
             FactoryStep(
                 "review-fix",
@@ -247,6 +249,7 @@ def seed(connection: sqlite3.Connection) -> None:
             return "{{user_prompt}}"
         return load_phase(step.agent_id, step.phase or "PHASE")
 
+    _make_room_for_new_steps(connection)
     connection.executemany(
         """
         INSERT OR IGNORE INTO workflow_defs
@@ -290,6 +293,34 @@ def seed(connection: sqlite3.Connection) -> None:
             for position, step in enumerate(workflow.steps, start=1)
         ],
     )
+
+
+def _make_room_for_new_steps(connection: sqlite3.Connection) -> None:
+    """Shift existing steps so a factory step new to a seeded workflow lands in order.
+
+    `INSERT OR IGNORE` at the factory position would tie with the step already
+    there, and `ORDER BY position, step_id` would then run them alphabetically.
+    Steps are visited in position order so each shift sees the previous insert's room.
+    """
+    for workflow in WORKFLOWS:
+        present = {
+            row[0]
+            for row in connection.execute(
+                "SELECT step_id FROM workflow_steps WHERE workflow_id = ?", (workflow.id,)
+            )
+        }
+        if not present:
+            continue
+        for position, step in enumerate(workflow.steps, start=1):
+            if step.id() in present:
+                continue
+            connection.execute(
+                """
+                UPDATE workflow_steps SET position = position + 1
+                 WHERE workflow_id = ? AND position >= ?
+                """,
+                (workflow.id, position),
+            )
 
 
 def inherit_policy_on_default_agent(connection: sqlite3.Connection) -> None:
@@ -385,6 +416,32 @@ def drop_approval_from_unattended_steps(connection: sqlite3.Connection) -> None:
             (templates[step_id], workflow_id, step_id, APPROVAL_MARK)
             for workflow_id, step_id in UNATTENDED_STEPS
         ],
+    )
+
+
+LAST_TASK_VALIDATION_MARK = "### 9. Feature-level validation (after the LAST task)"
+
+
+def drop_validation_from_implement(connection: sqlite3.Connection) -> None:
+    """Stop old `implement` rows from validating the feature in the last task.
+
+    The feature check moved to the `verify` step, but `seed` never rewrites
+    `agent_defs`. Only rows still carrying the factory section are replaced, so
+    user-rewritten instructions stay. Runs on every open: exits early via `SELECT`.
+    """
+    pending = connection.execute(
+        "SELECT count(*) FROM agent_defs WHERE id = 'implement' AND instr(instructions, ?) > 0",
+        (LAST_TASK_VALIDATION_MARK,),
+    ).fetchone()[0]
+    if not pending:
+        return
+    implement = next(agent for agent in load_agents() if agent.id == "implement")
+    connection.execute(
+        """
+        UPDATE agent_defs SET instructions = ?
+         WHERE id = 'implement' AND instr(instructions, ?) > 0
+        """,
+        (implement.instructions, LAST_TASK_VALIDATION_MARK),
     )
 
 

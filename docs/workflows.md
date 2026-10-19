@@ -47,7 +47,7 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 
 | Loop | Steps |
 | --- | --- |
-| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → review ⇄ review-fix (laço, até 3 rodadas) |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → verify (valida contra PRD e Techspec, depois da última task) → review ⇄ review-fix (laço, até 3 rodadas) |
 | `quick-fix` — Correção rápida | quick-plan → quick-implement |
 | `review` — Review | review ⇄ review-fix (laço, até 3 rodadas) sobre a branch atual vs `main` + não commitado; fase `STANDALONE.md`, rodadas em `.pulse/reviews/NNN-slug/` |
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |

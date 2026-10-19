@@ -364,6 +364,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
             factory.backfill_pull_request_templates(connection)
         factory.drop_approval_from_unattended_steps(connection)
         factory.inherit_policy_on_default_agent(connection)
+        factory.drop_validation_from_implement(connection)
     connection.commit()
     return connection
 
