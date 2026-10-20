@@ -74,6 +74,16 @@ WORKFLOWS: tuple[FactoryWorkflow, ...] = (
             FactoryStep("tasks", "Tasks", True),
             FactoryStep("implement", "Implementar", False, fan_out=True, commit_type="feat"),
             FactoryStep("verify", "Verificar", True, commit_type="docs"),
+            FactoryStep(
+                "implement",
+                "Corrigir lacunas",
+                False,
+                step_id="verify-fix",
+                repeat_from="verify",
+                repeat_max=3,
+                phase="FIX",
+                commit_type="fix",
+            ),
             FactoryStep("review", "Review", True),
             FactoryStep(
                 "review-fix",

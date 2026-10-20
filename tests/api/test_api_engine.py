@@ -32,6 +32,7 @@ def test_status_and_workflows():
         "tasks",
         "implement",
         "verify",
+        "implement",
         "review",
         "review-fix",
     ]

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from pulse.domain import run as run_model
 from pulse.domain.control import RUN_STOPPED, RunControl
+from pulse.domain.workflow import RepeatRule
+from pulse.store.workflow_defs import save_workflow
 from tests.conftest import make_workflow
 from tests.fakes import FakeAgentSession
 from tests.orchestrator.harness import approved_turn, delivered_turn
@@ -266,6 +269,58 @@ def test_clean_review_in_a_later_round_keeps_the_fix_that_already_ran(wired, mon
     record = wired.runs.only()
     assert record.step("review").rounds == 2
     assert [step.status for step in record.steps] == ["done", "done"]
+
+
+def test_closing_one_loop_does_not_skip_the_next_one(wired, monkeypatch, tmp_path):
+    """Verify -> fix -> clean verify, then review -> fix -> clean review.
+
+    Two loops in a row: the first closing must settle only its own range, and
+    the second must count its rounds from zero.
+    """
+    definition = make_workflow(
+        "demo",
+        steps=[
+            ("verify", "Verificar"),
+            ("verify-fix", "Corrigir lacunas"),
+            ("review", "Review"),
+            ("review-fix", "Fix review"),
+        ],
+        repeat=("verify-fix", "verify", 3),
+    )
+    fixes = {"verify-fix": "verify", "review-fix": "review"}
+    save_workflow(
+        replace(
+            definition,
+            steps=tuple(
+                replace(step, requires_approval=False, repeat=RepeatRule(fixes[step.step_id], 3))
+                if step.step_id in fixes
+                else step
+                for step in definition.steps
+            ),
+        )
+    )
+    runner = FakeAgentSession(
+        [
+            approved_turn("FAIL, 2 lacunas"),
+            _repeating("lacunas corrigidas"),
+            _clean("PASS", approval=True),
+            approved_turn("2 findings"),
+            _repeating("findings corrigidas"),
+            _clean("approved", approval=True),
+        ]
+    )
+
+    code = wired.run(runner, workflow_id="demo", user_prompt="x")
+
+    assert code == 0
+    assert len(runner.sent) == 6
+    record = wired.runs.only()
+    assert [(step.step_id, step.status, step.rounds) for step in record.steps] == [
+        ("verify", "done", 2),
+        ("verify-fix", "done", 1),
+        ("review", "done", 2),
+        ("review-fix", "done", 1),
+    ]
 
 
 def test_only_the_loop_opener_can_waive_approval(wired, monkeypatch, tmp_path):

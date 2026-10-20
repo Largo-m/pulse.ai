@@ -11,6 +11,12 @@ Read the feature's `PRD.md`, its `TECHSPEC.md` if it exists, and `tasks.md`.
 You did not write this code and you have no notes from whoever did: re-derive the
 contract from the artefacts and the diff, not from the summary above.
 
+The verify step before you checked the feature against that contract and wrote
+`validation.md` next to them. In round 1, every fix plan there still
+`**Status**: open` is a finding of yours: re-check it against the code — it may
+have been fixed since — and, if it holds, raise it citing its `Fix N` id. An
+`accepted` gap is the person's decision, not a finding; do not raise it again.
+
 ### Which round is this
 
 **This step repeats.** The fix step after you can send the run back here, so

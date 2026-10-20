@@ -37,6 +37,7 @@ def test_a_fresh_database_already_has_the_factory_loops():
         "tasks",
         "implement",
         "verify",
+        "verify-fix",
         "review",
         "review-fix",
     ]
@@ -46,6 +47,7 @@ def test_a_fresh_database_already_has_the_factory_loops():
         True,
         False,
         True,
+        False,
         True,
         False,
     ]
@@ -306,6 +308,7 @@ def test_unattended_loops_do_not_ask_for_approval():
         True,
         False,
         True,
+        False,
         True,
         False,
     ]
@@ -390,7 +393,7 @@ def test_seeded_db_gains_the_merge_phase_on_open(tmp_path: Path):
 
     workflows = {item.id: item for item in list_workflows(db_path=db_path)}
     steps = {step.step_id: step for step in workflows["new-issue"].steps}
-    assert (steps["review"].position, steps["review-fix"].position) == (6, 7)
+    assert (steps["review"].position, steps["review-fix"].position) == (7, 8)
     assert steps["review"].requires_approval is True
     assert steps["review-fix"].requires_approval is False
     assert get_agent("review", db_path=db_path) is not None
@@ -398,18 +401,18 @@ def test_seeded_db_gains_the_merge_phase_on_open(tmp_path: Path):
     assert steps["prd"].prompt_template == "PRD do meu jeito."
 
 
-def test_seeded_db_gains_the_verify_step_before_review_on_open(tmp_path: Path):
-    """A database seeded before `verify` existed must run it between implement and review.
+def test_seeded_db_gains_the_verify_loop_before_review_on_open(tmp_path: Path):
+    """A database seeded before `verify` existed must run its loop between implement and review.
 
-    Inserting the step at its factory position would tie it with `review`, and
-    `ORDER BY position, step_id` would then run it after the fix loop.
+    Inserting the steps at their factory positions would tie them with `review`,
+    and `ORDER BY position, step_id` would then run them after the fix loop.
     """
     db_path = tmp_path / "antigo.db"
     connection = connect(db_path)
-    connection.execute("DELETE FROM workflow_steps WHERE step_id = 'verify'")
+    connection.execute("DELETE FROM workflow_steps WHERE step_id IN ('verify', 'verify-fix')")
     connection.execute("DELETE FROM agent_defs WHERE id = 'verify'")
     connection.execute(
-        "UPDATE workflow_steps SET position = position - 1 "
+        "UPDATE workflow_steps SET position = position - 2 "
         "WHERE workflow_id = 'new-issue' AND step_id IN ('review', 'review-fix')"
     )
     connection.execute(
@@ -426,11 +429,12 @@ def test_seeded_db_gains_the_verify_step_before_review_on_open(tmp_path: Path):
     assert [(step.step_id, step.position) for step in workflow.steps[3:]] == [
         ("implement", 4),
         ("verify", 5),
-        ("review", 6),
-        ("review-fix", 7),
+        ("verify-fix", 6),
+        ("review", 7),
+        ("review-fix", 8),
     ]
     assert workflow.steps[4].requires_approval is True
-    assert workflow.steps[5].label == "Meu review"
+    assert workflow.steps[6].label == "Meu review"
     assert get_agent("verify", db_path=db_path) is not None
 
 
@@ -553,7 +557,7 @@ def test_merge_layer_is_a_capped_loop():
     repeating = [
         step.step_id for workflow in list_workflows() for step in workflow.steps if step.repeat
     ]
-    assert repeating == ["review-fix", "review-fix"]
+    assert repeating == ["verify-fix", "review-fix", "review-fix"]
 
     for workflow_id in ("new-issue", "review"):
         steps = {step.step_id: step for step in get_workflow(workflow_id).steps}
@@ -562,6 +566,41 @@ def test_merge_layer_is_a_capped_loop():
         assert "next: repeat" in steps["review-fix"].prompt_template
         assert "next: close" in steps["review"].prompt_template
         assert "next: close" not in steps["review-fix"].prompt_template
+
+
+def test_feature_layer_is_a_capped_loop_fixed_with_the_implement_playbook():
+    """Verify, fix its gaps, verify again — the fix never judges its own repair.
+
+    The fix reuses `implement` (unit tests, surgical changes) in its own phase,
+    so a gap is repaired by the same playbook that should have avoided it.
+    """
+    workflow = get_workflow("new-issue")
+    assert workflow is not None
+    steps = {step.step_id: step for step in workflow.steps}
+    fix = steps["verify-fix"]
+
+    assert [step.step_id for step in workflow.steps][4:] == [
+        "verify",
+        "verify-fix",
+        "review",
+        "review-fix",
+    ]
+    assert fix.repeat == RepeatRule(back_to="verify", max_rounds=3)
+    assert (fix.agent_id, fix.requires_approval, fix.commit_type) == ("implement", False, "fix")
+    assert "validation.md" in fix.prompt_template
+    assert "next: repeat" in fix.prompt_template
+    assert "next: close" not in fix.prompt_template
+    assert "next: close" in steps["verify"].prompt_template
+    assert "`accepted`" in steps["verify"].prompt_template, "B can accept gaps without a fix"
+
+
+def test_review_starts_from_what_verify_left_open():
+    """Gaps the verify loop did not close must reach the merge layer, not vanish."""
+    new_issue = {step.step_id: step for step in get_workflow("new-issue").steps}
+    standalone = {step.step_id: step for step in get_workflow("review").steps}
+
+    assert "still\n`**Status**: open`" in new_issue["review"].prompt_template
+    assert "**Status**: open" not in standalone["review"].prompt_template
 
 
 def _looping_workflow(repeat: RepeatRule | None) -> WorkflowDef:

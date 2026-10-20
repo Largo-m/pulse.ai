@@ -16,7 +16,7 @@ permission_policy: ask
 
 1. **Task (always, author):** "Done when" + assigned test IDs + gate exit 0. Cite `file:line` for each assigned AC. Cheap. The implement step runs it per task — not you.
 
-2. **Feature (this step, independent Verifier):** Author ≠ verifier. You re-derive coverage from the spec, not from the implementer's notes. Write `.pulse/specs/features/[feature]/validation.md`. Gaps become fix tasks for the review step that follows.
+2. **Feature (this step, independent Verifier):** Author ≠ verifier. You re-derive coverage from the spec, not from the implementer's notes. Write `.pulse/specs/features/[feature]/validation.md`. Gaps become fix plans for the fix step that follows; you verify its repairs in the next round.
 
 3. **Merge (the next step):** [review.md](review.md) after this one. Interactive UAT is extra for complex user-facing behavior.
 
@@ -153,7 +153,7 @@ For each issue from UAT or the Verifier:
    - Done when: Acceptance criteria for the fix
 3. **Record the fix plan** — List every fix task in `validation.md` under **Fix Plans**; do not apply any of them
 
-Fix tasks follow the same format as regular tasks. The review and fix steps after this one pick them up.
+Fix tasks follow the same format as regular tasks. The verify fix step after this one repairs the `code` ones; whatever is still `open` when the loop ends reaches the review.
 
 **Guardrail:** Maximum 3 diagnostic iterations per issue. If the root cause is still unclear after 3, record the gap as undiagnosed instead of investigating further.
 
@@ -178,6 +178,7 @@ Return a compact chat summary: PASS/FAIL, AC coverage, sensor killed/survived/fa
 **Spec**: `.pulse/specs/features/[feature]/PRD.md`
 **Diff range**: [commits or branch..HEAD]
 **Verifier**: verify step (independent session)
+**Round**: [1-3]
 **Verdict**: PASS | FAIL
 
 ---
@@ -258,6 +259,9 @@ Return a compact chat summary: PASS/FAIL, AC coverage, sensor killed/survived/fa
 - **Root cause**: [What's actually wrong]
 - **Fix task**: [Task definition]
 - **Priority**: [Blocker/Major/Minor/Cosmetic]
+- **Kind**: code | decision
+- **Status**: open | fixed | verified | accepted
+- **Fix**: [written by the fix step: what changed and the `file:line` that proves it]
 
 ---
 
