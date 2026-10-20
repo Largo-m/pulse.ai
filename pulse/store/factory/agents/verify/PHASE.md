@@ -18,15 +18,20 @@ artefacts and the code.
 ### Which round is this
 
 **This step repeats.** The fix step after you repairs the gaps you list and sends
-the run back here, at most until round 3. Read `validation.md` before deciding:
+the run back here, at most until round 3. Check the list of files this run has
+written, above, before deciding:
 
-- **No `validation.md`, or no fix plan in it with `**Status**: fixed` → round 1.**
-  Run the full process below and (over)write the file with `**Round**: 1`.
-- **Some fix plan is `fixed` → round N+1**, where N is the file's `**Round**`.
-  Do not re-validate the feature from scratch: confirm each `fixed` entry with
-  its own evidence (`verified`, or back to `open` saying why), re-run the gate
-  and the sensor on the files the fixes touched, and add a gap only for what a
-  fix broke. Update the verdict, the tables and `**Round**` in place.
+- **`validation.md` is not in the list of files this run has written → round
+  1.** Nothing validated this feature in this run yet; a `validation.md` already
+  on disk is left over from an earlier run. Run the full process below and
+  (over)write the file with `**Round**: 1`.
+- **`validation.md` is in that list → round N+1**, where N is the file's
+  `**Round**`: you validated before and the fix step sent the run back. Do not
+  re-validate the feature from scratch: confirm each `fixed` entry with its own
+  evidence (`verified`, or back to `open` saying why), keep `open` whatever the
+  fix could not repair, never reopen an `accepted` gap, re-run the gate and the
+  sensor on the files the fixes touched, and add a gap only for what a fix
+  broke. Update the verdict, the tables and `**Round**` in place.
 
 ### Scope
 
@@ -44,7 +49,10 @@ Run the `validate.md` playbook above:
   from `TECHSPEC.md`, gets a `file:line` of evidence or is a gap;
 - run the build-level gate;
 - run the discrimination sensor **only** in a scratch worktree you discard
-  afterwards, and confirm `git status --porcelain` matches the baseline;
+  afterwards, and confirm `git status --porcelain` matches the baseline. That
+  scratch copy is the one exception to the FORBIDDEN list in the approval block
+  below: injecting faults there is how the sensor works, and the run's worktree
+  stays untouched;
 - write `.pulse/specs/features/<slug>/validation.md` and update the requirement
   traceability in `PRD.md`.
 

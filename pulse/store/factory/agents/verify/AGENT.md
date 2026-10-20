@@ -90,7 +90,7 @@ Empirical check that tests can fail. **Never mutate the real worktree.**
 2. Isolated scratch: `git worktree add <scratch> HEAD` (preferred). Fallback: copy affected files to a temp dir. **Forbidden:** `git stash`
 3. Inject 1–3 behavior-level faults in the **new** code (flip condition, wrong return, off-by-one, remove a required side effect). P0 paths (auth, payments, data integrity): ≥5 faults or language mutation tooling if present
 4. Run the Quick/Full gate against the scratch. Mutant must be **killed** (tests FAIL)
-5. Discard scratch. Confirm real porcelain matches the baseline. If it differs, STOP, restore, treat the run as invalid
+5. Discard scratch: `git worktree remove --force <scratch>` (it holds only your mutants, so forcing loses nothing; never force a worktree you did not create), or delete the temp dir. Confirm real porcelain matches the baseline. If it differs, STOP, restore, treat the run as invalid
 6. Surviving mutants → fix tasks (strengthen assertions). Do not mark Feature Done
 
 **Fallback (honest):** if worktree/temp copy cannot run, write `Sensor: fallback — [why]` in `validation.md` and **do not** claim mutants were killed. Feature Done then requires user acceptance of the fallback or a later sensor run.

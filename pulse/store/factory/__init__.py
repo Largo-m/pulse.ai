@@ -310,7 +310,8 @@ def _make_room_for_new_steps(connection: sqlite3.Connection) -> None:
 
     `INSERT OR IGNORE` at the factory position would tie with the step already
     there, and `ORDER BY position, step_id` would then run them alphabetically.
-    Steps are visited in position order so each shift sees the previous insert's room.
+    All shifts run before the insert and accumulate, so several missing steps
+    each land at their factory position.
     """
     for workflow in WORKFLOWS:
         present = {
@@ -436,8 +437,9 @@ def drop_validation_from_implement(connection: sqlite3.Connection) -> None:
     """Stop old `implement` rows from validating the feature in the last task.
 
     The feature check moved to the `verify` step, but `seed` never rewrites
-    `agent_defs`. Only rows still carrying the factory section are replaced, so
-    user-rewritten instructions stay. Runs on every open: exits early via `SELECT`.
+    `agent_defs`. A row still carrying the factory section is reset to the
+    factory text, other edits in it included; a row without the section belongs
+    to the user and stays. Runs on every open: exits early via `SELECT`.
     """
     pending = connection.execute(
         "SELECT count(*) FROM agent_defs WHERE id = 'implement' AND instr(instructions, ?) > 0",

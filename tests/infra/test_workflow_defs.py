@@ -594,6 +594,33 @@ def test_feature_layer_is_a_capped_loop_fixed_with_the_implement_playbook():
     assert "`accepted`" in steps["verify"].prompt_template, "B can accept gaps without a fix"
 
 
+def test_verify_counts_rounds_from_this_runs_files_not_from_fixed_entries():
+    """A fix pass that repairs nothing marks no entry `fixed`.
+
+    Keying the round on a `fixed` entry made that pass look like round 1, so
+    verify rewrote `validation.md` from scratch and reopened accepted gaps.
+    """
+    verify = {step.step_id: step for step in get_workflow("new-issue").steps}["verify"]
+
+    assert "`validation.md` is not in the list of files this run" in verify.prompt_template
+    assert "`validation.md` is in that list → round N+1" in verify.prompt_template
+    assert "no fix plan in it with `**Status**: fixed` → round 1" not in verify.prompt_template
+
+
+def test_verify_may_mutate_only_its_scratch_copy():
+    """The approval include forbids edits outside `.pulse/specs/`, yet the sensor injects faults.
+
+    Without a named exception an agent obeying the FORBIDDEN list skips the
+    sensor and reports a fallback on every run.
+    """
+    verify = {step.step_id: step for step in get_workflow("new-issue").steps}["verify"]
+    agent = get_agent("verify")
+
+    assert agent is not None
+    assert "the one exception to the FORBIDDEN list" in verify.prompt_template
+    assert "git worktree remove --force <scratch>" in agent.instructions
+
+
 def test_review_starts_from_what_verify_left_open():
     """Gaps the verify loop did not close must reach the merge layer, not vanish."""
     new_issue = {step.step_id: step for step in get_workflow("new-issue").steps}
