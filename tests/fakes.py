@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable, Sequence
+from datetime import datetime
 from pathlib import Path
 
+from pulse.domain import run as run_model
 from pulse.domain.control import RunControl
 from pulse.domain.ports import (
     AgentProfile,
@@ -33,7 +35,7 @@ class InMemoryRunRepository:
 
     def __init__(self) -> None:
         self._runs: dict[str, RunRecord] = {}
-        self._artifacts: dict[str, list[str]] = {}
+        self._artifacts: dict[str, list[tuple[str, str, datetime]]] = {}
         self.saves = 0
 
     def create(
@@ -79,11 +81,24 @@ class InMemoryRunRepository:
         self.saves += 1
 
     def artifacts(self, run_id: str) -> list[str]:
-        return list(self._artifacts.get(run_id, []))
+        return [path for path, _step_id, _at in self._artifacts.get(run_id, [])]
 
-    def add_artifact(self, run_id: str, path: str) -> None:
-        """What the session runner does when an agent writes a file."""
-        self._artifacts.setdefault(run_id, []).append(path)
+    def step_artifacts(self, run_id: str, step_id: str, *, since: datetime | None) -> list[str]:
+        return [
+            path
+            for path, writer, at in self._artifacts.get(run_id, [])
+            if writer == step_id and (since is None or at >= since)
+        ]
+
+    def add_artifact(self, run_id: str, path: str, *, step_id: str = "") -> None:
+        """What the session runner does when an agent writes a file.
+
+        A path keeps its first writer, as the `(run_id, path)` key does in the database.
+        """
+        entries = self._artifacts.setdefault(run_id, [])
+        if any(known == path for known, _step_id, _at in entries):
+            return
+        entries.append((path, step_id, run_model.utc_now()))
 
     def ids(self) -> list[str]:
         return list(self._runs)

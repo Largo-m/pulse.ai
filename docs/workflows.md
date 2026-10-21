@@ -349,6 +349,8 @@ Step sem aprovação só precisa que o agente feche o turno (`stopReason`).
 
 Falha ou não-aprovação abre o menu **Refazer / Outro — dizer o que fazer /
 Parar**. "Outro" injeta a orientação do usuário no prompt da tentativa seguinte.
+Toda nova tentativa recebe também a lista dos arquivos que o step já gravou,
+para continuar neles em vez de criar o mesmo artefato com outro nome.
 
 Queda de sessão (timeout, processo do agente morto) cai no mesmo menu: é falha
 de tentativa, não fim de run. Antes de refazer, o processo ACP é reerguido.

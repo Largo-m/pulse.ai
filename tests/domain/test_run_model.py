@@ -519,20 +519,23 @@ def test_expanding_again_on_resume_keeps_the_children_it_has():
 
 
 @pytest.mark.parametrize(
-    ("status", "settled", "ended"),
+    ("status", "settled", "ended", "retry"),
     [
-        (StepStatus.PENDING, False, False),
-        (StepStatus.RUNNING, False, False),
-        (StepStatus.DONE, True, True),
-        (StepStatus.SKIPPED, True, True),
-        (StepStatus.FAILED, False, True),
-        (StepStatus.BLOCKED, False, True),
+        (StepStatus.PENDING, False, False, False),
+        (StepStatus.RUNNING, False, False, False),
+        (StepStatus.DONE, True, True, False),
+        (StepStatus.SKIPPED, True, True, False),
+        (StepStatus.FAILED, False, True, True),
+        (StepStatus.BLOCKED, False, True, True),
     ],
 )
-def test_settled_and_ended_split_the_statuses(status: StepStatus, settled: bool, ended: bool):
+def test_settled_ended_and_retry_split_the_statuses(
+    status: StepStatus, settled: bool, ended: bool, retry: bool
+):
+    """Only an attempt that failed or blocked makes the next start a retry."""
     step = StepRecord(step_id="one", status=status)
 
-    assert (step.settled, step.has_ended) == (settled, ended)
+    assert (step.settled, step.has_ended, step.starts_as_retry) == (settled, ended, retry)
 
 
 def test_history_steps_share_the_domain_rule_for_settled():
