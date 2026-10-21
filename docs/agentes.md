@@ -119,7 +119,8 @@ lista canônica — id da pasta → rótulo na UI:
 | `prd` | PRD | `new-issue` |
 | `techspec` | Techspec | `new-issue` |
 | `tasks` | Tasks | `new-issue` |
-| `implement` | Implementar | `new-issue` (fan-out) |
+| `implement` | Implementar | `new-issue` (fan-out; e `verify-fix`, laço do verify, fase `FIX.md`) |
+| `verify` | Verificar | `new-issue` (laço, depois da última task; fecha quando não sobra lacuna) |
 | `review` | Review | `new-issue` (laço), `review` (fase `STANDALONE.md`) |
 | `review-fix` | Fix review | `new-issue` (laço, fecha e pede a volta), `review` (fase `STANDALONE.md`) |
 | `quick-plan` | Quick plan | `quick-fix` |

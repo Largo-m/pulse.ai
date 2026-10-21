@@ -111,7 +111,9 @@ rápida, Setup do projeto, Analisar codebase, Executar) com os
 agentes deles — sem runtime nem model fixos (vazio = "use o padrão da máquina").
 
 `INSERT OR IGNORE` é o detalhe que importa: quem já editou não perde nada no
-upgrade, e linha de fábrica apagada volta na abertura seguinte.
+upgrade, e linha de fábrica apagada volta na abertura seguinte. Um step de
+fábrica novo num loop já semeado empurra os seguintes uma posição para baixo,
+para entrar na ordem certa.
 
 Os playbooks e templates são `.md` dentro de `store/factory/` — ~8 mil linhas
 que precisam ser revisáveis em diff. **Semente não é catálogo:** eles viram linha

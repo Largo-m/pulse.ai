@@ -47,7 +47,7 @@ upgrade, e linha de fábrica apagada volta na abertura seguinte.
 
 | Loop | Steps |
 | --- | --- |
-| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → review ⇄ review-fix (laço, até 3 rodadas) |
+| `new-issue` — Nova spec | prd → techspec → tasks → implement (uma vez por task) → verify ⇄ verify-fix (valida contra PRD e Techspec e corrige as lacunas; laço, até 3 rodadas) → review ⇄ review-fix (laço, até 3 rodadas) |
 | `quick-fix` — Correção rápida | quick-plan → quick-implement |
 | `review` — Review | review ⇄ review-fix (laço, até 3 rodadas) sobre a branch atual vs `main` + não commitado; fase `STANDALONE.md`, rodadas em `.pulse/reviews/NNN-slug/` |
 | `setup-project` — Setup do projeto | setup-interview → setup-artifacts |
@@ -242,7 +242,11 @@ Quem **permite** é a coluna. Os dois são necessários: um agente não cria la�
 onde a definição não abriu um, e uma definição não repete um step que entregou e
 ficou quieto. É o que o `new-issue` usa na camada de merge — `review-fix` aponta
 para `review` com teto 3, e todo fix que trabalhou uma rodada leva a run de volta
-ao revisor. Quem encerra o laço é o review, nunca o fix.
+ao revisor. Quem encerra o laço é o review, nunca o fix. A camada de feature
+segue o mesmo desenho antes dela: `verify-fix` (o agente `implement` na fase
+`FIX.md`) aponta para `verify` com teto 3 e corrige as lacunas `code` do
+`validation.md`; o que continuar aberto no fim do laço vira finding da primeira
+rodada do review.
 
 **Encerrar é de quem abre a faixa.** Sem nada a corrigir — review limpo, todo ID
 já terminal numa volta seguinte, ou a última volta —, o review não pede

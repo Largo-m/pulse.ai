@@ -31,6 +31,8 @@ def test_status_and_workflows():
         "techspec",
         "tasks",
         "implement",
+        "verify",
+        "implement",
         "review",
         "review-fix",
     ]
