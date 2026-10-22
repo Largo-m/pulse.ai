@@ -116,6 +116,14 @@ class StepRecord:
         """Settled, or its last attempt failed or blocked: it has a closed attempt to show."""
         return self.status in ENDED
 
+    @property
+    def starts_as_retry(self) -> bool:
+        """Its last attempt failed or blocked: starting it again repeats that attempt.
+
+        A new loop round reopens the step as pending, so it is not a retry.
+        """
+        return self.has_ended and not self.settled
+
     def round_seconds(self) -> float | None:
         """Net time of the current round (wall time minus wait); `None` while it is open."""
         if self.started_at is None or self.ended_at is None:

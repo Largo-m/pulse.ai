@@ -224,6 +224,13 @@ orientação do usuário no prompt da tentativa seguinte. Sem ninguém para
 perguntar (CLI, daemon), os dois param a run: o que ninguém vê não segue
 adiante sozinho.
 
+A nova tentativa roda numa sessão que não lembra da anterior. Por isso o prompt
+dela lista os arquivos que **este step** já gravou na rodada (`run_artifacts`
+filtrado por `step_id`, a partir do `started_at` do step) e pede que o agente
+continue ou sobrescreva esses arquivos em vez de criar outros. Assim o mesmo
+artefato não sai duas vezes com nomes diferentes. Uma rodada nova de loop não é
+retry: ela grava arquivos novos de propósito.
+
 ### Sair, voltar e parar
 
 São três coisas diferentes, e só a última toca na run.

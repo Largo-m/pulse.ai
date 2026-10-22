@@ -7,26 +7,31 @@ engine test mean the same thing against the real database.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
 
 from pulse.domain.ports import RunRepository
-from pulse.domain.run import RunStatus, StepRecord, StepStatus
+from pulse.domain.run import RunStatus, StepRecord, StepStatus, utc_now
 from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from tests.fakes import InMemoryRunRepository
 
-AddArtifact = Callable[[RunRepository, str, str], None]
+AddArtifact = Callable[..., None]
 
 
-def _sqlite_artifact(_repository: RunRepository, run_id: str, path: str) -> None:
-    run_store.record_artifact(run_id, path)
+def _sqlite_artifact(
+    _repository: RunRepository, run_id: str, path: str, *, step_id: str = ""
+) -> None:
+    run_store.record_artifact(run_id, path, step_id=step_id)
 
 
-def _memory_artifact(repository: RunRepository, run_id: str, path: str) -> None:
+def _memory_artifact(
+    repository: RunRepository, run_id: str, path: str, *, step_id: str = ""
+) -> None:
     assert isinstance(repository, InMemoryRunRepository)
-    repository.add_artifact(run_id, path)
+    repository.add_artifact(run_id, path, step_id=step_id)
 
 
 @pytest.fixture(params=["sqlite", "memory"])
@@ -133,3 +138,43 @@ def test_artifacts_are_listed_in_the_order_they_were_written(adapter, tmp_path: 
 
     assert repository.artifacts("run-1") == ["docs/plan.md", "src/app.py"]
     assert repository.artifacts("other") == []
+
+
+def test_step_artifacts_keep_only_what_that_step_wrote(adapter, tmp_path: Path):
+    """A retry lists its own step's files, never another step's."""
+    repository, add = adapter
+    _create(repository, tmp_path)
+
+    add(repository, "run-1", "docs/plan.md", step_id="one")
+    add(repository, "run-1", "src/app.py", step_id="two")
+    add(repository, "run-1", "docs/notes.md", step_id="one")
+
+    assert repository.step_artifacts("run-1", "one", since=None) == [
+        "docs/plan.md",
+        "docs/notes.md",
+    ]
+    assert repository.step_artifacts("run-1", "two", since=None) == ["src/app.py"]
+    assert repository.step_artifacts("other", "one", since=None) == []
+
+
+def test_a_path_belongs_to_the_step_that_wrote_it_first(adapter, tmp_path: Path):
+    repository, add = adapter
+    _create(repository, tmp_path)
+
+    add(repository, "run-1", "docs/plan.md", step_id="one")
+    add(repository, "run-1", "docs/plan.md", step_id="two")
+
+    assert repository.step_artifacts("run-1", "one", since=None) == ["docs/plan.md"]
+    assert repository.step_artifacts("run-1", "two", since=None) == []
+    assert repository.artifacts("run-1") == ["docs/plan.md"]
+
+
+def test_step_artifacts_leave_out_files_written_before_since(adapter, tmp_path: Path):
+    """Files from an earlier loop round predate the round's start and stay out."""
+    repository, add = adapter
+    _create(repository, tmp_path)
+    add(repository, "run-1", "reviews/round-001.md", step_id="one")
+    written = utc_now()
+
+    assert repository.step_artifacts("run-1", "one", since=written) == ["reviews/round-001.md"]
+    assert repository.step_artifacts("run-1", "one", since=written + timedelta(seconds=1)) == []

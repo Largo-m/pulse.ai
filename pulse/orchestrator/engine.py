@@ -34,6 +34,7 @@ from pulse.orchestrator.agent_text import (
     build_continuation_prompt,
     build_outcome_reminder_prompt,
     build_unblock_prompt,
+    earlier_attempt_block,
     guidance_block,
     outcome_protocol,
 )
@@ -293,6 +294,7 @@ def _attempt_step(
 ) -> tuple[LoopSignal | None, str]:
     """`(loop signal, reason)`. How the attempt ended is the step's status;
     `reason` explains a failure or a block to the person deciding what next."""
+    earlier = _earlier_attempt_files(wiring, run, record)
     run.start_step(record.step_id)
     wiring.runs.save(run)
 
@@ -300,7 +302,9 @@ def _attempt_step(
     wiring.session.use_agent(profile)
     before = snapshot_if_committing(wiring, run, step)
     try:
-        prompt_text = _step_prompt(wiring, run, step, profile, item=item, guidance=guidance)
+        prompt_text = _step_prompt(
+            wiring, run, step, profile, item=item, guidance=guidance, earlier=earlier
+        )
     except TemplateError as error:
         _fail(wiring, run, record)
         return None, str(error)
@@ -337,16 +341,30 @@ def _step_prompt(
     *,
     item: Item | None,
     guidance: str,
+    earlier: list[str],
 ) -> str:
     """The step's template rendered, wrapped in the agent's instructions and Pulse's protocol."""
     prompt_text = render(step.prompt_template, _template_values(wiring, run, step, item))
     # Inlined, not passed as a system prompt, so instructions work with any runtime.
     if profile.instructions:
         prompt_text = f"{profile.instructions}\n\n---\n\n{prompt_text}"
+    prompt_text += earlier_attempt_block(earlier)
     prompt_text += guidance_block(guidance)
     if step.declares_outcome:
         prompt_text += outcome_protocol(ask_commit=bool(wiring.atomic_commits and step.commit_type))
     return prompt_text
+
+
+def _earlier_attempt_files(wiring: Wiring, run: RunRecord, record: StepRecord) -> list[str]:
+    """What the failed attempts of this round wrote; nothing on a first attempt.
+
+    A retry runs in a fresh session; knowing these files keeps the agent from
+    writing the same artifact again under another name. `started_at` survives
+    retries but not a new loop round, whose files are meant to be new.
+    """
+    if not record.starts_as_retry:
+        return []
+    return wiring.runs.step_artifacts(run.id, record.step_id, since=record.started_at)
 
 
 def _converse(

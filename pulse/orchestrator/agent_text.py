@@ -157,3 +157,21 @@ def guidance_block(guidance: str) -> str:
         "precedência sobre a instrução original deste step:\n\n"
         f"{text}\n"
     )
+
+
+def earlier_attempt_block(paths: list[str]) -> str:
+    """Files a failed attempt of this step already wrote, for the attempt that retries it.
+
+    A retry runs in a fresh session that remembers nothing; without this list
+    the agent may write the same artifact again under another name.
+    """
+    if not paths:
+        return ""
+    listed = "".join(f"- {path}\n" for path in paths)
+    return (
+        "\n\n## Arquivos que este step já gravou\n\n"
+        "Uma tentativa anterior deste step já gravou estes arquivos:\n\n"
+        f"{listed}\n"
+        "Continue ou sobrescreva esses arquivos em vez de criar novos com outro\n"
+        "nome ou em outra pasta.\n"
+    )

@@ -194,6 +194,8 @@ Este é o ponto onde as camadas se encontram. Em
                               +
      render(workflow_steps.prompt_template, contexto)   (a fase: o que fazer agora)
                               +
+                 earlier_attempt_block(arquivos)  (só numa nova tentativa)
+                              +
                  guidance_block(orientação)     (só numa nova tentativa)
                               ║
                               ▼
@@ -462,7 +464,7 @@ Bloqueio é o último recurso, não o jeito de pedir informação.
 O menu de falha ([`_offer_retry`](../pulse/orchestrator/menus.py)):
 
 ```
-Refazer                      → nova tentativa, mesmo prompt
+Refazer                      → nova tentativa, mesmo prompt + arquivos já gravados
 Outro — dizer o que fazer    → ask_text() → guidance_block() no prompt seguinte
 Parar                        → status FAILED, run encerra com exit 1
 ```

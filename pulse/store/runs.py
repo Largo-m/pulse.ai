@@ -504,3 +504,23 @@ class SqliteRunRepository:
 
     def artifacts(self, run_id: str) -> list[str]:
         return [entry["path"] for entry in list_artifacts(run_id, db_path=self._db_path)]
+
+    def step_artifacts(self, run_id: str, step_id: str, *, since: datetime | None) -> list[str]:
+        connection = connect(self._db_path or default_db_path())
+        try:
+            rows = connection.execute(
+                """
+                SELECT path, created_at FROM run_artifacts
+                WHERE run_id = ? AND step_id = ? ORDER BY created_at, rowid
+                """,
+                (run_id, step_id),
+            ).fetchall()
+        finally:
+            connection.close()
+        return [str(row["path"]) for row in rows if _written_since(row["created_at"], since)]
+
+
+def _written_since(created_at: object, since: datetime | None) -> bool:
+    """An unreadable stamp counts as written: listing one file too many is the safe side."""
+    stamp = _stamp(created_at)
+    return since is None or stamp is None or stamp >= since

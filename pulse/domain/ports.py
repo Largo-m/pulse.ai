@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
@@ -133,6 +134,13 @@ class RunRepository(Protocol):
 
     def artifacts(self, run_id: str) -> list[str]:
         """Paths the agents wrote during the run, relative to where it worked."""
+        ...
+
+    def step_artifacts(self, run_id: str, step_id: str, *, since: datetime | None) -> list[str]:
+        """Paths `step_id` wrote in the run from `since` on, in the order they were written.
+
+        A path belongs to the step that wrote it first.
+        """
         ...
 
 
