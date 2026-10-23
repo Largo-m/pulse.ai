@@ -357,6 +357,23 @@ class HomeScreen(Screen[None]):
             summary=workflow.description or _step_chain(workflow),
             git=git,
         )
+        self.run_worker(self._fetch_files, group="files", exclusive=True, thread=True)
+
+    def _fetch_files(self) -> None:
+        """Without the list the form still works: `@` is then plain text."""
+        try:
+            files = engine.workspace_files(Path.cwd())
+        except engine.EngineError:
+            return
+        if get_current_worker().is_cancelled:
+            return
+        # The app already exited while the request was in flight.
+        with contextlib.suppress(RuntimeError):
+            self.app.call_from_thread(self._offer_files, files)
+
+    def _offer_files(self, files: list[str]) -> None:
+        if self.is_mounted and self._pending_workflow is not None:
+            self.query_one("#task-form", TaskForm).offer_files(files)
 
     def _close_form(self) -> None:
         self._pending_workflow = None

@@ -239,6 +239,21 @@ TaskForm TaskComposer .text-area--placeholder {{
     color: {TEXT_MUTED};
 }}
 
+TaskForm #task-mentions {{
+    height: auto;
+    max-height: 8;
+    margin: 0 2;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT_MUTED};
+}}
+
+TaskForm #task-mentions > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
+}}
+
 TaskForm .task-row {{
     height: 1;
     padding: 0 2;

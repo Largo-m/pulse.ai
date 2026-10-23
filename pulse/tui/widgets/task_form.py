@@ -15,6 +15,7 @@ from pulse.domain.branch_name import task_slug
 from pulse.domain.git_options import GitOption, GitOptions
 from pulse.domain.task_brief import TaskBrief
 from pulse.tui import strings
+from pulse.tui.widgets.file_mention import FileMentionList
 from pulse.tui.widgets.options_toggle import OptionsToggle, key_chips
 from pulse.tui.widgets.task_composer import TaskComposer
 
@@ -84,6 +85,7 @@ class TaskForm(Vertical):
         with Horizontal(classes="task-box", id="task-description-box"):
             yield Static(PROMPT_GLYPH, classes="task-glyph task-plain")
             yield TaskComposer(id="task-description", compact=True)
+        yield FileMentionList(id="task-mentions")
         with Horizontal(id="task-git-row", classes="task-row task-detail task-git"):
             yield Static(strings.TASK_CONFIG_LABEL, classes="task-row-label")
             for option, label in _GIT_LABELS:
@@ -91,6 +93,14 @@ class TaskForm(Vertical):
         yield Static("", id="task-error")
         yield OptionsToggle(id="task-options")
         yield Static("", classes="task-hint")
+
+    def on_mount(self) -> None:
+        mentions = self.query_one("#task-mentions", FileMentionList)
+        self.query_one("#task-description", TaskComposer).bind_mentions(mentions)
+
+    def offer_files(self, files: list[str]) -> None:
+        """The workspace files `@` lists; they arrive after the form opens."""
+        self.query_one("#task-mentions", FileMentionList).set_files(files)
 
     def open(self, *, heading: str | Text, summary: str, git: GitOptions | None) -> None:
         """Start a blank draft; `git` is None outside a repository."""
@@ -102,6 +112,7 @@ class TaskForm(Vertical):
             with self.query_one(selector, Input).prevent(Input.Changed):
                 self.query_one(selector, Input).value = ""
         self.query_one("#task-description", TaskComposer).clear()
+        self.offer_files([])
         self.set_class(git is None, "-no-repo")
         self._show_git()
         self.show_error("")
