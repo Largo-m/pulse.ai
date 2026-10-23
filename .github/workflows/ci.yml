@@ -171,3 +171,37 @@ jobs:
       # Allowlist and rules: .gitleaks.toml.
       - name: gitleaks
         run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 .'
+
+  build:
+    name: build wheel and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: build sdist and wheel
+        run: uv build --out-dir dist
+      # Installs the wheel alone, outside the checkout: a missing module or
+      # package-data file (the factory seed) breaks here, not on a user's machine.
+      - name: smoke test the wheel
+        working-directory: ${{ runner.temp }}
+        env:
+          PULSE_DB: ${{ runner.temp }}/smoke/pulse.db
+        run: |
+          wheel=$(ls "$GITHUB_WORKSPACE"/dist/*.whl)
+          uv run --isolated --no-project --with "$wheel" pulse --help
+          uv run --isolated --no-project --with "$wheel" python -c \
+            "from pulse.store.db import connect; connect().close()"
+      # Runtime dependencies only: what a user installs with the wheel.
+      - name: SBOM (CycloneDX)
+        run: uv export --locked --no-dev --format cyclonedx1.5 -o dist/pulse.cdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
