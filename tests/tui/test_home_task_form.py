@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -14,8 +15,10 @@ from pulse.client.protocol import RunForm
 from pulse.tui import strings
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.theme import COCKPIT_CSS
+from pulse.tui.widgets.file_mention import FileMentionList
 from pulse.tui.widgets.task_composer import TaskComposer
 from tests.conftest import onboard_machine
+from tests.tui.conftest import wait_until
 
 # Mirrors the cap in `home_theme.py`: past it the box scrolls instead of
 # pushing the git options and the hint off a 24-row terminal.
@@ -429,6 +432,8 @@ def test_the_key_chips_name_the_keys_of_the_mode_on_screen(monkeypatch):
             "ctrl+j",
             "nova",
             "linha",
+            "@",
+            "arquivo",
             "esc",
             "voltar",
         ]
@@ -441,10 +446,83 @@ def test_the_key_chips_name_the_keys_of_the_mode_on_screen(monkeypatch):
             "campo",
             "espaço",
             "marcar",
+            "@",
+            "arquivo",
             "enter",
             "enviar",
             "esc",
             "voltar",
         ]
+
+    _run(test, detailed=False)
+
+
+def test_at_in_the_description_offers_the_workspace_files(monkeypatch, free_branch):
+    """The form asks the daemon for the project's files; picking one types its path."""
+    _project(monkeypatch)
+    asked: list[Path] = []
+
+    def _files(workspace: Path) -> list[str]:
+        asked.append(workspace)
+        return ["README.md", "pulse/tui/app.py"]
+
+    monkeypatch.setattr(home_module.engine, "workspace_files", _files)
+
+    async def test(app, pilot, screen) -> None:
+        await wait_until(pilot, lambda: asked == [Path.cwd()])
+        await pilot.press("at", "a", "p", "p")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert screen.query_one("#task-description", TaskComposer).text == "@pulse/tui/app.py "
+        assert app.opened == []
+
+    _run(test, detailed=False)
+
+
+def test_without_the_daemon_files_the_at_sign_is_just_text(monkeypatch, free_branch):
+    _project(monkeypatch, worktree=False, commits=False)
+
+    def _refused(_workspace: Path) -> list[str]:
+        raise home_module.engine.EngineUnavailable("down")
+
+    monkeypatch.setattr(home_module.engine, "workspace_files", _refused)
+
+    async def test(app, pilot, screen) -> None:
+        await pilot.press("at", "a")
+        await pilot.pause()
+        assert screen.query_one(FileMentionList).display is False
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.opened == [("quick-fix", "@a", "", None)]
+
+    _run(test, detailed=False)
+
+
+def test_clicking_a_listed_file_types_its_path_and_keeps_the_typing_focus(monkeypatch, free_branch):
+    """The list never takes the focus, so the form routes the click to the description."""
+    _project(monkeypatch)
+    asked: list[Path] = []
+
+    def _files(workspace: Path) -> list[str]:
+        asked.append(workspace)
+        return ["README.md", "pulse/tui/app.py"]
+
+    monkeypatch.setattr(home_module.engine, "workspace_files", _files)
+
+    async def test(app, pilot, screen) -> None:
+        await wait_until(pilot, lambda: asked == [Path.cwd()])
+        await pilot.press("at", "p", "u")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+        # The form's theme drops the list border, so row 0 is the first option.
+        await pilot.click(FileMentionList, offset=(2, 0))
+        await pilot.pause()
+
+        description = screen.query_one("#task-description", TaskComposer)
+        assert description.text == "@pulse/tui/app.py "
+        assert description.has_focus
+        assert app.opened == []
 
     _run(test, detailed=False)
