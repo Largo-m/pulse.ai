@@ -13,9 +13,13 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "httpx>=0.27",
+    "pydantic>=2.4",
+    "rich>=13.0",
+    "starlette>=1.4",
 ]
 
-[project.optional-dependencies]
+# Locked in uv.lock; `uv sync` installs the project with this group.
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=7.0",
@@ -28,6 +32,9 @@ dev = [
     "import-linter>=2.15",
     "mutmut>=3.6",
     "pre-commit>=4.0",
+    "deptry>=0.25",
+    "bandit>=1.9",
+    "pip-audit>=2.10",
 ]
 
 [project.scripts]
@@ -106,6 +113,17 @@ branch = true
 # Measured when the gate landed; each phase raises it, never lowers it.
 fail_under = 93.0
 precision = 2
+
+# Unused, missing and transitive-only dependencies of the package.
+[tool.deptry]
+extend_exclude = [".claude", ".agents", ".cursor", "mutants", "scripts"]
+
+# Ruff's S603, S607 and S608 already gate these subprocess and SQL checks, each
+# hit with a line-level reason (AGENTS.md §4.5), and B404 only flags the import;
+# bandit runs the rest without a second suppression on the same line.
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B404", "B603", "B607", "B608"]
 
 [tool.vulture]
 paths = ["pulse"]

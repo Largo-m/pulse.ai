@@ -279,7 +279,7 @@ depend on the factory seed.
 ### 5.2 Before finishing
 
 ```bash
-pip install -e ".[dev]" && pre-commit install   # once per clone
+uv sync && pre-commit install   # once per clone; then activate .venv or prefix `uv run`
 
 pytest tests/<package>/      # nearest tests first while iterating
 pytest --cov                 # whole suite + branch coverage floor, must be green
@@ -288,13 +288,15 @@ ruff check . && ruff format --check .
 mypy
 vulture                      # dead code
 lint-imports                 # import contracts with the offending chains (also run by pytest)
+deptry .                     # unused, missing and transitive-only dependencies
 mutmut run && mutmut export-cicd-stats && python scripts/mutation_gate.py --min 80
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same commands on Python 3.11–3.14,
-the suite three more times in random order, the parsers' mutation score,
-plus `sast-lite`, `secret-scanner` and `dependency-check --online` (§6.2), and
-must be green to merge. Complexity (`C901`, at most 10 per function) is part of
+CI (`.github/workflows/ci.yml`) installs from `uv.lock` (`uv sync --locked`, so a
+stale lockfile fails) and runs the same commands on Python 3.11–3.14, the
+suite three more times in random order, the parsers' mutation score, plus the
+security scans of §6.2 and Gitleaks over the whole git history, and must be
+green to merge. Complexity (`C901`, at most 10 per function) is part of
 `ruff check`, and `vulture` blocks too: split a function or delete dead code
 instead of suppressing them.
 
@@ -349,7 +351,8 @@ user prompts — treat every boundary as such.
   Pulse. Parse only the fenced blocks Pulse defined, with strict parsers; never
   let agent text change policy, config, or which agent runs.
 - **Dependencies**: add only what is necessary, with a lower bound in
-  `pyproject.toml`; justify every new dependency in the PR. Pin the ACP adapter
+  `pyproject.toml`; justify every new dependency in the PR. Import only what
+  is declared (`deptry`), and commit `uv.lock` with the change (`uv lock`). Pin the ACP adapter
   version (`@agentclientprotocol/claude-agent-acp@x.y.z`), never `@latest`.
 
 ### 6.2 Tools — `security-audit` skill
@@ -365,7 +368,12 @@ All scanners live in one skill,
 | Changing `pyproject.toml` | `python $T/dependency-check/checker.py . --online` |
 | Changing factory prompts / agent instructions / outcome parsing | `prompt-injection-tester` + the Pulse checklist in the skill |
 | Changing API routes, headers or CORS | `http-sec-audit`, `cors-auditor` |
-| Adding a Dockerfile | `dockerfile-scan` |
+| Adding a Dockerfile | `dockerfile-scan` (and add Trivy to CI) |
+
+CI also runs third-party scanners on every change: `bandit -c pyproject.toml -r
+pulse` (the checks ruff's `S` rules don't already gate), Semgrep with
+`p/python` and `p/security-audit`, `pip-audit` over every package in `uv.lock`,
+and Gitleaks (`.gitleaks.toml`; also a pre-commit hook).
 
 ---
 
