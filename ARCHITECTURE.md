@@ -467,7 +467,9 @@ Só tela e interação. Não executa workflow no próprio processo.
 | [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable`, erro respondido pelo daemon vira `EngineRefused` (base comum `EngineError`) |
 | [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows que o daemon serve |
 | [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
-| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings` |
+| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings`; o menu segue o `/config` das CLIs de agentes (breadcrumb, `❯` no item, valor em coluna, `✓` na escolha atual, espaço alterna, Esc volta à linha de origem) |
+| [`pulse/tui/settings_rows.py`](pulse/tui/settings_rows.py) | Como uma configuração vira item do menu: rótulo, valor alinhado, descrição, estado dos toggles e linhas do doctor — função pura dos dados |
+| [`pulse/tui/key_hints.py`](pulse/tui/key_hints.py) | A linha de atalhos no rodapé dos seletores (histórico, configurações) |
 | [`pulse/tui/screens/onboarding.py`](pulse/tui/screens/onboarding.py) | Assistente da primeira execução: checks, login, workspace e sonda ACP, via `/api/setup` e `/api/runtimes` |
 | [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe; a lista segue o seletor de sessões das CLIs de agentes (busca que dirige a lista, `❯` no item, Esc recua um nível) |
 | [`pulse/tui/history_rows.py`](pulse/tui/history_rows.py) | Como uma run vira item da lista: título e linha de fatos (workflow, status, idade, etapas, branch) — função pura do item e do relógio |
