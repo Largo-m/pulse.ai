@@ -88,6 +88,12 @@ def _checked(screen: HomeScreen) -> tuple[bool, bool, bool]:
     )
 
 
+def _heading(screen: HomeScreen) -> list[str]:
+    """The form's breadcrumb levels, without the workspace that follows them."""
+    shown = str(screen.query_one("#task-heading", Static).render())
+    return shown.split("  ·  ")[0].split(" › ")
+
+
 def _run(test, *, detailed: bool = True) -> None:
     onboard_machine()
 
@@ -106,7 +112,7 @@ def test_the_form_opens_as_a_plain_description_in_the_menu_place(monkeypatch):
     async def test(_app, pilot, screen) -> None:
         assert screen.query_one("#home-options", OptionList).display is False
         assert screen.query_one(".home-brand", Static).display is False
-        assert str(screen.query_one("#task-heading", Static).render()) == "Correção rápida"
+        assert _heading(screen) == ["Nova sessão", "Correção rápida"]
         assert screen.query_one("#task-description", TaskComposer).has_focus
         for field in ("#task-title-box", "#task-slug-row", "#task-git-row"):
             assert screen.query_one(field).display is False, field
@@ -347,7 +353,7 @@ def test_esc_discards_the_draft_so_the_next_workflow_starts_blank(monkeypatch):
 
         assert screen.query_one("#task-title", Input).value == ""
         assert screen.query_one("#task-slug", Input).value == ""
-        assert str(screen.query_one("#task-heading", Static).render()) == "Nova spec"
+        assert _heading(screen) == ["Nova sessão", "Nova spec"]
 
     _run(test)
 

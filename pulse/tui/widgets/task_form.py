@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -91,7 +92,7 @@ class TaskForm(Vertical):
         yield OptionsToggle(id="task-options")
         yield Static("", classes="task-hint")
 
-    def open(self, *, heading: str, summary: str, git: GitOptions | None) -> None:
+    def open(self, *, heading: str | Text, summary: str, git: GitOptions | None) -> None:
         """Start a blank draft; `git` is None outside a repository."""
         self.query_one("#task-heading", Static).update(heading)
         self.query_one("#task-summary", Static).update(summary)
