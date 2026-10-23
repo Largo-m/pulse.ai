@@ -80,7 +80,9 @@ em quatro tabelas de estado.
   ────────────────────────              ────────────────────────
   workflow_defs                         runs
     id, label, description                id, workflow_id, workspace_root
-    is_default                            user_prompt, status, current_step
+    is_default                            user_prompt, title, description
+                                          status, current_step, use_worktree
+                                          atomic_commits, auto_pull_request
         │ 1..N                                │ 1..N
         ▼                                     ▼
   workflow_steps                        run_steps
@@ -368,7 +370,8 @@ Quem decide é [`prepare_workspace`](pulse/orchestrator/worktree.py), pela porta
 casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
 fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
 isolamento, `git worktree add` na branch que a pessoa confirmou antes de
-começar (sugestão: slug da tarefa; nome ocupado é recusado). Falhar ao abrir o
+começar (o slug do formulário da run, que acompanha o título até ser editado;
+nome ocupado é recusado ali mesmo). Falhar ao abrir o
 worktree **para a run** — rodar na árvore de trabalho da pessoa é justamente o
 que a chave pediu para não acontecer.
 
@@ -386,6 +389,18 @@ pedido no GitHub (`gh pr create`) ou no GitLab (`glab mr create`) contra o
 `git branch -d`; fica a branch remota. Push recusado, árvore suja, run parada
 ou step falho: a pasta e a branch local ficam. O motor fala com git, `gh` e
 `glab` pela porta `Workspace`.
+
+As três opções do projeto são só o **ponto de partida**. Por padrão a tarefa é
+só uma descrição, que vai como `prompt` e segue o projeto; o formulário completo
+(título, slug, descrição e as três chaves, aberto em *Mais opções*) começa com elas e o que a pessoa
+marcar vale **só para aquela run**: vai no `POST …/runs` como `git` (`ENGINE_PROTOCOL` 11), e o projeto
+não muda. A run grava título, descrição e as opções em `runs` ao nascer
+([`GitOptions`](pulse/domain/git_options.py), sempre em escada: ligar PR/MR liga
+as anteriores, desligar Worktree desliga as seguintes), e uma run retomada usa
+as **suas** opções, não as que o projeto tiver depois. Run gravada antes disso
+tem as colunas nulas e segue o projeto, como seguia. O título dá nome à run no
+histórico e ao PR/MR; o prompt que os agentes leem é título e descrição juntos
+([`TaskBrief`](pulse/domain/task_brief.py)), em `{{user_prompt}}`.
 
 A branch é lida nos três casos, inclusive sem worktree, e é isso que faz a
 sessão mostrar `modelo · branch` na linha de meta do stream. Ela chega à tela

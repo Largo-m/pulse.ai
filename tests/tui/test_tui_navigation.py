@@ -7,7 +7,6 @@ import asyncio
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.phase_sidebar import PhaseSidebar
-from pulse.tui.widgets.task_composer import TaskComposer
 from tests.conftest import configure_from_db, make_workflow, onboard_machine
 
 
@@ -111,48 +110,10 @@ def test_home_hides_the_loops_behind_new_session(monkeypatch):
     asyncio.run(run())
 
 
-def test_home_starts_the_chosen_loop_with_the_typed_prompt(monkeypatch):
-
-    onboard_machine()
-
-    async def run() -> None:
-        from textual.app import App, ComposeResult
-        from textual.widgets import Static
-
-        class Harness(App[None]):
-            CSS = COCKPIT_CSS
-
-            def compose(self) -> ComposeResult:
-                yield Static("ok")
-
-            def open_cockpit(self, workflow_id: str, prompt: str) -> None:
-                opened.append((workflow_id, prompt))
-
-        opened: list[tuple[str, str]] = []
-        app = Harness()
-        async with app.run_test(size=(80, 24)) as pilot:
-            screen = HomeScreen()
-            app.push_screen(screen)
-            await pilot.pause()
-            screen.on_option_selected(_selected("session"))
-            await pilot.pause()
-            screen.on_option_selected(_selected("workflow:new-issue"))
-            await pilot.pause()
-
-            composer = screen.query_one("#workflow-prompt", TaskComposer)
-            assert composer.has_focus
-
-            composer.text = "exportar relatório em csv"
-            await pilot.press("enter")
-            await pilot.pause()
-
-            assert opened == [("new-issue", "exportar relatório em csv")]
-
-    asyncio.run(run())
-
-
-def test_a_worktree_run_confirms_the_branch_and_cancel_does_not_start(monkeypatch):
-    """The workflow stays unstarted until the suggested branch name is confirmed."""
+def test_a_workflow_with_its_own_task_confirms_the_branch_and_cancel_does_not_start(
+    monkeypatch,
+):
+    """With no form to name the branch, a worktree project still confirms the slug first."""
     from types import SimpleNamespace
 
     import pulse.tui.screens.home as home_module
@@ -186,14 +147,11 @@ def test_a_worktree_run_confirms_the_branch_and_cancel_does_not_start(monkeypatc
             app.push_screen(screen)
             await pilot.pause()
             screen.on_option_selected(_selected("session"))
-            screen.on_option_selected(_selected("workflow:new-issue"))
-            await pilot.pause()
-            screen.query_one("#workflow-prompt", TaskComposer).text = "Corrigir o login"
-            await pilot.press("enter")
+            screen.on_option_selected(_selected("workflow:review"))
             await pilot.pause()
 
             assert isinstance(app.screen, BranchNameScreen)
-            assert app.screen.query_one("#branch-name", Input).value == "corrigir-o-login"
+            assert app.screen.query_one("#branch-name", Input).value == "revisar-a-branch-atual"
             app.screen.action_cancel()
             await pilot.pause()
             assert opened == []
@@ -201,8 +159,8 @@ def test_a_worktree_run_confirms_the_branch_and_cancel_does_not_start(monkeypatc
     asyncio.run(run())
 
 
-def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
-    """Esc goes one step at a time: closes the input, then returns to the root."""
+def test_escape_closes_the_form_before_leaving_the_submenu(monkeypatch):
+    """Esc goes one step at a time: closes the run form, then returns to the root."""
 
     onboard_machine()
 
@@ -227,7 +185,7 @@ def test_escape_closes_the_prompt_before_leaving_the_submenu(monkeypatch):
 
             screen.action_back()
             await pilot.pause()
-            assert screen.query_one("#task-composer").display is False
+            assert screen.query_one("#task-form").display is False
             assert "workflow:new-issue" in _home_option_ids(screen)
 
             screen.action_back()
@@ -361,15 +319,15 @@ def test_loop_with_builtin_task_starts_without_asking_for_text(monkeypatch):
 
             screen.on_option_selected(_selected("workflow:analyze-codebase"))
             await pilot.pause()
-            assert screen.query_one("#task-composer").display is False
+            assert screen.query_one("#task-form").display is False
 
             screen.on_option_selected(_selected("workflow:setup-project"))
             await pilot.pause()
-            assert screen.query_one("#task-composer").display is False
+            assert screen.query_one("#task-form").display is False
 
             screen.on_option_selected(_selected("workflow:review"))
             await pilot.pause()
-            assert screen.query_one("#task-composer").display is False
+            assert screen.query_one("#task-form").display is False
 
             assert opened == [
                 ("analyze-codebase", "Mapear codebase existente"),

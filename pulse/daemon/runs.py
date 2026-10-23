@@ -17,8 +17,10 @@ from pulse.daemon.adapters import ApiPromptPort, ApiStreamSink
 from pulse.daemon.events import EventBus, PromptCorrelator
 from pulse.doctor.checks import check_runtime_ready
 from pulse.domain.control import SHUTDOWN_GRACE_SECONDS, RunControl
+from pulse.domain.git_options import GitOptions
 from pulse.domain.ports import PromptPort, StreamSink
 from pulse.domain.run import RunStatus
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 from pulse.history.session_log import RecordedSessionLog
 from pulse.mcp.channel import McpQuestionChannel
 from pulse.orchestrator.engine import run_workflow
@@ -48,6 +50,9 @@ class RunState:
     exit_code: int | None = None
     resume_run_id: str | None = None
     branch: str = ""
+    brief: TaskBrief = EMPTY_BRIEF
+    # None: the project's settings decide, as for every run before runs chose their own.
+    git: GitOptions | None = None
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
     ended: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
@@ -62,6 +67,8 @@ class RunState:
         workspace: str,
         resume_run_id: str | None = None,
         branch: str = "",
+        brief: TaskBrief = EMPTY_BRIEF,
+        git: GitOptions | None = None,
     ) -> RunState:
         """A new run with its own bus; questions and stop/pause go out on that bus."""
         bus = EventBus()
@@ -79,6 +86,8 @@ class RunState:
             control=RunControl(on_change=_publish_control),
             resume_run_id=resume_run_id,
             branch=branch,
+            brief=brief,
+            git=git,
         )
 
     def is_active(self) -> bool:
@@ -117,6 +126,8 @@ def run_engine(
     control: RunControl,
     run_id: str,
     branch: str = "",
+    brief: TaskBrief = EMPTY_BRIEF,
+    git: GitOptions | None = None,
 ) -> int:
     """Wire the engine's ports for one run, then run it.
 
@@ -157,9 +168,13 @@ def run_engine(
         definition=definition,
         user_prompt=user_prompt,
         ports=ports,
-        use_worktree=resolved.use_worktree,
-        atomic_commits=resolved.atomic_commits,
-        auto_pull_request=resolved.auto_pull_request,
+        git=git
+        or GitOptions.chained(
+            use_worktree=resolved.use_worktree,
+            atomic_commits=resolved.atomic_commits,
+            auto_pull_request=resolved.auto_pull_request,
+        ),
+        brief=brief,
         branch=branch,
         resume_run_id=resume_run_id,
         control=control,
@@ -199,7 +214,15 @@ class RunManager:
         workspace: str | None = None,
         resume_run_id: str | None = None,
         branch: str = "",
+        brief: TaskBrief = EMPTY_BRIEF,
+        git: GitOptions | None = None,
     ) -> RunState:
+        """Start `workflow_id` in a thread of its own and return its state.
+
+        A brief replaces `prompt`: the run's prompt is its title and
+        description joined. A resume ignores both brief and options, since
+        the stored run keeps its own.
+        """
         if get_workflow(workflow_id) is None:
             raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
@@ -207,10 +230,12 @@ class RunManager:
         state = RunState.open(
             run_id=run_id,
             workflow_id=workflow_id,
-            prompt=prompt,
+            prompt=prompt if brief.is_empty else brief.prompt,
             workspace=workspace or str(safe_cwd()),
             resume_run_id=resume_run_id,
             branch="" if resume_run_id else branch,
+            brief=brief,
+            git=git,
         )
         with self._lock:
             if self._closing:
@@ -270,6 +295,7 @@ class RunManager:
             "id": state.id,
             "workflow_id": state.workflow_id,
             "workflow_label": labels.get(state.workflow_id, state.workflow_id),
+            "title": state.brief.title,
             "prompt": state.prompt,
             "workspace": state.workspace,
             "status": RunStatus.AWAITING_INPUT
@@ -383,6 +409,8 @@ class RunManager:
                 control=state.control,
                 run_id=state.id,
                 branch=state.branch,
+                brief=state.brief,
+                git=state.git,
             )
         except Exception as error:  # noqa: BLE001 - thread top-level; recorded as exit 1 + run.finished
             _log.exception("run.failed run_id=%s workflow=%s", state.id, state.workflow_id)

@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 
 from pulse.domain.control import RUN_STOPPED, RunControl
+from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.outcome import LoopSignal, Outcome, OutcomeStatus, parse_outcome
 from pulse.domain.ports import (
     AgentProfile,
@@ -28,6 +29,7 @@ from pulse.domain.ports import (
     WorkspaceError,
 )
 from pulse.domain.run import RunRecord, StepRecord, StepStatus
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 from pulse.domain.workflow import StepDef, WorkflowDef
 from pulse.orchestrator import wording
 from pulse.orchestrator.agent_text import (
@@ -63,9 +65,8 @@ def run_workflow(
     definition: WorkflowDef,
     user_prompt: str,
     ports: EnginePorts,
-    use_worktree: bool = False,
-    atomic_commits: bool = False,
-    auto_pull_request: bool = False,
+    git: GitOptions = NO_GIT_OPTIONS,
+    brief: TaskBrief = EMPTY_BRIEF,
     branch: str = "",
     resume_run_id: str | None = None,
     control: RunControl | None = None,
@@ -75,7 +76,9 @@ def run_workflow(
 
     A workflow with no step raises before any run is stored; once the run is
     stored, any failure (a worktree that will not open, a crash mid-run) is
-    recorded on it, then raised.
+    recorded on it, then raised. A resumed run keeps the git options it was
+    stored with; `git` applies to new runs and to runs stored before runs kept
+    their own.
     """
     if not definition.steps:
         raise EmptyWorkflow(f"workflow `{definition.id}` has no steps")
@@ -86,17 +89,20 @@ def run_workflow(
         user_prompt,
         resume_run_id=resume_run_id,
         run_id=run_id,
+        brief=brief,
+        git=git,
     )
+    git = run.git or git
 
     try:
-        exec_dir = _open_workspace(run, ports, use_worktree=use_worktree, branch=branch)
+        exec_dir = _open_workspace(run, ports, use_worktree=git.use_worktree, branch=branch)
         ports.session.bind_run(run.id, RunWaits(run, ports.runs))
         wiring = Wiring(
             ports=ports,
             control=control or RunControl(),
             exec_dir=exec_dir,
-            atomic_commits=atomic_commits and use_worktree,
-            auto_pull_request=auto_pull_request and atomic_commits and use_worktree,
+            atomic_commits=git.atomic_commits,
+            auto_pull_request=git.auto_pull_request,
         )
         return _execute(wiring, definition=definition, run=run)
     # The run is stored, so it is the boundary: record the crash on it, then let
@@ -128,6 +134,8 @@ def _resolve_run(
     *,
     resume_run_id: str | None,
     run_id: str | None = None,
+    brief: TaskBrief = EMPTY_BRIEF,
+    git: GitOptions = NO_GIT_OPTIONS,
 ) -> RunRecord:
     """The stored run. `run_id` lets the caller name it.
 
@@ -144,6 +152,8 @@ def _resolve_run(
         workflow_id=definition.id,
         workspace=ports.workspace.root,
         user_prompt=user_prompt,
+        brief=brief,
+        git=git,
         steps=[
             StepRecord(
                 step_id=step.step_id,

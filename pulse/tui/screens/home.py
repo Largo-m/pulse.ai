@@ -8,7 +8,7 @@ from typing import Any
 from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, OptionList, Static
 from textual.widgets.option_list import Option
@@ -16,14 +16,16 @@ from textual.worker import get_current_worker
 
 from pulse import __version__
 from pulse.client.active_runs import active_runs, awaiting_runs
+from pulse.client.protocol import RunForm
 from pulse.domain.branch_name import task_slug
+from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.history.run_lines import held_tail, run_line
 from pulse.history.status_labels import status_color, status_icon
 from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
-from pulse.tui.screens.branch_name import BranchNameScreen
+from pulse.tui.screens.branch_name import BranchNameScreen, branch_problem
 from pulse.tui.screens.navigation import pulse_app
-from pulse.tui.widgets.task_composer import TaskComposer
+from pulse.tui.widgets.task_form import TaskDraft, TaskForm
 
 
 def _home_brand() -> str:
@@ -51,6 +53,17 @@ def _session_workflows() -> list[engine.WorkflowShape]:
     return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
 
 
+def _run_form(draft: TaskDraft) -> RunForm:
+    git = draft.git or NO_GIT_OPTIONS
+    return RunForm(
+        title=draft.brief.title,
+        description=draft.brief.description,
+        use_worktree=git.use_worktree,
+        atomic_commits=git.atomic_commits,
+        auto_pull_request=git.auto_pull_request,
+    )
+
+
 def _step_chain(workflow: engine.WorkflowShape) -> str:
     return " → ".join(label for _step_id, label in workflow.steps)
 
@@ -68,7 +81,6 @@ SESSION = "session"
 ALERTS = "alerts"
 
 ALERT_POLL_SECONDS = 3.0
-COMPOSER_GLYPH = "›"
 
 
 def _alert_panel(runs: list[dict[str, Any]]) -> Text:
@@ -104,17 +116,7 @@ class HomeScreen(Screen[None]):
             yield Static("", id="home-alerts")
             yield OptionList(id="home-options")
             yield Static(strings.HOME_ROOT_HINT, classes="home-hint")
-            with Vertical(id="task-composer"):
-                yield Static("", id="composer-title")
-                yield Static("", id="composer-description")
-                with Horizontal(id="composer-box"):
-                    yield Static(COMPOSER_GLYPH, classes="composer-glyph")
-                    yield TaskComposer(
-                        id="workflow-prompt",
-                        compact=True,
-                        placeholder=strings.HOME_TASK_PLACEHOLDER,
-                    )
-                yield Static(strings.HOME_COMPOSER_HINT, classes="composer-hint")
+            yield TaskForm(id="task-form")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -123,7 +125,7 @@ class HomeScreen(Screen[None]):
         self._workflows: dict[str, engine.WorkflowShape] = {}
         self._alerts = []
         self._refresh_options()
-        self.query_one("#task-composer", Vertical).display = False
+        self.query_one("#task-form", TaskForm).display = False
         self.query_one("#home-alerts", Static).display = False
         self._poll_alerts()
         self.set_interval(ALERT_POLL_SECONDS, self._poll_alerts)
@@ -304,31 +306,44 @@ class HomeScreen(Screen[None]):
         if workflow.default_prompt:
             self._open_run(workflow_id, workflow.default_prompt)
             return
-        self._pending_workflow = workflow_id
-        self._show_composer(workflow)
+        self._open_form(workflow)
 
-    def _show_composer(self, workflow: engine.WorkflowShape) -> None:
-        """Swap the menu for the task box, titled with the chosen workflow.
+    def _open_form(self, workflow: engine.WorkflowShape) -> None:
+        """Swap the menu for the run form, its git options seeded from the project's.
 
-        The menu leaves the screen so the box can take the width a long task needs.
+        Menu and banner leave the screen so the form fits a 24-row terminal.
         """
-        self.query_one("#composer-title", Static).update(workflow.label)
-        self.query_one("#composer-description", Static).update(
-            workflow.description or _step_chain(workflow)
+        try:
+            settings = engine.project_settings(Path.cwd())
+        except engine.EngineError as error:
+            self.query_one(".home-hint", Static).update(error.describe())
+            return
+        self._pending_workflow = workflow.id
+        git = (
+            GitOptions.chained(
+                use_worktree=settings.use_worktree,
+                atomic_commits=settings.atomic_commits,
+                auto_pull_request=settings.auto_pull_request,
+            )
+            if settings.is_repo
+            else None
         )
         self._set_composing(True)
-        self.query_one("#workflow-prompt", TaskComposer).focus()
+        self.query_one("#task-form", TaskForm).open(
+            heading=workflow.label,
+            summary=workflow.description or _step_chain(workflow),
+            git=git,
+        )
 
-    def _close_composer(self) -> None:
-        self.query_one("#workflow-prompt", TaskComposer).clear()
+    def _close_form(self) -> None:
         self._pending_workflow = None
         self._set_composing(False)
         self.query_one("#home-options", OptionList).focus()
 
     def _set_composing(self, composing: bool) -> None:
-        self.query_one("#task-composer", Vertical).display = composing
-        self.query_one("#home-options", OptionList).display = not composing
-        self.query_one(".home-hint", Static).display = not composing
+        self.query_one("#task-form", TaskForm).display = composing
+        for hidden in ("#home-options", ".home-hint", ".home-brand", ".home-sub"):
+            self.query_one(hidden).display = not composing
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -348,24 +363,43 @@ class HomeScreen(Screen[None]):
         )
 
     def action_back(self) -> None:
-        """Esc: close the open prompt, otherwise go back to the root menu."""
-        if self.query_one("#task-composer", Vertical).display:
-            self._close_composer()
+        """Esc: close the run form, otherwise go back to the root menu."""
+        if self.query_one("#task-form", TaskForm).display:
+            self._close_form()
             return
         if self._view != ROOT:
             self._show_view(ROOT)
 
-    @on(TaskComposer.Submitted, "#workflow-prompt")
-    def on_prompt_submitted(self, event: TaskComposer.Submitted) -> None:
-        """Send the task; a blank box keeps it open, since there is nothing to run."""
-        text = event.text.strip()
+    @on(TaskForm.Submitted, "#task-form")
+    def on_task_submitted(self, event: TaskForm.Submitted) -> None:
+        """Start the run from the form.
+
+        A plain description runs as it always did, on the project's git options
+        and its branch confirmation. A detailed draft carries its own; a branch
+        that cannot be created keeps the form open on the slug.
+        """
         workflow_id = self._pending_workflow
-        if not workflow_id or not text:
+        if not workflow_id:
             return
-        self._close_composer()
-        self._open_run(workflow_id, text)
+        draft = event.draft
+        if not draft.detailed:
+            self._close_form()
+            self._open_run(workflow_id, draft.brief.prompt)
+            return
+        branch = ""
+        if draft.git is not None and draft.git.use_worktree:
+            branch = draft.slug
+            problem = branch_problem(Path.cwd(), branch)
+            if problem:
+                event.form.show_error(problem)
+                return
+        self._close_form()
+        pulse_app(self).open_cockpit(
+            workflow_id, draft.brief.prompt, branch=branch, form=_run_form(draft)
+        )
 
     def _open_run(self, workflow_id: str, text: str) -> None:
+        """Start a workflow that brings its own task, confirming the branch when needed."""
         workspace = Path.cwd()
         try:
             settings = engine.project_settings(workspace)

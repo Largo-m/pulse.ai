@@ -21,7 +21,7 @@ import pytest
 
 import pulse.client.engine_client as engine_client_module
 from pulse.client.engine_client import EngineClient
-from pulse.client.protocol import ENGINE_PROTOCOL
+from pulse.client.protocol import ENGINE_PROTOCOL, RunForm
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
@@ -111,6 +111,27 @@ def test_start_run_omits_workspace_and_resume_when_not_given():
     _client(recorder).start_run("wf", prompt="go")
 
     assert recorder.body() == {"prompt": "go"}
+
+
+def test_a_form_replaces_the_prompt_with_title_description_and_git_options():
+    """The daemon refuses a prompt sent with a title; the form never sends both."""
+    recorder = _Recorder()
+    form = RunForm(
+        title="Corrigir login",
+        description="erro 500",
+        use_worktree=True,
+        atomic_commits=True,
+        auto_pull_request=False,
+    )
+
+    _client(recorder).start_run("wf", prompt="ignored", branch="corrigir-login", form=form)
+
+    assert recorder.body() == {
+        "title": "Corrigir login",
+        "description": "erro 500",
+        "git": {"use_worktree": True, "atomic_commits": True, "auto_pull_request": False},
+        "branch": "corrigir-login",
+    }
 
 
 def test_run_queries_hit_their_routes():

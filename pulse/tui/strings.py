@@ -128,8 +128,28 @@ RESUME_OPTION = "Retomar de onde parou"
 # Home
 HOME_SUBTITLE = "Orquestrador de agentes de IA · v{version}"
 HOME_ROOT_HINT = "↑↓ navega · Enter seleciona · Q sai"
-HOME_TASK_PLACEHOLDER = "Descreva a tarefa — cole logs, links ou critérios de aceite"
-HOME_COMPOSER_HINT = "Enter envia · Ctrl+J ou \\ + Enter quebra linha · Esc volta"
+TASK_TITLE_LABEL = "Título"
+TASK_TITLE_PLACEHOLDER = "Ex.: Corrigir login com e-mail maiúsculo"
+TASK_SLUG_LABEL = "Slug"
+TASK_DESCRIPTION_LABEL = "Descrição"
+TASK_DESCRIPTION_PLACEHOLDER = "Detalhes da tarefa — cole logs, links ou critérios de aceite"
+TASK_CONFIG_LABEL = "Config"
+TASK_GIT_WORKTREE = "Auto branch"
+TASK_GIT_COMMITS = "Auto commit"
+TASK_GIT_PULL_REQUEST = "Auto PR/MR"
+TASK_TITLE_REQUIRED = "Dê um título à tarefa."
+TASK_PLAIN_PLACEHOLDER = "Descreva a tarefa — cole logs, links ou critérios de aceite"
+TASK_MORE_OPTIONS = "Mais opções"
+TASK_MORE_OPTIONS_DETAIL = "título, slug e config"
+TASK_FEWER_OPTIONS = "Menos opções"
+TASK_OPTIONS_SHORTCUT = "ctrl+o"
+TASK_KEYS_PLAIN = (("enter", "enviar"), ("ctrl+j", "nova linha"), ("esc", "voltar"))
+TASK_KEYS_DETAILED = (
+    ("tab", "próximo campo"),
+    ("espaço", "marcar"),
+    ("enter", "enviar"),
+    ("esc", "voltar"),
+)
 HOME_ALERTS_ONE = "{count} sessão precisa de você"
 HOME_ALERTS_MANY = "{count} sessões precisam de você"
 HOME_ALERTS_HINT = "Enter abre a sessão para responder · Esc volta"

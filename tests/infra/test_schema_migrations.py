@@ -229,3 +229,24 @@ def test_a_database_at_version_3_gains_the_factory_pull_request_template(tmp_pat
         rows = connection.execute("SELECT id, pull_request_template FROM workflow_defs").fetchall()
         assert rows
         assert all("{{prompt}}" in str(row["pull_request_template"]) for row in rows)
+
+
+def test_a_run_stored_before_runs_kept_git_options_reads_none(tmp_path):
+    """NULL options mean "follow the project", the behavior that run started with."""
+    from pulse.store.runs import load_run
+
+    db_path = tmp_path / "pulse.db"
+    connection = connect(db_path)
+    try:
+        connection.execute(
+            "INSERT INTO runs (id, workflow_id, workspace_root, created_at, updated_at)"
+            " VALUES ('old', 'demo', '/tmp', 'now', 'now')"
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    loaded = load_run("old", db_path=db_path)
+
+    assert loaded is not None
+    assert loaded.git is None

@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.run import (
     RunRecord,
     RunStatus,
@@ -23,6 +24,7 @@ from pulse.domain.run import (
     StepStatus,
     utc_now,
 )
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 from pulse.store.db import connect, default_db_path
 
 MAX_DETAIL = 20_000
@@ -87,7 +89,20 @@ def _run(row: sqlite3.Row, steps: list[StepRecord]) -> RunRecord:
         branch=str(row["branch"] or ""),
         branch_owned=bool(row["branch_owned"]),
         branch_base=str(row["branch_base"] or ""),
+        title=str(row["title"] or ""),
+        description=str(row["description"] or ""),
+        git=_git_options(row),
         steps=steps,
+    )
+
+
+def _git_options(row: sqlite3.Row) -> GitOptions | None:
+    if row["use_worktree"] is None:
+        return None
+    return GitOptions.chained(
+        use_worktree=bool(row["use_worktree"]),
+        atomic_commits=bool(row["atomic_commits"]),
+        auto_pull_request=bool(row["auto_pull_request"]),
     )
 
 
@@ -106,6 +121,8 @@ def create_run(
     workspace: str | Path,
     user_prompt: str,
     steps: list[StepRecord],
+    brief: TaskBrief = EMPTY_BRIEF,
+    git: GitOptions = NO_GIT_OPTIONS,
     db_path: Path | None = None,
 ) -> RunRecord:
     now = _now_text()
@@ -115,8 +132,9 @@ def create_run(
             """
             INSERT INTO runs
               (id, workflow_id, workspace_root, user_prompt, status, current_step,
-               created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               created_at, updated_at, title, description,
+               use_worktree, atomic_commits, auto_pull_request)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -127,6 +145,11 @@ def create_run(
                 steps[0].step_id if steps else "",
                 now,
                 now,
+                brief.title,
+                brief.description,
+                int(git.use_worktree),
+                int(git.atomic_commits),
+                int(git.auto_pull_request),
             ),
         )
         connection.executemany(
@@ -159,6 +182,9 @@ def create_run(
         current_step=steps[0].step_id if steps else "",
         created_at=now,
         updated_at=now,
+        title=brief.title,
+        description=brief.description,
+        git=git,
         steps=steps,
     )
 
@@ -486,6 +512,8 @@ class SqliteRunRepository:
         workspace: Path,
         user_prompt: str,
         steps: Sequence[StepRecord],
+        brief: TaskBrief = EMPTY_BRIEF,
+        git: GitOptions = NO_GIT_OPTIONS,
     ) -> RunRecord:
         return create_run(
             run_id=run_id,
@@ -493,6 +521,8 @@ class SqliteRunRepository:
             workspace=workspace,
             user_prompt=user_prompt,
             steps=list(steps),
+            brief=brief,
+            git=git,
             db_path=self._db_path,
         )
 

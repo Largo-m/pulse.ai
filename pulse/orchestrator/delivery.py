@@ -88,7 +88,9 @@ def _open_request(wiring: Wiring, run: RunRecord, subjects: list[str], template:
         body = pull_request_body(
             template, prompt=run.user_prompt, branch=run.branch, commits=subjects
         )
-        wiring.ports.workspace.open_pull_request(branch=run.branch, title=run.branch, body=body)
+        wiring.ports.workspace.open_pull_request(
+            branch=run.branch, title=run.title or run.branch, body=body
+        )
     except (TemplateError, WorkspaceError) as error:
         notify(wiring, wording.pull_request_failed(str(error)))
 

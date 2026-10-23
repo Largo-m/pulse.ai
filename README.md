@@ -125,6 +125,16 @@ commitada dentro, é mantido e o Pulse avisa. A branch sempre fica.
 Desligada a chave (o padrão), a run roda na raiz do projeto como sempre. Nos
 dois casos a sessão mostra a branch atual ao lado do modelo.
 
+Ao iniciar uma tarefa (ex.: **Correção rápida**, **Nova spec**), basta a
+**descrição**: `Enter` inicia com a config do projeto, e `Ctrl+J` ou `\` +
+`Enter` quebra linha. Quem quiser mais escolhe **▸ Mais opções** logo abaixo
+(`Tab` + `Enter`, clique ou `Ctrl+O`) e o formulário ganha
+**título**, **slug** (o nome da branch, que acompanha o título até você
+editá-lo) e a **config** — *Auto branch*, *Auto commit* e *Auto PR/MR*. A config
+começa com o que está em *Configurações* e vale só para aquela run; `Tab` muda de
+campo e `Espaço` marca uma opção. O modo escolhido vale para as próximas tarefas
+até fechar o Pulse.
+
 ### Workflows
 
 Um workflow é uma linha em `workflow_defs` mais N em `workflow_steps`, no

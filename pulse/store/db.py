@@ -136,7 +136,12 @@ CREATE TABLE IF NOT EXISTS runs (
   worktree_path TEXT NOT NULL DEFAULT '',
   branch TEXT NOT NULL DEFAULT '',
   branch_owned INTEGER NOT NULL DEFAULT 0,
-  branch_base TEXT NOT NULL DEFAULT ''
+  branch_base TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  use_worktree INTEGER,
+  atomic_commits INTEGER,
+  auto_pull_request INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS runs_by_workspace
@@ -236,6 +241,19 @@ def _apply_pull_request_template(connection: sqlite3.Connection) -> set[tuple[st
     return _add_columns(connection, columns)
 
 
+def _apply_run_brief(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    # NULL git options mark a run stored before runs kept their own: it keeps
+    # following the project settings, as it did when it started.
+    columns = (
+        ("runs", "title", "TEXT NOT NULL DEFAULT ''"),
+        ("runs", "description", "TEXT NOT NULL DEFAULT ''"),
+        ("runs", "use_worktree", "INTEGER"),
+        ("runs", "atomic_commits", "INTEGER"),
+        ("runs", "auto_pull_request", "INTEGER"),
+    )
+    return _add_columns(connection, columns)
+
+
 def _add_columns(
     connection: sqlite3.Connection, columns: tuple[tuple[str, str, str], ...]
 ) -> set[tuple[str, str]]:
@@ -287,6 +305,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=2, apply=_apply_git_options),
     Migration(version=3, apply=_apply_context_tokens),
     Migration(version=4, apply=_apply_pull_request_template),
+    Migration(version=5, apply=_apply_run_brief),
 )
 
 

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from textual.app import App
 
+from pulse.client.protocol import RunForm
 from pulse.tui import strings
 from pulse.tui.screens.cockpit import CockpitScreen
 from pulse.tui.screens.history import HistoryListScreen
@@ -29,6 +30,7 @@ class PulseApp(App[None]):
         attach_run_id: str | None = None,
         workspace: Path | None = None,
         branch: str = "",
+        form: RunForm | None = None,
     ) -> None:
         self.push_screen(
             CockpitScreen(
@@ -38,6 +40,7 @@ class PulseApp(App[None]):
                 resume_run_id=resume_run_id,
                 attach_run_id=attach_run_id,
                 branch=branch,
+                form=form,
             )
         )
 

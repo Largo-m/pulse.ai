@@ -15,6 +15,21 @@ _CONFIRM = "confirm"
 _CANCEL = "cancel"
 
 
+def branch_problem(workspace: Path, name: str) -> str:
+    """Why `name` cannot be the run's new branch, or empty when it can."""
+    if not name:
+        return strings.BRANCH_EMPTY
+    try:
+        valid, exists = engine.branch_check(workspace, name)
+    except engine.EngineError as error:
+        return error.describe()
+    if not valid:
+        return strings.BRANCH_INVALID
+    if exists:
+        return strings.BRANCH_TAKEN
+    return ""
+
+
 class BranchNameScreen(ModalScreen[str | None]):
     """Confirms the branch a worktree run will use. Cancel leaves the workflow unstarted."""
 
@@ -58,19 +73,8 @@ class BranchNameScreen(ModalScreen[str | None]):
 
     def _confirm(self) -> None:
         name = self.query_one("#branch-name", Input).value.strip()
-        hint = self.query_one("#branch-hint", Static)
-        if not name:
-            hint.update(strings.BRANCH_EMPTY)
-            return
-        try:
-            valid, exists = engine.branch_check(self._workspace, name)
-        except engine.EngineError as error:
-            hint.update(error.describe())
-            return
-        if not valid:
-            hint.update(strings.BRANCH_INVALID)
-            return
-        if exists:
-            hint.update(strings.BRANCH_TAKEN)
+        problem = branch_problem(self._workspace, name)
+        if problem:
+            self.query_one("#branch-hint", Static).update(problem)
             return
         self.dismiss(name)

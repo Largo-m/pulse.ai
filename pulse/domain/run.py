@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
+from pulse.domain.git_options import GitOptions
 
 
 class StepStatus(StrEnum):
@@ -268,6 +269,10 @@ class RunRecord:
     branch: str = ""
     branch_owned: bool = False
     branch_base: str = ""
+    title: str = ""
+    description: str = ""
+    # None for a run stored before runs kept their own options: it follows the project.
+    git: GitOptions | None = None
     steps: list[StepRecord] = field(default_factory=list)
     _removed: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
 

@@ -8,20 +8,46 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from pulse.api.deps import Runs
 from pulse.daemon.events import EventBus
 from pulse.daemon.runs import DaemonShuttingDown, RunAlreadyActive, RunManager, RunState
+from pulse.domain.git_options import GitOptions
+from pulse.domain.task_brief import TaskBrief
 
 router = APIRouter()
 
 
+class GitOptionsBody(BaseModel):
+    use_worktree: bool
+    atomic_commits: bool
+    auto_pull_request: bool
+
+    def options(self) -> GitOptions:
+        return GitOptions(self.use_worktree, self.atomic_commits, self.auto_pull_request)
+
+
 class StartRunBody(BaseModel):
     prompt: str = ""
+    title: str = ""
+    description: str = ""
+    git: GitOptionsBody | None = None
     workspace: str | None = None
     resume_run_id: str | None = None
     branch: str = ""
+
+    @model_validator(mode="after")
+    def _one_task_and_chained_options(self) -> StartRunBody:
+        """Reject what the engine would have to guess: two tasks, or an orphan option."""
+        if self.prompt.strip() and not self.brief().is_empty:
+            raise ValueError("send either prompt or title/description, not both")
+        if self.git is not None:
+            self.git.options()
+        return self
+
+    def brief(self) -> TaskBrief:
+        return TaskBrief(title=self.title, description=self.description)
 
 
 class PromptAnswerBody(BaseModel):
@@ -56,6 +82,8 @@ def start_workflow_run(workflow_id: str, body: StartRunBody, runs: Runs) -> dict
             workspace=body.workspace,
             resume_run_id=body.resume_run_id,
             branch=body.branch,
+            brief=body.brief(),
+            git=body.git.options() if body.git else None,
         )
     except RunAlreadyActive as error:
         raise HTTPException(status_code=409, detail=str(error)) from error

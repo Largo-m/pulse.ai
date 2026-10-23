@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from pulse.client.daemon_process import stop_daemon
-from pulse.client.protocol import ENGINE_PROTOCOL
+from pulse.client.protocol import ENGINE_PROTOCOL, RunForm
 from pulse.store.paths import (
     DAEMON_LOG_FILE,
     DAEMON_SOCKET,
@@ -144,8 +144,9 @@ class EngineClient:
         workspace: str | None = None,
         resume_run_id: str | None = None,
         branch: str = "",
+        form: RunForm | None = None,
     ) -> dict[str, Any]:
-        body: dict[str, Any] = {"prompt": prompt}
+        body: dict[str, Any] = form.body() if form is not None else {"prompt": prompt}
         if workspace is not None:
             body["workspace"] = workspace
         if resume_run_id:
