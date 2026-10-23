@@ -175,10 +175,34 @@ HOME_EXIT_RUNNING_MANY = (
 
 # History list
 HISTORY_BINDING_SEARCH = "Buscar"
-HISTORY_TITLE = "HISTÓRICO"
-HISTORY_SEARCH_PLACEHOLDER = "Buscar runs…"
-HISTORY_HINT = "/ busca  ·  Enter abre  ·  d remove"
-HISTORY_EMPTY = "Nenhuma run encontrada"
+HISTORY_TITLE = "Histórico"
+HISTORY_COUNT_ONE = "1 run"
+HISTORY_COUNT_MANY = "{count} runs"
+HISTORY_SEARCH_PLACEHOLDER = "Buscar por título, tarefa, workflow ou status…"
+HISTORY_KEYS_LIST = (
+    ("↑↓", "navegar"),
+    ("enter", "abrir"),
+    ("/", "buscar"),
+    ("d", "remover"),
+    ("esc", "voltar"),
+)
+HISTORY_KEYS_SEARCH = (
+    ("↑↓", "navegar"),
+    ("enter", "abrir"),
+    ("esc", "sair da busca"),
+)
+HISTORY_EMPTY = "Nenhuma run neste workspace ainda"
+HISTORY_EMPTY_ACTION = "Descreva uma tarefa na tela inicial para começar  ·  esc volta"
+HISTORY_NO_MATCH = "Nenhuma run corresponde a “{query}”"
+HISTORY_NO_MATCH_ACTION = "esc limpa a busca"
+HISTORY_AGE_NOW = "agora"
+HISTORY_AGE_MINUTES = "há {count} min"
+HISTORY_AGE_HOURS = "há {count} h"
+HISTORY_AGE_YESTERDAY = "ontem"
+HISTORY_AGE_DAYS = "há {count} dias"
+HISTORY_AGE_DATE_FORMAT = "%d/%m/%Y"
+HISTORY_STEPS = "{done}/{total} etapas"
+HISTORY_BRANCH = "⎇ {branch}"
 HISTORY_RUN_REMOVED = "Run removida: {title}"
 HISTORY_RUN_ALREADY_GONE = "Essa run já não estava mais no histórico"
 HISTORY_RUN_IN_USE = "Run mantida no histórico: ela ainda está em andamento"
