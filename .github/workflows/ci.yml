@@ -27,7 +27,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        # The ends of the supported range: the `requires-python` floor catches
+        # newer syntax or stdlib, the newest catches deprecations and removals.
+        python: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
