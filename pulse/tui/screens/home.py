@@ -8,9 +8,9 @@ from typing import Any
 from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, Input, OptionList, Static
+from textual.widgets import Footer, OptionList, Static
 from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
@@ -23,6 +23,7 @@ from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
 from pulse.tui.screens.branch_name import BranchNameScreen
 from pulse.tui.screens.navigation import pulse_app
+from pulse.tui.widgets.task_composer import TaskComposer
 
 
 def _home_brand() -> str:
@@ -50,6 +51,10 @@ def _session_workflows() -> list[engine.WorkflowShape]:
     return sorted((item for item in listed if not item.is_default), key=lambda item: item.label)
 
 
+def _step_chain(workflow: engine.WorkflowShape) -> str:
+    return " → ".join(label for _step_id, label in workflow.steps)
+
+
 def _setup() -> engine.SetupState | engine.EngineError:
     """Where the first run stands, or why the daemon could not say."""
     try:
@@ -63,6 +68,7 @@ SESSION = "session"
 ALERTS = "alerts"
 
 ALERT_POLL_SECONDS = 3.0
+COMPOSER_GLYPH = "›"
 
 
 def _alert_panel(runs: list[dict[str, Any]]) -> Text:
@@ -98,21 +104,26 @@ class HomeScreen(Screen[None]):
             yield Static("", id="home-alerts")
             yield OptionList(id="home-options")
             yield Static(strings.HOME_ROOT_HINT, classes="home-hint")
-            yield Input(
-                placeholder=strings.HOME_TASK_PLACEHOLDER,
-                id="workflow-prompt",
-                classes="-hidden",
-            )
+            with Vertical(id="task-composer"):
+                yield Static("", id="composer-title")
+                yield Static("", id="composer-description")
+                with Horizontal(id="composer-box"):
+                    yield Static(COMPOSER_GLYPH, classes="composer-glyph")
+                    yield TaskComposer(
+                        id="workflow-prompt",
+                        compact=True,
+                        placeholder=strings.HOME_TASK_PLACEHOLDER,
+                    )
+                yield Static(strings.HOME_COMPOSER_HINT, classes="composer-hint")
         yield Footer()
 
     def on_mount(self) -> None:
         self._pending_workflow: str | None = None
         self._view = ROOT
-        self._descriptions: dict[str, str] = {}
-        self._default_prompts: dict[str, str] = {}
+        self._workflows: dict[str, engine.WorkflowShape] = {}
         self._alerts = []
         self._refresh_options()
-        self.query_one("#workflow-prompt", Input).display = False
+        self.query_one("#task-composer", Vertical).display = False
         self.query_one("#home-alerts", Static).display = False
         self._poll_alerts()
         self.set_interval(ALERT_POLL_SECONDS, self._poll_alerts)
@@ -157,10 +168,11 @@ class HomeScreen(Screen[None]):
 
         Always two lines, even without a description, so the list does not jump.
         """
-        description = self._descriptions.get(workflow_id or "", "")
+        workflow = self._workflows.get(workflow_id or "")
+        description = _step_chain(workflow) if workflow else ""
         keys = (
             strings.HOME_START_NOW
-            if self._default_prompts.get(workflow_id or "")
+            if workflow and workflow.default_prompt
             else strings.HOME_DESCRIBE_TASK
         )
         self.query_one(".home-hint", Static).update(
@@ -195,12 +207,7 @@ class HomeScreen(Screen[None]):
             return
         if self._view == SESSION:
             workflows = _session_workflows()
-            self._descriptions = {
-                item.id: " → ".join(label for _step_id, label in item.steps) for item in workflows
-            }
-            self._default_prompts = {
-                item.id: item.default_prompt for item in workflows if item.default_prompt
-            }
+            self._workflows = {item.id: item for item in workflows}
             for workflow in workflows:
                 label = workflow.label
                 if workflow.description:
@@ -291,15 +298,37 @@ class HomeScreen(Screen[None]):
 
     def _choose_workflow(self, workflow_id: str) -> None:
         """Start right away when the workflow has a default prompt; otherwise ask for one."""
-        default_prompt = self._default_prompts.get(workflow_id, "")
-        if default_prompt:
-            self._open_run(workflow_id, default_prompt)
+        workflow = self._workflows.get(workflow_id)
+        if workflow is None:
+            return
+        if workflow.default_prompt:
+            self._open_run(workflow_id, workflow.default_prompt)
             return
         self._pending_workflow = workflow_id
-        prompt_input = self.query_one("#workflow-prompt", Input)
-        prompt_input.display = True
-        prompt_input.focus()
-        prompt_input.placeholder = strings.HOME_TASK_PLACEHOLDER
+        self._show_composer(workflow)
+
+    def _show_composer(self, workflow: engine.WorkflowShape) -> None:
+        """Swap the menu for the task box, titled with the chosen workflow.
+
+        The menu leaves the screen so the box can take the width a long task needs.
+        """
+        self.query_one("#composer-title", Static).update(workflow.label)
+        self.query_one("#composer-description", Static).update(
+            workflow.description or _step_chain(workflow)
+        )
+        self._set_composing(True)
+        self.query_one("#workflow-prompt", TaskComposer).focus()
+
+    def _close_composer(self) -> None:
+        self.query_one("#workflow-prompt", TaskComposer).clear()
+        self._pending_workflow = None
+        self._set_composing(False)
+        self.query_one("#home-options", OptionList).focus()
+
+    def _set_composing(self, composing: bool) -> None:
+        self.query_one("#task-composer", Vertical).display = composing
+        self.query_one("#home-options", OptionList).display = not composing
+        self.query_one(".home-hint", Static).display = not composing
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -320,25 +349,20 @@ class HomeScreen(Screen[None]):
 
     def action_back(self) -> None:
         """Esc: close the open prompt, otherwise go back to the root menu."""
-        prompt_input = self.query_one("#workflow-prompt", Input)
-        if prompt_input.display:
-            prompt_input.value = ""
-            prompt_input.display = False
-            self._pending_workflow = None
-            self.query_one("#home-options", OptionList).focus()
+        if self.query_one("#task-composer", Vertical).display:
+            self._close_composer()
             return
         if self._view != ROOT:
             self._show_view(ROOT)
 
-    @on(Input.Submitted, "#workflow-prompt")
-    def on_prompt_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
+    @on(TaskComposer.Submitted, "#workflow-prompt")
+    def on_prompt_submitted(self, event: TaskComposer.Submitted) -> None:
+        """Send the task; a blank box keeps it open, since there is nothing to run."""
+        text = event.text.strip()
         workflow_id = self._pending_workflow
-        event.input.value = ""
-        event.input.display = False
-        self._pending_workflow = None
         if not workflow_id or not text:
             return
+        self._close_composer()
         self._open_run(workflow_id, text)
 
     def _open_run(self, workflow_id: str, text: str) -> None:

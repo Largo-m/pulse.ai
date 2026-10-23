@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-BG = "#000000"
-BG_PANEL = "#121212"
-LIME = "#A2D729"
-LIME_MUTED = "#4A5F1A"
-TEXT = "#E0E0E0"
-TEXT_MUTED = "#888888"
-ERROR = "#E85D5D"
-ERROR_SOFT = "#FF8A8A"
-ACCENT_YELLOW = "#D4AF37"
-BORDER = "#333333"
+from pulse.tui.home_theme import HOME_CSS
+from pulse.tui.palette import (
+    BG,
+    BG_PANEL,
+    BORDER,
+    ERROR,
+    ERROR_SOFT,
+    LIME,
+    LIME_MUTED,
+    TEXT,
+    TEXT_MUTED,
+)
 
-COCKPIT_CSS = f"""
+COCKPIT_CSS = (
+    f"""
 Screen {{
     background: {BG};
     color: {TEXT};
@@ -230,75 +233,6 @@ AppFooter {{
 
 AppFooter .key {{
     color: {LIME};
-}}
-
-HomeScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-HomeScreen #home-content {{
-    width: auto;
-    height: auto;
-    max-width: 80%;
-    align: center middle;
-}}
-
-HomeScreen .home-brand {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HomeScreen .home-sub {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 2;
-}}
-
-HomeScreen #home-alerts {{
-    width: 60;
-    max-width: 100%;
-    height: auto;
-    background: {BG_PANEL};
-    border: solid #D4AF37;
-    padding: 0 1;
-    margin-bottom: 1;
-}}
-
-HomeScreen OptionList {{
-    width: 60;
-    max-width: 100%;
-    height: auto;
-    max-height: 16;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-    padding: 0 1;
-}}
-
-HomeScreen OptionList > .option-list--option {{
-    padding: 0 1;
-}}
-
-HomeScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-HomeScreen .home-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    margin-top: 1;
-    text-align: center;
-}}
-
-HomeScreen #workflow-prompt {{
-    width: 60;
-    max-width: 100%;
-    margin-top: 1;
 }}
 
 HistoryListScreen {{
@@ -657,3 +591,5 @@ BranchNameScreen .branch-hint {{
     margin-top: 1;
 }}
 """
+    + HOME_CSS
+)

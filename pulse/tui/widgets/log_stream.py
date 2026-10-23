@@ -15,8 +15,8 @@ from textual.widgets import Static
 
 from pulse.tui import strings
 from pulse.tui.adapters.prompt_bridge import PromptKind, PromptRequest, format_prompt_reply
+from pulse.tui.palette import ERROR, ERROR_SOFT
 from pulse.tui.state import CockpitState, LogEntry, LogKind, PhaseStatus
-from pulse.tui.theme import ERROR, ERROR_SOFT
 from pulse.tui.widgets.prompt_dock import PromptDock
 
 if TYPE_CHECKING:
