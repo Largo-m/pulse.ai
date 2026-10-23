@@ -15,26 +15,23 @@ concurrency:
 env:
   SECURITY_TOOLS: .claude/skills/security-audit/tools
   FORCE_COLOR: "1"
+  # Only the newest release runs; the 3.11 floor of `requires-python` is held by
+  # ruff's and mypy's target version (py311), which reject newer syntax and stdlib.
+  PYTHON_VERSION: "3.14"
   GITLEAKS_VERSION: "8.30.1"
   SEMGREP_VERSION: "1.182.1"
 
 jobs:
   test:
-    name: pytest (Python ${{ matrix.python }})
+    name: pytest
     runs-on: ubuntu-latest
     # A hung test fails the job instead of holding a runner for hours.
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        # The ends of the supported range: the `requires-python` floor catches
-        # newer syntax or stdlib, the newest catches deprecations and removals.
-        python: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: ${{ matrix.python }}
+          python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
           enable-cache: true
       # --locked fails when uv.lock no longer matches pyproject.toml.
@@ -52,7 +49,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
           enable-cache: true
       - run: uv sync --locked
@@ -68,7 +65,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
           enable-cache: true
       - run: uv sync --locked
@@ -85,7 +82,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
           enable-cache: true
       - run: uv sync --locked
@@ -112,7 +109,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
           activate-environment: true
           enable-cache: true
       - run: uv sync --locked

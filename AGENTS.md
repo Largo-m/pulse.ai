@@ -293,12 +293,13 @@ mutmut run && mutmut export-cicd-stats && python scripts/mutation_gate.py --min 
 ```
 
 CI (`.github/workflows/ci.yml`) installs from `uv.lock` (`uv sync --locked`, so a
-stale lockfile fails) and runs the same commands on Python 3.11 and 3.14 (the
-ends of the supported range), the suite three more times in random order, the
-parsers' mutation score, plus the security scans of §6.2 and Gitleaks over the
-whole git history, and must be green to merge. Complexity (`C901`, at most 10 per function) is part of
-`ruff check`, and `vulture` blocks too: split a function or delete dead code
-instead of suppressing them.
+stale lockfile fails) and runs the same commands on the newest Python (3.14),
+the suite three more times in random order, the parsers' mutation score, plus
+the security scans of §6.2 and Gitleaks over the whole git history, and must be
+green to merge. The 3.11 floor is held by ruff's and mypy's target version.
+Complexity (`C901`, at most 10 per function) is part of `ruff check`, and
+`vulture` blocks too: split a function or delete dead code instead of
+suppressing them.
 
 - **Coverage floor** is `fail_under` in `pyproject.toml`, measured on
   branches; `pulse/domain/` must stay at 90% or more. Each phase raises the
