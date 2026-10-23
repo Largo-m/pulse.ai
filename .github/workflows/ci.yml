@@ -16,10 +16,14 @@ concurrency:
 env:
   SECURITY_TOOLS: .claude/skills/security-audit/tools
   FORCE_COLOR: "1"
-  # Only the newest release runs; the 3.11 floor of `requires-python` is held by
-  # ruff's and mypy's target version (py311), which reject newer syntax and stdlib.
+  # Every job runs on the newest release except the random-order suite, which
+  # runs on the `requires-python` floor: ruff and mypy check its syntax and stdlib
+  # names, not its runtime behavior or the uv.lock branch resolved below 3.13.
   PYTHON_VERSION: "3.14"
+  PYTHON_FLOOR: "3.11"
   GITLEAKS_VERSION: "8.30.1"
+  # Release assets are mutable: the digest lives here, not in a downloaded file.
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
   SEMGREP_VERSION: "1.182.1"
 
 jobs:
@@ -45,7 +49,7 @@ jobs:
       - run: coverage report --include="pulse/domain/*" --fail-under=90
 
   random-order:
-    name: pytest in random order (3 runs)
+    name: pytest in random order (3 runs, Python floor)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -54,7 +58,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ env.PYTHON_FLOOR }}
           activate-environment: true
           enable-cache: true
       - run: uv sync --locked
@@ -158,15 +162,14 @@ jobs:
           # A secret removed in a later commit is still leaked: scan every commit.
           fetch-depth: 0
       # The binary instead of gitleaks-action, which needs a paid license on
-      # organization repos; the checksum pins what runs.
+      # organization repos; GITLEAKS_SHA256 pins what runs.
       - name: install gitleaks
         run: |
           cd "$RUNNER_TEMP"
           base="https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION"
           tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           curl -fsSLO "$base/$tarball"
-          curl -fsSLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
-          sha256sum --check --ignore-missing "gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          echo "$GITLEAKS_SHA256  $tarball" | sha256sum --check
           tar -xzf "$tarball" gitleaks
       # Allowlist and rules: .gitleaks.toml.
       - name: gitleaks
