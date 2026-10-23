@@ -7,6 +7,7 @@ workflow name leaking into the package is how that awareness starts.
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parents[2] / "pulse"
@@ -50,3 +51,18 @@ def test_the_vocabulary_check_recognises_a_leak() -> None:
     assert DOMAIN_VOCABULARY.search("write the PRD first")
     assert DOMAIN_VOCABULARY.search("#### Link do Figma:")
     assert not DOMAIN_VOCABULARY.search("prdx = approved")
+
+
+def test_the_wheel_ships_every_file_of_the_factory_seed() -> None:
+    """An editable install reads the seed from the checkout, so a file left out of
+    `package-data` only breaks an installed Pulse, on its first database open."""
+    pyproject = tomllib.loads((PACKAGE.parent / "pyproject.toml").read_text(encoding="utf-8"))
+    patterns = pyproject["tool"]["setuptools"]["package-data"]["pulse.store.factory"]
+    shipped = {path for pattern in patterns for path in FACTORY.glob(pattern)}
+    seed = {
+        path
+        for path in FACTORY.rglob("*")
+        if path.is_file() and path.suffix != ".py" and "__pycache__" not in path.parts
+    }
+
+    assert sorted(str(path.relative_to(FACTORY)) for path in seed - shipped) == []

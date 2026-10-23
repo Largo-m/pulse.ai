@@ -47,7 +47,7 @@ where = ["."]
 include = ["pulse*"]
 
 [tool.setuptools.package-data]
-"pulse.store.factory" = ["agents/*/*.md", "shared/*.md"]
+"pulse.store.factory" = ["*.md", "agents/*/*.md", "shared/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
