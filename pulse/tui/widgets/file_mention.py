@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from textual import on
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 
@@ -23,6 +21,16 @@ def mention_at(before_cursor: str) -> str | None:
     """What follows the `@` the cursor is still typing, or None when no mention is open."""
     match = _OPEN_MENTION.search(before_cursor)
     return match.group(1) if match else None
+
+
+def mention_text(path: str) -> str:
+    """The `@` token typed for `path`, closed by a space.
+
+    A path with whitespace is quoted: unquoted, the agent would read the first
+    space as the end of the mention.
+    """
+    token = f'"{path}"' if any(char.isspace() for char in path) else path
+    return f"{MENTION_SIGN}{token} "
 
 
 def match_files(files: list[str], query: str, *, limit: int = MENTION_LIMIT) -> list[str]:
@@ -51,7 +59,8 @@ class FileMentionList(OptionList):
     """The workspace files matching the mention being typed.
 
     It never takes the focus: the composer keeps it and drives the list, so
-    typing goes on filtering while the list is open.
+    typing goes on filtering while the list is open. A click bubbles up as
+    `OptionList.OptionSelected` for the form that holds both widgets.
     """
 
     can_focus = False
@@ -59,15 +68,10 @@ class FileMentionList(OptionList):
     def __init__(self, **kwargs: Unpack[WidgetOptions]) -> None:
         super().__init__(**kwargs)
         self._files: list[str] = []
-        self._pick: Callable[[str], None] | None = None
         self.display = False
 
     def set_files(self, files: list[str]) -> None:
         self._files = files
-
-    def on_pick(self, pick: Callable[[str], None]) -> None:
-        """Who receives a file clicked on the list: the composer typing the mention."""
-        self._pick = pick
 
     def show_for(self, query: str) -> None:
         """List the matches; with none there is nothing to pick, so the list hides."""
@@ -84,9 +88,3 @@ class FileMentionList(OptionList):
         if not self.display or self.highlighted is None:
             return None
         return self.get_option_at_index(self.highlighted).id
-
-    @on(OptionList.OptionSelected)
-    def _clicked(self, event: OptionList.OptionSelected) -> None:
-        event.stop()
-        if self._pick is not None and event.option.id is not None:
-            self._pick(event.option.id)

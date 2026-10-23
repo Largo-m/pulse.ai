@@ -499,3 +499,30 @@ def test_without_the_daemon_files_the_at_sign_is_just_text(monkeypatch, free_bra
         assert app.opened == [("quick-fix", "@a", "", None)]
 
     _run(test, detailed=False)
+
+
+def test_clicking_a_listed_file_types_its_path_and_keeps_the_typing_focus(monkeypatch, free_branch):
+    """The list never takes the focus, so the form routes the click to the description."""
+    _project(monkeypatch)
+    asked: list[Path] = []
+
+    def _files(workspace: Path) -> list[str]:
+        asked.append(workspace)
+        return ["README.md", "pulse/tui/app.py"]
+
+    monkeypatch.setattr(home_module.engine, "workspace_files", _files)
+
+    async def test(app, pilot, screen) -> None:
+        await wait_until(pilot, lambda: asked == [Path.cwd()])
+        await pilot.press("at", "p", "u")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+        # The form's theme drops the list border, so row 0 is the first option.
+        await pilot.click(FileMentionList, offset=(2, 0))
+        await pilot.pause()
+
+        description = screen.query_one("#task-description", TaskComposer)
+        assert description.text == "@pulse/tui/app.py "
+        assert description.has_focus
+        assert app.opened == []
+
+    _run(test, detailed=False)

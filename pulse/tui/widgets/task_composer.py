@@ -4,7 +4,7 @@ from textual import events, on
 from textual.message import Message
 from textual.widgets import TextArea
 
-from pulse.tui.widgets.file_mention import MENTION_SIGN, FileMentionList, mention_at
+from pulse.tui.widgets.file_mention import MENTION_SIGN, FileMentionList, mention_at, mention_text
 
 SUBMIT_KEY = "enter"
 LINE_BREAK = "\n"
@@ -39,18 +39,15 @@ class TaskComposer(TextArea):
     def bind_mentions(self, picker: FileMentionList) -> None:
         """Offer workspace files on `@`; while the list shows, Enter picks instead of sending."""
         self._mentions = picker
-        picker.on_pick(self.insert_mention)
 
     def insert_mention(self, path: str) -> None:
-        """Replace the mention being typed with `path` and a space that closes it."""
+        """Replace the mention being typed with the token for `path`."""
         query = self._open_mention()
         if query is None:
             return
         row, column = self.cursor_location
         start = (row, column - len(MENTION_SIGN) - len(query))
-        self.replace(
-            f"{MENTION_SIGN}{path} ", start, (row, column), maintain_selection_offset=False
-        )
+        self.replace(mention_text(path), start, (row, column), maintain_selection_offset=False)
         if self._mentions is not None:
             self._mentions.close()
 

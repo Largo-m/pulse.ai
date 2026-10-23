@@ -9,7 +9,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Checkbox, Input, Static
+from textual.widgets import Checkbox, Input, OptionList, Static
 
 from pulse.domain.branch_name import task_slug
 from pulse.domain.git_options import GitOption, GitOptions
@@ -97,6 +97,12 @@ class TaskForm(Vertical):
     def on_mount(self) -> None:
         mentions = self.query_one("#task-mentions", FileMentionList)
         self.query_one("#task-description", TaskComposer).bind_mentions(mentions)
+
+    @on(OptionList.OptionSelected, "#task-mentions")
+    def _mention_clicked(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        if event.option.id is not None:
+            self.query_one("#task-description", TaskComposer).insert_mention(event.option.id)
 
     def offer_files(self, files: list[str]) -> None:
         """The workspace files `@` lists; they arrive after the form opens."""

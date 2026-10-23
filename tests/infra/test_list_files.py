@@ -2,8 +2,9 @@
 
 The list feeds a picker, so it must hold what the user would open in the editor
 (tracked and new files) and leave out what the project ignores (build output,
-virtualenvs), with paths relative to the project root so they stay valid in a
-run's worktree.
+virtualenvs), with paths relative to the project root, where a run works. A
+worktree run of a project in a repo subfolder works at the repo top instead,
+so these paths miss there until issue #71 keeps the subfolder.
 """
 
 from __future__ import annotations

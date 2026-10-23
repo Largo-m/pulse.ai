@@ -13,7 +13,7 @@ import pytest
 from textual.app import App, ComposeResult
 from textual.pilot import Pilot
 
-from pulse.tui.widgets.file_mention import FileMentionList, match_files, mention_at
+from pulse.tui.widgets.file_mention import FileMentionList, match_files, mention_at, mention_text
 from pulse.tui.widgets.task_composer import TaskComposer
 
 FILES = ["README.md", "docs/readme-pt.md", "pulse/tui/app.py", "pulse/tui/widgets/task_form.py"]
@@ -39,6 +39,24 @@ def test_an_at_sign_at_a_word_start_opens_a_mention(before_cursor: str, query: s
 )
 def test_text_without_an_open_mention_is_left_alone(before_cursor: str) -> None:
     assert mention_at(before_cursor) is None
+
+
+def test_a_plain_path_becomes_a_bare_token_closed_by_a_space() -> None:
+    assert mention_text("pulse/tui/app.py") == "@pulse/tui/app.py "
+
+
+@pytest.mark.parametrize(
+    ("path", "token"),
+    [
+        ("notas de reunião.md", '@"notas de reunião.md" '),
+        ("docs/a\tb.md", '@"docs/a\tb.md" '),
+    ],
+)
+def test_a_path_with_whitespace_is_quoted_so_the_mention_stays_one_token(
+    path: str, token: str
+) -> None:
+    """Unquoted, the agent would read `@notas` and two loose words."""
+    assert mention_text(path) == token
 
 
 def test_an_empty_query_offers_the_first_files_in_order() -> None:
@@ -170,14 +188,13 @@ def test_a_query_with_no_match_hides_the_list_and_keeps_enter_sending() -> None:
     _drive(test)
 
 
-def test_clicking_a_file_inserts_it() -> None:
+def test_picking_a_path_with_a_space_inserts_it_quoted() -> None:
     async def test(app: _Harness, pilot: Pilot[None]) -> None:
-        await _type(pilot, "@pulse")
-        # Row 1 is the first option: the list's default border takes row 0.
-        await pilot.click(FileMentionList, offset=(2, 1))
+        await _type(pilot, "@notas")
+        await pilot.press("enter")
         await pilot.pause()
 
-        assert app.query_one(TaskComposer).text == "@pulse/tui/app.py "
-        assert app.query_one(TaskComposer).has_focus
+        assert app.query_one(TaskComposer).text == '@"notas de reunião.md" '
+        assert app.sent == []
 
-    _drive(test)
+    _drive(test, ["notas de reunião.md"])
