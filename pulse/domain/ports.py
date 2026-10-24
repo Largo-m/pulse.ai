@@ -6,7 +6,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol, TypeAlias, TypedDict, TypeVar, runtime_checkable
 
+from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.run import RunRecord, StepRecord
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 
 JsonObject: TypeAlias = dict[str, object]
 """An ACP JSON-RPC payload. Its shape belongs to the runtime, so adapters narrow it at the edge."""
@@ -122,8 +124,14 @@ class RunRepository(Protocol):
         workspace: Path,
         user_prompt: str,
         steps: Sequence[StepRecord],
+        brief: TaskBrief = EMPTY_BRIEF,
+        git: GitOptions = NO_GIT_OPTIONS,
     ) -> RunRecord:
-        """A new running run whose steps are all pending, stored before it is returned."""
+        """A new running run whose steps are all pending, stored before it is returned.
+
+        `brief` and `git` are copied onto the run, so a resume keeps what it
+        started with even after the project settings change.
+        """
         ...
 
     def load(self, run_id: str) -> RunRecord | None: ...

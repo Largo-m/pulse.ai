@@ -218,6 +218,12 @@ def get_branch(name: str = "", workspace: str | None = None) -> dict[str, Any]:
     return {"valid": valid, "exists": valid and vcs.branch_exists(repo, name)}
 
 
+@router.get("/api/workspace/files")
+def get_workspace_files(workspace: str | None = None) -> dict[str, Any]:
+    root = project_root(workspace)
+    return {"files": vcs.list_files(root), "untracked": vcs.list_files(root, untracked=True)}
+
+
 def _save_flag(save: Callable[..., None], body: FlagBody) -> None:
     try:
         save(Path(body.workspace).resolve(), enabled=body.enabled)

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse.domain.control import RunControl
+from pulse.domain.git_options import GitOptions
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 from pulse.orchestrator.engine import run_workflow
 from pulse.orchestrator.wiring import EnginePorts
 from pulse.store.workflow_defs import get_workflow
@@ -42,6 +44,7 @@ class EngineHarness:
         atomic_commits: bool = False,
         auto_pull_request: bool = False,
         branch: str = "",
+        brief: TaskBrief = EMPTY_BRIEF,
     ) -> int:
         definition = get_workflow(workflow_id)
         assert definition is not None, f"seed `{workflow_id}` with make_workflow first"
@@ -56,9 +59,12 @@ class EngineHarness:
             definition=definition,
             user_prompt=user_prompt,
             ports=ports,
-            use_worktree=use_worktree,
-            atomic_commits=atomic_commits,
-            auto_pull_request=auto_pull_request,
+            git=GitOptions.chained(
+                use_worktree=use_worktree,
+                atomic_commits=atomic_commits,
+                auto_pull_request=auto_pull_request,
+            ),
+            brief=brief,
             branch=branch,
             resume_run_id=resume_run_id,
             control=control or session.control,

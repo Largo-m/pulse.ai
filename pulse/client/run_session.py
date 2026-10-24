@@ -8,7 +8,7 @@ from typing import Protocol
 import httpx
 
 from pulse.client.engine_client import EngineClient
-from pulse.client.protocol import PING, REPLAY_END
+from pulse.client.protocol import PING, REPLAY_END, RunForm
 from pulse.domain.ports import JsonObject, StepRow, StreamSink
 from pulse.replies.permission import PermissionPolicy, parse_policy
 from pulse.replies.text_questionnaire import (
@@ -151,6 +151,7 @@ class EngineRunSession:
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
         branch: str = "",
+        form: RunForm | None = None,
     ) -> int:
         self.start(
             workflow_id=workflow_id,
@@ -158,6 +159,7 @@ class EngineRunSession:
             workspace=workspace,
             resume_run_id=resume_run_id,
             branch=branch,
+            form=form,
         )
         return self.listen()
 
@@ -169,6 +171,7 @@ class EngineRunSession:
         workspace: str | Path | None = None,
         resume_run_id: str | None = None,
         branch: str = "",
+        form: RunForm | None = None,
     ) -> str:
         """Create the run in the daemon and return its id, without listening."""
         self._client.ensure_daemon()
@@ -178,6 +181,7 @@ class EngineRunSession:
             workspace=str(workspace) if workspace is not None else None,
             resume_run_id=resume_run_id,
             branch=branch,
+            form=form,
         )
         self.run_id = str(created["id"])
         return self.run_id

@@ -158,6 +158,7 @@ def test_stop_cuts_the_run_and_resume_reopens_it_from_where_it_stopped(monkeypat
                 "workspace": str(tmp_path),
                 "resume_run_id": None,
                 "branch": "",
+                "form": None,
             }
             infos = _titles(cockpit, LogKind.INFO)
             assert strings.RUN_STOPPING in infos

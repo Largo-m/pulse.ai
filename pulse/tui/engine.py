@@ -112,6 +112,12 @@ class ProjectSettings:
 
 
 @dataclass(frozen=True)
+class WorkspaceFiles:
+    tracked: tuple[str, ...] = ()
+    untracked: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class WorkflowShape:
     """A workflow as the sidebar draws it before the run reports its own steps."""
 
@@ -348,6 +354,16 @@ def branch_check(workspace: Path, name: str) -> tuple[bool, bool]:
         )
     )
     return bool(data.get("valid")), bool(data.get("exists"))
+
+
+def workspace_files(workspace: Path) -> WorkspaceFiles:
+    data = _call(
+        lambda client: client.get("/api/workspace/files", params={"workspace": str(workspace)})
+    )
+    return WorkspaceFiles(
+        tracked=tuple(str(path) for path in data.get("files") or []),
+        untracked=tuple(str(path) for path in data.get("untracked") or []),
+    )
 
 
 def _put_flag(workspace: Path, path: str, *, enabled: bool) -> None:

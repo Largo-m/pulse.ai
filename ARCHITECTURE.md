@@ -80,7 +80,9 @@ em quatro tabelas de estado.
   ────────────────────────              ────────────────────────
   workflow_defs                         runs
     id, label, description                id, workflow_id, workspace_root
-    is_default                            user_prompt, status, current_step
+    is_default                            user_prompt, title, description
+                                          status, current_step, use_worktree
+                                          atomic_commits, auto_pull_request
         │ 1..N                                │ 1..N
         ▼                                     ▼
   workflow_steps                        run_steps
@@ -368,7 +370,8 @@ Quem decide é [`prepare_workspace`](pulse/orchestrator/worktree.py), pela porta
 casos: run retomada **reusa** o worktree que já tem (abrir um segundo jogaria
 fora o que os steps anteriores produziram); sem isolamento, roda na raiz; com
 isolamento, `git worktree add` na branch que a pessoa confirmou antes de
-começar (sugestão: slug da tarefa; nome ocupado é recusado). Falhar ao abrir o
+começar (o slug do formulário da run, que acompanha o título até ser editado;
+nome ocupado é recusado ali mesmo). Falhar ao abrir o
 worktree **para a run** — rodar na árvore de trabalho da pessoa é justamente o
 que a chave pediu para não acontecer.
 
@@ -386,6 +389,18 @@ pedido no GitHub (`gh pr create`) ou no GitLab (`glab mr create`) contra o
 `git branch -d`; fica a branch remota. Push recusado, árvore suja, run parada
 ou step falho: a pasta e a branch local ficam. O motor fala com git, `gh` e
 `glab` pela porta `Workspace`.
+
+As três opções do projeto são só o **ponto de partida**. Por padrão a tarefa é
+só uma descrição, que vai como `prompt` e segue o projeto; o formulário completo
+(título, slug, descrição e as três chaves, aberto em *Mais opções*) começa com elas e o que a pessoa
+marcar vale **só para aquela run**: vai no `POST …/runs` como `git` (`ENGINE_PROTOCOL` 11), e o projeto
+não muda. A run grava título, descrição e as opções em `runs` ao nascer
+([`GitOptions`](pulse/domain/git_options.py), sempre em escada: ligar PR/MR liga
+as anteriores, desligar Worktree desliga as seguintes), e uma run retomada usa
+as **suas** opções, não as que o projeto tiver depois. Run gravada antes disso
+tem as colunas nulas e segue o projeto, como seguia. O título dá nome à run no
+histórico e ao PR/MR; o prompt que os agentes leem é título e descrição juntos
+([`TaskBrief`](pulse/domain/task_brief.py)), em `{{user_prompt}}`.
 
 A branch é lida nos três casos, inclusive sem worktree, e é isso que faz a
 sessão mostrar `modelo · branch` na linha de meta do stream. Ela chega à tela
@@ -450,11 +465,16 @@ Só tela e interação. Não executa workflow no próprio processo.
 |---------|--------|
 | [`pulse/tui/app.py`](pulse/tui/app.py) | App Textual; abre home, cockpit, settings, onboarding, history |
 | [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable`, erro respondido pelo daemon vira `EngineRefused` (base comum `EngineError`) |
-| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows que o daemon serve |
+| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; em "Nova sessão" troca o banner pelo seletor de workflows no estilo das CLIs de agentes (breadcrumb, etapas em coluna, cadeia de etapas do item apontado) e abre o formulário da tarefa no mesmo layout; `@` na descrição lista os arquivos do projeto (`/api/workspace/files`, via [`file_mention.py`](pulse/tui/widgets/file_mention.py)) e insere o caminho escolhido como texto; com worktree, só os rastreados, pois o run parte de um commit e um arquivo novo não estaria lá |
 | [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
-| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings` |
+| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings`; o menu segue o `/config` das CLIs de agentes (breadcrumb, `❯` no item, valor em coluna, `✓` na escolha atual, espaço alterna, Esc volta à linha de origem) |
+| [`pulse/tui/menu_rows.py`](pulse/tui/menu_rows.py) | Como um item de menu se desenha: `❯`, rótulo, valor alinhado, descrição, `✓` na escolha atual, e o breadcrumb — função pura dos dados |
+| [`pulse/tui/widgets/menu_list.py`](pulse/tui/widgets/menu_list.py) | `MenuList`: a lista de itens com o `❯` que acompanha o cursor e volta ao item de origem; usada nas configurações e na nova sessão |
+| [`pulse/tui/settings_rows.py`](pulse/tui/settings_rows.py) | O que só as configurações mostram: estado dos toggles, tom do feedback e linhas do doctor |
+| [`pulse/tui/key_hints.py`](pulse/tui/key_hints.py) | A linha de atalhos no rodapé dos seletores (histórico, configurações, nova sessão) |
 | [`pulse/tui/screens/onboarding.py`](pulse/tui/screens/onboarding.py) | Assistente da primeira execução: checks, login, workspace e sonda ACP, via `/api/setup` e `/api/runtimes` |
-| [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe |
+| [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe; a lista segue o seletor de sessões das CLIs de agentes (busca que dirige a lista, `❯` no item, Esc recua um nível) |
+| [`pulse/tui/history_rows.py`](pulse/tui/history_rows.py) | Como uma run vira item da lista: título e linha de fatos (workflow, status, idade, etapas, branch) — função pura do item e do relógio |
 | [`pulse/tui/state.py`](pulse/tui/state.py) | `CockpitState` — estado visual, só memória |
 | [`pulse/tui/artifact_tab.py`](pulse/tui/artifact_tab.py) | A aba de artefatos do cockpit: lista, seleção e painel (mixin de `CockpitState`) |
 | [`pulse/tui/strings.py`](pulse/tui/strings.py) | Todo texto visível da TUI, em português, num só módulo |
@@ -495,7 +515,7 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 | [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
 | [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
 | [`pulse/api/token_guard.py`](pulse/api/token_guard.py) | Só no listener TCP: recusa (`401`) request sem o token do daemon ([ADR 0005](docs/adr/0005-tcp-exige-token-do-daemon.md)) |
-| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
+| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings/arquivos do workspace, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
 
 **Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
 mesmo caminho do cancelamento — a run grava `RUN_STOPPED`, o step volta a

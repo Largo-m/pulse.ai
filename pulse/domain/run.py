@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
+from pulse.domain.git_options import GitOptions
+from pulse.domain.task_brief import TaskBrief
 
 
 class StepStatus(StrEnum):
@@ -268,6 +270,10 @@ class RunRecord:
     branch: str = ""
     branch_owned: bool = False
     branch_base: str = ""
+    title: str = ""
+    description: str = ""
+    # None for a run stored before runs kept their own options: it follows the project.
+    git: GitOptions | None = None
     steps: list[StepRecord] = field(default_factory=list)
     _removed: set[str] = field(default_factory=set, init=False, repr=False, compare=False)
 
@@ -275,6 +281,10 @@ class RunRecord:
     def exec_root(self) -> str:
         """Where the agent worked: the worktree, or the root when there was none."""
         return self.worktree_path or self.workspace_root
+
+    @property
+    def brief(self) -> TaskBrief:
+        return TaskBrief(title=self.title, description=self.description)
 
     @property
     def own_branch(self) -> str:

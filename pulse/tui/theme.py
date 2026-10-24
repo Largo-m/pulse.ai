@@ -1,17 +1,22 @@
 from __future__ import annotations
 
-BG = "#000000"
-BG_PANEL = "#121212"
-LIME = "#A2D729"
-LIME_MUTED = "#4A5F1A"
-TEXT = "#E0E0E0"
-TEXT_MUTED = "#888888"
-ERROR = "#E85D5D"
-ERROR_SOFT = "#FF8A8A"
-ACCENT_YELLOW = "#D4AF37"
-BORDER = "#333333"
+from pulse.tui.history_theme import HISTORY_CSS
+from pulse.tui.home_theme import HOME_CSS
+from pulse.tui.palette import (
+    BG,
+    BG_PANEL,
+    BORDER,
+    ERROR,
+    ERROR_SOFT,
+    LIME,
+    LIME_MUTED,
+    TEXT,
+    TEXT_MUTED,
+)
+from pulse.tui.settings_theme import SETTINGS_CSS
 
-COCKPIT_CSS = f"""
+COCKPIT_CSS = (
+    f"""
 Screen {{
     background: {BG};
     color: {TEXT};
@@ -51,6 +56,7 @@ AppHeader .run-status {{
 }}
 
 AppHeader .pipeline-badge {{
+    width: auto;
     background: {LIME_MUTED};
     color: {LIME};
     padding: 0 1;
@@ -232,188 +238,6 @@ AppFooter .key {{
     color: {LIME};
 }}
 
-HomeScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-HomeScreen #home-content {{
-    width: auto;
-    height: auto;
-    max-width: 80%;
-    align: center middle;
-}}
-
-HomeScreen .home-brand {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HomeScreen .home-sub {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 2;
-}}
-
-HomeScreen #home-alerts {{
-    width: 60;
-    max-width: 100%;
-    height: auto;
-    background: {BG_PANEL};
-    border: solid #D4AF37;
-    padding: 0 1;
-    margin-bottom: 1;
-}}
-
-HomeScreen OptionList {{
-    width: 60;
-    max-width: 100%;
-    height: auto;
-    max-height: 16;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-    padding: 0 1;
-}}
-
-HomeScreen OptionList > .option-list--option {{
-    padding: 0 1;
-}}
-
-HomeScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-HomeScreen .home-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    margin-top: 1;
-    text-align: center;
-}}
-
-HomeScreen #workflow-prompt {{
-    width: 60;
-    max-width: 100%;
-    margin-top: 1;
-}}
-
-HistoryListScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-HistoryListScreen #history-content {{
-    width: 80%;
-    max-width: 90;
-    height: auto;
-    align: center middle;
-}}
-
-HistoryListScreen .history-title {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen .history-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen #history-search {{
-    width: 100%;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen OptionList {{
-    width: 100%;
-    height: 16;
-    max-height: 18;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-}}
-
-HistoryListScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-HistoryListScreen .history-empty {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-top: 1;
-}}
-
-SettingsScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-SettingsScreen #settings-content {{
-    width: 80%;
-    max-width: 90;
-    height: auto;
-    align: center middle;
-}}
-
-SettingsScreen .settings-title {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen .settings-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen OptionList {{
-    width: 100%;
-    height: auto;
-    max-height: 18;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList > .option-list--option {{
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-SettingsScreen .settings-report {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: left;
-    margin-top: 1;
-    height: auto;
-    max-height: 12;
-}}
-
-SettingsScreen .settings-hint-keys {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-top: 1;
-}}
-
 OnboardingScreen {{
     background: {BG};
     align: center middle;
@@ -569,6 +393,13 @@ ResumeChoiceScreen OptionList:focus {{
     border: none;
 }}
 
+ResumeChoiceScreen OptionList > .option-list--option-highlighted,
+ResumeChoiceScreen OptionList:focus > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
+}}
+
 ResumeChoiceScreen .resume-hint {{
     color: {TEXT_MUTED};
     width: 100%;
@@ -609,6 +440,13 @@ ConfirmScreen OptionList {{
 
 ConfirmScreen OptionList:focus {{
     border: none;
+}}
+
+ConfirmScreen OptionList > .option-list--option-highlighted,
+ConfirmScreen OptionList:focus > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
 }}
 
 ConfirmScreen .confirm-hint {{
@@ -657,3 +495,7 @@ BranchNameScreen .branch-hint {{
     margin-top: 1;
 }}
 """
+    + HOME_CSS
+    + HISTORY_CSS
+    + SETTINGS_CSS
+)

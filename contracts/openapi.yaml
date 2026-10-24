@@ -66,6 +66,34 @@ paths:
               properties:
                 prompt:
                   type: string
+                  description: >-
+                    The task as one text. Send either prompt or title and
+                    description, never both (422).
+                title:
+                  type: string
+                  description: >-
+                    Names the run in history and titles its pull request. With
+                    description, it becomes the run's prompt: title, a blank
+                    line, then description.
+                description:
+                  type: string
+                git:
+                  type: object
+                  nullable: true
+                  description: >-
+                    Git options for this run only; the project settings are not
+                    changed. Null or absent follows the project settings. Each
+                    option needs the one before it (commits need the worktree,
+                    a pull request needs commits); an orphan option is a 422.
+                    A resumed run keeps the options it started with.
+                  required: [use_worktree, atomic_commits, auto_pull_request]
+                  properties:
+                    use_worktree:
+                      type: boolean
+                    atomic_commits:
+                      type: boolean
+                    auto_pull_request:
+                      type: boolean
                 workspace:
                   type: string
                   nullable: true
@@ -86,6 +114,9 @@ paths:
           description: Run created
         "404":
           description: Unknown workflow id
+        "422":
+          description: >-
+            Both prompt and title/description, or git options out of order
         "409":
           description: That run is already executing
         "503":
@@ -100,7 +131,7 @@ paths:
       responses:
         "200":
           description: >-
-            Each run: id, workflow_id, workflow_label, prompt, workspace,
+            Each run: id, workflow_id, workflow_label, title, prompt, workspace,
             status, active, awaiting_prompt, awaiting_since,
             current_step_label, started_at, exit_code.
             status is awaiting_input while an active run has an open question
@@ -435,6 +466,21 @@ paths:
       responses:
         "200":
           description: valid and exists
+  /api/workspace/files:
+    get:
+      summary: Files a task can mention with @, relative to the project root, minus git-ignored ones
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: >-
+            files (tracked) and untracked (new, not ignored), both empty
+            outside a git repository. A worktree run starts from a commit, so
+            only tracked files exist where it works.
   /api/settings/atomic-commits:
     put:
       summary: Turn atomic commits on or off; requires the worktree

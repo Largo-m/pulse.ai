@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+BG = "#000000"
+BG_PANEL = "#121212"
+LIME = "#A2D729"
+LIME_MUTED = "#4A5F1A"
+TEXT = "#E0E0E0"
+TEXT_MUTED = "#888888"
+ERROR = "#E85D5D"
+ERROR_SOFT = "#FF8A8A"
+ACCENT_YELLOW = "#D4AF37"
+BORDER = "#333333"

@@ -95,7 +95,7 @@ def _item(record: RunRecord) -> HistoryItem:
         run_id=record.id,
         workflow_id=record.workflow_id,
         workflow_label=definition.label if definition else record.workflow_id,
-        title=record.user_prompt.strip() or record.workflow_id,
+        title=record.title or record.user_prompt.strip() or record.workflow_id,
         prompt=record.user_prompt,
         status=_RUN_TO_HISTORY.get(record.status, HistoryStatus.PENDING),
         updated_at=record.updated_at or record.created_at,

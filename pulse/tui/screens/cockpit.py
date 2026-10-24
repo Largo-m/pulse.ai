@@ -10,6 +10,7 @@ from textual.containers import Horizontal
 from textual.css.query import NoMatches
 from textual.screen import Screen
 
+from pulse.client.protocol import RunForm
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.history.models import HistoryItem, HistoryStatus
 from pulse.tui import engine, strings
@@ -74,6 +75,7 @@ class CockpitScreen(Screen[None]):
         resume_run_id: str | None = None,
         attach_run_id: str | None = None,
         branch: str = "",
+        form: RunForm | None = None,
     ) -> None:
         super().__init__()
         self.workflow_id = workflow_id
@@ -81,6 +83,7 @@ class CockpitScreen(Screen[None]):
         self.resume_run_id = resume_run_id
         self.attach_run_id = attach_run_id
         self.branch = branch
+        self.form = form
         self.state = CockpitState()
         # Unknown, or a daemon that cannot answer yet: the sidebar fills in as steps start.
         shape = engine.optional(lambda: engine.workflow(workflow_id))
@@ -278,6 +281,7 @@ class CockpitScreen(Screen[None]):
                     workspace=self._workspace,
                     resume_run_id=self.resume_run_id,
                     branch=self.branch,
+                    form=self.form,
                 )
         except PromptAbandoned:
             return

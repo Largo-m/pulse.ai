@@ -14,6 +14,7 @@ from pathlib import Path
 
 from pulse.domain import run as run_model
 from pulse.domain.control import RunControl
+from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.ports import (
     AgentProfile,
     JsonObject,
@@ -24,6 +25,7 @@ from pulse.domain.ports import (
     WorkspaceError,
 )
 from pulse.domain.run import RunRecord, RunStatus, StepRecord, StepStatus, utc_now
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 
 
 class InMemoryRunRepository:
@@ -46,6 +48,8 @@ class InMemoryRunRepository:
         workspace: Path,
         user_prompt: str,
         steps: Sequence[StepRecord],
+        brief: TaskBrief = EMPTY_BRIEF,
+        git: GitOptions = NO_GIT_OPTIONS,
     ) -> RunRecord:
         now = utc_now().isoformat()
         run = RunRecord(
@@ -57,6 +61,9 @@ class InMemoryRunRepository:
             current_step=steps[0].step_id if steps else "",
             created_at=now,
             updated_at=now,
+            title=brief.title,
+            description=brief.description,
+            git=git,
             steps=[
                 StepRecord(
                     step_id=step.step_id,

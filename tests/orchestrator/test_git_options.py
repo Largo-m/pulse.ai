@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pulse.domain.run import RunStatus
+from pulse.domain.git_options import GitOptions
+from pulse.domain.run import RunStatus, StepRecord
+from pulse.domain.task_brief import TaskBrief
 from pulse.orchestrator.delivery import pull_request_body
 from tests.conftest import make_workflow
 from tests.fakes import FakeAgentSession
@@ -236,3 +238,85 @@ def test_a_path_gone_after_the_step_is_left_out_of_its_commit(tmp_path: Path):
     assert harness.workspace.committed == [
         ("corrigir-o-login", ["src/app.py"], "feat: add email validation")
     ]
+
+
+def test_the_pull_request_is_titled_with_the_run_title(tmp_path: Path):
+    """The branch is a slug; the request a reviewer reads carries the title the user wrote."""
+    make_workflow(
+        "demo",
+        steps=[("implement", "Implementar")],
+        requires_approval=False,
+        commit_types={"implement": "feat"},
+    )
+    harness = EngineHarness(tmp_path)
+    harness.workspace = harness.workspace.__class__(tmp_path, repo=True)
+    session = FakeAgentSession([_delivered()])
+    session._before_turn = _editing(harness, session)
+
+    code = harness.run(
+        session,
+        workflow_id="demo",
+        user_prompt="Corrigir o login\n\nerro 500",
+        use_worktree=True,
+        atomic_commits=True,
+        auto_pull_request=True,
+        branch="fix-login",
+        brief=TaskBrief(title="Corrigir o login", description="erro 500"),
+    )
+
+    assert code == 0
+    assert [(item["branch"], item["title"]) for item in harness.workspace.requests] == [
+        ("fix-login", "Corrigir o login")
+    ]
+
+
+def test_a_run_without_a_title_names_its_pull_request_after_the_branch(tmp_path: Path):
+    make_workflow(
+        "demo",
+        steps=[("implement", "Implementar")],
+        requires_approval=False,
+        commit_types={"implement": "feat"},
+    )
+    harness = EngineHarness(tmp_path)
+    harness.workspace = harness.workspace.__class__(tmp_path, repo=True)
+    session = FakeAgentSession([_delivered()])
+    session._before_turn = _editing(harness, session)
+
+    harness.run(
+        session,
+        workflow_id="demo",
+        user_prompt="Corrigir o login",
+        use_worktree=True,
+        atomic_commits=True,
+        auto_pull_request=True,
+    )
+
+    assert [item["title"] for item in harness.workspace.requests] == ["corrigir-o-login"]
+
+
+def test_a_resumed_run_keeps_the_git_options_it_started_with(tmp_path: Path):
+    """Options chosen for one run are not overwritten by the project's on resume."""
+    make_workflow("demo", steps=[("implement", "Implementar")], requires_approval=False)
+    harness = EngineHarness(tmp_path)
+    harness.workspace = harness.workspace.__class__(tmp_path, repo=True)
+    stored = harness.runs.create(
+        run_id="run-1",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="Corrigir o login",
+        steps=[StepRecord(step_id="implement", position=1000, label="Implementar", agent_id="")],
+        git=GitOptions(),
+    )
+
+    code = harness.run(
+        FakeAgentSession([delivered_turn()]),
+        workflow_id="demo",
+        user_prompt="Corrigir o login",
+        resume_run_id=stored.id,
+        use_worktree=True,
+    )
+
+    run = harness.runs.only()
+    assert code == 0
+    assert run.worktree_path == ""
+    assert harness.workspace.worktrees == {}

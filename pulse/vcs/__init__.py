@@ -92,6 +92,25 @@ def current_branch(path: Path | str) -> str:
     return "" if name == "HEAD" else name
 
 
+def list_files(root: Path | str, *, untracked: bool = False) -> list[str]:
+    """Tracked files under `root`, relative to it; with `untracked`, new ones git does not ignore.
+
+    NUL-separated output, since git quotes names with spaces or accents otherwise.
+    """
+    candidate = Path(root)
+    if not candidate.exists():
+        return []
+    selection = ["--others", "--exclude-standard"] if untracked else ["--cached"]
+    args = ["ls-files", "-z", *selection]
+    try:
+        result = _run(args, cwd=candidate)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    return sorted({name for name in result.stdout.split("\0") if name})
+
+
 def branch_exists(repo: Path | str, branch: str) -> bool:
     if not branch:
         return False

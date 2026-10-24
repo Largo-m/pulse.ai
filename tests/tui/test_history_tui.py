@@ -338,7 +338,7 @@ def test_a_locked_database_skips_the_poll_and_keeps_the_list(tmp_path: Path, mon
                 raise sqlite3.OperationalError("database is locked")
 
             monkeypatch.setattr("pulse.history.catalog.HistoryCatalog.list_items", _locked)
-            screen._fetch()
+            screen._fetch(screen._query, screen._generation)
             await pilot.pause()
 
             assert set(screen._items) == {"run-login"}
@@ -370,7 +370,7 @@ def test_a_poll_answered_after_the_app_exited_is_dropped(tmp_path: Path, monkeyp
                 raise RuntimeError("App is not running")
 
             monkeypatch.setattr(app, "call_from_thread", _app_gone)
-            screen._fetch()
+            screen._fetch(screen._query, screen._generation)
 
             assert set(screen._items) == {"run-login"}
 

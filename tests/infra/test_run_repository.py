@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from pulse.domain.git_options import GitOptions
 from pulse.domain.ports import RunRepository
 from pulse.domain.run import RunStatus, StepRecord, StepStatus, utc_now
+from pulse.domain.task_brief import TaskBrief
 from pulse.store import runs as run_store
 from pulse.store.runs import SqliteRunRepository
 from tests.fakes import InMemoryRunRepository
@@ -178,3 +180,34 @@ def test_step_artifacts_leave_out_files_written_before_since(adapter, tmp_path: 
 
     assert repository.step_artifacts("run-1", "one", since=written) == ["reviews/round-001.md"]
     assert repository.step_artifacts("run-1", "one", since=written + timedelta(seconds=1)) == []
+
+
+def test_a_run_keeps_the_brief_and_git_options_it_started_with(adapter, tmp_path: Path):
+    """A resume reads them back, so a later change to the project settings cannot leak in."""
+    repository, _ = adapter
+    repository.create(
+        run_id="run-1",
+        workflow_id="demo",
+        workspace=tmp_path,
+        user_prompt="Corrigir login\n\nerro 500",
+        steps=_steps(),
+        brief=TaskBrief(title="Corrigir login", description="erro 500"),
+        git=GitOptions(use_worktree=True, atomic_commits=True, auto_pull_request=False),
+    )
+
+    loaded = repository.load("run-1")
+
+    assert loaded is not None
+    assert (loaded.title, loaded.description) == ("Corrigir login", "erro 500")
+    assert loaded.git == GitOptions(use_worktree=True, atomic_commits=True)
+
+
+def test_a_run_created_without_options_stores_every_option_off(adapter, tmp_path: Path):
+    repository, _ = adapter
+    _create(repository, tmp_path)
+
+    loaded = repository.load("run-1")
+
+    assert loaded is not None
+    assert loaded.git == GitOptions()
+    assert (loaded.title, loaded.description) == ("", "")

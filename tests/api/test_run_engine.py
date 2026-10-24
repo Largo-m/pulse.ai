@@ -12,17 +12,28 @@ import pytest
 
 from pulse.acp.session_runner import AcpSessionRunner
 from pulse.config.agent_profiles import ConfiguredAgentProfiles
+from pulse.config.project_config import update_project_defaults
 from pulse.daemon import runs as runs_module
 from pulse.daemon.runs import UnknownWorkflow, run_engine
 from pulse.doctor.checks import CheckResult
 from pulse.domain.control import RunControl
+from pulse.domain.git_options import GitOptions
 from pulse.domain.ports import NullPromptPort, NullStreamSink
+from pulse.domain.task_brief import EMPTY_BRIEF, TaskBrief
 from pulse.store.runs import SqliteRunRepository
 from pulse.vcs.workspace import GitWorkspace
 from tests.conftest import make_workflow
 
 
-def _start(tmp_path: Path, *, stream=None, control=None, workflow_id: str = "demo") -> int:
+def _start(
+    tmp_path: Path,
+    *,
+    stream=None,
+    control=None,
+    workflow_id: str = "demo",
+    git: GitOptions | None = None,
+    brief: TaskBrief = EMPTY_BRIEF,
+) -> int:
     return run_engine(
         workflow_id=workflow_id,
         user_prompt="x",
@@ -32,6 +43,8 @@ def _start(tmp_path: Path, *, stream=None, control=None, workflow_id: str = "dem
         resume_run_id=None,
         control=control or RunControl(),
         run_id="run-1",
+        git=git,
+        brief=brief,
     )
 
 
@@ -84,7 +97,34 @@ def test_the_engine_gets_the_production_adapters(monkeypatch, tmp_path: Path):
     assert ports.workspace.root == tmp_path.resolve()
     assert seen["definition"].id == "demo"
     assert seen["control"] is control
-    assert (seen["run_id"], seen["use_worktree"]) == ("run-1", False)
+    assert (seen["run_id"], seen["git"]) == ("run-1", GitOptions())
+
+
+@pytest.mark.usefixtures("ready")
+def test_without_options_of_its_own_a_run_follows_the_project(monkeypatch, tmp_path: Path):
+    make_workflow("demo", steps=[("one", "Um")])
+    update_project_defaults(tmp_path, use_worktree=True, atomic_commits=True)
+    seen: dict = {}
+    monkeypatch.setattr(runs_module, "run_workflow", lambda **kwargs: seen.update(kwargs) or 0)
+
+    _start(tmp_path)
+
+    assert seen["git"] == GitOptions(use_worktree=True, atomic_commits=True)
+
+
+@pytest.mark.usefixtures("ready")
+def test_options_chosen_for_the_run_override_the_project(monkeypatch, tmp_path: Path):
+    """The run form turns commits off for one run without touching the project."""
+    make_workflow("demo", steps=[("one", "Um")])
+    update_project_defaults(tmp_path, use_worktree=True, atomic_commits=True)
+    seen: dict = {}
+    monkeypatch.setattr(runs_module, "run_workflow", lambda **kwargs: seen.update(kwargs) or 0)
+    brief = TaskBrief(title="Corrigir login", description="erro 500")
+
+    _start(tmp_path, git=GitOptions(use_worktree=True), brief=brief)
+
+    assert seen["git"] == GitOptions(use_worktree=True)
+    assert seen["brief"] == brief
 
 
 @pytest.mark.usefixtures("ready")
