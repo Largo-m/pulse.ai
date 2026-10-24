@@ -188,6 +188,47 @@ def test_a_query_with_no_match_hides_the_list_and_keeps_enter_sending() -> None:
     _drive(test)
 
 
+def test_a_path_with_brackets_is_listed_verbatim_not_read_as_markup() -> None:
+    """`app/[slug]/page.tsx` is a common route file; `[/x]` would be a broken closing tag."""
+    files = ["app/[slug]/page.tsx", "lib/[/x].ts"]
+    lines: list[str] = []
+
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "@")
+        picker = app.query_one(FileMentionList)
+        lines.extend(picker.render_line(row).text.strip() for row in range(len(files)))
+
+    _drive(test, files)
+    assert lines == files
+
+
+def test_moving_the_cursor_back_into_a_finished_mention_keeps_enter_sending() -> None:
+    """Only typing opens the list: arrowing over a path already picked must not hijack Enter."""
+
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "@readme")
+        await pilot.press("tab", "left")
+        await pilot.pause()
+        assert _shown(app) == []
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.sent == ["@README.md "]
+
+    _drive(test)
+
+
+def test_moving_the_cursor_out_of_an_open_mention_closes_the_list() -> None:
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "veja @app")
+        await pilot.press("home")
+        await pilot.pause()
+
+        assert _shown(app) == []
+
+    _drive(test)
+
+
 def test_picking_a_path_with_a_space_inserts_it_quoted() -> None:
     async def test(app: _Harness, pilot: Pilot[None]) -> None:
         await _type(pilot, "@notas")

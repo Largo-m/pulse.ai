@@ -79,15 +79,21 @@ class TaskComposer(TextArea):
         else:
             picker.close()
 
-    @on(TextArea.SelectionChanged)
     @on(TextArea.Changed)
-    def _follow_mention(self) -> None:
+    def _follow_typing(self) -> None:
+        self._follow_mention(opening=True)
+
+    @on(TextArea.SelectionChanged)
+    def _follow_cursor(self) -> None:
+        self._follow_mention(opening=False)
+
+    def _follow_mention(self, *, opening: bool) -> None:
         if self._mentions is None:
             return
         query = self._open_mention()
         if query is None:
             self._mentions.close()
-        else:
+        elif opening or self._mentions.display:
             self._mentions.show_for(query)
 
     def _open_mention(self) -> str | None:

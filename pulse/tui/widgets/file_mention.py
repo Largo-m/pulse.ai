@@ -66,6 +66,7 @@ class FileMentionList(OptionList):
     can_focus = False
 
     def __init__(self, **kwargs: Unpack[WidgetOptions]) -> None:
+        kwargs["markup"] = False
         super().__init__(**kwargs)
         self._files: list[str] = []
         self.display = False
