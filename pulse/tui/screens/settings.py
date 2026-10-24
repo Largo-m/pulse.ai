@@ -430,7 +430,9 @@ class SettingsScreen(Screen[None]):
             lines.append(
                 check_line(
                     "ok",
-                    strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(source=project.get("source_file")),
+                    strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(
+                        source=project.get("source_file")
+                    ),
                 )
             )
 
