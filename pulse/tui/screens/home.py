@@ -371,9 +371,9 @@ class HomeScreen(Screen[None]):
         with contextlib.suppress(RuntimeError):
             self.app.call_from_thread(self._offer_files, files)
 
-    def _offer_files(self, files: list[str]) -> None:
+    def _offer_files(self, files: engine.WorkspaceFiles) -> None:
         if self.is_mounted and self._pending_workflow is not None:
-            self.query_one("#task-form", TaskForm).offer_files(files)
+            self.query_one("#task-form", TaskForm).offer_files(files.tracked, files.untracked)
 
     def _close_form(self) -> None:
         self._pending_workflow = None

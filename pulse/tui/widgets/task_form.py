@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -68,6 +69,9 @@ class TaskForm(Vertical):
     def __init__(self, **kwargs: Unpack[WidgetOptions]) -> None:
         super().__init__(**kwargs)
         self._git: GitOptions | None = None
+        self._project_git: GitOptions | None = None
+        self._tracked: tuple[str, ...] = ()
+        self._untracked: tuple[str, ...] = ()
         self._slug_follows_title = True
         self._detailed = False
 
@@ -104,9 +108,20 @@ class TaskForm(Vertical):
         if event.option.id is not None:
             self.query_one("#task-description", TaskComposer).insert_mention(event.option.id)
 
-    def offer_files(self, files: list[str]) -> None:
+    def offer_files(self, tracked: Sequence[str], untracked: Sequence[str] = ()) -> None:
         """The workspace files `@` lists; they arrive after the form opens."""
-        self.query_one("#task-description", TaskComposer).offer_files(files)
+        self._tracked = tuple(tracked)
+        self._untracked = tuple(untracked)
+        self.query_one("#task-description", TaskComposer).offer_files(self._mentionable())
+
+    def _mentionable(self) -> list[str]:
+        git = self._git if self._detailed else self._project_git
+        if git is not None and git.use_worktree:
+            return list(self._tracked)
+        return sorted({*self._tracked, *self._untracked})
+
+    def _refresh_mentionable(self) -> None:
+        self.query_one("#task-mentions", FileMentionList).set_files(self._mentionable())
 
     def open(self, *, heading: str | Text, summary: str, git: GitOptions | None) -> None:
         """Start a blank draft; `git` is None outside a repository."""
@@ -114,11 +129,12 @@ class TaskForm(Vertical):
         self.query_one("#task-summary", Static).update(summary)
         self._slug_follows_title = True
         self._git = git
+        self._project_git = git
         for selector in ("#task-title", "#task-slug"):
             with self.query_one(selector, Input).prevent(Input.Changed):
                 self.query_one(selector, Input).value = ""
         self.query_one("#task-description", TaskComposer).clear()
-        self.offer_files([])
+        self.offer_files(())
         self.set_class(git is None, "-no-repo")
         self._show_git()
         self.show_error("")
@@ -138,6 +154,7 @@ class TaskForm(Vertical):
     def _show_mode(self) -> None:
         detailed = self._detailed
         self.set_class(detailed, "-detailed")
+        self._refresh_mentionable()
         self.query_one("#task-description", TaskComposer).placeholder = (
             strings.TASK_DESCRIPTION_PLACEHOLDER if detailed else strings.TASK_PLAIN_PLACEHOLDER
         )
@@ -179,6 +196,7 @@ class TaskForm(Vertical):
             return
         self._git = self._git.toggled(_option_of(event.checkbox.id))
         self._show_git()
+        self._refresh_mentionable()
 
     @on(TaskComposer.Submitted, "#task-description")
     def _submit(self, event: TaskComposer.Submitted) -> None:

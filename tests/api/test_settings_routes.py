@@ -256,7 +256,7 @@ def test_workspace_files_lists_what_git_sees_in_the_project(
 
     files = client.get("/api/workspace/files", params={"workspace": str(repo)}).json()
 
-    assert files == {"files": ["README.md", "notes.md"]}
+    assert files == {"files": ["README.md"], "untracked": ["notes.md"]}
 
 
 def test_workspace_files_outside_a_repository_is_an_empty_list(
@@ -264,4 +264,4 @@ def test_workspace_files_outside_a_repository_is_an_empty_list(
 ) -> None:
     files = client.get("/api/workspace/files", params={"workspace": str(tmp_path)}).json()
 
-    assert files == {"files": []}
+    assert files == {"files": [], "untracked": []}

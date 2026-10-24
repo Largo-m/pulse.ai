@@ -477,7 +477,10 @@ paths:
             type: string
       responses:
         "200":
-          description: files (empty outside a git repository)
+          description: >-
+            files (tracked) and untracked (new, not ignored), both empty
+            outside a git repository. A worktree run starts from a commit, so
+            only tracked files exist where it works.
   /api/settings/atomic-commits:
     put:
       summary: Turn atomic commits on or off; requires the worktree

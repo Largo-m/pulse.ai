@@ -13,6 +13,7 @@ from textual.widgets import Checkbox, Input, OptionList, Static
 import pulse.tui.screens.home as home_module
 from pulse.client.protocol import RunForm
 from pulse.tui import strings
+from pulse.tui.engine import WorkspaceFiles
 from pulse.tui.screens.home import HomeScreen
 from pulse.tui.theme import COCKPIT_CSS
 from pulse.tui.widgets.file_mention import FileMentionList
@@ -462,9 +463,9 @@ def test_at_in_the_description_offers_the_workspace_files(monkeypatch, free_bran
     _project(monkeypatch)
     asked: list[Path] = []
 
-    def _files(workspace: Path) -> list[str]:
+    def _files(workspace: Path) -> WorkspaceFiles:
         asked.append(workspace)
-        return ["README.md", "pulse/tui/app.py"]
+        return WorkspaceFiles(tracked=("README.md", "pulse/tui/app.py"))
 
     monkeypatch.setattr(home_module.engine, "workspace_files", _files)
 
@@ -484,7 +485,7 @@ def test_at_in_the_description_offers_the_workspace_files(monkeypatch, free_bran
 def test_without_the_daemon_files_the_at_sign_is_just_text(monkeypatch, free_branch):
     _project(monkeypatch, worktree=False, commits=False)
 
-    def _refused(_workspace: Path) -> list[str]:
+    def _refused(_workspace: Path) -> WorkspaceFiles:
         raise home_module.engine.EngineUnavailable("down")
 
     monkeypatch.setattr(home_module.engine, "workspace_files", _refused)
@@ -506,9 +507,9 @@ def test_clicking_a_listed_file_types_its_path_and_keeps_the_typing_focus(monkey
     _project(monkeypatch)
     asked: list[Path] = []
 
-    def _files(workspace: Path) -> list[str]:
+    def _files(workspace: Path) -> WorkspaceFiles:
         asked.append(workspace)
-        return ["README.md", "pulse/tui/app.py"]
+        return WorkspaceFiles(tracked=("README.md", "pulse/tui/app.py"))
 
     monkeypatch.setattr(home_module.engine, "workspace_files", _files)
 
@@ -526,3 +527,72 @@ def test_clicking_a_listed_file_types_its_path_and_keeps_the_typing_focus(monkey
         assert app.opened == []
 
     _run(test, detailed=False)
+
+
+NEW_FILE_FILES = WorkspaceFiles(tracked=("README.md",), untracked=("notas.md",))
+
+
+def _offered(screen: HomeScreen) -> list[str]:
+    listed = screen.query_one(FileMentionList)
+    return [str(listed.get_option_at_index(index).id) for index in range(listed.option_count)]
+
+
+def _serve_files(monkeypatch) -> list[Path]:
+    asked: list[Path] = []
+
+    def _files(workspace: Path) -> WorkspaceFiles:
+        asked.append(workspace)
+        return NEW_FILE_FILES
+
+    monkeypatch.setattr(home_module.engine, "workspace_files", _files)
+    return asked
+
+
+@pytest.mark.parametrize(
+    ("worktree", "expected"),
+    [
+        pytest.param(True, ["README.md"], id="worktree"),
+        pytest.param(False, ["README.md", "notas.md"], id="in-place"),
+    ],
+)
+def test_new_files_are_offered_only_where_the_agent_will_find_them(
+    monkeypatch, free_branch, worktree, expected
+):
+    """A worktree run starts from a commit: a file git does not track yet is not there."""
+    _project(monkeypatch, worktree=worktree, commits=worktree)
+    asked = _serve_files(monkeypatch)
+
+    async def test(_app, pilot, screen) -> None:
+        await wait_until(pilot, lambda: asked == [Path.cwd()])
+        await pilot.press("at")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+
+        assert _offered(screen) == expected
+
+    _run(test, detailed=False)
+
+
+def test_turning_the_worktree_off_in_the_form_offers_new_files(monkeypatch, free_branch):
+    """The run's own options decide, not the project's they started from."""
+    _project(monkeypatch)
+    asked = _serve_files(monkeypatch)
+
+    async def test(_app, pilot, screen) -> None:
+        await wait_until(pilot, lambda: asked == [Path.cwd()])
+        description = screen.query_one("#task-description", TaskComposer)
+        description.focus()
+        await pilot.press("at")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+        assert _offered(screen) == ["README.md"]
+        await pilot.press("backspace")
+
+        screen.query_one("#git-use-worktree", Checkbox).toggle()
+        await pilot.pause()
+        description.focus()
+        await pilot.press("at")
+        await wait_until(pilot, lambda: screen.query_one(FileMentionList).display)
+
+        assert _checked(screen) == (False, False, False)
+        assert _offered(screen) == ["README.md", "notas.md"]
+
+    _run(test, detailed=True)
