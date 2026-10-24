@@ -13,6 +13,7 @@ from textual.screen import Screen
 from textual.widgets import OptionList, Static
 from textual.worker import Worker, get_current_worker
 
+from pulse.domain.git_options import GitOptions
 from pulse.tui import engine, strings
 from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
 from pulse.tui.key_hints import key_line
@@ -38,8 +39,13 @@ _FIELD_TITLES = {
 
 
 def _git_rows(settings: ProjectSettings) -> list[MenuRow]:
-    commits_available = settings.use_worktree
-    pull_request_available = settings.use_worktree and settings.atomic_commits
+    chain = GitOptions.chained(
+        use_worktree=settings.use_worktree,
+        atomic_commits=settings.atomic_commits,
+        auto_pull_request=settings.auto_pull_request,
+    )
+    commits_available = chain.use_worktree
+    pull_request_available = chain.atomic_commits
     return [
         _toggle_row(
             "worktree",
