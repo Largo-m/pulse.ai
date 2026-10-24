@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
 
+# Read-only token, and checkout drops it from .git/config: no job pushes.
 permissions:
   contents: read
 
@@ -15,40 +16,52 @@ concurrency:
 env:
   SECURITY_TOOLS: .claude/skills/security-audit/tools
   FORCE_COLOR: "1"
+  # Every job runs on the newest release except the random-order suite, which
+  # runs on the `requires-python` floor: ruff and mypy check its syntax and stdlib
+  # names, not its runtime behavior or the uv.lock branch resolved below 3.13.
+  PYTHON_VERSION: "3.14"
+  PYTHON_FLOOR: "3.11"
+  GITLEAKS_VERSION: "8.30.1"
+  # Release assets are mutable: the digest lives here, not in a downloaded file.
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  SEMGREP_VERSION: "1.182.1"
 
 jobs:
   test:
-    name: pytest (Python ${{ matrix.python }})
+    name: pytest
     runs-on: ubuntu-latest
     # A hung test fails the job instead of holding a runner for hours.
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-      - run: pip install -e ".[dev]"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: true
+          enable-cache: true
+      # --locked fails when uv.lock no longer matches pyproject.toml.
+      - run: uv sync --locked
       # Branch coverage; the total floor lives in [tool.coverage.report] fail_under.
       - run: pytest --cov --cov-report=term
       # The domain holds the rules every run depends on: it gets a higher floor.
       - run: coverage report --include="pulse/domain/*" --fail-under=90
 
   random-order:
-    name: pytest in random order (3 runs)
+    name: pytest in random order (3 runs, Python floor)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.11"
-          cache: pip
-      - run: pip install -e ".[dev]"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_FLOOR }}
+          activate-environment: true
+          enable-cache: true
+      - run: uv sync --locked
       # pytest-randomly shuffles the order with a new seed per run and prints it
       # in the header; rerun a failure with `pytest -p randomly --randomly-seed=<seed>`.
       - run: for attempt in 1 2 3; do pytest -p no:cacheprovider || exit 1; done
@@ -58,49 +71,78 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.11"
-          cache: pip
-      - run: pip install -e ".[dev]"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: true
+          enable-cache: true
+      - run: uv sync --locked
       # What gets mutated, and which tests run, is [tool.mutmut] in pyproject.toml.
       - run: mutmut run
       - run: mutmut export-cicd-stats
       - run: python scripts/mutation_gate.py --min 80
 
   lint:
-    name: lint and types
+    name: lint, types and dependencies
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.11"
-          cache: pip
-      - run: pip install -e ".[dev]"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: true
+          enable-cache: true
+      - run: uv sync --locked
       - name: ruff check
         run: ruff check --output-format github .
       - name: ruff format --check
         run: ruff format --check .
       - name: mypy
         run: mypy
+      # Import contracts (lint-imports), OpenAPI contract, file size and the rest.
       - name: architecture invariants (AGENTS.md §2)
         run: pytest -q tests/architecture
       # Complexity (C901, max 10) is selected in ruff, so `ruff check` above blocks on it.
       - name: dead code
         run: vulture
+      - name: unused, missing and transitive dependencies
+        run: deptry .
 
   security:
     name: security scans
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.11"
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: true
+          enable-cache: true
+      - run: uv sync --locked
+      # The gates below are only as good as these scanners: their own tests pin
+      # what each must flag and what it must let through.
+      - name: scanner self-tests
+        run: pytest -q -p no:cacheprovider "$SECURITY_TOOLS"
+      - name: bandit
+        run: bandit -c pyproject.toml -r pulse
+      - name: semgrep
+        run: >-
+          uvx "semgrep==$SEMGREP_VERSION" scan --error --metrics=off
+          --config p/python --config p/security-audit pulse/
+      # Audits every locked package, transitive and dev ones included.
+      - name: pip-audit
+        run: |
+          uv export --locked --all-groups --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
+          pip-audit --strict --disable-pip -r "$RUNNER_TEMP/requirements.txt"
       - name: sast-lite
         run: python "$SECURITY_TOOLS/sast-lite/analyzer.py" pulse/
       - name: secret-scanner
@@ -108,3 +150,61 @@ jobs:
       # Lower bounds instead of pins are deliberate for a package (AGENTS.md §6.1).
       - name: dependency-check
         run: python "$SECURITY_TOOLS/dependency-check/checker.py" . --online --no-unpinned
+
+  secrets:
+    name: gitleaks (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # A secret removed in a later commit is still leaked: scan every commit.
+          fetch-depth: 0
+      # The binary instead of gitleaks-action, which needs a paid license on
+      # organization repos; GITLEAKS_SHA256 pins what runs.
+      - name: install gitleaks
+        run: |
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v$GITLEAKS_VERSION"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          echo "$GITLEAKS_SHA256  $tarball" | sha256sum --check
+          tar -xzf "$tarball" gitleaks
+      # Allowlist and rules: .gitleaks.toml.
+      - name: gitleaks
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 .'
+
+  build:
+    name: build wheel and SBOM
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+      - name: build sdist and wheel
+        run: uv build --out-dir dist
+      # Installs the wheel alone, outside the checkout: a missing module or
+      # package-data file (the factory seed) breaks here, not on a user's machine.
+      - name: smoke test the wheel
+        working-directory: ${{ runner.temp }}
+        env:
+          PULSE_DB: ${{ runner.temp }}/smoke/pulse.db
+        run: |
+          wheel=$(ls "$GITHUB_WORKSPACE"/dist/*.whl)
+          uv run --isolated --no-project --with "$wheel" pulse --help
+          uv run --isolated --no-project --with "$wheel" python -c \
+            "from pulse.store.db import connect; connect().close()"
+      # Runtime dependencies only: what a user installs with the wheel.
+      - name: SBOM (CycloneDX)
+        run: uv export --locked --no-dev --format cyclonedx1.5 -o dist/pulse.cdx.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error

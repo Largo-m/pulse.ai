@@ -1,0 +1,8 @@
+# Gitleaks (CI and pre-commit): the default rules, minus the fake keys that the
+# security-audit scanners' own tests feed them on purpose.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixtures of the security-audit scanner tests"
+paths = ['''^\.(claude|cursor|agents)/skills/security-audit/tools/[^/]+/tests/''']

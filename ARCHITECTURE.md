@@ -816,7 +816,7 @@ pastas de `pulse/`, então um pacote novo já nasce coberto.
 ## 9. Comandos úteis
 
 ```bash
-pip install -e ".[dev]"
+uv sync                # .venv com o pacote e o grupo dev, travados em uv.lock
 
 pulse                  # TUI
 pulse init             # onboarding (tela Textual)
