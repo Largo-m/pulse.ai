@@ -49,14 +49,26 @@ def test_a_plain_path_becomes_a_bare_token_closed_by_a_space() -> None:
     ("path", "token"),
     [
         ("notas de reunião.md", '@"notas de reunião.md" '),
-        ("docs/a\tb.md", '@"docs/a\tb.md" '),
+        ("docs/a\tb.md", '@"docs/a\\tb.md" '),
+        ('my "notes".md', '@"my \\"notes\\".md" '),
+        ('a "b".txt', '@"a \\"b\\".txt" '),
+        ("a\nb.md", '@"a\\nb.md" '),
+        ('"start.md', '@"\\"start.md" '),
     ],
 )
-def test_a_path_with_whitespace_is_quoted_so_the_mention_stays_one_token(
+def test_a_path_with_whitespace_or_quotes_is_quoted_so_the_mention_stays_one_token(
     path: str, token: str
 ) -> None:
-    """Unquoted, the agent would read `@notas` and two loose words."""
+    """Unquoted, the agent would read `@notas` and two loose words.
+
+    Quotes and line breaks inside the name are escaped: a bare `"` would close
+    the token early and a raw line break would split it across two lines.
+    """
     assert mention_text(path) == token
+
+
+def test_a_path_with_only_unusual_characters_but_no_space_stays_bare() -> None:
+    assert mention_text("lib/a'b\\c.py") == "@lib/a'b\\c.py "
 
 
 def test_an_empty_query_offers_the_first_files_in_order() -> None:
@@ -227,6 +239,55 @@ def test_moving_the_cursor_out_of_an_open_mention_closes_the_list() -> None:
         assert _shown(app) == []
 
     _drive(test)
+
+
+def test_picking_from_the_middle_of_a_mention_replaces_the_whole_token() -> None:
+    """What sits after the cursor belongs to the same mention; leaving it would glue two paths."""
+
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "veja @readme")
+        await pilot.press("left", "left")
+        await pilot.pause()
+        assert _shown(app)
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert app.query_one(TaskComposer).text == "veja @README.md "
+        assert app.sent == []
+
+    _drive(test)
+
+
+def test_files_that_arrive_after_the_at_open_the_list_for_the_mention_being_typed() -> None:
+    """The form asks the daemon for files after it opens; a fast `@` must still get them."""
+
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "@readme")
+        assert _shown(app) == []
+
+        app.query_one(TaskComposer).offer_files(FILES)
+        await pilot.pause()
+        assert _shown(app) == ["README.md", "docs/readme-pt.md"]
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert app.query_one(TaskComposer).text == "@README.md "
+        assert app.sent == []
+
+    _drive(test, [])
+
+
+def test_files_that_arrive_while_no_mention_is_typed_keep_the_list_closed() -> None:
+    async def test(app: _Harness, pilot: Pilot[None]) -> None:
+        await _type(pilot, "veja")
+
+        app.query_one(TaskComposer).offer_files(FILES)
+        await pilot.pause()
+
+        assert _shown(app) == []
+
+    _drive(test, [])
 
 
 def test_picking_a_path_with_a_space_inserts_it_quoted() -> None:

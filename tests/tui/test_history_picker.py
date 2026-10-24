@@ -8,22 +8,27 @@ the screen always says what to do next.
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 
+import pytest
 from textual.app import App
 from textual.widgets import Input, OptionList, Static
 
 from pulse.domain.run import StepRecord, StepStatus
 from pulse.history.catalog import HistoryCatalog
+from pulse.history.models import HistoryItem
 from pulse.store import runs as run_store
-from pulse.tui import strings
+from pulse.tui import engine, strings
 from pulse.tui.history_rows import POINTER
 from pulse.tui.hydrate import hydrate_history_item
+from pulse.tui.key_hints import key_line
 from pulse.tui.screens.history import HistoryListScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
 from pulse.tui.theme import COCKPIT_CSS
 from tests.conftest import make_workflow, store_run_status, store_step
+from tests.tui.conftest import WAIT_SECONDS, wait_until
 
 
 def _finished_run(workspace: Path, run_id: str, prompt: str) -> None:
@@ -166,6 +171,82 @@ def test_an_empty_history_says_how_to_start(tmp_path: Path) -> None:
         )
         assert screen.query_one("#history-options").display is False
         assert strings.HISTORY_COUNT_MANY.format(count=0) in _text(screen, "#history-header")
+        assert _text(screen, "#history-keys") == key_line(strings.HISTORY_KEYS_EMPTY).plain
+
+    _drive(tmp_path, scenario)
+
+
+def test_removing_the_last_run_drops_the_keys_that_need_a_run(tmp_path: Path) -> None:
+    """`d remover` and `enter abrir` are offered only while there is a run to act on."""
+    _finished_run(tmp_path, "run-a", "Ajustar login")
+
+    async def scenario(app: App[None], pilot) -> None:
+        screen = app.screen
+        assert isinstance(screen, HistoryListScreen)
+        assert "d remover" in _text(screen, "#history-keys")
+
+        assert engine.delete_history_item(tmp_path, "run-a")
+        screen.on_screen_resume()
+        await pilot.pause()
+
+        keys = _text(screen, "#history-keys")
+        assert "d remover" not in keys
+        assert "enter abrir" not in keys
+
+    _drive(tmp_path, scenario)
+
+
+def test_a_search_without_matches_offers_only_the_way_out(tmp_path: Path) -> None:
+    _finished_run(tmp_path, "run-a", "Ajustar login")
+
+    async def scenario(app: App[None], pilot) -> None:
+        screen = app.screen
+        assert isinstance(screen, HistoryListScreen)
+        await pilot.press("slash", *"xyz")
+        await pilot.pause()
+
+        expected = key_line(strings.HISTORY_KEYS_SEARCH_EMPTY).plain
+        assert _text(screen, "#history-keys") == expected
+
+    _drive(tmp_path, scenario)
+
+
+def test_a_poll_that_started_before_a_refresh_never_brings_the_old_list_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run removed while a poll was in flight must stay removed when that poll lands."""
+    _finished_run(tmp_path, "run-a", "Ajustar login")
+    _finished_run(tmp_path, "run-b", "Ajustar logout")
+    real_history = engine.history
+    stale = real_history(tmp_path)
+    polling = threading.Event()
+    release = threading.Event()
+
+    def held_poll(workspace: Path, query: str = "") -> list[HistoryItem]:
+        if threading.current_thread() is threading.main_thread():
+            return real_history(workspace, query)
+        polling.set()
+        release.wait(WAIT_SECONDS)
+        return stale
+
+    monkeypatch.setattr(engine, "history", held_poll)
+
+    async def scenario(app: App[None], pilot) -> None:
+        screen = app.screen
+        assert isinstance(screen, HistoryListScreen)
+        screen._poll()
+        await wait_until(pilot, polling.is_set)
+
+        assert engine.delete_history_item(tmp_path, "run-a")
+        screen.on_screen_resume()
+        await pilot.pause()
+        assert set(screen._items) == {"run-b"}
+
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        assert set(screen._items) == {"run-b"}
 
     _drive(tmp_path, scenario)
 

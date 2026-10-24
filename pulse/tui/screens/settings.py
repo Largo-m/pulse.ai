@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import OptionList, Static
+from textual.worker import Worker, get_current_worker
 
 from pulse.tui import engine, strings
 from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
@@ -27,6 +29,7 @@ from pulse.tui.widgets.menu_list import MenuList
 
 # The field row each picker edits, so leaving a picker lands back on its row.
 _PICKER_FIELD = {"pick_agent": "agent", "pick_model": "model", "pick_permission": "permission"}
+_Place = tuple[str, str, str | None]
 _FIELD_TITLES = {
     "agent": strings.SETTINGS_FIELD_RUNTIME,
     "model": strings.SETTINGS_FIELD_MODEL,
@@ -252,7 +255,7 @@ class SettingsScreen(Screen[None]):
         """
         open_fields: dict[str, Callable[[str], object]] = {
             "agent": lambda _: self._show_agents(),
-            "model": lambda _: self._load_models(),
+            "model": lambda _: self._open_models(),
             "permission": lambda _: self._show_permissions(),
         }
         return {
@@ -274,14 +277,18 @@ class SettingsScreen(Screen[None]):
         self._workflow_id = agent_id
         self._show_workflow_fields()
 
-    @work(thread=True)
-    def _load_models(self) -> None:
-        self.app.call_from_thread(self._set_status, strings.SETTINGS_LOADING_MODELS)
-        runtime = self._current_fields().runtime
+    def _open_models(self) -> None:
+        self._set_status(strings.SETTINGS_LOADING_MODELS)
+        self._load_models(self._current_fields().runtime, self._place())
+
+    @work(thread=True, exclusive=True, group="models")
+    def _load_models(self, runtime: str, place: _Place) -> None:
+        worker = get_current_worker()
         try:
             models = engine.models(self._cwd, runtime)
         except EngineError as error:
-            self.app.call_from_thread(self._set_report, error.describe(), Tone.ERROR)
+            message = error.describe()
+            self._apply_if_current(worker, place, lambda: self._set_report(message, Tone.ERROR))
             return
 
         def apply() -> None:
@@ -292,7 +299,21 @@ class SettingsScreen(Screen[None]):
                 [MenuRow(f"model:{item}", item, current=item == current) for item in models]
             )
 
-        self.app.call_from_thread(apply)
+        self._apply_if_current(worker, place, apply)
+
+    def _place(self) -> _Place:
+        return (self._mode, self._target, self._workflow_id)
+
+    def _apply_if_current(
+        self, worker: Worker[None], place: _Place, apply: Callable[[], None]
+    ) -> None:
+        def guarded() -> None:
+            if worker.is_cancelled or not self.is_mounted or self._place() != place:
+                return
+            apply()
+
+        with contextlib.suppress(RuntimeError):
+            self.app.call_from_thread(guarded)
 
     def _show_permissions(self) -> None:
         self._mode = "pick_permission"
@@ -406,15 +427,17 @@ class SettingsScreen(Screen[None]):
         self._show_view((strings.ENVIRONMENT,), strings.SETTINGS_LOADING_DOCTOR)
         self._set_report("")
         self._set_rows([MenuRow("back", strings.BACK_ARROW)])
-        self._load_doctor()
+        self._load_doctor(self._place())
 
-    @work(thread=True)
-    def _load_doctor(self) -> None:
+    @work(thread=True, exclusive=True, group="doctor")
+    def _load_doctor(self, place: _Place) -> None:
+        worker = get_current_worker()
         try:
             checks = engine.doctor_checks()
             config = engine.config(self._cwd)
         except EngineError as error:
-            self.app.call_from_thread(self._set_report, error.describe(), Tone.ERROR)
+            message = error.describe()
+            self._apply_if_current(worker, place, lambda: self._set_report(message, Tone.ERROR))
             return
 
         lines = [check_line(check.status, check.message) for check in checks]
@@ -439,12 +462,10 @@ class SettingsScreen(Screen[None]):
         report: str | Text = Text("\n").join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS
 
         def apply() -> None:
-            if not self.is_mounted or self._mode != "doctor":
-                return
             self._set_status(strings.SETTINGS_DOCTOR_HINT)
             self._set_report(report)
 
-        self.app.call_from_thread(apply)
+        self._apply_if_current(worker, place, apply)
 
 
 def _field_rows(prefix: str, fields: Fields) -> list[MenuRow]:

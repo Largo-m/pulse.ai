@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from rich.text import Text
@@ -50,6 +51,7 @@ class HistoryListScreen(Screen[None]):
         self._items: dict[str, HistoryItem] = {}
         self._now = utc_now()
         self._pointed: str | None = None
+        self._generation = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="history-content"):
@@ -69,10 +71,10 @@ class HistoryListScreen(Screen[None]):
 
     def _poll(self) -> None:
         """Reload history off the screen loop so a busy database never blocks the UI."""
-        self.run_worker(self._fetch, exclusive=True, thread=True)
+        fetch = partial(self._fetch, self._query, self._generation)
+        self.run_worker(fetch, exclusive=True, thread=True)
 
-    def _fetch(self) -> None:
-        query = self._query
+    def _fetch(self, query: str, generation: int) -> None:
         try:
             items = engine.history(self._workspace, query)
         except engine.EngineError:
@@ -80,9 +82,14 @@ class HistoryListScreen(Screen[None]):
             return
         # The app already exited while the poll was in flight.
         with contextlib.suppress(RuntimeError):
-            self.app.call_from_thread(self._apply, items, query)
+            self.app.call_from_thread(self._apply_poll, items, query, generation)
+
+    def _apply_poll(self, items: list[HistoryItem], query: str, generation: int) -> None:
+        if generation == self._generation:
+            self._apply(items, query)
 
     def _refresh(self) -> None:
+        self._generation += 1
         try:
             items = engine.history(self._workspace, self._query)
         except engine.EngineError as error:
@@ -112,6 +119,7 @@ class HistoryListScreen(Screen[None]):
         self._pointed = None
         options.display = bool(items)
         self._show_empty(not items)
+        self._show_keys()
         if not items:
             return
         ids = [item.item_id for item in items]
@@ -154,7 +162,13 @@ class HistoryListScreen(Screen[None]):
 
     def _show_keys(self) -> None:
         searching = isinstance(self.focused, Input)
-        keys = strings.HISTORY_KEYS_SEARCH if searching else strings.HISTORY_KEYS_LIST
+        keys: tuple[tuple[str, str], ...]
+        if not self._items:
+            keys = strings.HISTORY_KEYS_SEARCH_EMPTY if searching else strings.HISTORY_KEYS_EMPTY
+        elif searching:
+            keys = strings.HISTORY_KEYS_SEARCH
+        else:
+            keys = strings.HISTORY_KEYS_LIST
         self.query_one("#history-keys", Static).update(key_line(keys))
 
     def on_descendant_focus(self) -> None:

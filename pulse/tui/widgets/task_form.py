@@ -106,7 +106,7 @@ class TaskForm(Vertical):
 
     def offer_files(self, files: list[str]) -> None:
         """The workspace files `@` lists; they arrive after the form opens."""
-        self.query_one("#task-mentions", FileMentionList).set_files(files)
+        self.query_one("#task-description", TaskComposer).offer_files(files)
 
     def open(self, *, heading: str | Text, summary: str, git: GitOptions | None) -> None:
         """Start a blank draft; `git` is None outside a repository."""

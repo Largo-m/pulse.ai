@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ from pulse.config.project_config import init_project_config, load_project_config
 from pulse.store.agent_settings import upsert_agent_settings
 from pulse.tui.screens.settings import SettingsScreen
 from pulse.tui.theme import COCKPIT_CSS
-from tests.tui.conftest import wait_until
+from tests.tui.conftest import WAIT_SECONDS, wait_until
 
 
 def test_settings_shows_saved_model_after_select(tmp_path: Path):
@@ -88,7 +89,7 @@ def test_settings_model_picker_uses_runtime(tmp_path: Path, monkeypatch: pytest.
             upsert_agent_settings(project.project_id, "default", runtime="claude")
             screen._workflow_id = "default"
             screen._show_workflow_fields()
-            screen._load_models()
+            screen._open_models()
             await wait_until(
                 pilot,
                 lambda: any(
@@ -289,6 +290,82 @@ def test_the_doctor_report_shows_each_check_as_an_icon_and_its_message(
 
     _run_settings(tmp_path, scenario)
     assert shown[0].splitlines()[:3] == ["✓ agent [1.0]", "✗ not logged in", "! inconclusive"]
+
+
+def _report(screen: SettingsScreen) -> str:
+    return str(screen.query_one("#settings-report").render())
+
+
+def test_a_doctor_report_from_an_earlier_visit_never_replaces_the_current_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Leaving and reopening the doctor starts a new report; the late first one is dropped."""
+    from pulse.tui.engine import Check
+
+    init_project_config(tmp_path)
+    calls: list[int] = []
+    release = threading.Event()
+
+    def doctor_checks() -> list[Check]:
+        calls.append(len(calls))
+        if len(calls) == 1:
+            release.wait(WAIT_SECONDS)
+            return [Check(name="old", status="ok", message="primeira visita", detail="")]
+        return [Check(name="new", status="ok", message="segunda visita", detail="")]
+
+    monkeypatch.setattr("pulse.tui.engine.doctor_checks", doctor_checks)
+    shown: list[str] = []
+
+    async def scenario(pilot, screen: SettingsScreen) -> None:
+        await _select(pilot, screen, "doctor")
+        await wait_until(pilot, lambda: len(calls) == 1)
+        await pilot.press("escape")
+        await pilot.pause()
+        await _select(pilot, screen, "doctor")
+        await wait_until(pilot, lambda: "segunda visita" in _report(screen))
+
+        release.set()
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause()
+        shown.append(_report(screen))
+
+    _run_settings(tmp_path, scenario)
+    assert "segunda visita" in shown[0]
+    assert "primeira visita" not in shown[0]
+
+
+def test_a_model_list_that_lands_after_leaving_never_takes_over_the_menu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A late list would turn the visible menu into a model picker for whatever is open now."""
+    init_project_config(tmp_path)
+    asked = threading.Event()
+    release = threading.Event()
+
+    def models(_workspace: Path, _runtime: str) -> list[str]:
+        asked.set()
+        release.wait(WAIT_SECONDS)
+        return ["model-late"]
+
+    monkeypatch.setattr("pulse.tui.engine.models", models)
+    seen: list[list[str]] = []
+
+    async def scenario(pilot, screen: SettingsScreen) -> None:
+        await _select(pilot, screen, "global")
+        await _select(pilot, screen, "g_model")
+        await wait_until(pilot, asked.is_set)
+        await pilot.press("escape")
+        await pilot.pause()
+        await _select(pilot, screen, "global")
+        await _select(pilot, screen, "g_permission")
+
+        release.set()
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause()
+        seen.append(_option_ids(screen))
+
+    _run_settings(tmp_path, scenario)
+    assert seen == [["policy:ask", "policy:auto_approve", "policy:deny_writes"]]
 
 
 def _pointed(screen: SettingsScreen) -> str:

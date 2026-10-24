@@ -196,6 +196,11 @@ HISTORY_KEYS_LIST = (
     ("d", "remover"),
     ("esc", "voltar"),
 )
+HISTORY_KEYS_EMPTY = (
+    ("/", "buscar"),
+    ("esc", "voltar"),
+)
+HISTORY_KEYS_SEARCH_EMPTY = (("esc", "sair da busca"),)
 HISTORY_KEYS_SEARCH = (
     ("↑↓", "navegar"),
     ("enter", "abrir"),

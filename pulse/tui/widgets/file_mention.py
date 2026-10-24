@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,7 @@ MENTION_LIMIT = 8
 MENTION_SIGN = "@"
 # Only an `@` that starts a word: `dev@empresa.com` is an e-mail, not a mention.
 _OPEN_MENTION = re.compile(rf"(?:^|\s){MENTION_SIGN}(\S*)$")
+_MENTION_TAIL = re.compile(r"\S*")
 
 
 def mention_at(before_cursor: str) -> str | None:
@@ -26,11 +28,18 @@ def mention_at(before_cursor: str) -> str | None:
 def mention_text(path: str) -> str:
     """The `@` token typed for `path`, closed by a space.
 
-    A path with whitespace is quoted: unquoted, the agent would read the first
-    space as the end of the mention.
+    A path with whitespace or quotes is quoted and escaped: unquoted, the agent
+    would read the first space as the end of the mention, and a raw `"` or line
+    break would end or split the quoted token.
     """
-    token = f'"{path}"' if any(char.isspace() for char in path) else path
+    needs_quotes = any(char.isspace() or char == '"' for char in path)
+    token = json.dumps(path, ensure_ascii=False) if needs_quotes else path
     return f"{MENTION_SIGN}{token} "
+
+
+def mention_end(after_cursor: str) -> int:
+    tail = _MENTION_TAIL.match(after_cursor)
+    return tail.end() if tail else 0
 
 
 def match_files(files: list[str], query: str, *, limit: int = MENTION_LIMIT) -> list[str]:
