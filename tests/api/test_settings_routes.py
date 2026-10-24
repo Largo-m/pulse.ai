@@ -20,6 +20,7 @@ from pulse.daemon.runs import RunManager
 from pulse.runtimes import DEFAULT_RUNTIME_ID, all_runtimes, get_runtime
 from pulse.store.agent_settings import load_agent_settings
 from pulse.store.workflow_defs import list_agents
+from tests.infra.test_worktree import make_repo
 
 
 @pytest.fixture
@@ -245,3 +246,22 @@ def test_the_worktree_switch_is_saved_on_the_project(client: TestClient, tmp_pat
     settings = client.get("/api/settings", params={"workspace": str(tmp_path)}).json()
     assert settings["use_worktree"] is True
     assert settings["is_repo"] is False
+
+
+def test_workspace_files_lists_what_git_sees_in_the_project(
+    client: TestClient, tmp_path: Path
+) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / "notes.md").write_text("", encoding="utf-8")
+
+    files = client.get("/api/workspace/files", params={"workspace": str(repo)}).json()
+
+    assert files == {"files": ["README.md", "notes.md"]}
+
+
+def test_workspace_files_outside_a_repository_is_an_empty_list(
+    client: TestClient, tmp_path: Path
+) -> None:
+    files = client.get("/api/workspace/files", params={"workspace": str(tmp_path)}).json()
+
+    assert files == {"files": []}

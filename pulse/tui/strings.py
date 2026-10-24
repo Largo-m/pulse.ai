@@ -142,10 +142,16 @@ TASK_MORE_OPTIONS = "Mais opções"
 TASK_MORE_OPTIONS_DETAIL = "título, slug e config"
 TASK_FEWER_OPTIONS = "Menos opções"
 TASK_OPTIONS_SHORTCUT = "ctrl+o"
-TASK_KEYS_PLAIN = (("enter", "enviar"), ("ctrl+j", "nova linha"), ("esc", "voltar"))
+TASK_KEYS_PLAIN = (
+    ("enter", "enviar"),
+    ("ctrl+j", "nova linha"),
+    ("@", "arquivo"),
+    ("esc", "voltar"),
+)
 TASK_KEYS_DETAILED = (
     ("tab", "próximo campo"),
     ("espaço", "marcar"),
+    ("@", "arquivo"),
     ("enter", "enviar"),
     ("esc", "voltar"),
 )
@@ -154,7 +160,12 @@ HOME_ALERTS_MANY = "{count} sessões precisam de você"
 HOME_ALERTS_HINT = "Enter abre a sessão para responder · Esc volta"
 HOME_START_NOW = "Enter inicia agora"
 HOME_DESCRIBE_TASK = "Enter para descrever a tarefa"
-HOME_SESSION_HINT = "{description}\n{keys} · Esc volta"
+HOME_SESSION_PROMPT = "Escolha o workflow da tarefa"
+HOME_SESSION_STEPS = "{count} etapas"
+HOME_SESSION_STEP_ONE = "1 etapa"
+HOME_SESSION_STARTS_NOW = "inicia direto"
+HOME_SESSION_EMPTY = "Nenhum workflow disponível. Verifique a engine em Configurações."
+HOME_SESSION_KEYS = (("↑↓", "navegar"), ("enter", "escolher"), ("esc", "voltar"))
 HOME_SETUP = "Configurar Pulse"
 HOME_START_ENGINE = "Iniciar a engine"
 HOME_ENGINE_STARTING = "Iniciando a engine…"

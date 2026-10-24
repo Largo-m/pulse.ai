@@ -10,23 +10,20 @@ from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import OptionList, Static
-from textual.widgets.option_list import Option
 
 from pulse.tui import engine, strings
 from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
 from pulse.tui.key_hints import key_line
+from pulse.tui.menu_rows import MenuRow, breadcrumb
 from pulse.tui.settings_rows import (
-    SettingRow,
     Toggle,
     Tone,
-    breadcrumb,
     check_line,
     feedback,
-    label_width,
-    setting_row,
     toggle_state,
     toggle_value,
 )
+from pulse.tui.widgets.menu_list import MenuList
 
 # The field row each picker edits, so leaving a picker lands back on its row.
 _PICKER_FIELD = {"pick_agent": "agent", "pick_model": "model", "pick_permission": "permission"}
@@ -37,7 +34,7 @@ _FIELD_TITLES = {
 }
 
 
-def _git_rows(settings: ProjectSettings) -> list[SettingRow]:
+def _git_rows(settings: ProjectSettings) -> list[MenuRow]:
     commits_available = settings.use_worktree
     pull_request_available = settings.use_worktree and settings.atomic_commits
     return [
@@ -66,8 +63,8 @@ def _git_rows(settings: ProjectSettings) -> list[SettingRow]:
     ]
 
 
-def _toggle_row(option_id: str, label: str, state: Toggle, description: str) -> SettingRow:
-    return SettingRow(
+def _toggle_row(option_id: str, label: str, state: Toggle, description: str) -> MenuRow:
+    return MenuRow(
         option_id,
         label,
         toggle_value(state),
@@ -93,15 +90,12 @@ class SettingsScreen(Screen[None]):
         self._target = "agent"
         self._settings: ProjectSettings | None = None
         self._trail: tuple[str, ...] = ()
-        self._rows: dict[str, SettingRow] = {}
-        self._width = 0
-        self._pointed: str | None = None
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-content"):
             yield Static(id="settings-header")
             yield Static("", id="settings-status")
-            yield OptionList(id="settings-options")
+            yield MenuList(id="settings-options")
             yield Static("", id="settings-report")
         yield Static(id="settings-keys")
 
@@ -138,7 +132,7 @@ class SettingsScreen(Screen[None]):
 
     def _show_view(self, trail: tuple[str, ...], hint: str) -> None:
         self._trail = trail
-        header = breadcrumb(trail, self._cwd.name)
+        header = breadcrumb(strings.SETTINGS_TITLE, trail, self._cwd.name)
         self.query_one("#settings-header", Static).update(header)
         self._set_status(hint)
         keys = strings.SETTINGS_KEYS_ROOT if not trail else strings.SETTINGS_KEYS_MENU
@@ -152,49 +146,11 @@ class SettingsScreen(Screen[None]):
         widget.update(text if isinstance(text, Text) else feedback(text, tone))
         widget.display = bool(text)
 
-    def _set_rows(self, rows: list[SettingRow], *, focus: str | None = None) -> None:
-        """Show `rows`, keeping the pointer where the user expects it.
-
-        The pointer lands on `focus`, else on the row it was on (a toggle
-        redraws its own menu), else on the current choice, else on the top.
-        """
-        widget = self.query_one("#settings-options", OptionList)
-        ids = [row.id for row in rows]
-        current = next((row.id for row in rows if row.current), None)
-        pointed = next(
-            (
-                candidate
-                for candidate in (focus, self._pointed, current)
-                if candidate is not None and candidate in ids
-            ),
-            ids[0] if ids else None,
-        )
-        self._rows = {row.id: row for row in rows}
-        self._width = label_width(rows)
-        self._pointed = pointed
-        widget.clear_options()
-        widget.add_options(
-            Option(setting_row(row, selected=row.id == pointed, width=self._width), id=row.id)
-            for row in rows
-        )
-        if pointed is not None:
-            widget.highlighted = ids.index(pointed)
+    def _set_rows(self, rows: list[MenuRow], *, focus: str | None = None) -> None:
+        widget = self.query_one("#settings-options", MenuList)
+        widget.show_rows(rows, focus=focus)
+        if rows:
             widget.focus()
-
-    @on(OptionList.OptionHighlighted, "#settings-options")
-    def on_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
-        """Move the `❯` pointer: only the two rows that change are redrawn."""
-        target = str(event.option_id) if event.option_id is not None else None
-        if target == self._pointed:
-            return
-        widget = self.query_one("#settings-options", OptionList)
-        for row_id, selected in ((self._pointed, False), (target, True)):
-            row = self._rows.get(row_id or "")
-            if row is not None:
-                widget.replace_option_prompt(
-                    row.id, setting_row(row, selected=selected, width=self._width)
-                )
-        self._pointed = target
 
     def _show_root(self, *, focus: str | None = None) -> None:
         self._mode = "root"
@@ -205,17 +161,17 @@ class SettingsScreen(Screen[None]):
             settings = self._load()
         except EngineError as error:
             self._set_report(error.describe(), Tone.ERROR)
-            self._set_rows([SettingRow("back", strings.BACK_ARROW)])
+            self._set_rows([MenuRow("back", strings.BACK_ARROW)])
             return
         defaults = settings.defaults
         rows = [
-            SettingRow(
+            MenuRow(
                 "global",
                 strings.SETTINGS_GLOBAL_LABEL,
                 strings.SETTINGS_AGENT_VALUE.format(runtime=defaults.runtime, model=defaults.model),
                 strings.SETTINGS_GLOBAL_DESCRIPTION,
             ),
-            SettingRow(
+            MenuRow(
                 "agents",
                 strings.SETTINGS_AGENTS_LABEL,
                 strings.SETTINGS_AGENTS_COUNT.format(count=len(settings.agents)),
@@ -225,7 +181,7 @@ class SettingsScreen(Screen[None]):
         if settings.is_repo:
             rows.extend(_git_rows(settings))
         rows.append(
-            SettingRow(
+            MenuRow(
                 "doctor", strings.SETTINGS_DOCTOR_LABEL, "", strings.SETTINGS_DOCTOR_DESCRIPTION
             )
         )
@@ -333,7 +289,7 @@ class SettingsScreen(Screen[None]):
             current = self._current_fields().model
             self._show_picker("model", strings.SETTINGS_PICK_MODEL)
             self._set_rows(
-                [SettingRow(f"model:{item}", item, current=item == current) for item in models]
+                [MenuRow(f"model:{item}", item, current=item == current) for item in models]
             )
 
         self.app.call_from_thread(apply)
@@ -344,7 +300,7 @@ class SettingsScreen(Screen[None]):
         self._show_picker("permission", strings.SETTINGS_PICK_POLICY)
         self._set_rows(
             [
-                SettingRow(
+                MenuRow(
                     f"policy:{key}",
                     strings.PERMISSION_LABELS.get(key, key),
                     current=key == current,
@@ -381,7 +337,7 @@ class SettingsScreen(Screen[None]):
         self._show_view((strings.SETTINGS_AGENTS_LABEL,), strings.SETTINGS_PICK_AGENT)
         self._set_rows(
             [
-                SettingRow(
+                MenuRow(
                     f"workflow:{agent.id}",
                     agent.label,
                     strings.SETTINGS_AGENT_VALUE.format(
@@ -431,7 +387,7 @@ class SettingsScreen(Screen[None]):
         self._show_picker("agent", strings.SETTINGS_PICK_RUNTIME)
         self._set_rows(
             [
-                SettingRow(f"agent:{name}", name, binary, current=name == current)
+                MenuRow(f"agent:{name}", name, binary, current=name == current)
                 for name, binary in self._current().runtimes
             ]
         )
@@ -468,16 +424,16 @@ class SettingsScreen(Screen[None]):
         self._mode = "doctor"
         self._show_view((strings.ENVIRONMENT,), strings.SETTINGS_DOCTOR_HINT)
         self._set_report(Text("\n").join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS)
-        self._set_rows([SettingRow("back", strings.BACK_ARROW)])
+        self._set_rows([MenuRow("back", strings.BACK_ARROW)])
 
 
-def _field_rows(prefix: str, fields: Fields) -> list[SettingRow]:
+def _field_rows(prefix: str, fields: Fields) -> list[MenuRow]:
     """Runtime, model and policy rows of a settings target, ids prefixed by `prefix`."""
     policy = fields.permission_policy
     return [
-        SettingRow(f"{prefix}_agent", strings.SETTINGS_FIELD_RUNTIME, fields.runtime),
-        SettingRow(f"{prefix}_model", strings.SETTINGS_FIELD_MODEL, fields.model),
-        SettingRow(
+        MenuRow(f"{prefix}_agent", strings.SETTINGS_FIELD_RUNTIME, fields.runtime),
+        MenuRow(f"{prefix}_model", strings.SETTINGS_FIELD_MODEL, fields.model),
+        MenuRow(
             f"{prefix}_permission",
             strings.SETTINGS_FIELD_PERMISSIONS,
             strings.PERMISSION_LABELS.get(policy, policy),

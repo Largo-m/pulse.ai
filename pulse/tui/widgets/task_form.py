@@ -3,17 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Checkbox, Input, Static
+from textual.widgets import Checkbox, Input, OptionList, Static
 
 from pulse.domain.branch_name import task_slug
 from pulse.domain.git_options import GitOption, GitOptions
 from pulse.domain.task_brief import TaskBrief
 from pulse.tui import strings
+from pulse.tui.widgets.file_mention import FileMentionList
 from pulse.tui.widgets.options_toggle import OptionsToggle, key_chips
 from pulse.tui.widgets.task_composer import TaskComposer
 
@@ -83,6 +85,7 @@ class TaskForm(Vertical):
         with Horizontal(classes="task-box", id="task-description-box"):
             yield Static(PROMPT_GLYPH, classes="task-glyph task-plain")
             yield TaskComposer(id="task-description", compact=True)
+        yield FileMentionList(id="task-mentions")
         with Horizontal(id="task-git-row", classes="task-row task-detail task-git"):
             yield Static(strings.TASK_CONFIG_LABEL, classes="task-row-label")
             for option, label in _GIT_LABELS:
@@ -91,7 +94,21 @@ class TaskForm(Vertical):
         yield OptionsToggle(id="task-options")
         yield Static("", classes="task-hint")
 
-    def open(self, *, heading: str, summary: str, git: GitOptions | None) -> None:
+    def on_mount(self) -> None:
+        mentions = self.query_one("#task-mentions", FileMentionList)
+        self.query_one("#task-description", TaskComposer).bind_mentions(mentions)
+
+    @on(OptionList.OptionSelected, "#task-mentions")
+    def _mention_clicked(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        if event.option.id is not None:
+            self.query_one("#task-description", TaskComposer).insert_mention(event.option.id)
+
+    def offer_files(self, files: list[str]) -> None:
+        """The workspace files `@` lists; they arrive after the form opens."""
+        self.query_one("#task-mentions", FileMentionList).set_files(files)
+
+    def open(self, *, heading: str | Text, summary: str, git: GitOptions | None) -> None:
         """Start a blank draft; `git` is None outside a repository."""
         self.query_one("#task-heading", Static).update(heading)
         self.query_one("#task-summary", Static).update(summary)
@@ -101,6 +118,7 @@ class TaskForm(Vertical):
             with self.query_one(selector, Input).prevent(Input.Changed):
                 self.query_one(selector, Input).value = ""
         self.query_one("#task-description", TaskComposer).clear()
+        self.offer_files([])
         self.set_class(git is None, "-no-repo")
         self._show_git()
         self.show_error("")

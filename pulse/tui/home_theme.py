@@ -68,6 +68,104 @@ HomeScreen OptionList > .option-list--option {{
 
 HomeScreen OptionList:focus {{
     border: solid {LIME};
+    background-tint: {BG} 0%;
+}}
+
+/* The `❯` pointer marks the row (MenuList); the bar would mark it twice. */
+HomeScreen OptionList > .option-list--option-highlighted,
+HomeScreen OptionList:focus > .option-list--option-highlighted,
+HomeScreen OptionList > .option-list--option-hover {{
+    background: {BG_PANEL};
+    text-style: none;
+}}
+
+HomeScreen #home-header,
+HomeScreen #home-keys,
+HomeScreen #task-form {{
+    display: none;
+}}
+
+/* New session: the agent-CLI picker layout, full width and top-left. */
+HomeScreen.-picker {{
+    align: left top;
+}}
+
+HomeScreen.-picker #home-content {{
+    width: 100%;
+    max-width: 120;
+    height: 1fr;
+    padding: 1 2 0 2;
+    align: left top;
+}}
+
+HomeScreen.-picker .home-brand,
+HomeScreen.-picker .home-sub,
+HomeScreen.-picker Footer {{
+    display: none;
+}}
+
+HomeScreen.-picker #home-header {{
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}}
+
+HomeScreen.-picker #home-alerts {{
+    width: 100%;
+}}
+
+HomeScreen.-picker OptionList {{
+    width: 100%;
+    max-height: 1fr;
+    background: {BG};
+    border: none;
+    padding: 0;
+    scrollbar-size-vertical: 1;
+}}
+
+HomeScreen.-picker OptionList:focus {{
+    border: none;
+}}
+
+HomeScreen.-picker OptionList > .option-list--option {{
+    padding: 0;
+}}
+
+HomeScreen.-picker OptionList > .option-list--option-highlighted,
+HomeScreen.-picker OptionList:focus > .option-list--option-highlighted,
+HomeScreen.-picker OptionList > .option-list--option-hover {{
+    background: {BG};
+}}
+
+HomeScreen.-picker .home-hint {{
+    text-align: left;
+    margin-top: 1;
+    padding: 0 0 0 2;
+    border-left: tall {TEXT_MUTED};
+}}
+
+HomeScreen.-picker #home-keys {{
+    display: block;
+    dock: bottom;
+    width: 100%;
+    height: 1;
+    padding: 0 2;
+    background: {BG};
+}}
+
+/* The run form takes the picker's place and brings its own key chips. */
+HomeScreen.-composing #task-form {{
+    display: block;
+}}
+
+HomeScreen.-composing #home-header,
+HomeScreen.-composing OptionList,
+HomeScreen.-composing .home-hint,
+HomeScreen.-composing #home-keys,
+HomeScreen.-composing .home-brand,
+HomeScreen.-composing .home-sub {{
+    display: none;
 }}
 
 HomeScreen .home-hint {{
@@ -78,9 +176,8 @@ HomeScreen .home-hint {{
 }}
 
 
-HomeScreen #task-form {{
-    width: 96;
-    max-width: 100%;
+HomeScreen.-composing #task-form {{
+    width: 100%;
     height: auto;
 }}
 
@@ -142,6 +239,21 @@ TaskForm TaskComposer .text-area--placeholder {{
     color: {TEXT_MUTED};
 }}
 
+TaskForm #task-mentions {{
+    height: auto;
+    max-height: 8;
+    margin: 0 2;
+    background: {BG_PANEL};
+    border: none;
+    color: {TEXT_MUTED};
+}}
+
+TaskForm #task-mentions > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
+}}
+
 TaskForm .task-row {{
     height: 1;
     padding: 0 2;
@@ -169,8 +281,9 @@ TaskForm Checkbox {{
     margin-right: 2;
 }}
 
+/* An off box shows no mark at all, so the state is not carried by color only. */
 TaskForm Checkbox > .toggle--button {{
-    color: {BORDER};
+    color: {BG_PANEL};
     background: {BG_PANEL};
 }}
 

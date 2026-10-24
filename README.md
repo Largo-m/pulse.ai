@@ -127,7 +127,9 @@ dois casos a sessão mostra a branch atual ao lado do modelo.
 
 Ao iniciar uma tarefa (ex.: **Correção rápida**, **Nova spec**), basta a
 **descrição**: `Enter` inicia com a config do projeto, e `Ctrl+J` ou `\` +
-`Enter` quebra linha. Quem quiser mais escolhe **▸ Mais opções** logo abaixo
+`Enter` quebra linha. Digitar `@` lista os arquivos do projeto (os que o git
+não ignora): o texto após o `@` filtra, `↑`/`↓` escolhem e `Enter` ou `Tab`
+insere o caminho na descrição. Quem quiser mais escolhe **▸ Mais opções** logo abaixo
 (`Tab` + `Enter`, clique ou `Ctrl+O`) e o formulário ganha
 **título**, **slug** (o nome da branch, que acompanha o título até você
 editá-lo) e a **config** — *Auto branch*, *Auto commit* e *Auto PR/MR*. A config
