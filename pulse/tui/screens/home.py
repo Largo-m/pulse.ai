@@ -11,7 +11,6 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, OptionList, Static
-from textual.widgets.option_list import Option
 from textual.worker import get_current_worker
 
 from pulse import __version__
@@ -23,8 +22,12 @@ from pulse.history.run_lines import held_tail, run_line
 from pulse.history.status_labels import status_color, status_icon
 from pulse.tui import engine, strings
 from pulse.tui.brand import BANNER, PULSE_LINE, PULSE_WAVE
+from pulse.tui.key_hints import key_line
+from pulse.tui.menu_rows import MenuRow, breadcrumb
+from pulse.tui.palette import TEXT, TEXT_MUTED
 from pulse.tui.screens.branch_name import BranchNameScreen, branch_problem
 from pulse.tui.screens.navigation import pulse_app
+from pulse.tui.widgets.menu_list import MenuList
 from pulse.tui.widgets.task_form import TaskDraft, TaskForm
 
 
@@ -66,6 +69,19 @@ def _run_form(draft: TaskDraft) -> RunForm:
 
 def _step_chain(workflow: engine.WorkflowShape) -> str:
     return " → ".join(label for _step_id, label in workflow.steps)
+
+
+def _workflow_row(workflow: engine.WorkflowShape) -> MenuRow:
+    """A workflow in the new-session picker: its size and whether it asks for a task."""
+    count = len(workflow.steps)
+    value = (
+        strings.HOME_SESSION_STEP_ONE
+        if count == 1
+        else strings.HOME_SESSION_STEPS.format(count=count)
+    )
+    if workflow.default_prompt:
+        value = f"{value} · {strings.HOME_SESSION_STARTS_NOW}"
+    return MenuRow(f"workflow:{workflow.id}", workflow.label, value, workflow.description)
 
 
 def _setup() -> engine.SetupState | engine.EngineError:
@@ -113,10 +129,12 @@ class HomeScreen(Screen[None]):
                 strings.HOME_SUBTITLE.format(version=__version__),
                 classes="home-sub",
             )
+            yield Static("", id="home-header")
             yield Static("", id="home-alerts")
-            yield OptionList(id="home-options")
+            yield MenuList(id="home-options")
             yield Static(strings.HOME_ROOT_HINT, classes="home-hint")
             yield TaskForm(id="task-form")
+        yield Static(key_line(strings.HOME_SESSION_KEYS), id="home-keys")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -125,7 +143,6 @@ class HomeScreen(Screen[None]):
         self._workflows: dict[str, engine.WorkflowShape] = {}
         self._alerts = []
         self._refresh_options()
-        self.query_one("#task-form", TaskForm).display = False
         self.query_one("#home-alerts", Static).display = False
         self._poll_alerts()
         self.set_interval(ALERT_POLL_SECONDS, self._poll_alerts)
@@ -166,20 +183,16 @@ class HomeScreen(Screen[None]):
             self._refresh_options()
 
     def _update_hint(self, workflow_id: str | None = None) -> None:
-        """Submenu hint: the workflow description plus the key help.
-
-        Always two lines, even without a description, so the list does not jump.
-        """
+        """The pointed workflow's step chain and what Enter will do with it."""
+        hint = self.query_one(".home-hint", Static)
         workflow = self._workflows.get(workflow_id or "")
-        description = _step_chain(workflow) if workflow else ""
-        keys = (
-            strings.HOME_START_NOW
-            if workflow and workflow.default_prompt
-            else strings.HOME_DESCRIBE_TASK
-        )
-        self.query_one(".home-hint", Static).update(
-            strings.HOME_SESSION_HINT.format(description=description, keys=keys)
-        )
+        if workflow is None:
+            hint.update(Text(strings.HOME_SESSION_EMPTY, style=TEXT_MUTED))
+            return
+        action = strings.HOME_START_NOW if workflow.default_prompt else strings.HOME_DESCRIBE_TASK
+        detail = Text(_step_chain(workflow), style=TEXT)
+        detail.append(f"\n{action}", style=TEXT_MUTED)
+        hint.update(detail)
 
     @on(OptionList.OptionHighlighted, "#home-options")
     def on_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
@@ -188,9 +201,8 @@ class HomeScreen(Screen[None]):
         option_id = str(event.option_id or "")
         self._update_hint(option_id.split(":", 1)[1] if option_id.startswith("workflow:") else None)
 
-    def _refresh_options(self) -> None:
-        options = self.query_one("#home-options", OptionList)
-        options.clear_options()
+    def _refresh_options(self, *, focus: str | None = None) -> None:
+        options = self.query_one("#home-options", MenuList)
         hint = self.query_one(".home-hint", Static)
         setup = _setup()
         if isinstance(setup, engine.EngineError):
@@ -199,25 +211,19 @@ class HomeScreen(Screen[None]):
         if not setup.configured:
             self._offer_setup(options, hint, None)
             return
+        self.set_class(self._view == SESSION, "-picker")
         if self._view == ALERTS:
-            for run in self._alerts:
-                options.add_option(
-                    Option(run_line(run, tail=held_tail(run)), id=f"attach:{run.get('id')}")
-                )
-            options.add_option(Option(strings.BACK_ARROW, id="back"))
+            rows = [
+                MenuRow(f"attach:{run.get('id')}", run_line(run, tail=held_tail(run)))
+                for run in self._alerts
+            ]
+            options.show_rows([*rows, MenuRow("back", strings.BACK_ARROW)])
             hint.update(strings.HOME_ALERTS_HINT)
             return
         if self._view == SESSION:
-            workflows = _session_workflows()
-            self._workflows = {item.id: item for item in workflows}
-            for workflow in workflows:
-                label = workflow.label
-                if workflow.description:
-                    label = f"{label} · {workflow.description}"
-                options.add_option(Option(label, id=f"workflow:{workflow.id}"))
-            options.add_option(Option(strings.BACK_ARROW, id="back"))
-            self._update_hint(workflows[0].id if workflows else None)
+            self._show_session(options)
             return
+        rows = []
         if setup.ready:
             if self._alerts:
                 count = len(self._alerts)
@@ -226,24 +232,39 @@ class HomeScreen(Screen[None]):
                     if count == 1
                     else strings.HOME_ANSWER_MANY.format(count=count)
                 )
-                options.add_option(Option(label, id="alerts"))
-            options.add_option(Option(strings.HOME_NEW_SESSION, id="session"))
-            options.add_option(Option(strings.HOME_HISTORY, id="history"))
+                rows.append(MenuRow("alerts", label))
+            rows.append(MenuRow("session", strings.HOME_NEW_SESSION))
+            rows.append(MenuRow("history", strings.HOME_HISTORY))
         else:
-            options.add_option(Option(strings.HOME_SETUP, id="init"))
-        options.add_option(Option(strings.HOME_SETTINGS, id="settings"))
-        options.add_option(Option(strings.QUIT, id="exit"))
+            rows.append(MenuRow("init", strings.HOME_SETUP))
+        rows.append(MenuRow("settings", strings.HOME_SETTINGS))
+        rows.append(MenuRow("exit", strings.QUIT))
+        options.show_rows(rows, focus=focus)
         hint.update(strings.HOME_ROOT_HINT)
 
+    def _show_session(self, options: MenuList) -> None:
+        """The workflow picker, laid out like an agent CLI's: no banner, one row per workflow."""
+        workflows = _session_workflows()
+        self._workflows = {item.id: item for item in workflows}
+        header = breadcrumb(strings.HOME_NEW_SESSION, (), Path.cwd().name)
+        header.append(f"\n{strings.HOME_SESSION_PROMPT}", style=TEXT_MUTED)
+        self.query_one("#home-header", Static).update(header)
+        options.show_rows([_workflow_row(workflow) for workflow in workflows])
+        pointed = options.pointed
+        self._update_hint(pointed.id.partition(":")[2] if pointed else None)
+
     def _offer_setup(
-        self, options: OptionList, hint: Static, failure: engine.EngineError | None
+        self, options: MenuList, hint: Static, failure: engine.EngineError | None
     ) -> None:
         self._view = ROOT
+        self.set_class(False, "-picker")
+        rows = []
         # Screens never start the daemon themselves, so Home is where it comes back.
         if isinstance(failure, engine.EngineUnavailable):
-            options.add_option(Option(strings.HOME_START_ENGINE, id="start_engine"))
-        options.add_option(Option(strings.HOME_SETUP, id="init"))
-        options.add_option(Option(strings.QUIT, id="exit"))
+            rows.append(MenuRow("start_engine", strings.HOME_START_ENGINE))
+        rows.append(MenuRow("init", strings.HOME_SETUP))
+        rows.append(MenuRow("exit", strings.QUIT))
+        options.show_rows(rows)
         hint.update(failure.describe() if failure is not None else strings.HOME_ROOT_HINT)
 
     @on(OptionList.OptionSelected, "#home-options")
@@ -294,8 +315,10 @@ class HomeScreen(Screen[None]):
             self.query_one(".home-hint", Static).update(failure.describe())
 
     def _show_view(self, view: str) -> None:
+        """Switch menus; going back up points at the row that led down (`session`, `alerts`)."""
+        came_from = self._view
         self._view = view
-        self._refresh_options()
+        self._refresh_options(focus=came_from)
         self.query_one("#home-options", OptionList).focus()
 
     def _choose_workflow(self, workflow_id: str) -> None:
@@ -330,10 +353,27 @@ class HomeScreen(Screen[None]):
         )
         self._set_composing(True)
         self.query_one("#task-form", TaskForm).open(
-            heading=workflow.label,
+            heading=breadcrumb(strings.HOME_NEW_SESSION, (workflow.label,), Path.cwd().name),
             summary=workflow.description or _step_chain(workflow),
             git=git,
         )
+        self.run_worker(self._fetch_files, group="files", exclusive=True, thread=True)
+
+    def _fetch_files(self) -> None:
+        """Without the list the form still works: `@` is then plain text."""
+        try:
+            files = engine.workspace_files(Path.cwd())
+        except engine.EngineError:
+            return
+        if get_current_worker().is_cancelled:
+            return
+        # The app already exited while the request was in flight.
+        with contextlib.suppress(RuntimeError):
+            self.app.call_from_thread(self._offer_files, files)
+
+    def _offer_files(self, files: list[str]) -> None:
+        if self.is_mounted and self._pending_workflow is not None:
+            self.query_one("#task-form", TaskForm).offer_files(files)
 
     def _close_form(self) -> None:
         self._pending_workflow = None
@@ -341,9 +381,8 @@ class HomeScreen(Screen[None]):
         self.query_one("#home-options", OptionList).focus()
 
     def _set_composing(self, composing: bool) -> None:
-        self.query_one("#task-form", TaskForm).display = composing
-        for hidden in ("#home-options", ".home-hint", ".home-brand", ".home-sub"):
-            self.query_one(hidden).display = not composing
+        """The form takes the menu's place; `home_theme.py` swaps what is shown."""
+        self.set_class(composing, "-composing")
 
     def _open_waiting_run(self, run_id: str) -> None:
         """Attach live to a waiting session; its pending prompt reopens after replay.
@@ -364,7 +403,7 @@ class HomeScreen(Screen[None]):
 
     def action_back(self) -> None:
         """Esc: close the run form, otherwise go back to the root menu."""
-        if self.query_one("#task-form", TaskForm).display:
+        if self.has_class("-composing"):
             self._close_form()
             return
         if self._view != ROOT:

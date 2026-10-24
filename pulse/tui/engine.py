@@ -350,6 +350,13 @@ def branch_check(workspace: Path, name: str) -> tuple[bool, bool]:
     return bool(data.get("valid")), bool(data.get("exists"))
 
 
+def workspace_files(workspace: Path) -> list[str]:
+    data = _call(
+        lambda client: client.get("/api/workspace/files", params={"workspace": str(workspace)})
+    )
+    return [str(path) for path in data.get("files") or []]
+
+
 def _put_flag(workspace: Path, path: str, *, enabled: bool) -> None:
     body = {"workspace": str(workspace), "enabled": enabled}
     _call(lambda client: client.put(path, body))

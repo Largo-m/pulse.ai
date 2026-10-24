@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pulse.tui.history_theme import HISTORY_CSS
 from pulse.tui.home_theme import HOME_CSS
 from pulse.tui.palette import (
     BG,
@@ -12,6 +13,7 @@ from pulse.tui.palette import (
     TEXT,
     TEXT_MUTED,
 )
+from pulse.tui.settings_theme import SETTINGS_CSS
 
 COCKPIT_CSS = (
     f"""
@@ -54,6 +56,7 @@ AppHeader .run-status {{
 }}
 
 AppHeader .pipeline-badge {{
+    width: auto;
     background: {LIME_MUTED};
     color: {LIME};
     padding: 0 1;
@@ -235,119 +238,6 @@ AppFooter .key {{
     color: {LIME};
 }}
 
-HistoryListScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-HistoryListScreen #history-content {{
-    width: 80%;
-    max-width: 90;
-    height: auto;
-    align: center middle;
-}}
-
-HistoryListScreen .history-title {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen .history-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen #history-search {{
-    width: 100%;
-    margin-bottom: 1;
-}}
-
-HistoryListScreen OptionList {{
-    width: 100%;
-    height: 16;
-    max-height: 18;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-}}
-
-HistoryListScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-HistoryListScreen .history-empty {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-top: 1;
-}}
-
-SettingsScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-SettingsScreen #settings-content {{
-    width: 80%;
-    max-width: 90;
-    height: auto;
-    align: center middle;
-}}
-
-SettingsScreen .settings-title {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen .settings-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen OptionList {{
-    width: 100%;
-    height: auto;
-    max-height: 18;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList > .option-list--option {{
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-SettingsScreen .settings-report {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: left;
-    margin-top: 1;
-    height: auto;
-    max-height: 12;
-}}
-
-SettingsScreen .settings-hint-keys {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-top: 1;
-}}
-
 OnboardingScreen {{
     background: {BG};
     align: center middle;
@@ -503,6 +393,13 @@ ResumeChoiceScreen OptionList:focus {{
     border: none;
 }}
 
+ResumeChoiceScreen OptionList > .option-list--option-highlighted,
+ResumeChoiceScreen OptionList:focus > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
+}}
+
 ResumeChoiceScreen .resume-hint {{
     color: {TEXT_MUTED};
     width: 100%;
@@ -543,6 +440,13 @@ ConfirmScreen OptionList {{
 
 ConfirmScreen OptionList:focus {{
     border: none;
+}}
+
+ConfirmScreen OptionList > .option-list--option-highlighted,
+ConfirmScreen OptionList:focus > .option-list--option-highlighted {{
+    background: {LIME_MUTED};
+    color: {TEXT};
+    text-style: bold;
 }}
 
 ConfirmScreen .confirm-hint {{
@@ -592,4 +496,6 @@ BranchNameScreen .branch-hint {{
 }}
 """
     + HOME_CSS
+    + HISTORY_CSS
+    + SETTINGS_CSS
 )

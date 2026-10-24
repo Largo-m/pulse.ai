@@ -25,13 +25,15 @@ from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
 from pulse.tui import strings
 from pulse.tui.artifacts import artifact_has_content, artifact_key
+from pulse.tui.history_rows import run_title
 from pulse.tui.state import CockpitState
 
 
 def hydrate_history_item(item: HistoryItem, workspace: Path, log: RunLog | None) -> CockpitState:
     state = CockpitState()
     state.workflow_id = item.workflow_id
-    state.workflow_label = item.workflow_label.upper()
+    # The header is the only place a reopened run names itself; phase titles take the stream's.
+    state.workflow_label = f"{item.workflow_label.upper()} · {run_title(item)}"
     state.phases = [
         PhaseItem(
             id=step.id,
