@@ -19,6 +19,7 @@ from pulse.domain.run import utc_now
 from pulse.history.models import LIVE_STATUSES, HistoryItem
 from pulse.tui import engine, strings
 from pulse.tui.history_rows import history_row
+from pulse.tui.key_hints import key_line
 from pulse.tui.palette import LIME, TEXT_MUTED
 from pulse.tui.screens.confirm import ConfirmScreen
 from pulse.tui.screens.history_detail import HistoryDetailScreen
@@ -154,13 +155,7 @@ class HistoryListScreen(Screen[None]):
     def _show_keys(self) -> None:
         searching = isinstance(self.focused, Input)
         keys = strings.HISTORY_KEYS_SEARCH if searching else strings.HISTORY_KEYS_LIST
-        line = Text()
-        for index, (key, label) in enumerate(keys):
-            if index:
-                line.append("  ·  ", style=TEXT_MUTED)
-            line.append(key, style=LIME)
-            line.append(f" {label}", style=TEXT_MUTED)
-        self.query_one("#history-keys", Static).update(line)
+        self.query_one("#history-keys", Static).update(key_line(keys))
 
     def on_descendant_focus(self) -> None:
         self._show_keys()

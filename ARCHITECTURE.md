@@ -465,9 +465,13 @@ Só tela e interação. Não executa workflow no próprio processo.
 |---------|--------|
 | [`pulse/tui/app.py`](pulse/tui/app.py) | App Textual; abre home, cockpit, settings, onboarding, history |
 | [`pulse/tui/engine.py`](pulse/tui/engine.py) | O daemon visto pelas telas: leituras e escritas tipadas sobre `/api/*`; daemon fora do ar vira `EngineUnavailable`, erro respondido pelo daemon vira `EngineRefused` (base comum `EngineError`) |
-| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; lista os workflows que o daemon serve |
+| [`pulse/tui/screens/home.py`](pulse/tui/screens/home.py) | Menu; em "Nova sessão" troca o banner pelo seletor de workflows no estilo das CLIs de agentes (breadcrumb, etapas em coluna, cadeia de etapas do item apontado) e abre o formulário da tarefa no mesmo layout; `@` na descrição lista os arquivos do projeto (`/api/workspace/files`, via [`file_mention.py`](pulse/tui/widgets/file_mention.py)) e insere o caminho escolhido como texto |
 | [`pulse/tui/screens/cockpit.py`](pulse/tui/screens/cockpit.py) | Run ao vivo (steps, log, prompts, artefatos) |
-| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings` |
+| [`pulse/tui/screens/settings.py`](pulse/tui/screens/settings.py) | Runtime, modelo, permissões por agente; doctor — lidos e gravados por `/api/settings`; o menu segue o `/config` das CLIs de agentes (breadcrumb, `❯` no item, valor em coluna, `✓` na escolha atual, espaço alterna, Esc volta à linha de origem) |
+| [`pulse/tui/menu_rows.py`](pulse/tui/menu_rows.py) | Como um item de menu se desenha: `❯`, rótulo, valor alinhado, descrição, `✓` na escolha atual, e o breadcrumb — função pura dos dados |
+| [`pulse/tui/widgets/menu_list.py`](pulse/tui/widgets/menu_list.py) | `MenuList`: a lista de itens com o `❯` que acompanha o cursor e volta ao item de origem; usada nas configurações e na nova sessão |
+| [`pulse/tui/settings_rows.py`](pulse/tui/settings_rows.py) | O que só as configurações mostram: estado dos toggles, tom do feedback e linhas do doctor |
+| [`pulse/tui/key_hints.py`](pulse/tui/key_hints.py) | A linha de atalhos no rodapé dos seletores (histórico, configurações, nova sessão) |
 | [`pulse/tui/screens/onboarding.py`](pulse/tui/screens/onboarding.py) | Assistente da primeira execução: checks, login, workspace e sonda ACP, via `/api/setup` e `/api/runtimes` |
 | [`pulse/tui/screens/history*.py`](pulse/tui/screens/) | Runs passadas e detalhe; a lista segue o seletor de sessões das CLIs de agentes (busca que dirige a lista, `❯` no item, Esc recua um nível) |
 | [`pulse/tui/history_rows.py`](pulse/tui/history_rows.py) | Como uma run vira item da lista: título e linha de fatos (workflow, status, idade, etapas, branch) — função pura do item e do relógio |
@@ -511,7 +515,7 @@ O argv vem do registro de runtimes do daemon, nunca de texto digitado.
 | [`pulse/api/app.py`](pulse/api/app.py) | Monta o app FastAPI: hosts confiáveis, guarda de navegador, handler de erro (traceback no log do daemon) e os routers abaixo |
 | [`pulse/api/browser_guard.py`](pulse/api/browser_guard.py) | Recusa (`403`) request com `Origin` e endurece os headers de toda resposta ([ADR 0003](docs/adr/0003-listeners-locais-recusam-navegador.md)) |
 | [`pulse/api/token_guard.py`](pulse/api/token_guard.py) | Só no listener TCP: recusa (`401`) request sem o token do daemon ([ADR 0005](docs/adr/0005-tcp-exige-token-do-daemon.md)) |
-| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
+| [`pulse/api/system_routes.py`](pulse/api/system_routes.py), [`config_routes.py`](pulse/api/config_routes.py), [`settings_routes.py`](pulse/api/settings_routes.py), [`run_routes.py`](pulse/api/run_routes.py), [`history_routes.py`](pulse/api/history_routes.py) | Rotas por recurso: status/doctor, config, setup/runtimes/models/settings/arquivos do workspace, workflows/runs/prompts, histórico e log gravado da run; `deps.py` entrega o `RunManager` |
 
 **Desligamento.** No primeiro SIGTERM/SIGINT o daemon para cada run ativa pelo
 mesmo caminho do cancelamento — a run grava `RUN_STOPPED`, o step volta a

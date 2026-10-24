@@ -6,45 +6,71 @@ from pathlib import Path
 from rich.text import Text
 from textual import on, work
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Footer, OptionList, Static
-from textual.widgets.option_list import Option
+from textual.widgets import OptionList, Static
 
 from pulse.tui import engine, strings
 from pulse.tui.engine import AgentField, EngineError, Fields, ProjectSettings
+from pulse.tui.key_hints import key_line
+from pulse.tui.menu_rows import MenuRow, breadcrumb
+from pulse.tui.settings_rows import (
+    Toggle,
+    Tone,
+    check_line,
+    feedback,
+    toggle_state,
+    toggle_value,
+)
+from pulse.tui.widgets.menu_list import MenuList
+
+# The field row each picker edits, so leaving a picker lands back on its row.
+_PICKER_FIELD = {"pick_agent": "agent", "pick_model": "model", "pick_permission": "permission"}
+_FIELD_TITLES = {
+    "agent": strings.SETTINGS_FIELD_RUNTIME,
+    "model": strings.SETTINGS_FIELD_MODEL,
+    "permission": strings.SETTINGS_FIELD_PERMISSIONS,
+}
 
 
-def _flag_state(enabled: bool, *, available: bool) -> str:
-    if not available:
-        return strings.SETTINGS_ATOMIC_UNAVAILABLE
-    return strings.SETTINGS_WORKTREE_ON if enabled else strings.SETTINGS_WORKTREE_OFF
-
-
-def _git_options(settings: ProjectSettings) -> list[tuple[str, str]]:
+def _git_rows(settings: ProjectSettings) -> list[MenuRow]:
+    commits_available = settings.use_worktree
+    pull_request_available = settings.use_worktree and settings.atomic_commits
     return [
-        (
+        _toggle_row(
             "worktree",
-            strings.SETTINGS_WORKTREE_OPTION.format(
-                state=_flag_state(settings.use_worktree, available=True)
-            ),
+            strings.SETTINGS_WORKTREE_LABEL,
+            toggle_state(settings.use_worktree, available=True),
+            strings.SETTINGS_WORKTREE_DESCRIPTION,
         ),
-        (
+        _toggle_row(
             "atomic",
-            strings.SETTINGS_ATOMIC_OPTION.format(
-                state=_flag_state(settings.atomic_commits, available=settings.use_worktree)
-            ),
+            strings.SETTINGS_ATOMIC_LABEL,
+            toggle_state(settings.atomic_commits, available=commits_available),
+            strings.SETTINGS_ATOMIC_DESCRIPTION
+            if commits_available
+            else strings.SETTINGS_ATOMIC_NEEDS_WORKTREE,
         ),
-        (
+        _toggle_row(
             "pull_request",
-            strings.SETTINGS_PR_OPTION.format(
-                state=_flag_state(
-                    settings.auto_pull_request,
-                    available=settings.use_worktree and settings.atomic_commits,
-                )
-            ),
+            strings.SETTINGS_PR_LABEL,
+            toggle_state(settings.auto_pull_request, available=pull_request_available),
+            strings.SETTINGS_PR_DESCRIPTION
+            if pull_request_available
+            else strings.SETTINGS_PR_NEEDS_COMMITS,
         ),
     ]
+
+
+def _toggle_row(option_id: str, label: str, state: Toggle, description: str) -> MenuRow:
+    return MenuRow(
+        option_id,
+        label,
+        toggle_value(state),
+        description,
+        muted=state is Toggle.UNAVAILABLE,
+    )
 
 
 class SettingsScreen(Screen[None]):
@@ -52,6 +78,8 @@ class SettingsScreen(Screen[None]):
         ("escape", "go_back", strings.BACK),
         ("q", "go_back", strings.BACK),
         ("b", "go_back", strings.BACK),
+        # Agent CLIs flip a setting with space as well as Enter.
+        Binding("space", "select", show=False),
     ]
 
     def __init__(self, *, cwd: Path | None = None) -> None:
@@ -61,17 +89,15 @@ class SettingsScreen(Screen[None]):
         self._workflow_id: str | None = None
         self._target = "agent"
         self._settings: ProjectSettings | None = None
+        self._trail: tuple[str, ...] = ()
 
     def compose(self) -> ComposeResult:
         with Vertical(id="settings-content"):
-            yield Static(strings.SETTINGS_TITLE, classes="settings-title")
-            yield Static(
-                strings.SETTINGS_ROOT_STATUS, id="settings-status", classes="settings-hint"
-            )
-            yield OptionList(id="settings-options")
-            yield Static("", id="settings-report", classes="settings-report")
-            yield Static(strings.SETTINGS_HINT_KEYS, classes="settings-hint-keys")
-        yield Footer()
+            yield Static(id="settings-header")
+            yield Static("", id="settings-status")
+            yield MenuList(id="settings-options")
+            yield Static("", id="settings-report")
+        yield Static(id="settings-keys")
 
     def on_mount(self) -> None:
         self._set_report("")
@@ -84,59 +110,82 @@ class SettingsScreen(Screen[None]):
         try:
             self._show_previous_menu()
         except EngineError as error:
-            self._set_report(error.describe())
+            self._set_report(error.describe(), Tone.ERROR)
+
+    def action_select(self) -> None:
+        self.query_one("#settings-options", OptionList).action_select()
 
     def _show_previous_menu(self) -> None:
-        if self._mode in {"pick_model", "pick_permission", "pick_agent"}:
+        field = _PICKER_FIELD.get(self._mode)
+        if field is not None:
             if self._target == "global":
-                self._show_global_fields()
+                self._show_global_fields(focus=f"g_{field}")
                 return
             if self._workflow_id:
-                self._show_workflow_fields()
+                self._show_workflow_fields(focus=f"wf_{field}")
                 return
-        if self._mode in {"workflow_fields", "doctor"}:
-            self._show_pulse_agents() if self._mode == "workflow_fields" else self._show_root()
+        if self._mode == "workflow_fields":
+            self._show_pulse_agents(focus=f"workflow:{self._workflow_id}")
             return
-        self._show_root()
+        focus = {"global_fields": "global", "pick_workflow": "agents", "doctor": "doctor"}
+        self._show_root(focus=focus.get(self._mode))
+
+    def _show_view(self, trail: tuple[str, ...], hint: str) -> None:
+        self._trail = trail
+        header = breadcrumb(strings.SETTINGS_TITLE, trail, self._cwd.name)
+        self.query_one("#settings-header", Static).update(header)
+        self._set_status(hint)
+        keys = strings.SETTINGS_KEYS_ROOT if not trail else strings.SETTINGS_KEYS_MENU
+        self.query_one("#settings-keys", Static).update(key_line(keys))
 
     def _set_status(self, text: str) -> None:
-        self.query_one("#settings-status", Static).update(text)
+        self.query_one("#settings-status", Static).update(Text(text))
 
-    def _set_report(self, text: str) -> None:
+    def _set_report(self, text: str | Text, tone: Tone = Tone.NOTE) -> None:
         widget = self.query_one("#settings-report", Static)
-        # Plain text: check tags like `[ok]` and daemon errors are not Rich markup.
-        widget.update(Text(text))
+        widget.update(text if isinstance(text, Text) else feedback(text, tone))
         widget.display = bool(text)
 
-    def _set_options(self, options: list[tuple[str, str]]) -> None:
-        widget = self.query_one("#settings-options", OptionList)
-        widget.clear_options()
-        widget.display = True
-        for option_id, label in options:
-            widget.add_option(Option(label, id=option_id))
-        if options:
+    def _set_rows(self, rows: list[MenuRow], *, focus: str | None = None) -> None:
+        widget = self.query_one("#settings-options", MenuList)
+        widget.show_rows(rows, focus=focus)
+        if rows:
             widget.focus()
 
-    def _show_root(self) -> None:
+    def _show_root(self, *, focus: str | None = None) -> None:
         self._mode = "root"
         self._workflow_id = None
         self._set_report("")
-        self._set_status(strings.SETTINGS_ROOT_STATUS)
-        options = [
-            ("global", strings.SETTINGS_GLOBAL_OPTION),
-            ("agents", strings.SETTINGS_AGENTS_OPTION),
-        ]
+        self._show_view((), strings.SETTINGS_ROOT_HINT)
         try:
             settings = self._load()
         except EngineError as error:
-            self._set_report(error.describe())
-            self._set_options([("back", strings.BACK)])
+            self._set_report(error.describe(), Tone.ERROR)
+            self._set_rows([MenuRow("back", strings.BACK_ARROW)])
             return
+        defaults = settings.defaults
+        rows = [
+            MenuRow(
+                "global",
+                strings.SETTINGS_GLOBAL_LABEL,
+                strings.SETTINGS_AGENT_VALUE.format(runtime=defaults.runtime, model=defaults.model),
+                strings.SETTINGS_GLOBAL_DESCRIPTION,
+            ),
+            MenuRow(
+                "agents",
+                strings.SETTINGS_AGENTS_LABEL,
+                strings.SETTINGS_AGENTS_COUNT.format(count=len(settings.agents)),
+                strings.SETTINGS_AGENTS_DESCRIPTION,
+            ),
+        ]
         if settings.is_repo:
-            options.extend(_git_options(settings))
-        options.append(("doctor", strings.SETTINGS_DOCTOR_OPTION))
-        options.append(("back", strings.BACK))
-        self._set_options(options)
+            rows.extend(_git_rows(settings))
+        rows.append(
+            MenuRow(
+                "doctor", strings.SETTINGS_DOCTOR_LABEL, "", strings.SETTINGS_DOCTOR_DESCRIPTION
+            )
+        )
+        self._set_rows(rows, focus=focus)
 
     def _load(self) -> ProjectSettings:
         """The project's settings as the daemon resolves them; reread after every write."""
@@ -155,7 +204,8 @@ class SettingsScreen(Screen[None]):
         engine.set_atomic_commits(self._cwd, enabled=enabled)
         self._show_root()
         self._set_report(
-            strings.SETTINGS_ATOMIC_ENABLED if enabled else strings.SETTINGS_ATOMIC_DISABLED
+            strings.SETTINGS_ATOMIC_ENABLED if enabled else strings.SETTINGS_ATOMIC_DISABLED,
+            Tone.DONE,
         )
 
     def _toggle_pull_request(self) -> None:
@@ -166,14 +216,17 @@ class SettingsScreen(Screen[None]):
         enabled = not current.auto_pull_request
         engine.set_pull_request(self._cwd, enabled=enabled)
         self._show_root()
-        self._set_report(strings.SETTINGS_PR_ENABLED if enabled else strings.SETTINGS_PR_DISABLED)
+        self._set_report(
+            strings.SETTINGS_PR_ENABLED if enabled else strings.SETTINGS_PR_DISABLED, Tone.DONE
+        )
 
     def _toggle_worktree(self) -> None:
         enabled = not self._current().use_worktree
         engine.set_worktree(self._cwd, enabled=enabled)
         self._show_root()
         self._set_report(
-            strings.SETTINGS_WORKTREE_ENABLED if enabled else strings.SETTINGS_WORKTREE_DISABLED
+            strings.SETTINGS_WORKTREE_ENABLED if enabled else strings.SETTINGS_WORKTREE_DISABLED,
+            Tone.DONE,
         )
 
     @on(OptionList.OptionSelected, "#settings-options")
@@ -189,7 +242,7 @@ class SettingsScreen(Screen[None]):
         try:
             route(value)
         except EngineError as error:
-            self._set_report(error.describe())
+            self._set_report(error.describe(), Tone.ERROR)
 
     def _option_routes(self) -> dict[tuple[str, str], Callable[[str], object]]:
         """What each option does, keyed by the menu showing it and its id.
@@ -228,67 +281,80 @@ class SettingsScreen(Screen[None]):
         try:
             models = engine.models(self._cwd, runtime)
         except EngineError as error:
-            self.app.call_from_thread(self._set_report, error.describe())
+            self.app.call_from_thread(self._set_report, error.describe(), Tone.ERROR)
             return
 
         def apply() -> None:
             self._mode = "pick_model"
             current = self._current_fields().model
-            self._set_status(self._pick_title(strings.SETTINGS_PICK_MODEL))
-            self._set_options([(f"model:{item}", _mark_current(item, current)) for item in models])
+            self._show_picker("model", strings.SETTINGS_PICK_MODEL)
+            self._set_rows(
+                [MenuRow(f"model:{item}", item, current=item == current) for item in models]
+            )
 
         self.app.call_from_thread(apply)
 
     def _show_permissions(self) -> None:
         self._mode = "pick_permission"
         current = self._current_fields().permission_policy
-        self._set_status(self._pick_title(strings.SETTINGS_PICK_POLICY))
-        current_label = strings.PERMISSION_LABELS.get(current, current)
-        self._set_options(
+        self._show_picker("permission", strings.SETTINGS_PICK_POLICY)
+        self._set_rows(
             [
-                (
+                MenuRow(
                     f"policy:{key}",
-                    _mark_current(strings.PERMISSION_LABELS.get(key, key), current_label),
+                    strings.PERMISSION_LABELS.get(key, key),
+                    current=key == current,
                 )
                 for key in self._current().permission_policies
             ]
         )
 
-    def _show_global_fields(self) -> None:
+    def _show_picker(self, field: str, hint: str) -> None:
+        self._set_report("")
+        self._show_view((*self._fields_trail(), _FIELD_TITLES[field]), hint)
+
+    def _fields_trail(self) -> tuple[str, ...]:
+        if self._target == "global":
+            return (strings.SETTINGS_GLOBAL_LABEL,)
+        return (strings.SETTINGS_AGENTS_LABEL, self._agent_label())
+
+    def _show_global_fields(self, *, focus: str | None = None) -> None:
         """Settings that apply to every agent."""
         engine.open_project(self._cwd)
         self._target = "global"
         self._workflow_id = None
         self._mode = "global_fields"
         defaults = self._load().defaults
-        self._set_report(strings.SETTINGS_GLOBAL_REPORT)
-        self._set_status(strings.SETTINGS_GLOBAL)
-        self._set_options(_field_options("g", defaults))
+        self._set_report("")
+        self._show_view(self._fields_trail(), strings.SETTINGS_GLOBAL_HINT)
+        self._set_rows(_field_rows("g", defaults), focus=focus)
 
-    def _show_pulse_agents(self) -> None:
+    def _show_pulse_agents(self, *, focus: str | None = None) -> None:
         engine.open_project(self._cwd)
         self._target = "agent"
         self._mode = "pick_workflow"
         self._set_report("")
-        self._set_status(strings.SETTINGS_PICK_AGENT)
-        self._set_options(
+        self._show_view((strings.SETTINGS_AGENTS_LABEL,), strings.SETTINGS_PICK_AGENT)
+        self._set_rows(
             [
-                (
+                MenuRow(
                     f"workflow:{agent.id}",
-                    strings.SETTINGS_AGENT_OPTION.format(
-                        label=agent.label, runtime=agent.fields.runtime, model=agent.fields.model
+                    agent.label,
+                    strings.SETTINGS_AGENT_VALUE.format(
+                        runtime=agent.fields.runtime, model=agent.fields.model
                     ),
                 )
                 for agent in self._load().agents
-            ]
+            ],
+            focus=focus,
         )
 
-    def _show_workflow_fields(self) -> None:
+    def _show_workflow_fields(self, *, focus: str | None = None) -> None:
         self._mode = "workflow_fields"
         self._load()
         self._set_report("")
-        self._set_status(self._agent_label())
-        self._set_options(_field_options("wf", self._current_fields()))
+        self._show_view(self._fields_trail(), strings.SETTINGS_AGENT_HINT)
+        self._set_rows(_field_rows("wf", self._current_fields()), focus=focus)
 
     def _agent_label(self) -> str:
         agent = self._current().agent(self._workflow_id or "")
@@ -302,34 +368,29 @@ class SettingsScreen(Screen[None]):
         agent = settings.agent(self._workflow_id or "")
         return agent.fields if agent is not None else Fields("", "", "")
 
-    def _pick_title(self, title: str) -> str:
-        return (
-            strings.SETTINGS_PICK_GLOBAL.format(title=title) if self._target == "global" else title
-        )
-
     def _save(self, field: AgentField, value: str) -> None:
         """Write the picked value for the target being edited, then show its fields again."""
+        row = _PICKER_FIELD[self._mode]
         if self._target == "global":
             engine.save_default(self._cwd, field, value)
-            self._show_global_fields()
+            self._show_global_fields(focus=f"g_{row}")
             return
         if not self._workflow_id:
             self._show_root()
             return
         engine.save_agent_field(self._cwd, self._workflow_id, field, value)
-        self._show_workflow_fields()
+        self._show_workflow_fields(focus=f"wf_{row}")
 
     def _show_agents(self) -> None:
         self._mode = "pick_agent"
         current = self._current_fields().runtime
-        self._set_status(self._pick_title(strings.SETTINGS_PICK_RUNTIME))
-        options = []
-        for name, binary in self._current().runtimes:
-            label = strings.SETTINGS_RUNTIME_OPTION.format(name=name, binary=binary)
-            if name == current:
-                label = strings.CURRENT_MARK.format(label=label)
-            options.append((f"agent:{name}", label))
-        self._set_options(options)
+        self._show_picker("agent", strings.SETTINGS_PICK_RUNTIME)
+        self._set_rows(
+            [
+                MenuRow(f"agent:{name}", name, binary, current=name == current)
+                for name, binary in self._current().runtimes
+            ]
+        )
 
     def _save_model(self, model: str) -> None:
         self._save("model", model)
@@ -341,41 +402,60 @@ class SettingsScreen(Screen[None]):
         self._save("runtime", runtime)
 
     def _run_doctor(self) -> None:
-        lines = [
-            f"[{'ok' if check.status == 'ok' else check.status.upper()}] {check.message}"
-            for check in engine.doctor_checks()
-        ]
-        config = engine.config(self._cwd)
+        self._mode = "doctor"
+        self._show_view((strings.ENVIRONMENT,), strings.SETTINGS_LOADING_DOCTOR)
+        self._set_report("")
+        self._set_rows([MenuRow("back", strings.BACK_ARROW)])
+        self._load_doctor()
+
+    @work(thread=True)
+    def _load_doctor(self) -> None:
+        try:
+            checks = engine.doctor_checks()
+            config = engine.config(self._cwd)
+        except EngineError as error:
+            self.app.call_from_thread(self._set_report, error.describe(), Tone.ERROR)
+            return
+
+        lines = [check_line(check.status, check.message) for check in checks]
         machine = config.get("global")
         if machine:
-            lines.append(strings.SETTINGS_DOCTOR_GLOBAL_CONFIG.format(model=machine.get("model")))
+            lines.append(
+                check_line(
+                    "ok", strings.SETTINGS_DOCTOR_GLOBAL_CONFIG.format(model=machine.get("model"))
+                )
+            )
         project = config.get("project")
         if project:
             lines.append(
-                strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(source=project.get("source_file"))
+                check_line(
+                    "ok",
+                    strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(
+                        source=project.get("source_file")
+                    ),
+                )
             )
-        self._mode = "doctor"
-        self._set_status(strings.ENVIRONMENT)
-        self._set_report("\n".join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS)
-        self._set_options([("back", strings.BACK)])
+
+        report: str | Text = Text("\n").join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS
+
+        def apply() -> None:
+            if not self.is_mounted or self._mode != "doctor":
+                return
+            self._set_status(strings.SETTINGS_DOCTOR_HINT)
+            self._set_report(report)
+
+        self.app.call_from_thread(apply)
 
 
-def _mark_current(label: str, current: str) -> str:
-    if current and label == current:
-        return strings.CURRENT_MARK.format(label=label)
-    return label
-
-
-def _field_options(prefix: str, fields: Fields) -> list[tuple[str, str]]:
+def _field_rows(prefix: str, fields: Fields) -> list[MenuRow]:
     """Runtime, model and policy rows of a settings target, ids prefixed by `prefix`."""
     policy = fields.permission_policy
     return [
-        (f"{prefix}_agent", strings.SETTINGS_FIELD_RUNTIME.format(value=fields.runtime)),
-        (f"{prefix}_model", strings.SETTINGS_FIELD_MODEL.format(value=fields.model)),
-        (
+        MenuRow(f"{prefix}_agent", strings.SETTINGS_FIELD_RUNTIME, fields.runtime),
+        MenuRow(f"{prefix}_model", strings.SETTINGS_FIELD_MODEL, fields.model),
+        MenuRow(
             f"{prefix}_permission",
-            strings.SETTINGS_FIELD_PERMISSIONS.format(
-                value=strings.PERMISSION_LABELS.get(policy, policy)
-            ),
+            strings.SETTINGS_FIELD_PERMISSIONS,
+            strings.PERMISSION_LABELS.get(policy, policy),
         ),
     ]

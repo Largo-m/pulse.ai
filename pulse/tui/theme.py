@@ -13,6 +13,7 @@ from pulse.tui.palette import (
     TEXT,
     TEXT_MUTED,
 )
+from pulse.tui.settings_theme import SETTINGS_CSS
 
 COCKPIT_CSS = (
     f"""
@@ -235,67 +236,6 @@ AppFooter {{
 
 AppFooter .key {{
     color: {LIME};
-}}
-
-SettingsScreen {{
-    background: {BG};
-    align: center middle;
-}}
-
-SettingsScreen #settings-content {{
-    width: 80%;
-    max-width: 90;
-    height: auto;
-    align: center middle;
-}}
-
-SettingsScreen .settings-title {{
-    width: 100%;
-    color: {LIME};
-    text-style: bold;
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen .settings-hint {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-bottom: 1;
-}}
-
-SettingsScreen OptionList {{
-    width: 100%;
-    height: auto;
-    max-height: 18;
-    background: {BG_PANEL};
-    border: solid {BORDER};
-    color: {TEXT};
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList > .option-list--option {{
-    padding: 0 1;
-}}
-
-SettingsScreen OptionList:focus {{
-    border: solid {LIME};
-}}
-
-SettingsScreen .settings-report {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: left;
-    margin-top: 1;
-    height: auto;
-    max-height: 12;
-}}
-
-SettingsScreen .settings-hint-keys {{
-    width: 100%;
-    color: {TEXT_MUTED};
-    text-align: center;
-    margin-top: 1;
 }}
 
 OnboardingScreen {{
@@ -557,4 +497,5 @@ BranchNameScreen .branch-hint {{
 """
     + HOME_CSS
     + HISTORY_CSS
+    + SETTINGS_CSS
 )

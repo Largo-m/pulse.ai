@@ -31,7 +31,6 @@ AGENT = "Agent"
 ENVIRONMENT = "Ambiente"
 HINT_CONFIRM_OR_CANCEL = "Enter confirma · Esc cancela"
 HINT_CONFIRM_OR_BACK = "Enter confirma · Esc volta"
-CURRENT_MARK = "{label}  · atual"
 RUN_SUMMARY = "{current} · steps {done}/{total}"
 
 # Apps
@@ -143,10 +142,16 @@ TASK_MORE_OPTIONS = "Mais opções"
 TASK_MORE_OPTIONS_DETAIL = "título, slug e config"
 TASK_FEWER_OPTIONS = "Menos opções"
 TASK_OPTIONS_SHORTCUT = "ctrl+o"
-TASK_KEYS_PLAIN = (("enter", "enviar"), ("ctrl+j", "nova linha"), ("esc", "voltar"))
+TASK_KEYS_PLAIN = (
+    ("enter", "enviar"),
+    ("ctrl+j", "nova linha"),
+    ("@", "arquivo"),
+    ("esc", "voltar"),
+)
 TASK_KEYS_DETAILED = (
     ("tab", "próximo campo"),
     ("espaço", "marcar"),
+    ("@", "arquivo"),
     ("enter", "enviar"),
     ("esc", "voltar"),
 )
@@ -155,7 +160,12 @@ HOME_ALERTS_MANY = "{count} sessões precisam de você"
 HOME_ALERTS_HINT = "Enter abre a sessão para responder · Esc volta"
 HOME_START_NOW = "Enter inicia agora"
 HOME_DESCRIBE_TASK = "Enter para descrever a tarefa"
-HOME_SESSION_HINT = "{description}\n{keys} · Esc volta"
+HOME_SESSION_PROMPT = "Escolha o workflow da tarefa"
+HOME_SESSION_STEPS = "{count} etapas"
+HOME_SESSION_STEP_ONE = "1 etapa"
+HOME_SESSION_STARTS_NOW = "inicia direto"
+HOME_SESSION_EMPTY = "Nenhum workflow disponível. Verifique a engine em Configurações."
+HOME_SESSION_KEYS = (("↑↓", "navegar"), ("enter", "escolher"), ("esc", "voltar"))
 HOME_SETUP = "Configurar Pulse"
 HOME_START_ENGINE = "Iniciar a engine"
 HOME_ENGINE_STARTING = "Iniciando a engine…"
@@ -252,15 +262,26 @@ ONBOARD_READY = "Pronto"
 ONBOARD_CONFIG_SAVED = "Config salvo em {path}"
 
 # Settings
-SETTINGS_TITLE = "CONFIGURAÇÕES"
-SETTINGS_ROOT_STATUS = "Agents e ambiente"
-SETTINGS_HINT_KEYS = "Enter seleciona  ·  Esc volta"
-SETTINGS_GLOBAL_OPTION = "Global — runtime, modelo e permissões de todos os agents"
-SETTINGS_AGENTS_OPTION = "Agents — runtime, modelo e permissões"
-SETTINGS_WORKTREE_OPTION = "Worktree — isolar cada run em branch própria · {state}"
-SETTINGS_WORKTREE_ON = "ligado"
-SETTINGS_WORKTREE_OFF = "desligado"
-SETTINGS_DOCTOR_OPTION = "Verificar ambiente"
+SETTINGS_TITLE = "Configurações"
+SETTINGS_ROOT_HINT = "O que os agents usam e como as runs tocam o git"
+SETTINGS_GLOBAL_LABEL = "Global"
+SETTINGS_GLOBAL_DESCRIPTION = "Runtime, modelo e permissões de todos os agents"
+SETTINGS_AGENTS_LABEL = "Por agent"
+SETTINGS_AGENTS_DESCRIPTION = "Ajusta um agent sem mexer nos outros"
+SETTINGS_AGENTS_COUNT = "{count} agents"
+SETTINGS_WORKTREE_LABEL = "Worktree"
+SETTINGS_WORKTREE_DESCRIPTION = "Isola cada run numa branch própria"
+SETTINGS_ATOMIC_LABEL = "Autocommit"
+SETTINGS_ATOMIC_DESCRIPTION = "Um commit por entrega"
+SETTINGS_ATOMIC_NEEDS_WORKTREE = "Autocommit só liga com o Worktree ligado."
+SETTINGS_PR_LABEL = "PR/MR"
+SETTINGS_PR_DESCRIPTION = "Abre o pedido no fim da run"
+SETTINGS_PR_NEEDS_COMMITS = "PR/MR só liga com o Worktree e o Autocommit ligados."
+SETTINGS_DOCTOR_LABEL = "Verificar ambiente"
+SETTINGS_DOCTOR_DESCRIPTION = "Runtimes instalados, login e config"
+SETTINGS_TOGGLE_ON = "ligado"
+SETTINGS_TOGGLE_OFF = "desligado"
+SETTINGS_TOGGLE_UNAVAILABLE = "indisponível"
 SETTINGS_WORKTREE_ENABLED = (
     "As runs deste projeto passam a rodar num `git worktree` próprio, em "
     "`~/.pulse/worktrees/`, numa branch com o nome da tarefa. A árvore de "
@@ -270,15 +291,10 @@ SETTINGS_WORKTREE_DISABLED = (
     "As runs voltam a rodar na árvore de trabalho do projeto. "
     "Autocommit e PR/MR foram desligados. Os worktrees já criados continuam onde estão."
 )
-SETTINGS_ATOMIC_OPTION = "Autocommit — um commit por entrega · {state}"
-SETTINGS_ATOMIC_UNAVAILABLE = "indisponível"
-SETTINGS_ATOMIC_NEEDS_WORKTREE = "Autocommit só liga com o Worktree ligado."
 SETTINGS_ATOMIC_ENABLED = (
     "Cada entrega de implementação ou correção vira um commit na branch da run."
 )
 SETTINGS_ATOMIC_DISABLED = "As runs deixam de commitar. PR/MR foi desligado."
-SETTINGS_PR_OPTION = "PR/MR — abrir pedido no fim da run · {state}"
-SETTINGS_PR_NEEDS_COMMITS = "PR/MR só liga com o Worktree e o Autocommit ligados."
 SETTINGS_PR_ENABLED = "No fim da run o Pulse abre o pedido no GitHub ou no GitLab."
 SETTINGS_PR_DISABLED = "O Pulse deixa de abrir pedido no fim da run."
 BRANCH_TITLE = "BRANCH"
@@ -287,23 +303,34 @@ BRANCH_TAKEN = "Essa branch já existe. Escolha outro nome."
 BRANCH_INVALID = "Nome de branch inválido."
 BRANCH_EMPTY = "Informe o nome da branch."
 SETTINGS_LOADING_MODELS = "Carregando modelos…"
+SETTINGS_LOADING_DOCTOR = "Carregando checks…"
 SETTINGS_PICK_MODEL = "Escolha o modelo"
 SETTINGS_PICK_POLICY = "Escolha a política de permissões"
-SETTINGS_PICK_AGENT = "Escolha o agent"
+SETTINGS_PICK_AGENT = "Escolha o agent a ajustar"
 SETTINGS_PICK_RUNTIME = "Escolha o runtime"
-SETTINGS_PICK_GLOBAL = "{title} (global)"
-SETTINGS_GLOBAL = "Global"
-SETTINGS_GLOBAL_REPORT = (
+SETTINGS_GLOBAL_HINT = (
     "O global sobrescreve todos os agents. Trocar um agent depois vale só para ele."
 )
-SETTINGS_FIELD_RUNTIME = "Runtime — {value}"
-SETTINGS_FIELD_MODEL = "Modelo — {value}"
-SETTINGS_FIELD_PERMISSIONS = "Permissões — {value}"
-SETTINGS_AGENT_OPTION = "{label} — {runtime} · {model}"
-SETTINGS_RUNTIME_OPTION = "{name} — {binary}"
-SETTINGS_DOCTOR_GLOBAL_CONFIG = "[ok] Config global · modelo={model}"
-SETTINGS_DOCTOR_PROJECT_CONFIG = "[ok] Config projeto · {source}"
+SETTINGS_AGENT_HINT = "Vale só para este agent"
+SETTINGS_FIELD_RUNTIME = "Runtime"
+SETTINGS_FIELD_MODEL = "Modelo"
+SETTINGS_FIELD_PERMISSIONS = "Permissões"
+SETTINGS_AGENT_VALUE = "{runtime} · {model}"
+SETTINGS_DOCTOR_HINT = "Resultado dos checks deste ambiente"
+SETTINGS_DOCTOR_GLOBAL_CONFIG = "Config global · modelo {model}"
+SETTINGS_DOCTOR_PROJECT_CONFIG = "Config do projeto · {source}"
 SETTINGS_DOCTOR_NO_CHECKS = "Nenhum check"
+SETTINGS_KEYS_ROOT = (
+    ("↑↓", "navegar"),
+    ("enter", "selecionar"),
+    ("espaço", "alternar"),
+    ("esc", "fechar"),
+)
+SETTINGS_KEYS_MENU = (
+    ("↑↓", "navegar"),
+    ("enter", "selecionar"),
+    ("esc", "voltar"),
+)
 
 # Permission policies, keyed by `PERMISSION_POLICIES`
 PERMISSION_LABELS = {

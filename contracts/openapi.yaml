@@ -466,6 +466,18 @@ paths:
       responses:
         "200":
           description: valid and exists
+  /api/workspace/files:
+    get:
+      summary: Files a task can mention with @, relative to the project root, minus git-ignored ones
+      parameters:
+        - name: workspace
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: files (empty outside a git repository)
   /api/settings/atomic-commits:
     put:
       summary: Turn atomic commits on or off; requires the worktree

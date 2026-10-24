@@ -100,7 +100,7 @@ def test_home_hides_the_loops_behind_new_session(monkeypatch):
             loops = _home_option_ids(screen)
             assert "workflow:new-issue" in loops
             assert "workflow:quick-fix" in loops
-            assert loops[-1] == "back"
+            assert "back" not in loops, "esc goes back; the key line says so"
             assert "workflow:default" not in loops
 
             screen.action_back()
@@ -195,8 +195,8 @@ def test_escape_closes_the_form_before_leaving_the_submenu(monkeypatch):
     asyncio.run(run())
 
 
-def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatch):
-    """Short description on the item; the long step chain goes in the hint."""
+def test_a_workflow_row_shows_its_size_and_description_and_the_hint_its_step_chain(monkeypatch):
+    """The row says how big the workflow is; the long step chain goes under the list."""
 
     onboard_machine()
 
@@ -219,21 +219,14 @@ def test_item_keeps_the_short_description_and_the_hint_the_step_chain(monkeypatc
             await pilot.pause()
 
             options = screen.query_one("#home-options", OptionList)
-            labels = [
-                str(options.get_option_at_index(index).prompt)
-                for index in range(options.option_count)
-            ]
-            assert "Nova spec · da ideia ao código revisado" in labels
-            assert not any("→" in label for label in labels)
+            row = options.get_option("workflow:new-issue").prompt.plain.splitlines()
+            assert row[0].split() == ["Nova", "spec", "8", "etapas"]
+            assert row[1].strip() == "da ideia ao código revisado"
 
             hint = screen.query_one(".home-hint", Static)
             screen.on_option_highlighted(_highlighted("workflow:new-issue"))
             await pilot.pause()
-            assert "PRD → Techspec → Tasks → Implementar" in str(hint.render())
-
-            screen.on_option_highlighted(_highlighted("back"))
-            await pilot.pause()
-            assert str(hint.render()).count("\n") == 1
+            assert str(hint.render()).splitlines()[0].startswith("PRD → Techspec → Tasks → ")
 
     asyncio.run(run())
 
@@ -558,3 +551,76 @@ def test_home_alert_poll_finishing_after_the_app_exited_does_not_crash(monkeypat
             assert screen._alerts == []
 
     asyncio.run(run())
+
+
+def test_a_workflow_row_counts_its_steps_and_says_when_it_starts_at_once():
+    from pulse.tui.engine import WorkflowShape
+    from pulse.tui.screens.home import _workflow_row
+
+    asks = WorkflowShape(id="fix", label="Fix", description="d", steps=(("p", "Plano"),))
+    runs = WorkflowShape(
+        id="scan", label="Scan", default_prompt="go", steps=(("a", "A"), ("b", "B"))
+    )
+
+    assert _workflow_row(asks).value == "1 etapa"
+    assert _workflow_row(asks).description == "d"
+    assert _workflow_row(runs).value == "2 etapas · inicia direto"
+    assert _workflow_row(runs).id == "workflow:scan"
+
+
+def test_new_session_swaps_the_banner_for_the_picker_and_back_restores_it(monkeypatch):
+    """The picker drops the banner for a breadcrumb and a key line; Esc brings the home
+    back with the pointer on `Nova sessão`, the row that led there, not on the top row.
+    """
+    from pathlib import Path
+
+    from textual.app import App, ComposeResult
+    from textual.widgets import Footer, Static
+
+    onboard_machine()
+    seen: dict[str, object] = {}
+
+    async def run() -> None:
+        class Harness(App[None]):
+            CSS = COCKPIT_CSS
+
+            def compose(self) -> ComposeResult:
+                yield Static("ok")
+
+        app = Harness()
+        async with app.run_test(size=(100, 30)) as pilot:
+            screen = HomeScreen()
+            app.push_screen(screen)
+            await pilot.pause()
+            # A waiting run puts `alerts` above `session`: the top row is not the answer.
+            screen._apply_alerts([_waiting_run()])
+            await pilot.pause()
+            await pilot.press("down", "down")
+            screen.on_option_selected(_selected("session"))
+            await pilot.pause()
+            seen["picker"] = {
+                "brand": screen.query_one(".home-brand").display,
+                "footer": screen.query_one(Footer).display,
+                "keys": str(screen.query_one("#home-keys", Static).render()),
+                "header": str(screen.query_one("#home-header", Static).render()).splitlines()[0],
+            }
+
+            await pilot.press("escape")
+            await pilot.pause()
+            options = screen.query_one("#home-options", MenuList)
+            seen["root"] = {
+                "brand": screen.query_one(".home-brand").display,
+                "keys": screen.query_one("#home-keys").display,
+                "pointed": options.pointed.id if options.pointed else None,
+            }
+
+    from pulse.tui.widgets.menu_list import MenuList
+
+    asyncio.run(run())
+    assert seen["picker"] == {
+        "brand": False,
+        "footer": False,
+        "keys": "↑↓ navegar  ·  enter escolher  ·  esc voltar",
+        "header": f"Nova sessão  ·  {Path.cwd().name}",
+    }
+    assert seen["root"] == {"brand": True, "keys": False, "pointed": "session"}
