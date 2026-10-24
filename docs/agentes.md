@@ -581,8 +581,9 @@ stdout do runtime (uma linha = um JSON-RPC)
 `create`} faz o log da sessão ([`RecordedSessionLog`](../pulse/history/session_log.py),
 injetado pelo daemon) extrair o caminho de `locations[].path` ou do `rawInput`
 (chaves `path`, `file_path`, `target_file`, `filePath`, `abs_path` — cada runtime
-reporta de um jeito) e gravar em `run_artifacts`. Não há convenção de pasta, nome
-ou extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
+reporta de um jeito) e gravar em `run_artifacts`, uma linha por caminho e step.
+Não há convenção de pasta nem de nome, e toda escrita é gravada; o painel de
+artefatos é que mostra só os `.md` dentro do worktree.
 
 **Contexto ocupado:** um `session/update` com `sessionUpdate: "usage_update"`
 (`used`) vira o indicador `42k tokens` ao lado do tempo do step na barra lateral

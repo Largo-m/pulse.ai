@@ -231,6 +231,42 @@ def test_a_database_at_version_3_gains_the_factory_pull_request_template(tmp_pat
         assert all("{{prompt}}" in str(row["pull_request_template"]) for row in rows)
 
 
+def test_a_database_at_version_5_keys_artifacts_by_step_without_losing_any(tmp_path: Path) -> None:
+    """With `(run_id, path)` as the key, a fix step editing the round file was never recorded."""
+    path = tmp_path / "v5.db"
+    connect(path).close()
+    with _raw(path) as connection:
+        connection.execute("DROP TABLE run_artifacts")
+        connection.execute(
+            "CREATE TABLE run_artifacts (run_id TEXT NOT NULL REFERENCES runs(id)"
+            " ON DELETE CASCADE, path TEXT NOT NULL, step_id TEXT NOT NULL DEFAULT '',"
+            " created_at TEXT NOT NULL, PRIMARY KEY (run_id, path))"
+        )
+        connection.execute(
+            "INSERT INTO runs (id, workflow_id, workspace_root, created_at, updated_at)"
+            " VALUES ('run-1', 'demo', '/tmp', 'now', 'now')"
+        )
+        connection.execute(
+            "INSERT INTO run_artifacts VALUES ('run-1', 'reviews/round-001.md', 'review', 't1')"
+        )
+        connection.execute("PRAGMA user_version = 5")
+
+    connect(path).close()
+
+    with _raw(path) as connection:
+        assert schema_version(connection) == LATEST
+        connection.execute(
+            "INSERT INTO run_artifacts VALUES ('run-1', 'reviews/round-001.md', 'fix', 't2')"
+        )
+        rows = connection.execute(
+            "SELECT path, step_id, created_at FROM run_artifacts ORDER BY created_at"
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            ("reviews/round-001.md", "review", "t1"),
+            ("reviews/round-001.md", "fix", "t2"),
+        ]
+
+
 def test_a_run_stored_before_runs_kept_git_options_reads_none(tmp_path):
     """NULL options mean "follow the project", the behavior that run started with."""
     from pulse.store.runs import load_run

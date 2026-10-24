@@ -108,7 +108,9 @@ def _item(record: RunRecord) -> HistoryItem:
             )
             for step in record.steps
         ],
-        artifacts=[entry["path"] for entry in run_store.list_artifacts(record.id)],
+        artifacts=list(
+            dict.fromkeys(entry["path"] for entry in run_store.list_artifacts(record.id))
+        ),
         branch=record.branch,
         worktree_path=record.worktree_path,
     )

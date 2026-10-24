@@ -452,7 +452,7 @@ def record_artifact(
             """
             INSERT INTO run_artifacts (run_id, path, step_id, created_at)
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(run_id, path) DO NOTHING
+            ON CONFLICT(run_id, path, step_id) DO UPDATE SET created_at = excluded.created_at
             """,
             (run_id, path.strip(), step_id, _now_text()),
         )
@@ -533,7 +533,9 @@ class SqliteRunRepository:
         save(run, db_path=self._db_path)
 
     def artifacts(self, run_id: str) -> list[str]:
-        return [entry["path"] for entry in list_artifacts(run_id, db_path=self._db_path)]
+        return list(
+            dict.fromkeys(entry["path"] for entry in list_artifacts(run_id, db_path=self._db_path))
+        )
 
     def step_artifacts(self, run_id: str, step_id: str, *, since: datetime | None) -> list[str]:
         connection = connect(self._db_path or default_db_path())

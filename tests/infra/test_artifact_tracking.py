@@ -1,7 +1,7 @@
 """An artifact is whatever the agent wrote, discovered via ACP tool calls.
 
-There is no folder or extension convention: Pulse stores only the path the
-runtime reported, and that is what the pane and history show.
+There is no folder or extension convention here: Pulse stores every path the
+runtime reported; only the pane narrows them down to Markdown.
 """
 
 from __future__ import annotations

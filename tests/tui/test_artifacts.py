@@ -4,6 +4,7 @@ from pulse.tui.artifacts import (
     MAX_ARTIFACT_CHARS,
     artifact_key,
     artifact_paths_in_text,
+    is_displayable_artifact,
     read_artifact_markdown,
 )
 
@@ -53,6 +54,39 @@ def test_read_artifact_markdown_truncates_and_missing(tmp_path):
     assert len(truncated) < MAX_ARTIFACT_CHARS + 80
 
 
-def test_read_artifact_is_not_limited_to_markdown():
-    """An artifact is whatever the agent wrote, not just `.md` in a specs folder."""
-    assert artifact_key("src/main.rs") == "src/main.rs"
+def test_the_pane_shows_markdown_written_inside_the_worktree(tmp_path):
+    """A file not yet on disk still counts: the write is announced before it lands."""
+    cwd = str(tmp_path)
+
+    assert is_displayable_artifact("reviews/round-002.md", cwd) is True
+    assert is_displayable_artifact("docs/PLANO.MD", cwd) is True
+    assert is_displayable_artifact(str(tmp_path / "specs" / "validation.md"), cwd) is True
+    assert is_displayable_artifact("file://" + str(tmp_path / "TASK.md"), cwd) is True
+
+
+def test_the_pane_leaves_out_code_and_paths_outside_the_worktree(tmp_path):
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (worktree / "link").symlink_to(outside)
+    cwd = str(worktree)
+
+    for path in (
+        "src/main.rs",
+        "local.properties",
+        ".",
+        "",
+        "notes.md.bak",
+        "/scratch/review-r2.md",
+        "../round.md",
+        "link/escaped.md",
+    ):
+        assert is_displayable_artifact(path, cwd) is False, path
+
+
+def test_without_a_working_directory_only_relative_paths_that_stay_inside_count():
+    assert is_displayable_artifact("reviews/round-001.md", None) is True
+    assert is_displayable_artifact("/scratch/review.md", None) is False
+    assert is_displayable_artifact("../review.md", None) is False
+    assert is_displayable_artifact("docs/../../review.md", None) is False

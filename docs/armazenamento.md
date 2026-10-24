@@ -113,8 +113,13 @@ o Pulse é agnóstico ao agente.
 
 O Pulse **não gera** arquivo nenhum. O agente escreve onde o prompt do step
 mandar, e o Pulse descobre pelos tool-calls do ACP (`write`/`edit`/`create`),
-gravando o caminho em `run_artifacts`. Não há convenção de pasta, de nome nem de
-extensão: `src/main.rs` é tão artefato quanto `docs/PLANO.md`.
+gravando o caminho em `run_artifacts`. Não há convenção de pasta nem de nome, e
+toda escrita é gravada; só o painel filtra, mostrando os `.md` dentro do
+worktree.
+
+A chave é `(run_id, path, step_id)` (migração 6): o mesmo arquivo escrito por dois
+steps aparece nos dois, e reescrevê-lo atualiza `created_at`, de modo que a
+última rodada de um loop é a versão mais recente.
 
 ## 6. Store do Cursor (externo)
 

@@ -1,17 +1,19 @@
 """Artifacts shown in the cockpit.
 
-An artifact is any file the agent wrote, discovered from ACP tool-calls rather
-than by folder or extension convention; paths arrive from the runtime and are
+An artifact is a Markdown file the agent wrote, discovered from ACP tool-calls
+rather than by folder convention; paths arrive from the runtime and are
 normalized, confined to the run's worktree and read here.
 """
 
 from __future__ import annotations
 
+import posixpath
 from pathlib import Path
 
 from pulse.tui import strings
 
 MAX_ARTIFACT_CHARS = 200_000
+ARTIFACT_SUFFIX = ".md"
 
 
 def artifact_key(path: str) -> str:
@@ -20,6 +22,22 @@ def artifact_key(path: str) -> str:
     if text.startswith("file://"):
         text = text[7:]
     return text
+
+
+def is_displayable_artifact(path: str, cwd: str | None = None) -> bool:
+    """A Markdown path inside `cwd`; the file may not exist yet, a write is announced first."""
+    key = artifact_key(path)
+    if not key.lower().endswith(ARTIFACT_SUFFIX):
+        return False
+    if not cwd:
+        normalized = posixpath.normpath(key)
+        return not posixpath.isabs(normalized) and normalized.split("/")[0] != ".."
+    try:
+        root = Path(cwd).resolve()
+        target = (root / key).resolve()
+    except (ValueError, OSError, RuntimeError):
+        return False
+    return target.is_relative_to(root)
 
 
 def artifact_paths_in_text(text: str, known: list[str]) -> list[str]:

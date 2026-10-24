@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS run_artifacts (
   path TEXT NOT NULL,
   step_id TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  PRIMARY KEY (run_id, path)
+  PRIMARY KEY (run_id, path, step_id)
 );
 """
 
@@ -254,6 +254,30 @@ def _apply_run_brief(connection: sqlite3.Connection) -> set[tuple[str, str]]:
     return _add_columns(connection, columns)
 
 
+def _key_artifacts_by_step(connection: sqlite3.Connection) -> set[tuple[str, str]]:
+    connection.execute(
+        """
+        CREATE TABLE run_artifacts_by_step (
+          run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+          path TEXT NOT NULL,
+          step_id TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (run_id, path, step_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO run_artifacts_by_step (run_id, path, step_id, created_at)
+        SELECT run_id, path, step_id, created_at FROM run_artifacts
+        WHERE run_id IN (SELECT id FROM runs)
+        """
+    )
+    connection.execute("DROP TABLE run_artifacts")
+    connection.execute("ALTER TABLE run_artifacts_by_step RENAME TO run_artifacts")
+    return set()
+
+
 def _add_columns(
     connection: sqlite3.Connection, columns: tuple[tuple[str, str, str], ...]
 ) -> set[tuple[str, str]]:
@@ -306,6 +330,7 @@ MIGRATIONS: tuple[Migration, ...] = (
     Migration(version=3, apply=_apply_context_tokens),
     Migration(version=4, apply=_apply_pull_request_template),
     Migration(version=5, apply=_apply_run_brief),
+    Migration(version=6, apply=_key_artifacts_by_step),
 )
 
 
