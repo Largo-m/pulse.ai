@@ -402,8 +402,22 @@ class SettingsScreen(Screen[None]):
         self._save("runtime", runtime)
 
     def _run_doctor(self) -> None:
-        lines = [check_line(check.status, check.message) for check in engine.doctor_checks()]
-        config = engine.config(self._cwd)
+        self._mode = "doctor"
+        self._show_view((strings.ENVIRONMENT,), strings.SETTINGS_LOADING_DOCTOR)
+        self._set_report("")
+        self._set_rows([MenuRow("back", strings.BACK_ARROW)])
+        self._load_doctor()
+
+    @work(thread=True)
+    def _load_doctor(self) -> None:
+        try:
+            checks = engine.doctor_checks()
+            config = engine.config(self._cwd)
+        except EngineError as error:
+            self.app.call_from_thread(self._set_report, error.describe(), Tone.ERROR)
+            return
+
+        lines = [check_line(check.status, check.message) for check in checks]
         machine = config.get("global")
         if machine:
             lines.append(
@@ -416,15 +430,19 @@ class SettingsScreen(Screen[None]):
             lines.append(
                 check_line(
                     "ok",
-                    strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(
-                        source=project.get("source_file")
-                    ),
+                    strings.SETTINGS_DOCTOR_PROJECT_CONFIG.format(source=project.get("source_file")),
                 )
             )
-        self._mode = "doctor"
-        self._show_view((strings.ENVIRONMENT,), strings.SETTINGS_DOCTOR_HINT)
-        self._set_report(Text("\n").join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS)
-        self._set_rows([MenuRow("back", strings.BACK_ARROW)])
+
+        report: str | Text = Text("\n").join(lines) if lines else strings.SETTINGS_DOCTOR_NO_CHECKS
+
+        def apply() -> None:
+            if not self.is_mounted or self._mode != "doctor":
+                return
+            self._set_status(strings.SETTINGS_DOCTOR_HINT)
+            self._set_report(report)
+
+        self.app.call_from_thread(apply)
 
 
 def _field_rows(prefix: str, fields: Fields) -> list[MenuRow]:

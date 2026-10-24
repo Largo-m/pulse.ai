@@ -282,6 +282,8 @@ def test_the_doctor_report_shows_each_check_as_an_icon_and_its_message(
 
     async def scenario(pilot, screen: SettingsScreen) -> None:
         await _select(pilot, screen, "doctor")
+        await pilot.app.workers.wait_for_complete()
+        await pilot.pause()
         report = screen.query_one("#settings-report", Static)
         shown.append(str(report.render()))
 
