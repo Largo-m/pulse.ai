@@ -12,7 +12,9 @@ class GitWorkspace:
     """A project on disk; a run's worktree goes under `worktrees/<run id>`.
 
     The project root and the repository root may differ (a project in a
-    subfolder of a repo): branches and worktrees belong to the repository.
+    subfolder of a repo): branches and worktrees belong to the repository, and
+    a run works in the project's subfolder of its worktree, as it would
+    without one.
     """
 
     def __init__(self, root: Path, *, worktrees: Path) -> None:
@@ -39,11 +41,12 @@ class GitWorkspace:
     def attach_worktree(self, run_id: str, branch: str) -> Path:
         target = self._worktrees / run_id
         vcs.attach_worktree(self._repo(), target, branch)
-        return target
+        return self._project_in(target)
 
     def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
         target = self._worktrees / run_id
-        return target, vcs.add_worktree(self._repo(), target, branch)
+        created = vcs.add_worktree(self._repo(), target, branch)
+        return self._project_in(target), created
 
     def head(self, cwd: Path) -> str:
         return vcs.head_sha(cwd)
@@ -72,6 +75,12 @@ class GitWorkspace:
         if not base:
             raise vcs.GitError("origin has no default branch (`git remote set-head origin -a`)")
         publish.open_request(repo, branch=branch, title=title, body=body, base=base)
+
+    def _project_in(self, worktree: Path) -> Path:
+        """The project's folder inside `worktree`, created when the checkout lacks it."""
+        project = worktree / self._root.resolve().relative_to(self._repo())
+        project.mkdir(parents=True, exist_ok=True)
+        return project
 
     def _repo(self) -> Path:
         repo = vcs.repo_root(self._root)

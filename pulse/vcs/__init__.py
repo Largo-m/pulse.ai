@@ -164,11 +164,14 @@ def prune_worktrees(repo: Path | str) -> None:
 
 
 def remove_worktree(repo: Path | str, path: Path | str, *, force: bool = False) -> None:
-    """Remove the worktree. Without `force`, git refuses if there are unsaved changes."""
+    """Remove the worktree containing `path`, which may be a folder inside it.
+
+    Without `force`, git refuses if there are unsaved changes.
+    """
     args = ["worktree", "remove"]
     if force:
         args.append("--force")
-    args.append(str(path))
+    args.append(str(repo_root(path) or path))
     _write(args, cwd=repo)
 
 

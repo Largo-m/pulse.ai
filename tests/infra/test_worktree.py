@@ -276,6 +276,72 @@ def test_deleted_run_branch_opens_another(tmp_path: Path) -> None:
     assert new_branch == branch
 
 
+def commit_project_in_subfolder(repo: Path) -> Path:
+    project = repo / "service"
+    project.mkdir()
+    commit_in(project, "main.py")
+    return project
+
+
+def test_a_project_in_a_subfolder_works_in_that_subfolder_of_its_worktree(tmp_path: Path) -> None:
+    """Without a worktree the agent works in `repo/service`; with one it worked at the
+    top of the repo, so `@main.py`, `{{workspace}}` and artifact paths pointed elsewhere.
+    """
+    project = commit_project_in_subfolder(make_repo(tmp_path / "repo"))
+    run = make_run(project)
+
+    exec_dir, _branch = prepare(run, project, use_worktree=True)
+
+    assert exec_dir == worktrees_dir() / run.id / "service"
+    assert (exec_dir / "main.py").is_file()
+    stored = run_store.load_run(run.id)
+    assert stored is not None
+    assert stored.worktree_path == str(exec_dir)
+    assert stored.workspace_root == str(project.resolve())
+
+
+def test_a_reopened_worktree_keeps_the_project_subfolder(tmp_path: Path) -> None:
+    project = commit_project_in_subfolder(make_repo(tmp_path / "repo"))
+    run = make_run(project)
+    first, _branch = prepare(run, project, use_worktree=True)
+    shutil.rmtree(worktrees_dir() / run.id)
+
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, _same = prepare(resumed, project, use_worktree=True)
+
+    assert second == first
+    assert (second / "main.py").is_file()
+
+
+def test_an_untracked_project_subfolder_exists_in_the_worktree(tmp_path: Path) -> None:
+    """A project folder not committed yet is absent from a fresh checkout; the agent
+    still needs it as its working directory.
+    """
+    repo = make_repo(tmp_path / "repo")
+    project = repo / "novo"
+    project.mkdir()
+    run = make_run(project)
+
+    exec_dir, _branch = prepare(run, project, use_worktree=True)
+
+    assert exec_dir == worktrees_dir() / run.id / "novo"
+    assert exec_dir.is_dir()
+
+
+def test_removing_a_subfolder_run_worktree_removes_the_whole_worktree(tmp_path: Path) -> None:
+    project = commit_project_in_subfolder(make_repo(tmp_path / "repo"))
+    run = make_run(project)
+    prepare(run, project, use_worktree=True)
+
+    catalog = HistoryCatalog(project)
+    item = catalog.get(run.id)
+    assert item is not None
+    assert catalog.remove_worktree(item) is True
+
+    assert not (worktrees_dir() / run.id).exists()
+
+
 def test_concurrent_runs_do_not_share_directory(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     one, _ = prepare(

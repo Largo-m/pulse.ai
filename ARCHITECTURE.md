@@ -375,6 +375,14 @@ nome ocupado é recusado ali mesmo). Falhar ao abrir o
 worktree **para a run** — rodar na árvore de trabalho da pessoa é justamente o
 que a chave pediu para não acontecer.
 
+Projeto numa subpasta do repositório (`repo/service`): o worktree é do
+repositório inteiro, mas a run trabalha em `<worktree>/service`, o mesmo lugar
+relativo de quando roda sem worktree. É esse caminho que vai para
+`runs.worktree_path`, e por isso `cwd`, `{{workspace}}`, menções `@arquivo` e
+caminhos de artefato apontam para o mesmo arquivo nos dois modos. Se a subpasta
+ainda não está commitada, é criada vazia no worktree. O Autocommit só enxerga
+o que mudou dentro dela, e remover o worktree remove a raiz dele.
+
 Três opções de projeto, em escada, todas desligadas por padrão:
 **Worktree**, **Autocommit** (`atomic_commits`, só com worktree) e **PR/MR**
 (`auto_pull_request`, só com as duas). Autocommit grava um commit por step com
