@@ -65,9 +65,33 @@ def test_a_taken_branch_name_is_refused(make):
         workspace.add_worktree("run-b", "corrigir-o-login")
 
     assert first_branch == "corrigir-o-login"
-    assert first.name == "run-a"
+    assert first.name == "corrigir-o-login"
     assert workspace.worktree_exists(str(first)) is True
     assert workspace.current_branch() == "main", "the project root stays where it was"
+
+
+def test_the_worktree_folder_is_the_branch_with_slashes_as_dashes(make):
+    """One folder per branch, flat under the worktrees dir, named as the user typed it."""
+    workspace = make()
+
+    target, branch = workspace.add_worktree("run-a", "feat/fix-login")
+
+    assert branch == "feat/fix-login"
+    assert target.name == "feat-fix-login"
+    assert target.parent.name == "worktrees"
+
+
+def test_a_folder_held_by_another_branch_gets_the_run_id_as_suffix(make):
+    """`feat/x` and `feat-x` are different branches but would share one folder."""
+    workspace = make()
+    first, _ = workspace.add_worktree("run-aaaaaaaa-1", "feat/x")
+
+    second, branch = workspace.add_worktree("run-bbbbbbbb-2", "feat-x")
+
+    assert first.name == "feat-x"
+    assert second.name == "feat-x-run-bbbb"
+    assert branch == "feat-x"
+    assert workspace.worktree_exists(str(second)) is True
 
 
 def test_a_lost_worktree_reopens_on_its_branch(make):

@@ -15,3 +15,8 @@ def task_slug(text: str) -> str:
     ascii_text = "".join(char for char in folded if not unicodedata.combining(char))
     slug = _SEPARATOR.sub("-", ascii_text.lower()).strip("-")
     return slug[:SLUG_MAX].strip("-")
+
+
+def worktree_folder(branch: str) -> str:
+    """The folder a worktree on `branch` gets: one path segment, `/` turned into `-`."""
+    return branch.replace("/", "-")

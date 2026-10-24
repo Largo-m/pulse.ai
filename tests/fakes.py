@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pulse.domain import run as run_model
+from pulse.domain.branch_name import worktree_folder
 from pulse.domain.control import RunControl
 from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.ports import (
@@ -155,7 +156,7 @@ class FakeWorkspace:
     def attach_worktree(self, run_id: str, branch: str) -> Path:
         if not self.has_branch(branch):
             raise WorkspaceError(f"branch {branch} does not exist")
-        target = self._target(run_id)
+        target = self._target(run_id, branch)
         self.worktrees[target] = branch
         return target
 
@@ -167,7 +168,7 @@ class FakeWorkspace:
         self.branches.add(branch)
         self.bases[branch] = f"base-{branch}"
         self.log[branch] = []
-        target = self._target(run_id)
+        target = self._target(run_id, branch)
         self.worktrees[target] = branch
         return target, branch
 
@@ -216,8 +217,11 @@ class FakeWorkspace:
         """The user deleted the folder; the branch stays."""
         del self.worktrees[path]
 
-    def _target(self, run_id: str) -> Path:
-        return self._root.parent / "worktrees" / run_id
+    def _target(self, run_id: str, branch: str) -> Path:
+        folder = self._root.parent / "worktrees" / worktree_folder(branch)
+        if folder not in self.worktrees:
+            return folder
+        return folder.with_name(f"{folder.name}-{run_id[: run_model.SHORT_ID_CHARS]}")
 
 
 class FixedAgentProfiles:

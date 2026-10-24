@@ -166,7 +166,7 @@ def test_removing_a_subfolder_worktree_removes_its_root(tmp_path: Path) -> None:
 
     workspace.remove_worktree(target)
 
-    assert not (tmp_path / "worktrees" / "run-1").exists()
+    assert not (tmp_path / "worktrees" / "corrigir-o-login").exists()
 
 
 def test_a_pull_request_without_a_known_default_branch_is_refused(tmp_path: Path) -> None:
