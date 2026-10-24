@@ -11,6 +11,7 @@ from pulse.api.app import create_app
 from pulse.daemon.runs import RunManager
 from pulse.domain.git_options import GitOptions
 from pulse.domain.task_brief import TaskBrief
+from pulse.store import runs as run_store
 
 FORM = {
     "title": "Corrigir login",
@@ -61,6 +62,29 @@ def test_the_run_list_shows_the_title(started, tmp_path: Path):
 
     assert listed["title"] == "Corrigir login"
     assert listed["prompt"].startswith("Corrigir login\n\n")
+
+
+def test_a_resumed_run_is_listed_under_its_stored_title(started, tmp_path: Path):
+    """A resume sends no brief, yet the run list must still name the run it reopened."""
+    stored = run_store.create_run(
+        run_id="run-titled",
+        workflow_id="default",
+        workspace=tmp_path,
+        user_prompt="Corrigir login",
+        steps=[],
+        brief=TaskBrief(title="Corrigir login", description=FORM["description"]),
+    )
+    manager = RunManager()
+    client = _client(manager)
+
+    client.post(
+        "/api/workflows/default/runs",
+        json={"resume_run_id": stored.id, "workspace": str(tmp_path)},
+    )
+    assert manager.get(stored.id).ended.wait(timeout=5)
+
+    (listed,) = client.get("/api/runs").json()["runs"]
+    assert listed["title"] == "Corrigir login"
 
 
 def test_a_run_started_from_a_prompt_has_no_title_and_follows_the_project(started):

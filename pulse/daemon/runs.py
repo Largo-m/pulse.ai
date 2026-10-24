@@ -220,17 +220,22 @@ class RunManager:
         """Start `workflow_id` in a thread of its own and return its state.
 
         A brief replaces `prompt`: the run's prompt is its title and
-        description joined. A resume ignores both brief and options, since
-        the stored run keeps its own.
+        description joined. A resume ignores the brief and options it is
+        sent: the stored run keeps its own, and its title names it here.
         """
         if get_workflow(workflow_id) is None:
             raise UnknownWorkflow(f"unknown workflow: {workflow_id}")
         run_id = resume_run_id or str(uuid.uuid4())
+        if not brief.is_empty:
+            prompt = brief.prompt
+        if resume_run_id:
+            stored = run_store.load_run(resume_run_id)
+            brief = stored.brief if stored is not None else EMPTY_BRIEF
         self._prune()
         state = RunState.open(
             run_id=run_id,
             workflow_id=workflow_id,
-            prompt=prompt if brief.is_empty else brief.prompt,
+            prompt=prompt,
             workspace=workspace or str(safe_cwd()),
             resume_run_id=resume_run_id,
             branch="" if resume_run_id else branch,

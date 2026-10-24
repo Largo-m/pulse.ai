@@ -17,6 +17,7 @@ from enum import StrEnum
 
 from pulse.domain.control import RUN_BLOCKED, RUN_STOPPED
 from pulse.domain.git_options import GitOptions
+from pulse.domain.task_brief import TaskBrief
 
 
 class StepStatus(StrEnum):
@@ -280,6 +281,10 @@ class RunRecord:
     def exec_root(self) -> str:
         """Where the agent worked: the worktree, or the root when there was none."""
         return self.worktree_path or self.workspace_root
+
+    @property
+    def brief(self) -> TaskBrief:
+        return TaskBrief(title=self.title, description=self.description)
 
     @property
     def own_branch(self) -> str:
