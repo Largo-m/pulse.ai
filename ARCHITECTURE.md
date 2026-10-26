@@ -346,7 +346,7 @@ aparece se o root for repositório git) passa a ter **uma run, um worktree**:
 ~/.pulse/worktrees/<slug com / trocado por ->        branch confirmada (slug da tarefa)
 ```
 
-A pasta deriva da branch (`worktree_folder` em `pulse/domain/branch_name.py`):
+A pasta deriva da branch (`worktree_folders` em `pulse/domain/branch_name.py`):
 `feat/fix-login` abre `~/.pulse/worktrees/feat-fix-login` na branch
 `feat/fix-login`. Duas branches que caem na mesma pasta (`feat/x` e `feat-x`)
 não colidem: a segunda ganha o id curto da run como sufixo.

@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pulse.domain import run as run_model
-from pulse.domain.branch_name import worktree_folder
+from pulse.domain.branch_name import worktree_folders
 from pulse.domain.control import RunControl
 from pulse.domain.git_options import NO_GIT_OPTIONS, GitOptions
 from pulse.domain.ports import (
@@ -218,10 +218,10 @@ class FakeWorkspace:
         del self.worktrees[path]
 
     def _target(self, run_id: str, branch: str) -> Path:
-        folder = self._root.parent / "worktrees" / worktree_folder(branch)
-        if folder not in self.worktrees:
-            return folder
-        return folder.with_name(f"{folder.name}-{run_id[: run_model.SHORT_ID_CHARS]}")
+        folder, fallback = worktree_folders(branch, run_id)
+        worktrees = self._root.parent / "worktrees"
+        target = worktrees / folder
+        return worktrees / fallback if target in self.worktrees else target
 
 
 class FixedAgentProfiles:

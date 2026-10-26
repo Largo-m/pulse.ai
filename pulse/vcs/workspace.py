@@ -5,13 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse import vcs
-from pulse.domain.branch_name import worktree_folder
-from pulse.domain.run import SHORT_ID_CHARS
+from pulse.domain.branch_name import worktree_folders
 from pulse.vcs import changes, publish
 
 
 class GitWorkspace:
-    """A project on disk; a run's worktree goes under `worktrees/<branch, `/` as `-`>`.
+    """A project on disk; a run's worktree goes under `worktrees/`, named after its branch.
 
     The project root and the repository root may differ (a project in a
     subfolder of a repo): branches and worktrees belong to the repository, and
@@ -51,11 +50,10 @@ class GitWorkspace:
         return self._project_in(target), created
 
     def _target(self, run_id: str, branch: str) -> Path:
-        """The branch's folder, or that folder suffixed with the run when another run holds it."""
-        folder = self._worktrees / worktree_folder(branch)
-        if not folder.exists():
-            return folder
-        return folder.with_name(f"{folder.name}-{run_id[:SHORT_ID_CHARS]}")
+        """The branch's folder, or its fallback when another worktree or a leftover holds it."""
+        folder, fallback = worktree_folders(branch, run_id)
+        target = self._worktrees / folder
+        return self._worktrees / fallback if target.exists() else target
 
     def head(self, cwd: Path) -> str:
         return vcs.head_sha(cwd)

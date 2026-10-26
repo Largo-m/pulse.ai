@@ -94,6 +94,18 @@ def test_a_folder_held_by_another_branch_gets_the_run_id_as_suffix(make):
     assert workspace.worktree_exists(str(second)) is True
 
 
+def test_a_folder_left_on_disk_gets_the_run_id_as_suffix(tmp_path: Path):
+    """A stray folder is not a worktree git can reuse; adding over it would fail the run."""
+    workspace = _git(tmp_path, repo=True)
+    (tmp_path / "worktrees" / "feat-x").mkdir(parents=True)
+
+    target, branch = workspace.add_worktree("run-bbbbbbbb-2", "feat/x")
+
+    assert target == tmp_path / "worktrees" / "feat-x-run-bbbb"
+    assert branch == "feat/x"
+    assert vcs.current_branch(target) == "feat/x"
+
+
 def test_a_lost_worktree_reopens_on_its_branch(make):
     """Finished steps' work lives on the branch; a new one from HEAD would leave it out."""
     workspace = make()
