@@ -122,6 +122,19 @@ def test_deleting_a_run_takes_its_steps_events_and_artifacts_along(tmp_path: Pat
     assert [item.id for item in run_store.list_runs(tmp_path)] == [other.id]
 
 
+def test_a_file_written_by_two_steps_is_listed_under_each(tmp_path: Path):
+    """History shows the fix step's edit of the round file under the fix step too."""
+    record = _create(tmp_path)
+    run_store.record_artifact(record.id, path="reviews/round-001.md", step_id="one")
+    run_store.record_artifact(record.id, path="reviews/round-001.md", step_id="two")
+    run_store.record_artifact(record.id, path="reviews/round-001.md", step_id="two")
+
+    assert run_store.list_artifacts(record.id) == [
+        {"path": "reviews/round-001.md", "step_id": "one"},
+        {"path": "reviews/round-001.md", "step_id": "two"},
+    ]
+
+
 def test_deleting_a_run_that_is_not_there_says_so(tmp_path: Path):
     assert run_store.delete_run("run-que-nunca-existiu") is False
 

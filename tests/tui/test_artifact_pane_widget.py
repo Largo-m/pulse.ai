@@ -146,6 +146,35 @@ def test_tabs_follow_the_selected_phase_and_drop_the_other_phase_files(tmp_path)
     asyncio.run(run())
 
 
+def test_a_file_written_again_moves_its_tab_to_the_end(tmp_path):
+    """Tabs read oldest to newest; a later round's rewrite is the newest, and is on screen."""
+    (tmp_path / "validation.md").write_text("# Round 2\n", encoding="utf-8")
+    (tmp_path / "notes.md").write_text("# Notes\n", encoding="utf-8")
+    state = _state()
+    state.begin_phase("Um")
+    state.upsert_artifact("validation.md", ready=True, has_content=True)
+    state.upsert_artifact("notes.md", ready=True, has_content=True)
+    state.open_artifact_pane()
+
+    async def run() -> None:
+        app = _harness(state, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            pane = app.query_one(ArtifactPane)
+            pane.sync_from_state(state, force=True)
+            await pilot.pause()
+            assert _tab_names(app) == ["validation.md", "notes.md"]
+
+            state.upsert_artifact("validation.md", ready=True, has_content=True)
+            pane.sync_from_state(state)
+            await pilot.pause()
+
+            assert _tab_names(app) == ["notes.md", "validation.md"]
+            assert app.query_one("#artifact-tabs").children[-1].has_class("-active")
+            assert _markdown(app) == "# Round 2\n"
+
+    asyncio.run(run())
+
+
 def test_repointing_the_pane_to_the_worktree_reloads_the_file_from_there(tmp_path):
     """The worktree is known only after `run.context`; the same path must be read again."""
     project = tmp_path / "project"

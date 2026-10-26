@@ -88,7 +88,7 @@ class InMemoryRunRepository:
         self.saves += 1
 
     def artifacts(self, run_id: str) -> list[str]:
-        return [path for path, _step_id, _at in self._artifacts.get(run_id, [])]
+        return list(dict.fromkeys(path for path, _step_id, _at in self._artifacts.get(run_id, [])))
 
     def step_artifacts(self, run_id: str, step_id: str, *, since: datetime | None) -> list[str]:
         return [
@@ -100,11 +100,11 @@ class InMemoryRunRepository:
     def add_artifact(self, run_id: str, path: str, *, step_id: str = "") -> None:
         """What the session runner does when an agent writes a file.
 
-        A path keeps its first writer, as the `(run_id, path)` key does in the database.
+        One entry per path and step, as the `(run_id, path, step_id)` key does in
+        the database; writing it again moves it to its latest write.
         """
         entries = self._artifacts.setdefault(run_id, [])
-        if any(known == path for known, _step_id, _at in entries):
-            return
+        entries[:] = [entry for entry in entries if entry[:2] != (path, step_id)]
         entries.append((path, step_id, run_model.utc_now()))
 
     def ids(self) -> list[str]:

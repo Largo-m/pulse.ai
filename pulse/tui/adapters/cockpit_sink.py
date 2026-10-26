@@ -477,6 +477,7 @@ class CockpitSink:
                         path,
                         ready=ready,
                         has_content=artifact_has_content(path, self._cwd),
+                        cwd=self._cwd,
                     )
 
     def _maybe_enter_questionnaire_mode(self) -> None:

@@ -7,7 +7,7 @@ engine test mean the same thing against the real database.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -159,7 +159,8 @@ def test_step_artifacts_keep_only_what_that_step_wrote(adapter, tmp_path: Path):
     assert repository.step_artifacts("other", "one", since=None) == []
 
 
-def test_a_path_belongs_to_the_step_that_wrote_it_first(adapter, tmp_path: Path):
+def test_a_path_belongs_to_every_step_that_wrote_it(adapter, tmp_path: Path):
+    """A fix step that only edits the round file must still have it as its artifact."""
     repository, add = adapter
     _create(repository, tmp_path)
 
@@ -167,8 +168,33 @@ def test_a_path_belongs_to_the_step_that_wrote_it_first(adapter, tmp_path: Path)
     add(repository, "run-1", "docs/plan.md", step_id="two")
 
     assert repository.step_artifacts("run-1", "one", since=None) == ["docs/plan.md"]
-    assert repository.step_artifacts("run-1", "two", since=None) == []
+    assert repository.step_artifacts("run-1", "two", since=None) == ["docs/plan.md"]
     assert repository.artifacts("run-1") == ["docs/plan.md"]
+
+
+def test_a_file_written_again_counts_from_its_latest_write(adapter, monkeypatch, tmp_path: Path):
+    """A retry that rewrote an earlier round's file must list it, since it wrote it now."""
+    clock = [datetime(2026, 1, 1, tzinfo=UTC)]
+
+    def tick() -> datetime:
+        clock[0] += timedelta(minutes=1)
+        return clock[0]
+
+    monkeypatch.setattr("pulse.store.runs.utc_now", tick)
+    monkeypatch.setattr("pulse.domain.run.utc_now", tick)
+    repository, add = adapter
+    _create(repository, tmp_path)
+    add(repository, "run-1", "specs/validation.md", step_id="one")
+    add(repository, "run-1", "specs/notes.md", step_id="one")
+    round_two = clock[0] + timedelta(seconds=30)
+
+    add(repository, "run-1", "specs/validation.md", step_id="one")
+
+    assert repository.step_artifacts("run-1", "one", since=round_two) == ["specs/validation.md"]
+    assert repository.step_artifacts("run-1", "one", since=None) == [
+        "specs/notes.md",
+        "specs/validation.md",
+    ]
 
 
 def test_step_artifacts_leave_out_files_written_before_since(adapter, tmp_path: Path):
