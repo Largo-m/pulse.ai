@@ -5,14 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from pulse import vcs
+from pulse.domain.branch_name import worktree_folders
 from pulse.vcs import changes, publish
 
 
 class GitWorkspace:
-    """A project on disk; a run's worktree goes under `worktrees/<run id>`.
+    """A project on disk; a run's worktree goes under `worktrees/`, named after its branch.
 
     The project root and the repository root may differ (a project in a
-    subfolder of a repo): branches and worktrees belong to the repository.
+    subfolder of a repo): branches and worktrees belong to the repository, and
+    a run works in the project's subfolder of its worktree, as it would
+    without one.
     """
 
     def __init__(self, root: Path, *, worktrees: Path) -> None:
@@ -37,13 +40,26 @@ class GitWorkspace:
         return bool(path) and Path(path).exists()
 
     def attach_worktree(self, run_id: str, branch: str) -> Path:
-        target = self._worktrees / run_id
+        # Only the project subfolder may be gone: git refuses a second worktree
+        # on a branch the remaining one still has checked out.
+        for folder in worktree_folders(branch, run_id):
+            held = self._worktrees / folder
+            if held.exists() and vcs.current_branch(held) == branch:
+                return self._project_in(held)
+        target = self._target(run_id, branch)
         vcs.attach_worktree(self._repo(), target, branch)
-        return target
+        return self._project_in(target)
 
     def add_worktree(self, run_id: str, branch: str) -> tuple[Path, str]:
-        target = self._worktrees / run_id
-        return target, vcs.add_worktree(self._repo(), target, branch)
+        target = self._target(run_id, branch)
+        created = vcs.add_worktree(self._repo(), target, branch)
+        return self._project_in(target), created
+
+    def _target(self, run_id: str, branch: str) -> Path:
+        """The branch's folder, or its fallback when another worktree or a leftover holds it."""
+        folder, fallback = worktree_folders(branch, run_id)
+        target = self._worktrees / folder
+        return self._worktrees / fallback if target.exists() else target
 
     def head(self, cwd: Path) -> str:
         return vcs.head_sha(cwd)
@@ -72,6 +88,12 @@ class GitWorkspace:
         if not base:
             raise vcs.GitError("origin has no default branch (`git remote set-head origin -a`)")
         publish.open_request(repo, branch=branch, title=title, body=body, base=base)
+
+    def _project_in(self, worktree: Path) -> Path:
+        """The project's folder inside `worktree`, created when the checkout lacks it."""
+        project = worktree / self._root.resolve().relative_to(self._repo())
+        project.mkdir(parents=True, exist_ok=True)
+        return project
 
     def _repo(self) -> Path:
         repo = vcs.repo_root(self._root)

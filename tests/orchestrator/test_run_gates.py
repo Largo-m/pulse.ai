@@ -66,7 +66,7 @@ def test_the_session_opens_where_the_run_works(tmp_path: Path):
 
     harness.run(session, workflow_id="demo", user_prompt="x", use_worktree=True)
 
-    worktree = tmp_path.parent / "worktrees" / harness.runs.only().id
+    worktree = tmp_path.parent / "worktrees" / "x"
     assert session.opened_in == worktree
     assert session.stream.contexts == [(str(worktree), harness.runs.only().branch)]
     assert session.closed is True

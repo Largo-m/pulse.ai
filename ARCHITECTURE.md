@@ -343,8 +343,13 @@ nas configurações do projeto (`project_settings.use_worktree`, e a opção só
 aparece se o root for repositório git) passa a ter **uma run, um worktree**:
 
 ```
-~/.pulse/worktrees/<run_id>        branch confirmada (slug da tarefa)
+~/.pulse/worktrees/<slug com / trocado por ->        branch confirmada (slug da tarefa)
 ```
+
+A pasta deriva da branch (`worktree_folders` em `pulse/domain/branch_name.py`):
+`feat/fix-login` abre `~/.pulse/worktrees/feat-fix-login` na branch
+`feat/fix-login`. Duas branches que caem na mesma pasta (`feat/x` e `feat-x`)
+não colidem: a segunda ganha o id curto da run como sufixo.
 
 O que isso resolve é a mistura: duas runs simultâneas escreviam na mesma árvore
 de trabalho, e qualquer run misturava a entrega do agente com o que a pessoa
@@ -374,6 +379,14 @@ começar (o slug do formulário da run, que acompanha o título até ser editado
 nome ocupado é recusado ali mesmo). Falhar ao abrir o
 worktree **para a run** — rodar na árvore de trabalho da pessoa é justamente o
 que a chave pediu para não acontecer.
+
+Projeto numa subpasta do repositório (`repo/service`): o worktree é do
+repositório inteiro, mas a run trabalha em `<worktree>/service`, o mesmo lugar
+relativo de quando roda sem worktree. É esse caminho que vai para
+`runs.worktree_path`, e por isso `cwd`, `{{workspace}}`, menções `@arquivo` e
+caminhos de artefato apontam para o mesmo arquivo nos dois modos. Se a subpasta
+ainda não está commitada, é criada vazia no worktree. O Autocommit só enxerga
+o que mudou dentro dela, e remover o worktree remove a raiz dele.
 
 Três opções de projeto, em escada, todas desligadas por padrão:
 **Worktree**, **Autocommit** (`atomic_commits`, só com worktree) e **PR/MR**

@@ -129,6 +129,46 @@ def test_a_snapshot_lists_each_file_inside_an_untracked_directory(tmp_path: Path
     assert before["docs/prd.md"] != after["docs/prd.md"]
 
 
+def test_a_subfolder_project_snapshots_and_commits_paths_relative_to_itself(
+    tmp_path: Path,
+) -> None:
+    """`git status --porcelain` names paths from the top of the repo; committing them
+    from the project subfolder would stage `service/service/...` and fail.
+    """
+    repo = make_repo(tmp_path / "repo")
+    (repo / "service").mkdir()
+    (repo / "service" / "main.py").write_text("print()\n", encoding="utf-8")
+    _git(repo, "add", "service/main.py")
+    _git(repo, "commit", "-q", "-m", "service")
+    workspace = GitWorkspace(repo / "service", worktrees=tmp_path / "worktrees")
+    target, _branch = workspace.add_worktree("run-1", "corrigir-o-login")
+    base = workspace.head(target)
+    (target / "main.py").write_text("print('novo')\n", encoding="utf-8")
+    (target / "pkg").mkdir()
+    (target / "pkg" / "util.py").write_text("x = 1\n", encoding="utf-8")
+    (target.parent / "fora.txt").write_text("fora do projeto\n", encoding="utf-8")
+
+    before = workspace.snapshot(target)
+    assert set(before) == {"main.py", "pkg/util.py"}
+
+    workspace.commit(target, sorted(before), "feat: change the service")
+
+    assert workspace.commits_after(target, base) == ["feat: change the service"]
+    assert set(workspace.snapshot(target)) == set()
+    assert vcs.has_changes(target) is True, "the file outside the project is still dirty"
+
+
+def test_removing_a_subfolder_worktree_removes_its_root(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / "service").mkdir()
+    workspace = GitWorkspace(repo / "service", worktrees=tmp_path / "worktrees")
+    target, _branch = workspace.add_worktree("run-1", "corrigir-o-login")
+
+    workspace.remove_worktree(target)
+
+    assert not (tmp_path / "worktrees" / "corrigir-o-login").exists()
+
+
 def test_a_pull_request_without_a_known_default_branch_is_refused(tmp_path: Path) -> None:
     """Without `origin/HEAD` the base was guessed (`main`, or whatever the root had
     checked out), which can target a branch that does not exist.

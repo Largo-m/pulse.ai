@@ -25,15 +25,25 @@ def commit_paths(cwd: Path, paths: list[str], message: str) -> None:
 
 
 def _status_paths(cwd: Path) -> list[str]:
+    """Dirty paths under `cwd`, relative to it.
+
+    Porcelain names paths from the top of the repository even when `cwd` is a
+    project subfolder, and the commit runs from `cwd`.
+    """
     try:
         # `all`: the default collapses an untracked directory into one entry, so
         # edits inside it would never show up as a change.
-        result = _run(["status", "--porcelain", "-z", "--untracked-files=all"], cwd=cwd)
+        result = _run(["status", "--porcelain", "-z", "--untracked-files=all", "--", "."], cwd=cwd)
     except OSError:
         return []
     if result.returncode != 0:
         return []
-    return _parse_porcelain(result.stdout)
+    prefix = _read(["rev-parse", "--show-prefix"], cwd=cwd)
+    return [
+        path.removeprefix(prefix)
+        for path in _parse_porcelain(result.stdout)
+        if path.startswith(prefix)
+    ]
 
 
 def _parse_porcelain(text: str) -> list[str]:
