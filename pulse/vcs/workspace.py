@@ -40,6 +40,12 @@ class GitWorkspace:
         return bool(path) and Path(path).exists()
 
     def attach_worktree(self, run_id: str, branch: str) -> Path:
+        # Only the project subfolder may be gone: git refuses a second worktree
+        # on a branch the remaining one still has checked out.
+        for folder in worktree_folders(branch, run_id):
+            held = self._worktrees / folder
+            if held.exists() and vcs.current_branch(held) == branch:
+                return self._project_in(held)
         target = self._target(run_id, branch)
         vcs.attach_worktree(self._repo(), target, branch)
         return self._project_in(target)

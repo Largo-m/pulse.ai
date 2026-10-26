@@ -334,6 +334,47 @@ def test_a_reopened_worktree_keeps_the_project_subfolder(tmp_path: Path) -> None
     assert (second / "main.py").is_file()
 
 
+def test_a_lost_project_subfolder_resumes_in_the_worktree_that_still_holds_the_branch(
+    tmp_path: Path,
+) -> None:
+    """The worktree root still has the branch checked out, so git refuses a second
+    worktree on it; the run must reuse that root instead of failing to resume.
+    """
+    project = commit_project_in_subfolder(make_repo(tmp_path / "repo"))
+    run = make_run(project)
+    first, branch = prepare(run, project, use_worktree=True)
+    shutil.rmtree(first)
+
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, same = prepare(resumed, project, use_worktree=True)
+
+    assert second == first
+    assert second.is_dir()
+    assert same == branch
+    assert vcs.current_branch(second) == branch
+    assert sorted(path.name for path in worktrees_dir().iterdir()) == ["tarefa"]
+
+
+def test_a_lost_project_subfolder_resumes_in_its_fallback_worktree(tmp_path: Path) -> None:
+    """A run pushed to the fallback folder must find it again, not the branch folder
+    another worktree holds.
+    """
+    project = commit_project_in_subfolder(make_repo(tmp_path / "repo"))
+    (worktrees_dir() / "tarefa").mkdir(parents=True)
+    run = make_run(project)
+    first, branch = prepare(run, project, use_worktree=True)
+    shutil.rmtree(first)
+
+    resumed = run_store.load_run(run.id)
+    assert resumed is not None
+    second, _same = prepare(resumed, project, use_worktree=True)
+
+    assert first == worktrees_dir() / "tarefa-run-1" / "service"
+    assert second == first
+    assert vcs.current_branch(second) == branch
+
+
 def test_an_untracked_project_subfolder_exists_in_the_worktree(tmp_path: Path) -> None:
     """A project folder not committed yet is absent from a fresh checkout; the agent
     still needs it as its working directory.
