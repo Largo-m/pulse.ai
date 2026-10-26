@@ -112,8 +112,13 @@ Projeto que é repositório git pode ligar **Worktree** em *Configurações*. Co
 chave ligada, cada run abre a própria cópia de trabalho:
 
 ```
-~/.pulse/worktrees/<run_id>     branch  pulse/<workflow>-<run curto>
+~/.pulse/worktrees/<slug>     branch  <slug>
 ```
+
+O slug confirmado nomeia os dois: a branch fica como foi digitada e a pasta
+troca `/` por `-` (slug `feat/fix-login` → pasta `feat-fix-login`, branch
+`feat/fix-login`). Se outra run já ocupa a pasta, ela ganha o id curto da run
+como sufixo.
 
 A árvore de trabalho do editor fica intocada, duas runs simultâneas param de se
 atropelar, e revisar a entrega de uma run vira um `git diff` de uma branch.

@@ -343,8 +343,13 @@ nas configurações do projeto (`project_settings.use_worktree`, e a opção só
 aparece se o root for repositório git) passa a ter **uma run, um worktree**:
 
 ```
-~/.pulse/worktrees/<run_id>        branch confirmada (slug da tarefa)
+~/.pulse/worktrees/<slug com / trocado por ->        branch confirmada (slug da tarefa)
 ```
+
+A pasta deriva da branch (`worktree_folders` em `pulse/domain/branch_name.py`):
+`feat/fix-login` abre `~/.pulse/worktrees/feat-fix-login` na branch
+`feat/fix-login`. Duas branches que caem na mesma pasta (`feat/x` e `feat-x`)
+não colidem: a segunda ganha o id curto da run como sufixo.
 
 O que isso resolve é a mistura: duas runs simultâneas escreviam na mesma árvore
 de trabalho, e qualquer run misturava a entrega do agente com o que a pessoa

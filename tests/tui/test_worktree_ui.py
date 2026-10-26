@@ -185,7 +185,6 @@ def test_deleting_run_removes_clean_worktree(tmp_path: Path):
 
     assert HistoryCatalog(repo).delete(run_id) is True
     assert not exec_dir.exists()
-    assert not (worktrees_dir() / run_id).exists()
 
 
 @git_only
@@ -427,5 +426,5 @@ def test_enabled_toggle_moves_run_to_worktree(tmp_path: Path):
     assert record is not None
     exec_dir, branch = prepare(record, repo, use_worktree=resolve_config(repo).use_worktree)
 
-    assert exec_dir == worktrees_dir() / run_id
+    assert exec_dir == worktrees_dir() / "adicionar-login"
     assert branch == "adicionar-login"
