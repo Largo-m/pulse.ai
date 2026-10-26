@@ -32,12 +32,7 @@ def is_displayable_artifact(path: str, cwd: str | None = None) -> bool:
     if not cwd:
         normalized = posixpath.normpath(key)
         return not posixpath.isabs(normalized) and normalized.split("/")[0] != ".."
-    try:
-        root = Path(cwd).resolve()
-        target = (root / key).resolve()
-    except (ValueError, OSError, RuntimeError):
-        return False
-    return target.is_relative_to(root)
+    return _confined(key, cwd) is not None
 
 
 def artifact_paths_in_text(text: str, known: list[str]) -> list[str]:
@@ -69,17 +64,21 @@ def resolve_artifact_path(path: str, cwd: str | None = None) -> Path | None:
     key = artifact_key(path)
     if not cwd or not key:
         return None
+    target = _confined(key, cwd)
+    return target if target is not None and target.is_file() else None
+
+
+def _confined(key: str, cwd: str) -> Path | None:
+    """`key` resolved under `cwd`, or `None` when `..` or a symlink leads outside it."""
     try:
         root = Path(cwd).resolve()
         # `root / key` is `key` itself when the runtime reported an absolute path.
         target = (root / key).resolve()
     # A NUL byte (ValueError), an unreadable parent (OSError) or a symlink loop
-    # (RuntimeError before 3.13) is not a file Pulse can show.
+    # (RuntimeError before 3.13) is not a path Pulse can confine.
     except (ValueError, OSError, RuntimeError):
         return None
-    if not target.is_relative_to(root) or not target.is_file():
-        return None
-    return target
+    return target if target.is_relative_to(root) else None
 
 
 def artifact_has_content(path: str, cwd: str | None = None) -> bool:
