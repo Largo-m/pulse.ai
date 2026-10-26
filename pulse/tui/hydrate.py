@@ -24,7 +24,7 @@ from pulse.history.events import (
 from pulse.history.models import HistoryItem
 from pulse.history.run_log import RunLog
 from pulse.tui import strings
-from pulse.tui.artifacts import artifact_has_content, artifact_key
+from pulse.tui.artifacts import artifact_has_content, artifact_key, is_displayable_artifact
 from pulse.tui.history_rows import run_title
 from pulse.tui.state import CockpitState
 
@@ -117,11 +117,11 @@ def restore_settled_steps(state: CockpitState, log: RunLog, workspace: Path) -> 
         entry.entry_id = state._next_entry_id
         state._next_entry_id += 1
     state.entries = restored + state.entries
-    known = {artifact.path for artifact in state.artifacts}
+    known = {(artifact.path, artifact.phase_id) for artifact in state.artifacts}
     state.artifacts = [
         artifact
         for artifact in _load_artifacts(log, Path(log.exec_root or workspace))
-        if artifact.phase_id in missing and artifact.path not in known
+        if artifact.phase_id in missing and (artifact.path, artifact.phase_id) not in known
     ] + state.artifacts
     state.notify()
 
@@ -219,16 +219,18 @@ def _load_entries(
 
 
 def _load_artifacts(log: RunLog | None, workspace: Path) -> list[ArtifactItem]:
-    by_step = {item.path: item.step_id for item in log.artifacts} if log is not None else {}
-    artifacts: list[ArtifactItem] = []
-    for path, step_id in by_step.items():
-        key = artifact_key(path)
-        artifacts.append(
-            ArtifactItem(
-                path=key,
-                phase_id=step_id,
-                ready=True,
-                has_content=artifact_has_content(key, str(workspace)),
-            )
+    root = str(workspace)
+    written = {
+        (artifact_key(item.path), item.step_id): None
+        for item in (log.artifacts if log is not None else ())
+        if is_displayable_artifact(item.path, root)
+    }
+    return [
+        ArtifactItem(
+            path=path,
+            phase_id=step_id,
+            ready=True,
+            has_content=artifact_has_content(path, root),
         )
-    return artifacts
+        for path, step_id in written
+    ]

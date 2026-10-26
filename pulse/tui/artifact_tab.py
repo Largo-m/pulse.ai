@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from pulse.history.events import ArtifactItem, PhaseItem
-from pulse.tui.artifacts import artifact_key, artifact_paths_in_text
+from pulse.tui.artifacts import artifact_key, artifact_paths_in_text, is_displayable_artifact
 
 
 class _ArtifactHost(Protocol):
@@ -43,28 +43,22 @@ class ArtifactTab:
         *,
         ready: bool,
         has_content: bool = False,
+        cwd: str | None = None,
     ) -> ArtifactItem | None:
-        key = artifact_key(path)
-        if not key:
+        if not is_displayable_artifact(path, cwd):
             return None
+        key = artifact_key(path)
         phase_id = self._entry_phase_id()
-        for item in self.artifacts:
-            if item.path != key:
-                continue
+        item = next(
+            (known for known in self.artifacts if (known.path, known.phase_id) == (key, phase_id)),
+            None,
+        )
+        if item is None:
+            item = ArtifactItem(path=key, phase_id=phase_id, ready=ready, has_content=has_content)
+        else:
+            self.artifacts.remove(item)
             item.ready = ready
             item.has_content = item.has_content or has_content
-            if not item.phase_id:
-                item.phase_id = phase_id
-            if self.follow_artifact:
-                self.selected_artifact_path = item.path
-            self.notify()
-            return item
-        item = ArtifactItem(
-            path=key,
-            phase_id=phase_id,
-            ready=ready,
-            has_content=has_content,
-        )
         self.artifacts.append(item)
         if self.follow_artifact or not self.selected_artifact_path:
             self.selected_artifact_path = item.path

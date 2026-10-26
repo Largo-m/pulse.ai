@@ -172,10 +172,12 @@ class ArtifactPane(Widget):
         selected = state.selected_artifact()
         selected_path = selected.path if selected is not None else ""
         children = [child for child in row.children if isinstance(child, Static)]
+        wanted = [item.path for item in visible]
+        if [child.name for child in children] != wanted[: len(children)]:
+            row.remove_children()
+            children = []
         by_name = {child.name: child for child in children if child.name}
-        seen: set[str] = set()
         for item in visible:
-            seen.add(item.path)
             active = item.path == selected_path
             child = by_name.get(item.path)
             if child is None:
@@ -190,9 +192,6 @@ class ArtifactPane(Widget):
                 continue
             child.update(self._tab_label(item, active))
             child.set_class(active, "-active")
-        for child in children:
-            if child.name not in seen:
-                child.remove()
 
     def _load_selected(self, *, force: bool) -> None:
         if not self._state.artifact_pane_open:

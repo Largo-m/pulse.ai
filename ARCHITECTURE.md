@@ -727,8 +727,17 @@ log da sessão gravar o caminho em `run_artifacts`
 ([`RecordedSessionLog`](pulse/history/session_log.py)). O caminho vem de
 `locations[].path` ou do `rawInput` — cada runtime reporta de um jeito.
 
-Consequência: não há convenção de pasta, de nome nem de extensão. `src/main.rs` é
-tão artefato quanto `docs/PLANO.md`.
+Consequência: não há convenção de pasta nem de nome, e `run_artifacts` grava
+toda escrita — `src/main.rs` inclusive, porque `{{artifacts}}` e o bloco de
+retry listam o que o step escreveu. Só o **painel** filtra: mostra apenas `.md`
+dentro do worktree (`is_displayable_artifact` em
+[`pulse/tui/artifacts.py`](pulse/tui/artifacts.py)), para que um rascunho em
+`/tmp` ou um arquivo de código não tome o lugar do documento da rodada.
+
+Cada linha é chaveada por `(run_id, path, step_id)`: um step de correção que só
+edita o arquivo de outro step também o tem como artefato. Escrever de novo
+atualiza `created_at`, então a rodada 2 de um loop que reescreve o mesmo arquivo
+o põe como o mais recente — é o que o painel seleciona.
 
 O caminho é gravado **relativo ao diretório onde a run trabalhou**, que com
 isolamento é o worktree dela (§Onde a run trabalha). Por isso o painel precisa

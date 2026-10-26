@@ -232,6 +232,81 @@ def test_upsert_artifact_keeps_collection_and_follow_live():
     assert state.selected_artifact_path == "docs/PROJECT.md"
 
 
+def test_only_markdown_inside_the_worktree_is_an_artifact(tmp_path):
+    """Code files and paths outside the worktree hid the round file as "the latest"."""
+    state = _state("pair", PAIR)
+    state.begin_phase("Construir")
+    cwd = str(tmp_path)
+
+    rejected = [
+        state.upsert_artifact(path, ready=True, cwd=cwd)
+        for path in ("src/app.kt", "local.properties", ".", "/scratch/sensor.md", "../fora.md")
+    ]
+    kept = state.upsert_artifact("docs/PLANO.MD", ready=True, cwd=cwd)
+
+    assert rejected == [None] * 5
+    assert kept is not None
+    assert [item.path for item in state.artifacts] == ["docs/PLANO.MD"]
+    assert state.selected_artifact_path == "docs/PLANO.MD"
+
+
+def test_without_a_working_directory_an_absolute_or_escaping_path_is_not_an_artifact():
+    state = _state("pair", PAIR)
+    state.begin_phase("Construir")
+
+    assert state.upsert_artifact("/scratch/review-r2.md", ready=True) is None
+    assert state.upsert_artifact("../review.md", ready=True) is None
+    assert state.upsert_artifact("reviews/round-001.md", ready=True) is not None
+
+
+def test_the_round_file_of_a_later_loop_round_is_the_one_on_screen():
+    state = _state("loop", [("review", "Review"), ("fix", "Fix")])
+    state.begin_phase("Review")
+    state.upsert_artifact("reviews/round-001.md", ready=True, has_content=True)
+    state.begin_phase("Fix")
+    state.begin_phase("Review")
+
+    state.upsert_artifact("/scratch/review-r2", ready=True)
+    state.upsert_artifact("reviews/round-002.md", ready=True, has_content=True)
+
+    assert [item.path for item in state.visible_artifacts()] == [
+        "reviews/round-001.md",
+        "reviews/round-002.md",
+    ]
+    assert state.selected_artifact().path == "reviews/round-002.md"
+
+
+def test_a_file_written_again_becomes_the_latest_artifact():
+    """`validation.md` rewritten by round 2 must be what the phase shows, not an older file."""
+    state = _state("loop", [("verify", "Verificar"), ("fix", "Corrigir")])
+    state.begin_phase("Verificar")
+    state.upsert_artifact("specs/validation.md", ready=True, has_content=True)
+    state.upsert_artifact("specs/notes.md", ready=True, has_content=True)
+
+    again = state.upsert_artifact("specs/validation.md", ready=True, has_content=True)
+
+    assert [item.path for item in state.artifacts] == ["specs/notes.md", "specs/validation.md"]
+    assert again is state.artifacts[-1]
+    assert state.selected_artifact().path == "specs/validation.md"
+
+
+def test_a_file_the_fix_step_edits_shows_in_both_phases():
+    """The fix step only edits the round file; attributing it to the review alone left it empty."""
+    state = _state("loop", [("review", "Review"), ("fix", "Fix")])
+    state.begin_phase("Review")
+    state.upsert_artifact("reviews/round-001.md", ready=True, has_content=True)
+    state.begin_phase("Fix")
+    state.upsert_artifact("reviews/round-001.md", ready=True, has_content=True)
+
+    assert [(item.path, item.phase_id) for item in state.artifacts] == [
+        ("reviews/round-001.md", "review"),
+        ("reviews/round-001.md", "fix"),
+    ]
+    assert [item.path for item in state.visible_artifacts()] == ["reviews/round-001.md"]
+    state.select_phase(0)
+    assert [item.phase_id for item in state.visible_artifacts()] == ["review"]
+
+
 def test_manual_artifact_select_disables_follow():
     state = _state("pair", PAIR)
     state.begin_phase("Construir")
